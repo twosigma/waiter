@@ -1,0 +1,450 @@
+; ========== Waiter Configuration ==========
+;
+; NOTE: Waiter comes with reasonable defaults for most settings. We have added some hints and
+;       reminders for the various settings to try and clarify the effects of making changes.
+;       Nevertheless, tread lightly if you are tweaking and tuning the Waiter configuration.
+;
+
+; ---------- Custom Extensions ----------
+;
+; Several of the configuration settings below allow for extending Waiter by providing custom
+; implementations of a protocol. For example, if you want to have a custom way of providing
+; entitlements in Waiter, you might specify:
+;
+;      {
+;       ; ...
+;       :entitlement-config {:kind :custom
+;                            :custom {:factory-fn waiter-extensions.security/my-entitlement-manager
+;                                     :foo "bar"
+;                                     :baz "qux"}}
+;       ; ...
+;       }
+;
+; Which would invoke your custom implementation of the EntitlementManager protocol:
+;
+;     (ns waiter-extensions.security
+;       (:require [waiter.security :as sec]))
+;
+;     (defrecord MyEntitlementManager [foo baz]
+;       sec/EntitlementManager
+;
+;       (authorized? [this subject action resource]
+;         ; your custom entitlements code goes here
+;         ))
+;
+;     (defn my-entitlement-manager [{:keys [foo baz]}]
+;       (MyEntitlementManager. foo baz))
+;
+
+{
+ ; ---------- Cluster ----------
+
+ ;; To be considered part of the same cluster, Waiter routers need to:
+ ;; 1. Have the same :cluster-config :name
+ ;; 2. Have the same :zookeeper :base-path and :discovery-relative-path to allow computing router endpoints
+ ;; 3. Have the same :zookeeper :base-path and :leader-latch-relative-path to participate in leadership election
+
+ :cluster-config {
+                  ;; Number of routers required in order for leader election to take place;
+                  ;; it's a good idea to set this to an odd number:
+                  :min-routers 3
+
+                  ;; Use a descriptive name for your cluster;
+                  ;; it's best to keep this unique across clusters:
+                  :name "my-waiter-cluster"}
+
+ :zookeeper {
+             ;; The root path to which Waiter will write data:
+             :base-path "/waiter"
+
+             ;; Valid values are:
+             ;; - a valid ZooKeeper connect string (example below)
+             ;; - :in-process, which simply uses an in-process ZK (not for production use)
+             :connect-string "zk1.example.com:2181,zk2.example.com:2181,zk3.example.com:2181"
+
+             ;; Retry policy that retries a set number of times with an increasing
+             ;; (up to a maximum bound) sleep time between retries
+             :curator-retry-policy {
+                                    ;; Initial amount of time (milliseconds) to wait between retries
+                                    :base-sleep-time-ms 100
+
+                                    ;; Maximum number of times to retry
+                                    :max-retries 10
+
+                                    ;; Maximum amount of time (milliseconds) to wait between retries
+                                    :max-sleep-time-ms 120000}
+
+             ;; The path used for service discovery:
+             :discovery-relative-path "discovery"
+
+             ;; The path used for service garbage collection state:
+             :gc-relative-path "gc-state"
+
+             ;; The path used for leader election:
+             :leader-latch-relative-path "leader-latch"
+            
+             ;; The timeout for acquiring a mutex 
+             :mutex-timeout-ms 1000}
+
+ ;; Waiter starts a loop to query for the list of currently running routers:
+ :router-syncer {
+                 ;; The amount of time (milliseconds) to wait before starting the loop:
+                 :delay-ms 750
+
+                 ;; The interval (milliseconds) on which to query:
+                 :interval-ms 1500}
+
+ ; ---------- Node ----------
+
+ ; Use a descriptive name for this router; this is useful in multi-router
+ ; scenarios for identifying which router handled a request:
+ :router-id-prefix "router-1"
+
+ ; ---------- Network ----------
+
+ ;; Set the bind address to a specific IP:
+ :host "192.168.0.1"
+
+ ;; Set the port:
+ :port 9091
+
+ ;; Set the DNS name for your Waiter cluster:
+ :hostname "waiter.example.com"
+
+ ; ---------- Token Storage ----------
+
+ :kv-config {
+             ;; :kind :zk uses Apache ZooKeeper (https://zookeeper.apache.org/):
+             :kind :zk
+             :zk {
+                  ;; Custom implementations should specify a :factory-fn
+                  ;; that returns an instance of waiter.kv.KeyValueStore:
+                  :factory-fn waiter.kv/new-zk-kv-store
+
+                  ;; How long (milliseconds) to await a response from ZK synchronize call:
+                  :sync-timeout-ms 2000}
+
+             ;; Alternatively, :kind :local simply uses an in-memory store
+             ;; (not for production use, and obviously does not work with multiple Waiter routers):
+             ;:kind :local
+             :local {:factory-fn waiter.kv/new-local-kv-store}
+
+             ;; The path used for token storage:
+             :relative-path "tokens"
+
+             ;; Whether or not to store the data encrypted:
+             :encrypt true
+
+             :cache {
+                     ;; The maximum number of elements in the cache before FIFO semantics apply:
+                     :threshold 1000
+
+                     ;; The time (seconds) that entries are allowed to reside in the cache:
+                     :ttl 60}}
+
+ ; ---------- Security ----------
+
+ ; Waiter supports the run-as-requester feature to launch a service as the requesting user.
+ ; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
+ ; The explicit consent is required to defend against CSRF attacks.
+ ; consent-expiry-days is used to configure how long to remember this consent and honor the presence of the cookie.
+ :consent-expiry-days 90
+
+ ;; CORS (https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS) governs whether a web application
+ ;; running in the browser may make AJAX requests to a different web application. Configuring CORS will be required for
+ ;; clients who wish to interact with Waiter via Javascript in a web browser. CORS is not required to make requests to
+ ;; your own application running on Waiter (because they will have the same origin) or to communicate with Waiter
+ ;; outside the browser.
+ :cors-config {
+               ;; :kind :patterns takes a simple list of regular expressions (see below):
+               :kind :patterns
+               :patterns {
+                          ;; Custom implementations should specify a :factory-fn
+                          ;; that returns an instance of waiter.cors.CorsValidator:
+                          :factory-fn waiter.cors/pattern-based-validator
+
+                          ;; List of regular expressions representing origins to allow:
+                          :allowed-origins [#regex "^http://[^\\.]+\\.example\\.org(:80)?$"
+                                            #regex "^https://anotherapp.example.org:12345$"]}
+
+               ;; The value to use for the Access-Control-Max-Age header:
+               :max-age 3600}
+
+ :entitlement-config {
+                      ;; :kind :simple requires that the requesting user be the same as the run-as-user:
+                      :kind :simple
+                      :simple {
+                               ;; Custom implementations should specify a :factory-fn
+                               ;; that returns an instance of waiter.security.EntitlementManager:
+                               :factory-fn waiter.security/->SimpleEntitlementManager}}
+
+ :password-store-config {
+                         ;; :kind :configured takes a simple list of passwords:
+                         :kind :configured
+                         :configured {
+                                      ;; Custom implementations should specify a :factory-fn that
+                                      ;; returns an instance of waiter.password-store.PasswordProvider:
+                                      :factory-fn waiter.password-store/configured-provider
+
+                                      ;; List of passwords:
+                                      :passwords ["open-sesame"]}}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {
+                    ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
+                    :kind :marathon
+                    :marathon {
+                               ;; Custom implementations should specify a :factory-fn
+                               ;; that returns an instance of waiter.scheduler.ServiceScheduler:
+                               :factory-fn waiter.marathon/marathon-scheduler
+
+                               ;; The location of home directories on your Mesos agents;
+                               ;; the HOME environment variable is set by joining this and the run-as-user:
+                               :home-path-prefix "/home/"
+
+                               ;; The HTTP options that will be used when accessing Marathon:
+                               :http-options {:conn-timeout 10000
+                                              :socket-timeout 10000}
+
+                               ;; Marathon will fail deployments (e.g. scale-down) if there is an existing deployment in
+                               ;; flight; this represents the amount of time (milliseconds) Waiter will tolerate failed
+                               ;; scale-down deployments before using the force flag when scaling down:
+                               :force-kill-after-ms 60000
+
+                               ;; How long (milliseconds) to cache the framework id:
+                               :framework-id-ttl 900000
+
+                               ;; The URL for your Marathon HTTP API:
+                               :url "http://marathon.example.com:8080"}
+
+                    ;; :kind :shell simply schedules instances on your local machine (for testing purposes only):
+                    ;:kind :shell
+                    :shell {
+                            :factory-fn waiter.shell-scheduler/shell-scheduler
+
+                            ;; The interval (milliseconds) at which instance health will be checked:
+                            :health-check-interval-ms 10000
+
+                            ;; The HTTP connect timeout and idle timeout (milliseconds) for instance health checks:
+                            :health-check-timeout-ms 200
+
+                            ;; The amount of time (milliseconds) after an instance is
+                            ;; killed before its port will become available for use:
+                            :port-grace-period-ms 120000
+
+                            ;; Defines the port range from which we allocate ports:
+                            :port-range [10000 10999]
+
+                            ;; The base work directory to use; both absolute and relative paths are supported:
+                            :work-directory "scheduler"}}
+
+ ;; Waiter performs garbage collection of services by tracking two things:
+ ;;
+ ;; 1. Services that are "broken" (i.e. have no healthy instance, but at
+ ;;    least one failed instance, possibly due to a broken command).
+ ;;
+ ;; 2. Services that are "idle" (i.e. have no outstanding requests).
+ ;;    Idle services are detected based on no changes to the metrics state
+ ;;    past the idle-timeout-mins period set on the service description.
+ ;;
+ ;; If an error occurs while deleting a service, there will be repeated
+ ;; attempts to delete it later.
+ :scheduler-gc-config {
+                       ;; The number of hosts on which health checks
+                       ;; must fail in order to consider a service broken:
+                       :broken-service-min-hosts 2
+
+                       ;; Faulty services are detected based on no changes to healthy/failed
+                       ;; instance state past this amount of time (minutes):
+                       :broken-service-timeout-mins 30
+
+                       ;; Timeout intervals (milliseconds) used as a refractory period to
+                       ;; allow effects of any GC run to propagate through the system,
+                       ;; for broken and idle services, respectively:
+                       :scheduler-gc-broken-service-interval-ms 60000
+                       :scheduler-gc-interval-ms 60000}
+
+ ;; How often (seconds) to query the scheduler for the service and instance statuses:
+ :scheduler-syncer-interval-secs 5
+
+ :scaling {
+           ;; How often (milliseconds) to run the autoscaling algorithm:
+           :autoscaler-interval-ms 1000
+
+           ;; Throttles the rate at which kill requests are sent to the scheduler:
+           :inter-kill-request-wait-time-ms 1000}
+
+ ; ---------- Service Descriptions ----------
+
+ :service-description-builder-config {
+                                      ;; :kind :default invokes the DefaultServiceDescriptionBuilder
+                                      :kind :default
+                                      :default {
+                                                ;; Custom implementations should specify a
+                                                ;; :factory-fn that returns an instance of
+                                                ;; waiter.service-description.ServiceDescriptionBuilder:
+                                                :factory-fn waiter.service-description/->DefaultServiceDescriptionBuilder}}
+
+ ;; The following service description parameters are required and
+ ;; therefore don't have default values:
+ ;;
+ ;; - cpus
+ ;; - mem
+ ;; - cmd
+ ;; - version
+ ;;
+ ;; For the other parameters, if the user does not provide a
+ ;; value for the parameter when constructing her service
+ ;; description, these defaults will be used:
+ :service-description-defaults {"blacklist-on-503" true
+                                "concurrency-level" 1
+                                "distribution-scheme" "balanced"
+                                "env" {"FOO" "bar"
+                                       "BAZ" "qux"}
+                                "expired-instance-restart-rate" 0.1
+                                "grace-period-secs" 30
+                                "health-check-url" "/status"
+                                "idle-timeout-mins" 30
+                                "instance-expiry-mins" 7200
+                                "jitter-threshold" 0.5
+                                "max-instances" 500
+                                "max-queue-length" 1000000
+                                "metadata" {}
+                                "min-instances" 1
+                                "permitted-user" "*"
+                                "restart-backoff-factor" 2
+                                "scale-down-factor" 0.001
+                                "scale-factor" 1
+                                "scale-up-factor" 0.1}
+
+ ; ---------- Timeouts ----------
+
+ ; Waiter maintains a list of recently "killed" and "erroneous" (e.g. an error occurred while streaming the response)
+ ; instances. Such instances are guaranteed not to be served up as an available instance until sufficient time has
+ ; elapsed since their last use. This is referred to as blacklisting an instance:
+ :blacklist-config {
+                    ;; Erroneous instances are blacklisted using an exponential delay based on the number of successive
+                    ;; failures and blacklist-backoff-base-time-ms (milliseconds):
+                    :blacklist-backoff-base-time-ms 10000
+
+                    ;; Killed instances are blacklisted for max-blacklist-time-ms (milliseconds):
+                    :max-blacklist-time-ms 300000}
+
+ ;; The HTTP connect timeout and idle timeout (milliseconds) for instance health checks:
+ :health-check-timeout-ms 200
+
+ :instance-request-properties {
+                               ;; Waiter monitors the state of an async request at specified intervals.
+                               ;; It makes calls to the backend instance and inspects the responses to
+                               ;; decide when to treat the request as complete. A request is not
+                               ;; considered complete as long as the backend keeps returning a 200
+                               ;; response. This dictates the interval (milliseconds) at which Waiter
+                               ;; will poll the backend instance:
+                               :async-check-interval-ms 3000
+
+                               ;; After this amount of time (milliseconds) the async request will be
+                               ;; considered timed out, and Waiter will release the allocated
+                               ;; instance. This is the default value and can be overriden in the
+                               ;; service description:
+                               :async-request-timeout-ms 60000
+
+                               ;; The HTTP connect timeout (milliseconds) for instance requests:
+                               :connection-timeout-ms 5000
+
+                               ;; The HTTP idle timeout (milliseconds) for instance requests:
+                               :initial-socket-timeout-ms 900000
+
+                               ;; The default amount of time (milliseconds) each request will wait in
+                               ;; the Waiter queue before an instance is available to process it. This
+                               ;; can be overriden in the service description:
+                               :queue-timeout-ms 300000
+
+                               ;; Configures the idle timeout (milliseconds) in the response output stream:
+                               :streaming-timeout-ms 20000}
+
+ ; ---------- Load Balancing ----------
+
+ :work-stealing {
+                 ;; The interval (milliseconds) on which Waiter makes work-stealing offers:
+                 :offer-help-interval-ms 100
+
+                 ;; The timeout (milliseconds) used internally by the
+                 ;; Waiter router to reserve an instance for offering:
+                 :reserve-timeout-ms 1000}
+
+ ; ---------- Metrics - StatsD ----------
+
+ ;; Waiter has support for publishing certain metrics via the StatsD (https://github.com/etsy/statsd) protocol.
+
+ ;; You can either disable this feature, which will result in no StatsD metrics being published:
+
+ ;:statsd :disabled
+
+ ;; or you can configure it as such:
+ :statsd {
+          ;; The location of your StatsD server daemon:
+          :host "statsd.example.com"
+
+          ;; The port to publish metrics on:
+          :port 8125
+
+          ;; The environment, cluster, and server will all
+          ;; be included in the full name of the metric:
+          :environment "prod"
+          :cluster "my_waiter_cluster"
+          :server "router_1"
+
+          ;; Waiter aggregates metrics locally and publishes
+          ;; to StatsD on the following interval (milliseconds):
+          :publish-interval-ms 10000}
+
+ ;; Waiter allows a "metric group" string to be associated with a service so that related
+ ;; services can be grouped together in the Waiter Stats environment. One or multiple
+ ;; services can use the same metric group string depending on how you want to group metrics together.
+
+ ;; Waiter can be configured to automatically map certain well-known services to metric groups,
+ ;; using a regular expression on the service name. These mappings only take effect if no
+ ;; metric group has been explicitly provided in the service description. If a service
+ ;; description does not explicitly provide a metric group, and Waiter is not automatically
+ ;; mapping it to one, then the service's metrics will show up as part of the "other" metric
+ ;; group:
+ :metric-group-mappings [[#regex "^foo.*" "foo"]
+                         [#regex "^bar.*" "bar"]
+                         [#regex ".*baz.*" "baz"]]
+
+ ; ---------- Metrics - Internal ----------
+
+ :metrics-config {
+                  ;; The idle timeout (milliseconds) on the web socket connections
+                  ;; for sharing metrics between routers in the cluster:
+                  :inter-router-metrics-idle-timeout-ms 2000
+
+                  ;; The interval (milliesconds) on which Waiter deletes
+                  ;; metrics for services that are no longer running:
+                  :metrics-gc-interval-ms 60000
+
+                  ;; Waiter periodically triggers publishing of metrics with peer routers.
+                  ;; This value (milliseconds) is used to throttle the rate of sending metrics:
+                  :metrics-sync-interval-ms 50
+
+                  ;; The rate of listening for router state updates
+                  ;; is throttled at this value (milliseconds):
+                  :router-update-interval-ms 5000
+
+                  ;; The amount of time that must pass since a service's metrics have changed
+                  ;; in order for Waiter to garbage collect its metrics:
+                  :transient-metrics-timeout-ms 300000}
+
+ ; ---------- Miscellaneous ----------
+
+ ;; Certain messages that Waiter returns can be customized:
+ :messages {:prestashed-tickets-not-available "Lorem ipsum dolor sit amet"
+            :environment-variable-error-info "Consectetur adipiscing elit"
+            :metadata-error-info "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua"
+            :cannot-identify-service "Ut enim ad minim veniam"
+            :invalid-service-description "Quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo"}
+
+ ;; Waiter launches a loop that maintains the stacktraces for individual threads;
+ ;; this value dictates how often (milliseconds) the stacktraces are refreshed:
+ :thread-stack-state-refresh-interval-ms 600000}

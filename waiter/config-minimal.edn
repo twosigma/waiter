@@ -1,0 +1,20 @@
+;
+; The purpose of this example is to show the absolute minimum you can configure to setup a Waiter router that you can
+; experiment with. This is not a valid production configuration of Waiter. For a complete explanation of the Waiter
+; configuration file, see config-full.edn.
+;
+{
+ ; ---------- Cluster ----------
+
+ :zookeeper {
+             ;; Use an in-process ZK (not for production use):
+             :connect-string :in-process}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {
+                    ;; Use Marathon for scheduling instances:
+                    :kind :marathon
+                    :marathon {
+                               ;; The URL for your Marathon HTTP API:
+                               :url "http://marathon.example.com:8080"}}}
