@@ -20,9 +20,14 @@
             [clojure.walk :as walk]
             [full.async :refer (<?? <? go-try)]
             [waiter.password-store]
+            [waiter.test-helpers :refer :all]
             [waiter.utils :refer :all])
-  (:import java.util.UUID
-           org.joda.time.DateTime))
+  (:import clojure.lang.ExceptionInfo
+           java.net.ServerSocket
+           java.util.UUID
+           org.joda.time.DateTime
+           waiter.cors.PatternBasedCorsValidator
+           waiter.service_description.DefaultServiceDescriptionBuilder))
 
 (deftest test-is-uuid?
   (testing "invalid value"
@@ -50,30 +55,6 @@
     (let [m {"this.is.an.example" 1 "this.is.an.example2" 2}
           nm {"this" {"is" {"an" {"example" 1 "example2" 2}}}}]
       (is (= nm (keys->nested-map m #"\."))))))
-
-(deftest test-resolve-fn-with-namespace
-  (testing "Test resolve-fn-with-namespace"
-    (is (= #'waiter.password-store/create-password-provider
-           (resolve-fn "waiter.password-store/create-password-provider")))))
-
-(defn sample-function-for-testing [] true)
-(defn another-sample-function-for-testing [{:keys [value]}] value)
-
-(deftest test-resolve-fn-in-current-namespace
-  (testing "Test resolve-fn-in-current-namespace"
-    (is (= #'sample-function-for-testing
-           (resolve-fn "waiter.utils-test/sample-function-for-testing")))))
-
-(deftest test-evaluate-config-fn
-  (testing "Test evaluate-config-fn"
-    (is (= "abc123"
-           (evaluate-config-fn {:custom-impl "waiter.utils-test/another-sample-function-for-testing"
-                                :value "abc123"})))))
-
-(deftest test-resolve-fn-with-function-argument
-  (testing "Test resolve-fn-with-function-argument"
-    (is (= waiter.password-store/create-password-provider
-           (resolve-fn waiter.password-store/create-password-provider)))))
 
 (deftest test-extract-expired-keys
   (let [current-time (t/now)
@@ -168,11 +149,35 @@
       (is (= (json/write-str {"bar" ["foo" "baz"]}) (:body (map->json-response {:bar ["foo" #"baz"]}))))
       (is (= (json/write-str {"bar" [["foo" "baz"]]}) (:body (map->json-response {:bar [["foo" #"baz"]]})))))))
 
+(deftest test-map->streaming-json-response
+  (testing "convert empty map"
+    (let [{:keys [body headers status]} (map->streaming-json-response {})]
+      (is (= 200 status))
+      (is (= {"Content-Type" "application/json"} headers))
+      (is (= {} (json/read-str (json-response->str body))))))
+  (testing "consumes status argument"
+    (let [{:keys [status]} (map->streaming-json-response {} :status 404)]
+      (is (= status 404))))
+  (testing "converts regex patters to strings"
+    (is (= {"foo" ["bar"]} (-> {:foo [#"bar"]}
+                               map->streaming-json-response
+                               :body
+                               json-response->str
+                               json/read-str)))))
+
 (deftest test-exception->strs
   (let [result (exception->strs (ex-info "TestCase Exception" {}))]
     (is (not (empty? result))))
   (let [result (exception->strs (ex-info "Test Exception" {:friendly-error-message "No Stack Trace"}))]
     (is (= "No Stack Trace" result))))
+
+(deftest test-exception->status
+  (is (= 400 (exception->status (Exception. "test"))))
+  (is (= 400 (exception->status (ex-info "test" {}))))
+  (is (= 400 (exception->status (ex-info "test" {:status 400}))))
+  (is (= 502 (exception->status (ex-info "test" {:status 502}))))
+  (is (= 503 (exception->status (ex-info "test" {:status 503}))))
+  (is (= 400 (exception->status (Exception. ^Throwable (ex-info "test" {:status 503}))))))
 
 (deftest test-exception->response
   (let [{:keys [body headers status]} (exception->response "Message" (ex-info "TestCase Exception" {}))]
@@ -350,12 +355,16 @@
 
 (deftest test-stringify-elements
   (testing "Converting all leaf elements in a collection to string"
+
     (testing "should work with and without nesting"
       (is (= '("foo") (stringify-elements :k [#"foo"])))
       (is (= '("foo" "bar") (stringify-elements :k [#"foo" #"bar"])))
       (is (= '("foo" "bar") (stringify-elements :k [#"foo" "bar"])))
       (is (= '(("foo" "bar")) (stringify-elements :k [[#"foo" "bar"]])))
-      (is (= '(("foo" "bar") ("baz" "qux")) (stringify-elements :k [[#"foo" "bar"] [#"baz" "qux"]]))))))
+      (is (= '(("foo" "bar") ("baz" "qux")) (stringify-elements :k [[#"foo" "bar"] [#"baz" "qux"]]))))
+
+    (testing "should convert symbols to strings, inlcuding their namespace"
+      (is (= "waiter.cors/pattern-based-validator" (stringify-elements :k 'waiter.cors/pattern-based-validator))))))
 
 (deftest test-deep-sort-map
   (let [deep-seq (fn [data] (walk/postwalk #(if (or (map? %) (seq? %)) (seq %) %) data))]
@@ -462,3 +471,72 @@
       (let [now (t/now)
             every-ten-secs (time-seq now (t/millis 10000))]
         (is (true? (t/equal? (t/plus now (t/weeks 52)) (nth every-ten-secs 3144960))))))))
+
+(deftest test-authority->host
+  (is (nil? (authority->host nil)))
+  (is (= "www.example.com" (authority->host "www.example.com")))
+  (is (= "www.example.com" (authority->host "www.example.com:1234")))
+  (is (= "www.example2.com" (authority->host "www.example2.com:80"))))
+
+(deftest test-authority->port
+  (is (= "" (authority->port nil)))
+  (is (= "" (authority->port "www.example.com")))
+  (is (= "8080" (authority->port "www.example.com" :default 8080)))
+  (is (= "1234" (authority->port "www.example.com:1234")))
+  (is (= "80" (authority->port "www.example2.com:80"))))
+
+(deftest test-same-origin
+  (is (not (same-origin nil)))
+  (is (not (same-origin {})))
+  (is (not (same-origin {:headers {}})))
+  (is (not (same-origin {:headers {"host" "www.example.com", "origin" "http://www.example.com"}})))
+  (is (not (same-origin {:headers {"origin" "http://www.example.com"}, :scheme :http})))
+  (is (not (same-origin {:headers {"host" "www.example.com"}, :scheme :http})))
+  (is (same-origin {:headers {"host" "www.example.com", "origin" "http://www.example.com"}, :scheme :http}))
+  (is (not (same-origin {:headers {"host" "www.example.com", "origin" "http://www.example.com"}, :scheme :https})))
+  (is (not (same-origin {:headers {"host" "www.example.com", "origin" "https://www.example.com"}, :scheme :http})))
+  (is (same-origin {:headers {"host" "www.example.com", "origin" "http://www.example.com", "x-forwarded-proto" "http"}, :scheme :https}))
+  (is (not (same-origin {:headers {"host" "www.example.com", "origin" "https://www.example.com", "x-forwarded-proto" "http"}, :scheme :https})))
+  (is (not (same-origin {:headers {"host" "www.example.com", "origin" "http://www.example.com", "x-forwarded-proto" "https"}, :scheme :https}))))
+
+(deftest test-create-component
+  (testing "Creating a component"
+
+    (testing "should support specifying a custom :kind"
+      (is (= {:factory-fn 'identity, :bar 1, :baz 2}
+             (create-component {:kind :foo, :foo {:factory-fn 'identity, :bar 1, :baz 2}})))
+      (is (= {:factory-fn 'identity, :bar 1, :baz 2}
+             (create-component {:kind :marathon, :marathon {:factory-fn 'identity, :bar 1, :baz 2}})))
+      (is (instance? PatternBasedCorsValidator
+                     (create-component {:kind :patterns
+                                        :patterns {:factory-fn 'waiter.cors/pattern-based-validator
+                                                   :allowed-origins []}})))
+      (is (instance? DefaultServiceDescriptionBuilder
+                     (create-component {:kind :default
+                                        :default {:factory-fn
+                                                  'waiter.service-description/->DefaultServiceDescriptionBuilder}}))))
+
+    (testing "should throw when config sub-map is missing"
+      (is (thrown-with-msg? ExceptionInfo
+                            #"No :factory-fn specified"
+                            (create-component {:kind :special}))))
+
+    (testing "should throw when unable to resolve factory-fn"
+      (is (thrown-with-msg? ExceptionInfo
+                            #"Unable to resolve factory function"
+                            (create-component {:kind :x
+                                               :x {:factory-fn 'bar}}))))
+
+    (testing "should call use on namespace before attempting to resolve"
+      (is (= :bar
+             (create-component {:kind :x
+                                :x {:factory-fn 'waiter.utils-test-ns/foo}}))))))
+
+(deftest test-port-available?
+  (let [port (first (filter port-available? (shuffle (range 10000 11000))))]
+    (is (port-available? port))
+    (let [ss (ServerSocket. port)]
+      (.setReuseAddress ss true)
+      (is (false? (port-available? port)))
+      (.close ss))
+    (is (port-available? port))))

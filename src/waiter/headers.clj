@@ -20,7 +20,7 @@
 (def ^:const waiter-headers-with-str-value
   (set (map #(str waiter-header-prefix %)
             #{"name" "cmd" "version" "endpoint-path" "health-check-url" "permitted-user" "run-as-user" "token"
-              "cmd-type" "metric-group"})))
+              "cmd-type" "metric-group" "distribution-scheme"})))
 
 (defn get-waiter-header
   "Retrieves the waiter header value."

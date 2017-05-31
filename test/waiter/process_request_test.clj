@@ -222,6 +222,7 @@
                                   (swap! bytes-reported conj value)))]
       (let [body (async/chan)
             confirm-live-connection (fn [] :nothing)
+            request-abort-callback (fn [_] :nothing)
             resp-chan (async/chan)
             instance-request-properties {:streaming-timeout-ms 100}
             reservation-status-promise (promise)
@@ -229,7 +230,9 @@
             metric-group nil
             waiter-debug-enabled nil
             service-id "service-id"
-            error-chan (async/chan)]
+            abort-request-chan (async/chan)
+            error-chan (async/chan)
+            response {:abort-request-chan abort-request-chan, :body body, :error-chan error-chan}]
         (async/go-loop [bytes-streamed 0]
           (if (= bytes-streamed bytes)
             (do
@@ -238,7 +241,7 @@
             (let [bytes-to-stream (min 1024 (- bytes bytes-streamed))]
               (async/>! body (byte-array (repeat bytes-to-stream 0)))
               (recur (+ bytes-streamed bytes-to-stream)))))
-        (stream-http-response body error-chan confirm-live-connection resp-chan instance-request-properties
+        (stream-http-response response confirm-live-connection request-abort-callback resp-chan instance-request-properties
                               reservation-status-promise request-state-chan metric-group
                               waiter-debug-enabled (stream-metric-map service-id))
         (loop []
@@ -274,7 +277,7 @@
                   post-process-data (atom {})
                   post-process-async-request-response-fn
                   (fn [_ _ _ auth-user _ _ location _]
-                    (reset! post-process-data {:auth-user auth-user, :location location}))]
+                    (reset! post-process-data {:auth-user (:username auth-user), :location location}))]
               (inspect-for-202-async-request-response
                 post-process-async-request-response-fn {} "service-id" "metric-group" {}
                 endpoint request {} response (atom {}) reservation-status-promise)
@@ -350,6 +353,7 @@
 (deftest test-make-request
   (let [instance {:service-id "test-service-id", :host "example.com", :port 8080}
         request {:authorization/user "test-user"
+                 :krb5-authenticated-princ "test-user@test.com"
                  :body "body"}
         request-properties {:connection-timeout-ms 123456, :initial-socket-timeout-ms 654321}
         passthrough-headers {"accept" "text/html"
@@ -388,10 +392,19 @@
         end-route "/end-route"
         app-password "test-password"]
     (testing "make-request:headers"
-      (with-redefs [request->http-method-fn
+      (let [expected-endpoint "http://example.com:8080/end-route"
+            make-basic-auth-fn (fn make-basic-auth-fn [endpoint username password]
+                                 (is (= expected-endpoint endpoint))
+                                 (is (= username "waiter"))
+                                 (is (= app-password password))
+                                 (Object.))
+            http-client (http/client)
+            request-method-fn-call-counter (atom 0)]
+        (with-redefs [http-method-fn
                     (fn [_]
                       (fn [^HttpClient _ endpoint request-config]
-                        (is (= "http://example.com:8080/end-route" endpoint))
+                        (swap! request-method-fn-call-counter inc)
+                        (is (= expected-endpoint endpoint))
                         (is (= :bytes (:as request-config)))
                         (is (:auth request-config))
                         (is (= "body" (:body request-config)))
@@ -399,14 +412,18 @@
                         (is (= (-> (dissoc passthrough-headers "content-length" "expect" "authorization"
                                            "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
                                            "te" "trailers" "transfer-encoding" "upgrade")
-                                   (merge {"x-waiter-auth-principal" "test-user"}))
+                                   (merge {"x-waiter-auth-principal" "test-user"
+                                           "x-waiter-authenticated-principal" "test-user@test.com"}))
                                (:headers request-config)))))]
-        (make-request instance (http/client) request request-properties passthrough-headers end-route app-password nil (constantly nil))))))
+          (make-request http-client make-basic-auth-fn instance request request-properties passthrough-headers end-route app-password nil)
+          (is (= 1 @request-method-fn-call-counter)))))))
 
 (deftest test-request->descriptor
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         can-run-as? #(= %1 %2)
-        waiter-hostname "waiter-hostname.app.example.com"]
+        waiter-hostname "waiter-hostname.app.example.com"
+        assoc-run-as-user-approved? (fn [_ _] false)
+        service-builder (sd/->DefaultServiceDescriptionBuilder nil)]
     (testing "missing user in request"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {}
                                                       :service-preauthorized false})]
@@ -414,9 +431,8 @@
               service-id-prefix "service-prefix-"
               request {}]
           (is (thrown-with-msg? ExceptionInfo #"kerberos auth failed"
-                                (request->descriptor service-description-defaults service-id-prefix
-                                                     kv-store waiter-hostname can-run-as? []
-                                                     (sd/->DefaultServiceDescriptionBuilder) request))))))
+                                (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
+                                                     can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
     (testing "not preauthorized service and different user"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser"}
                                                       :service-preauthorized false})]
@@ -424,9 +440,8 @@
               service-id-prefix "service-prefix-"
               request {:authorization/user "tuser"}]
           (is (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service"
-                                (request->descriptor service-description-defaults service-id-prefix
-                                                     kv-store waiter-hostname can-run-as? []
-                                                     (sd/->DefaultServiceDescriptionBuilder) request))))))
+                                (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
+                                                     can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
     (testing "not permitted to run service"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
                                                       :service-preauthorized false})]
@@ -434,9 +449,8 @@
               service-id-prefix "service-prefix-"
               request {:authorization/user "ruser"}]
           (is (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service"
-                                (request->descriptor service-description-defaults service-id-prefix
-                                                     kv-store waiter-hostname can-run-as? []
-                                                     (sd/->DefaultServiceDescriptionBuilder) request))))))
+                                (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
+                                                     can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
     (testing "preauthorized service, not permitted to run service"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
                                                       :service-preauthorized true})]
@@ -444,31 +458,29 @@
               service-id-prefix "service-prefix-"
               request {:authorization/user "tuser"}]
           (is (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service"
-                                (request->descriptor service-description-defaults service-id-prefix
-                                                     kv-store waiter-hostname can-run-as? []
-                                                     (sd/->DefaultServiceDescriptionBuilder) request))))))
+                                (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
+                                                     can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
     (testing "preauthorized service, permitted to run service"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "tuser"}
                                                       :service-preauthorized true})]
         (let [service-description-defaults {}
               service-id-prefix "service-prefix-"
               request {:authorization/user "tuser"}]
-          (is (not (nil? (request->descriptor service-description-defaults service-id-prefix
-                                              kv-store waiter-hostname can-run-as? []
-                                              (sd/->DefaultServiceDescriptionBuilder) request)))))))
+          (is (not (nil? (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
+                                              can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))
     (testing "not preauthorized service, permitted to run service"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "tuser", "permitted-user" "tuser"}
                                                       :service-preauthorized false})]
         (let [service-description-defaults {}
               service-id-prefix "service-prefix-"
               request {:authorization/user "tuser"}]
-          (is (not (nil? (request->descriptor service-description-defaults service-id-prefix
-                                              kv-store waiter-hostname can-run-as? []
-                                              (sd/->DefaultServiceDescriptionBuilder) request)))))))))
+          (is (not (nil? (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
+                                              can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))))
 
 (deftest test-handle-suspended-service
   (testing "returns error for suspended app"
-    (let [{:keys [status body]} (handle-suspended-service nil {:suspended-state {:suspended true
+    (let [{:keys [status body]} (handle-suspended-service nil {:service-id "service-id-1"
+                                                               :suspended-state {:suspended true
                                                                                  :last-updated-by "suser"
                                                                                  :time (t/now)}})]
       (is (= 503 status))
@@ -494,3 +506,88 @@
       (counters/inc! counter 3)
       (is (nil? (handle-too-many-requests nil {:service-id service-id
                                                :service-description {"max-queue-length" 10}}))))))
+
+(deftest test-missing-run-as-user?
+  (let [exception (ex-info "Test exception" {})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:issue {"run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {}})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"cmd" "missing-required-key"
+                                                     "run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {}})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"run-as-user" "invalid-length"}
+                                             :x-waiter-headers {}})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {"token" "www.example.com"}})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {}})]
+    (is (missing-run-as-user? exception)))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {"queue-length" 100}})]
+    (is (missing-run-as-user? exception))))
+
+(deftest test-redirect-on-process-error
+  (let [ctrl-chan (async/promise-chan)
+        prepend-waiter-url (fn [x] (str "http://www.waiter.com:7890" x))
+        request->descriptor-fn (fn [_]
+                                 (throw
+                                   (ex-info "Test exception" {:type :service-description-error
+                                                              :issue {"run-as-user" "missing-required-key"}
+                                                              :x-waiter-headers {"queue-length" 100}})))]
+    (testing "with-query-params"
+      (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
+            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil request)
+            {:keys [body headers status]} (async/<!! response-chan)]
+        (is (= 303 status))
+        (is (= "/waiter-consent/path?a=b&c=d" (get headers "Location")))
+        (is (= "text/plain" (get headers "Content-Type")))
+        (is (str/includes? (str body) "Test exception"))))
+
+    (testing "with-query-params-and-default-port"
+      (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
+            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil request)
+            {:keys [body headers status]} (async/<!! response-chan)]
+        (is (= 303 status))
+        (is (= "/waiter-consent/path?a=b&c=d" (get headers "Location")))
+        (is (= "text/plain" (get headers "Content-Type")))
+        (is (str/includes? (str body) "Test exception"))))
+
+    (testing "without-query-params"
+      (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :uri "/path"}
+            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil request)
+            {:keys [body headers status]} (async/<!! response-chan)]
+        (is (= 303 status))
+        (is (= "/waiter-consent/path" (get headers "Location")))
+        (is (= "text/plain" (get headers "Content-Type")))
+        (is (str/includes? (str body) "Test exception"))))))
+
+(deftest test-no-redirect-on-process-error
+  (let [ctrl-chan (async/promise-chan)
+        request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
+        request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
+        response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] nil nil nil request)
+        {:keys [body headers status]} (async/<!! response-chan)]
+    (is (= 400 status))
+    (is (nil? (get headers "Location")))
+    (is (= "text/plain" (get headers "Content-Type")))
+    (is (str/includes? (str body) "Exception message"))))
+
+(deftest test-determine-priority
+  (let [position-generator-atom (atom 100)]
+    (is (nil? (determine-priority position-generator-atom nil)))
+    (is (nil? (determine-priority position-generator-atom {})))
+    (is (nil? (determine-priority position-generator-atom {"foo" 1})))
+    (is (= [1 -101] (determine-priority position-generator-atom {"x-waiter-priority" 1})))
+    (is (= [2 -102] (determine-priority position-generator-atom {"x-waiter-priority" "2"})))
+    (is (= [4 -103] (determine-priority position-generator-atom {"x-waiter-foo" "2", "x-waiter-priority" "4"})))
+    (is (nil? (determine-priority position-generator-atom {"priority" 1})))
+    (is (= 103 @position-generator-atom))))

@@ -39,11 +39,29 @@
     (is (some #(blacklisted-instances-fn %) (keys router->endpoint))
         (str "No router has blacklisted " killed-instance-id ", routers: " (keys router->endpoint)))))
 
-;; Marked explicit
-;; FAIL in (test-blacklisted-instance-not-reserved) (killed_instance_test.clj)
-;; dft-stg-waiter-splitcorecljforcb1testkilledinsttswaiter660020-5be05b432e544e4c0fa8c5658c7ba081.c2f229de-e4e6-11e6-83eb-002590fd11e6was used to service requests("test-blacklisted-instance-not-reserved-1e72a775c317da-659b62a0229bc2cf")
-;; expected: (not (contains? (clojure.core/deref other-request-instances) killed-instance-id2))
-;    actual: (not (not true))
+(deftest ^:parallel ^:integration-slow test-delegate-kill-instance
+  (testing-using-waiter-url
+    (let [requests-per-thread 10
+          parallelism 10
+          extra-headers {:x-waiter-min-instances 0
+                         :x-waiter-distribution-scheme "simple"
+                         :x-waiter-scale-down-factor 0.9
+                         :x-kitchen-delay-ms 5000
+                         :x-waiter-name (rand-name "delegate-kill")}
+          request-fn (fn []
+                       (make-kitchen-request waiter-url extra-headers))
+          _ (log/info "making canary request")
+          {:keys [request-headers]} (request-fn)
+          service-id (retrieve-service-id waiter-url request-headers)]
+      (time-it (str service-id ":" parallelism "x" requests-per-thread)
+               (parallelize-requests parallelism requests-per-thread #(request-fn)))
+      (is (< (* 2 (count (routers waiter-url))) (num-instances waiter-url service-id)))
+      (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180))))
+
+; Marked explicit due to:
+; FAIL in (test-blacklisted-instance-not-reserved) (killed_instance_test.clj)
+; expected: (not (contains? (clojure.core/deref other-request-instances) killed-instance-id2))
+;   actual: (not (not true))
 (deftest ^:parallel ^:integration-slow ^:explicit test-blacklisted-instance-not-reserved
   (testing-using-waiter-url
     (log/info (str "Testing blacklisted instance is not reserved (should take " (colored-time "~2 minutes") ")"))

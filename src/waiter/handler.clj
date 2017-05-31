@@ -13,22 +13,34 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [comb.template :as template]
             [metrics.counters :as counters]
+            [metrics.meters :as meters]
             [plumbing.core :as pc]
+            [ring.middleware.multipart-params :as multipart-params]
             [ring.middleware.params :as ring-params]
             [waiter.async-request :as async-req]
+            [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.security :as security]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils]))
+
+(defn make-auth-user-map
+  "Creates a map containing the username and principal from a request"
+  [request]
+  {:username (:authorization/user request)
+   :principal (:krb5-authenticated-princ request)})
 
 (defn- async-make-http-request
   "Helper function for async status/result handlers."
@@ -41,9 +53,9 @@
     (let [target-location (scheduler/end-point-url {:host host, :port port}
                                                    (cond-> location (not (str/blank? query-string)) (str "?" query-string)))
           _ (log/info request-id counter-name "location is" target-location)
-          auth-user (:authorization/user request)
           {:keys [passthrough-headers]} (headers/split-headers headers)]
-      (make-http-request-fn service-id target-location auth-user request-method passthrough-headers body))))
+      (make-http-request-fn service-id target-location (make-auth-user-map request)
+                            request-method passthrough-headers body))))
 
 (defn complete-async-handler
   "Completes execution of an async request by propagating a termination message to the request monitor system."
@@ -180,7 +192,7 @@
                     exclude-services (metrics/get-waiter-metrics)
                     (and (not exclude-services) service-id) (metrics/get-service-metrics service-id)
                     :else (metrics/get-metrics))]
-      (utils/map->json-response metrics))
+      (utils/map->streaming-json-response metrics))
     (catch Exception e
       (utils/exception->json-response e :status 500))))
 
@@ -200,7 +212,7 @@
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
-  [can-run-as? state-chan prepend-waiter-url service-id->service-description-fn request]
+  [state-chan prepend-waiter-url service-id->service-description-fn authorized? request]
   (try
     (let [timeout-ms 30000
           current-state (async/alt!!
@@ -211,10 +223,13 @@
         (utils/map->json-response {"message" "Timeout in retrieving services"})
         (let [request-params (:params (ring-params/params-request request))
               auth-user (get request :authorization/user)
-              run-as-user-filter (get request-params "run-as-user" auth-user)
+              run-as-user-param (get request-params "run-as-user")
               viewable-services (filter
-                                  #(let [service-description (service-id->service-description-fn % :effective? false)]
-                                     (can-run-as? run-as-user-filter (get service-description "run-as-user")))
+                                  #(let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn % :effective? false)]
+                                     (and service-description
+                                          (if run-as-user-param
+                                            (= run-as-user run-as-user-param)
+                                            (authorized? auth-user :manage (security/make-service-resource % service-description)))))
                                   (->> (concat (keys (:service-id->healthy-instances current-state))
                                                (keys (:service-id->unhealthy-instances current-state)))
                                        (apply sorted-set)))
@@ -223,37 +238,37 @@
                                           :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
               include-effective-parameters? (utils/request-flag request-params "effective-parameters")
               response-data (map
-                              (fn service-id->service-info [service-id]
-                                (let [service-description (service-id->service-description-fn service-id :effective? false)]
-                                  (cond->
-                                    {:service-id service-id
-                                     :service-description service-description
-                                     :instance-counts (retrieve-instance-counts service-id)
-                                     :url (prepend-waiter-url (str "/apps/" service-id))}
-                                    include-effective-parameters? (assoc :effective-parameters
-                                                                         (service-id->service-description-fn
-                                                                           service-id :effective? true)))))
-                              viewable-services)]
-          (utils/map->json-response response-data))))
+                             (fn service-id->service-info [service-id]
+                               (let [service-description (service-id->service-description-fn service-id :effective? false)]
+                                 (cond->
+                                     {:service-id service-id
+                                      :service-description service-description
+                                      :instance-counts (retrieve-instance-counts service-id)
+                                      :url (prepend-waiter-url (str "/apps/" service-id))}
+                                   include-effective-parameters? (assoc :effective-parameters
+                                                                        (service-id->service-description-fn
+                                                                         service-id :effective? true)))))
+                             viewable-services)]
+          (utils/map->streaming-json-response response-data))))
     (catch Exception e
       (utils/exception->response "Error retrieving services" e))))
 
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
-  [service-id core-service-description scheduler can-run-as? request]
+  [service-id core-service-description scheduler allowed-to-manage-service?-fn request]
   (let [auth-user (get request :authorization/user)
         run-as-user (get core-service-description "run-as-user")]
-    (when-not (can-run-as? auth-user run-as-user)
+    (when-not (allowed-to-manage-service?-fn service-id auth-user)
       (throw (ex-info "User not allowed to delete service"
                       {:existing-owner run-as-user
                        :current-user auth-user
                        :service-id service-id
                        :status 403})))
     (let [delete-result (scheduler/delete-app scheduler service-id)
-          response-status (cond
-                            (:deploymentId delete-result) 200
-                            (= :no-such-service-exists (:result delete-result)) 404
-                            :else 400)
+          response-status (case (:result delete-result)
+                            :deleted 200
+                            :no-such-service-exists 404
+                            400)
           response-body-map (merge {:success (= 200 response-status), :service-id service-id} delete-result)]
       (utils/map->json-response response-body-map :status response-status))))
 
@@ -324,14 +339,14 @@
                              (:time service-suspended-state)
                              (assoc :service-suspended-state service-suspended-state)))
         sorted-result-map (utils/deep-sort-map result-map)]
-    (utils/map->json-response sorted-result-map)))
+    (utils/map->streaming-json-response sorted-result-map)))
 
 (defn service-handler
   "Handles the /apps/<service-id> requests.
    It supports the following request methods:
      :delete deletes the service from the scheduler (after authorization checks).
      :get returns details about the service such as the service description, metrics, instances, etc."
-  [router-id service-id scheduler kv-store can-run-as? prepend-waiter-url make-inter-router-requests-fn request]
+  [router-id service-id scheduler kv-store allowed-to-manage-service?-fn prepend-waiter-url make-inter-router-requests-fn request]
   (try
     (when (not service-id)
       (throw (ex-info (str "Service id is missing!") {})))
@@ -342,7 +357,7 @@
       (if (empty? core-service-description)
         (utils/map->json-response {:message (str "No service description found: " service-id)} :status 404)
         (case (:request-method request)
-          :delete (delete-service-handler service-id core-service-description scheduler can-run-as? request)
+          :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn request)
           :get (get-service-handler router-id service-id core-service-description scheduler kv-store
                                     prepend-waiter-url make-inter-router-requests-fn))))
     (catch Exception e
@@ -477,7 +492,7 @@
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [state-chan router-metrics-state-fn kv-store]
+  [state-chan router-metrics-state-fn kv-store leader?-fn scheduler]
   (try
     (let [timeout-ms 30000
           current-state (async/alt!!
@@ -485,10 +500,12 @@
                           (async/timeout timeout-ms) ([_] {:message "Request timed out!"})
                           :priority true)]
       (-> current-state
-          (assoc :kv-store (kv/state kv-store)
+          (assoc :leader (leader?-fn)
+                 :kv-store (kv/state kv-store)
                  :router-metrics-state (router-metrics-state-fn)
+                 :scheduler (scheduler/state scheduler)
                  :statsd (statsd/state))
-          (utils/map->json-response)))
+          (utils/map->streaming-json-response)))
     (catch Exception e
       (log/error e "Error getting router state")
       (utils/exception->json-response e :status 500))))
@@ -530,7 +547,89 @@
                                                     (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
                                       (recur remaining (assoc result key state)))
                                     result))]
-          (utils/map->json-response {:router-id router-id, :state (utils/deep-sort-map query-chans-state)}))
+          (utils/map->streaming-json-response {:router-id router-id, :state (utils/deep-sort-map query-chans-state)}))
         (catch Exception e
           (utils/map->json-response {:error (utils/exception->strs e)} :status 500))))))
 
+(defn acknowledge-consent-handler
+  "Processes the acknowledgment to launch a service as the auth-user.
+   It triggers storing of the x-waiter-consent cookie on the client."
+  [clock token->service-description-template service-description->service-id consent-cookie-value add-encoded-cookie
+   consent-expiry-days {:keys [request-method] :as request}]
+  (try
+    (when-not (= :post request-method)
+      (throw (ex-info "Only POST supported!" {:request-method request-method, :status 405})))
+    (let [{:keys [headers params] :as request} (multipart-params/multipart-params-request request)
+          {:strs [host origin referer x-requested-with]} headers
+          {:strs [mode service-id] :as params} params]
+      (when-not (str/blank? origin)
+        (when-not (utils/same-origin request)
+          (throw (ex-info "Origin is not the same as the host!" {:host host, :origin origin}))))
+      (when (and (not (str/blank? origin)) (not (str/blank? referer)))
+        (when-not (str/starts-with? referer origin)
+          (throw (ex-info "Referer does not start with origin!" {:origin origin, :referer referer}))))
+      (when-not (= x-requested-with "XMLHttpRequest")
+        (throw (ex-info "Header x-requested-with does not match expected value!" {:actual x-requested-with, :expected "XMLHttpRequest"})))
+      (when-not (and mode (contains? #{"service" "token"} mode))
+        (throw (ex-info "Missing or invalid mode!" params)))
+      (when (= "service" mode)
+        (when-not service-id
+          (throw (ex-info "Missing service-id!" params))))
+      (let [token (utils/authority->host host)
+            service-description-template (token->service-description-template token)]
+        (when-not (seq service-description-template)
+          (throw (ex-info "Unable to load description for token!" {:token token})))
+        (when (= "service" mode)
+          (let [auth-user (:authorization/user request)
+                computed-service-id (-> service-description-template
+                                        (sd/assoc-run-as-requester-fields auth-user)
+                                        (service-description->service-id))]
+            (when-not (= service-id computed-service-id)
+              (log/error "computed" computed-service-id ", but user[" auth-user "] provided" service-id "for" token)
+              (throw (ex-info "Invalid service-id for specified token" params)))))
+        (let [cookie-name "x-waiter-consent"
+              cookie-value (consent-cookie-value clock mode service-id token service-description-template)]
+          (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-success"))
+          (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-success"))
+          (-> {:body (str "Added cookie " cookie-name), :headers {}, :status 200}
+              (add-encoded-cookie cookie-name cookie-value consent-expiry-days)
+              (cookie-support/cookies-async-response)))))
+    (catch Exception e
+      (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-error"))
+      (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-error"))
+      (utils/exception->response "error in processing consent" e))))
+
+(defn request-consent-handler
+  "Displays the consent form and requests approval from user. The content is rendered from consent.html.
+   Approval form is submitted using AJAX and the user is then redirected to the target url that triggered a redirect to this form."
+  [token->service-description-template service-description->service-id consent-expiry-days
+   {:keys [headers query-string request-method route-params scheme] :as request}]
+  (try
+    (when-not (= :get request-method)
+      (throw (ex-info "Only GET supported!" {:request-method request-method, :status 405})))
+    (let [host-header (get headers "host")
+          token (utils/authority->host host-header)
+          {:keys [path]} route-params
+          service-description-template (token->service-description-template token)]
+      (when-not (seq service-description-template)
+        (throw (ex-info "Unable to load description for token!" {:token token})))
+      (let [auth-user (:authorization/user request)
+            service-id (-> service-description-template
+                           (sd/assoc-run-as-requester-fields auth-user)
+                           (service-description->service-id))]
+        (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-render"))
+        (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-render"))
+        {:body (template/eval (slurp (io/resource "web/consent.html"))
+                              {:auth-user auth-user
+                               :consent-expiry-days consent-expiry-days
+                               :service-description-template service-description-template
+                               :service-id service-id
+                               :target-url (str (name scheme) "://" host-header "/" path
+                                                (when (not (str/blank? query-string)) (str "?" query-string)))
+                               :token token})
+         :headers {}
+         :status 200}))
+    (catch Exception e
+      (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-error"))
+      (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-error"))
+      (utils/exception->response "error in rendering consent form" e))))

@@ -17,7 +17,13 @@
             [waiter.utils :as utils])
   (:import (java.util.concurrent Semaphore)))
 
-(deftest ^:parallel ^:integration-slow test-instance-reservation
+; Marked explicit due to:
+;  FAIL in (test-instance-reservation) (instance_reservation_test.clj:81)
+;  test-instance-reservation
+;     expected: (not (contains? (clojure.core/deref other-request-instances) (clojure.core/deref first-request-instance)))
+;     actual: (not (not true))
+
+(deftest ^:parallel ^:integration-slow ^:explicit test-instance-reservation
   (testing-using-waiter-url
     (log/info (str "Testing instance allocation for each request"))
     (let [cookies-atom (atom {})

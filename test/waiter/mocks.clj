@@ -20,7 +20,7 @@
     (try
       (loop [mock (first mock-fns)
              remaining (rest mock-fns)]
-        (let [[method service-id cid chan-resp-chan] (async/<!! instance-rpc-chan)
+        (let [[_ _ _ chan-resp-chan] (async/<!! instance-rpc-chan)
                 c (async/chan 1)]
           (async/>!! chan-resp-chan c)
           (mock (async/<!! c)))

@@ -10,7 +10,8 @@
 ;;
 (ns waiter.cors-test
   (:require [clojure.test :refer :all]
-            [waiter.cors :refer :all]))
+            [waiter.cors :refer :all])
+  (:import waiter.cors.PatternBasedCorsValidator))
 
 (deftest pattern-validator-test
   (let [validator (pattern-based-validator {:allowed-origins [#"^http://[^\.]+\.example\.org(:80)?$"
@@ -33,10 +34,10 @@
                                                     "host" "good.example.com"}
                                           :scheme :http})))))
 
-(deftest create-cors-validator-test
-  (is (create-cors-validator {:kind :custom
-                              :allowed-origins []
-                              :custom-impl "waiter.cors/pattern-based-validator"}))
-  (is (thrown? AssertionError (create-cors-validator {:kind :patterns})))
-  (is (create-cors-validator {:kind :patterns
-                              :allowed-origins []})))
+(deftest test-pattern-based-validator
+  (is (thrown? Throwable (pattern-based-validator {})))
+  (is (thrown? Throwable (pattern-based-validator {:allowed-origins nil})))
+  (is (thrown? Throwable (pattern-based-validator {:allowed-origins ["foo"]})))
+  (is (thrown? Throwable (pattern-based-validator {:allowed-origins [#"foo" "bar"]})))
+  (is (thrown? Throwable (pattern-based-validator {:allowed-origins [#"foo" #"bar" "baz"]})))
+  (is (instance? PatternBasedCorsValidator (pattern-based-validator {:allowed-origins [#"foo" #"bar" #"baz"]}))))

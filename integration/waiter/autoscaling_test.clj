@@ -12,7 +12,8 @@
   (:require [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.client-tools :refer :all]))
+            [waiter.client-tools :refer :all]
+            [waiter.utils :as utils]))
 
 (defn- scaling-for-service-test [testing-str waiter-url threads requests-per-thread request-fn]
   (testing testing-str
@@ -23,7 +24,7 @@
                                      (let [tasks-running (num-tasks-running waiter-url service-id :prev-tasks-running tasks-running)]
                                        (when (not (pred tasks-running))
                                          (Thread/sleep 1000)
-                                         (recur (inc i) tasks-running)))
+                                         (recur (inc i) (int tasks-running))))
                                      (is nil msg))))]
       (let [_ (log/info (str "Making canary request..."))
             first-request (request-fn)
@@ -64,9 +65,10 @@
                           :x-waiter-queue-timeout 5000}]
       (scaling-for-service-test "Scaling unhealthy app" waiter-url 5 10 #(make-shell-request waiter-url custom-headers)))))
 
-(deftest ^:parallel ^:integration-slow test-scale-factor
+;; Marked explicit:
+;; Expected: in range [2, 8], Actual: 1
+(deftest ^:parallel ^:integration-slow ^:explicit test-scale-factor
   (testing-using-waiter-url
-    (log/info (str "Scale factor test (should take " (colored-time "~3 minutes") ")"))
     (let [metrics-sync-interval-ms (get-in (waiter-settings waiter-url) [:metrics-config :metrics-sync-interval-ms])
           delay-ms (int (* 2.50 metrics-sync-interval-ms))
           requests-per-thread 60
@@ -86,14 +88,15 @@
                                           :canceled? (fn [] @cancellation-token-atom)
                                           :service-id service-id
                                           :verbose true
-                                          :wait-for-tasks false)]
+                                          :wait-for-tasks false)
+            timeout-secs 15]
+        (log/debug "waiting up to" timeout-secs "seconds for scale up")
         ;; Scale factor is 0.45 and we're making 10 concurrent requests,
         ;; so we should scale up, but not above 5 instances.
         ;; But because we run on multiple routers and are sampling metrics from routers at different times,
         ;; it's possible to observe that overall outstanding requests are higher than 10,
         ;; so we'll allow 6, eh 7 actually, no -- perhaps 8, instances.
-        (is (wait-for #(<= 2 (num-instances waiter-url service-id) 8)
-                      :interval 1 :timeout (-> requests-per-thread (+ 2) (* delay-ms) (/ 1000) (int)))
+        (is (wait-for #(<= 2 (num-instances waiter-url service-id) 8) :interval 1 :timeout timeout-secs)
             (str "Expected: in range [2, 8], Actual: " (num-instances waiter-url service-id)))
         (reset! cancellation-token-atom true)
         (await-futures futures))
@@ -102,8 +105,6 @@
 ; Marked explicit due to:
 ; FAIL in (test-concurrency-level) (autoscaling_test.clj:134)
 ; Expected: in range [2, 3], Actual: 5
-; expected: (wait-for (fn* [] (<= 2 (num-instances waiter-url service-id) 3)) :interval 1 :timeout assertion-delay-ms)
-; actual: (not (wait-for #object[waiter.autoscaling_test$fn__1895$fn__1896$fn__1922$fn__1923 0xec1c3da "waiter.autoscaling_test$fn__1895$fn__1896$fn__1922$fn__1923@ec1c3da"] :interval 1 :timeout 50))
 (deftest ^:parallel ^:integration-slow ^:explicit test-concurrency-level
   (testing-using-waiter-url
     (log/info (str "Concurrency-Level test (should take " (colored-time "~4 minutes") ")"))
@@ -204,35 +205,52 @@
           "Failed to kill expired instance")
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-slow test-minmax-instances
+(deftest ^:parallel ^:integration-fast test-minmax-instances
   (testing-using-waiter-url
-    (log/info (str "Minimum/Maximum Instances test (should take " (colored-time "~5 minutes") ")"))
     (let [min-instances 2
           max-instances 5
           requests-per-thread 20
-          custom-headers {:x-kitchen-delay-ms 2000
+          request-delay-ms 2000
+          custom-headers {:x-kitchen-delay-ms request-delay-ms
                           :x-waiter-min-instances 2
                           :x-waiter-max-instances 5
-                          :x-waiter-name (rand-name "testminmaxinstances")
+                          :x-waiter-name (rand-name "test-minmax-instances")
                           :x-waiter-scale-up-factor 0.99}
           request-fn (fn [& {:keys [cookies] :or {cookies {}}}]
                        (make-request-with-debug-info
                          custom-headers
                          #(make-kitchen-request waiter-url % :cookies cookies)))
-          _ (log/info (str "Making canary request..."))
+          _ (log/info "making canary request...")
           {:keys [cookies service-id]} (request-fn)
-          get-target-instances (fn []
-                                 (loop [routers (routers waiter-url)
-                                        target-instances 0]
-                                   (if-let [[_ router-url] (first routers)]
-                                     (let [{:keys [state]} (service-state router-url service-id :cookies cookies)]
-                                       (recur (rest routers)
-                                              (max target-instances (int (get-in state [:autoscaler-state :scale-to-instances] 0)))))
-                                     target-instances)))]
-      (log/info "Waiting 20 seconds for autoscaler to catch up for" service-id)
-      (wait-for #(= min-instances (get-target-instances)) :interval 1 :timeout 20)
-      (parallelize-requests (* 2 max-instances) requests-per-thread #(request-fn :cookies cookies)
-                            :service-id service-id
-                            :verbose true)
-      (is (= max-instances (get-target-instances)))
+          get-target-instances
+          (fn []
+            (let [instances
+                  (loop [routers (routers waiter-url)
+                         target-instances 0]
+                    (if-let [[_ router-url] (first routers)]
+                      (let [{:keys [state]} (service-state router-url service-id :cookies cookies)]
+                        (recur (rest routers)
+                               (max target-instances
+                                    (int (get-in state [:autoscaler-state :scale-to-instances] 0)))))
+                      target-instances))]
+              (log/debug "target instances:" instances)
+              instances))]
+      (log/info "waiting up to 20 seconds for autoscaler to catch up for" service-id)
+      (is (wait-for #(= min-instances (get-target-instances)) :interval 4 :timeout 20))
+      (log/info "starting parallel requests")
+      (let [cancellation-token-atom (atom false)
+            futures (parallelize-requests (* 2 max-instances)
+                                          requests-per-thread
+                                          #(request-fn :cookies cookies)
+                                          :canceled? (fn [] @cancellation-token-atom)
+                                          :service-id service-id
+                                          :verbose true
+                                          :wait-for-tasks false)]
+        (log/info "waiting for autoscaler to reach" max-instances)
+        (is (wait-for #(= max-instances (get-target-instances)) :interval 1))
+        (log/info "waiting to make sure autoscaler does not go above"  max-instances)
+        (utils/sleep (-> requests-per-thread (* request-delay-ms) (/ 4)))
+        (is (= max-instances (get-target-instances)))
+        (reset! cancellation-token-atom true)
+        (await-futures futures))
       (delete-service waiter-url service-id))))

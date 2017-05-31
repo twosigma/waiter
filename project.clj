@@ -25,16 +25,18 @@
 
   :dependencies [[bidi "2.0.16"
                   :exclusions [prismatic/schema ring/ring-core]]
-                 ^{:voom {:repo "https://gitlab.twosigma.com/platform-services/jet.git"}}
-                 [cc.qbits/jet "0.7.10-20170105_202855-g8e826ff"]
-                 ^{:voom {:repo "https://gitlab.twosigma.com/platform-services/clj-http.git"}}
-                 [clj-http "1.0.2-20160817_033415-gaffe23d"
+                 ^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
+                 [cc.qbits/jet "0.7.10-20170524_203939-gd23596c"]
+                 ^{:voom {:repo "https://github.com/twosigma/clj-http.git" :branch "waiter-patch"}}
+                 [clj-http "1.0.2-20170524_085846-g161c42f"
                   :exclusions [commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.12.0"
                   :exclusions
                   [joda-time]]
                  [com.taoensso/nippy "2.12.2"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
+                 [comb "0.1.0"
+                  :exclusions [org.clojure/clojure]]
                  [digest "1.4.5"]
                  [fullcontact/full.async "0.9.0"
                   :exclusions [org.clojure/clojure org.clojure/core.async]]
@@ -44,11 +46,13 @@
                    clj-time/clj-time
                    org.clojure/core.async]]
                  [joda-time "2.9.4"]
-                 ^{:voom {:repo "https://gitlab.twosigma.com/simulations/marathonclj.git"}}
-                 [marathonclj "0.1.0-20160222_212736-gf32784d"
-                  :exclusions [clj-http]]
-                 ^{:voom {:repo "https://gitlab.twosigma.com/platform-services/metrics-clojure.git"}}
-                 [metrics-clojure "2.6.0-20160929_034402-g5f3fb64"
+                 [marathonclj "0.1.1"
+                  :exclusions
+                  [clj-http
+                   org.clojure/clojure
+                   org.clojure/data.json]]
+                 ^{:voom {:repo "https://github.com/twosigma/metrics-clojure.git" :branch "waiter-patch"}}
+                 [metrics-clojure "2.6.0-20170531_164957-gd0d2c2c"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
                  [org.apache.curator/curator-framework "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
@@ -59,13 +63,14 @@
                  [org.apache.curator/curator-x-discovery "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.8.0"]
-                 [org.clojure/core.async "0.2.391"
+                 [org.clojure/core.async "0.3.442"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [org.clojure/core.cache "0.6.5"]
                  [org.clojure/core.memoize "0.5.9"
                   :exclusions [org.clojure/clojure]]
-                 [org.clojure/data.json "0.2.6"]
                  [org.clojure/data.codec "0.1.0"]
+                 [org.clojure/data.json "0.2.6"]
+                 [org.clojure/data.priority-map "0.0.7"]
                  [org.clojure/tools.cli "0.3.5"]
                  [org.clojure/tools.logging "0.3.1"]
                  [org.clojure/tools.namespace "0.2.11"]

@@ -22,27 +22,27 @@
 
 (deftest test-check-passwords
   (let [test-cases (list
-                     {:name     "test-check-passwords:empty-vec-of-passwords"
+                     {:name "test-check-passwords:empty-vec-of-passwords"
                       :input []
                       :expected true
                       },
-                     {:name     "test-check-passwords:one-empty-password"
+                     {:name "test-check-passwords:one-empty-password"
                       :input [""]
                       :expected true
                       },
-                     {:name     "test-check-passwords:multiple-empty-passwords"
+                     {:name "test-check-passwords:multiple-empty-passwords"
                       :input ["" "" ""]
                       :expected true
                       },
-                     {:name     "test-check-passwords:some-empty-password"
+                     {:name "test-check-passwords:some-empty-password"
                       :input ["foo" "" "bar"]
                       :expected true
                       },
-                     {:name     "test-check-passwords:one-non-empty-password"
+                     {:name "test-check-passwords:one-non-empty-password"
                       :input ["foo"]
                       :expected false
                       },
-                     {:name     "test-check-passwords:multiple-non-empty-passwords"
+                     {:name "test-check-passwords:multiple-non-empty-passwords"
                       :input ["foo" "bar" "baz"]
                       :expected false
                       })]
@@ -52,3 +52,8 @@
               callback #(reset! flag true)]
           (check-empty-passwords input callback)
           (is (= expected @flag)))))))
+
+(deftest test-configured-provider
+  (let [provider (configured-provider {:passwords ["open-sesame"]})]
+    (is (= ["open-sesame"]
+           (retrieve-passwords provider)))))

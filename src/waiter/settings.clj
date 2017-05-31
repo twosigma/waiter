@@ -19,19 +19,21 @@
 (def settings-schema
   {(s/required-key :blacklist-config) {(s/required-key :blacklist-backoff-base-time-ms) schema/positive-int
                                        (s/required-key :max-blacklist-time-ms) schema/positive-int}
-   (s/required-key :cors-config) {:kind s/Keyword
-                                  (s/optional-key :custom-impl) schema/non-empty-string
-                                  (s/optional-key :ttl) schema/positive-int
-                                  (s/required-key :allowed-origins) [s/Regex]
-                                  (s/required-key :max-age) schema/positive-int
-                                  s/Keyword s/Any}
+   (s/required-key :cors-config) (s/constrained
+                                   {:kind s/Keyword
+                                    (s/optional-key :ttl) schema/positive-int
+                                    (s/required-key :max-age) schema/positive-int
+                                    s/Keyword schema/require-symbol-factory-fn}
+                                   schema/contains-kind-sub-map?)
    (s/required-key :cluster-config) {(s/required-key :min-routers) schema/positive-int
                                      (s/required-key :name) schema/non-empty-string}
-   (s/required-key :entitlement-config) {:kind s/Keyword
-                                         (s/optional-key :custom-impl) schema/non-empty-string
-                                         (s/optional-key :cache) {(s/required-key :threshold) schema/positive-int
-                                                                  (s/required-key :ttl) schema/positive-int}
-                                         s/Keyword s/Any}
+   (s/required-key :consent-expiry-days) schema/positive-int
+   (s/required-key :entitlement-config) (s/constrained
+                                          {:kind s/Keyword
+                                           (s/optional-key :cache) {(s/required-key :threshold) schema/positive-int
+                                                                    (s/required-key :ttl) schema/positive-int}
+                                           s/Keyword schema/require-symbol-factory-fn}
+                                          schema/contains-kind-sub-map?)
    (s/optional-key :git-version) s/Any
    (s/required-key :health-check-timeout-ms) schema/positive-int
    (s/required-key :host) schema/non-empty-string
@@ -45,11 +47,13 @@
    (s/optional-key :kerberos) {(s/required-key :prestash-cache-min-refresh-ms) schema/positive-int
                                (s/required-key :prestash-cache-refresh-ms) schema/positive-int
                                (s/required-key :prestash-query-host) schema/non-empty-string}
-   (s/required-key :kv-config) {:kind s/Keyword
-                                (s/optional-key :encrypt) s/Bool
-                                (s/optional-key :cache) {(s/required-key :threshold) schema/positive-int
-                                                         (s/required-key :ttl) schema/positive-int}
-                                s/Keyword s/Any}
+   (s/required-key :kv-config) (s/constrained
+                                 {:kind s/Keyword
+                                  (s/optional-key :encrypt) s/Bool
+                                  (s/optional-key :cache) {(s/required-key :threshold) schema/positive-int
+                                                           (s/required-key :ttl) schema/positive-int}
+                                  s/Keyword schema/require-symbol-factory-fn}
+                                 schema/contains-kind-sub-map?)
    (s/optional-key :messages) {s/Keyword s/Str}
    (s/required-key :metric-group-mappings) schema/valid-metric-group-mappings
    (s/required-key :metrics-config) {(s/required-key :inter-router-metrics-idle-timeout-ms) schema/positive-int
@@ -57,29 +61,33 @@
                                      (s/required-key :metrics-sync-interval-ms) schema/positive-int
                                      (s/required-key :router-update-interval-ms) schema/positive-int
                                      (s/required-key :transient-metrics-timeout-ms) schema/positive-int}
-   (s/required-key :password-store-config) {:kind s/Keyword
-                                            (s/optional-key :custom-impl) schema/non-empty-string
-                                            s/Keyword s/Any}
+   (s/required-key :password-store-config) (s/constrained
+                                             {:kind s/Keyword
+                                              s/Keyword schema/require-symbol-factory-fn}
+                                             schema/contains-kind-sub-map?)
    (s/required-key :port) schema/positive-int
    (s/required-key :router-id-prefix) s/Str
    (s/required-key :router-syncer) {(s/required-key :delay-ms) schema/positive-int
                                     (s/required-key :interval-ms) schema/positive-int}
    (s/required-key :scaling) {(s/required-key :autoscaler-interval-ms) schema/positive-int
                               (s/required-key :inter-kill-request-wait-time-ms) schema/positive-int}
-   (s/required-key :scheduler-config) {:kind s/Keyword
-                                       (s/optional-key :custom-impl) schema/non-empty-string
-                                       s/Keyword s/Any}
+   (s/required-key :scheduler-config) (s/constrained
+                                        {:kind s/Keyword
+                                         s/Keyword schema/require-symbol-factory-fn}
+                                        schema/contains-kind-sub-map?)
    (s/required-key :scheduler-gc-config) {(s/required-key :broken-service-min-hosts) schema/positive-int
                                           (s/required-key :broken-service-timeout-mins) schema/positive-int
                                           (s/required-key :scheduler-gc-broken-service-interval-ms) schema/positive-int
                                           (s/required-key :scheduler-gc-interval-ms) schema/positive-int}
    (s/required-key :scheduler-syncer-interval-secs) schema/positive-int
-   (s/required-key :service-description-builder-config) {:kind s/Keyword
-                                                         (s/optional-key :custom-impl) schema/non-empty-string
-                                                         s/Keyword s/Any}
+   (s/required-key :service-description-builder-config) (s/constrained
+                                                          {:kind s/Keyword
+                                                           s/Keyword schema/require-symbol-factory-fn}
+                                                          schema/contains-kind-sub-map?)
    ; service-description-defaults should never contain default values for required fields, e.g. version, cmd, run-as-user, etc.
    (s/required-key :service-description-defaults) {(s/required-key "blacklist-on-503") s/Bool
                                                    (s/required-key "concurrency-level") schema/positive-int
+                                                   (s/required-key "distribution-scheme") (s/enum "balanced" "simple")
                                                    (s/required-key "env") {s/Str s/Str}
                                                    (s/required-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "grace-period-secs") schema/positive-int
@@ -91,6 +99,7 @@
                                                    (s/required-key "max-queue-length") schema/positive-int
                                                    (s/required-key "metadata") {s/Str s/Str}
                                                    (s/required-key "min-instances") schema/positive-int
+                                                   (s/required-key "permitted-user") schema/non-empty-string
                                                    (s/required-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
                                                    (s/required-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "scale-up-factor") schema/positive-fraction-less-than-1
@@ -113,7 +122,8 @@
                                                                         (s/required-key :max-retries) schema/positive-int}
                                 (s/required-key :discovery-relative-path) schema/non-empty-string
                                 (s/required-key :gc-relative-path) schema/non-empty-string
-                                (s/required-key :leader-latch-relative-path) schema/non-empty-string}})
+                                (s/required-key :leader-latch-relative-path) schema/non-empty-string
+                                (s/required-key :mutex-timeout-ms) schema/positive-int}})
 
 (defn load-settings-file
   "Loads the edn config in the specified file, it relies on having the filename being a path to the file."
@@ -143,7 +153,8 @@
 
 (def settings-defaults
   {:cors-config {:kind :patterns
-                 :allowed-origins []
+                 :patterns {:factory-fn 'waiter.cors/pattern-based-validator
+                            :allowed-origins []}
                  :max-age 3600}
    :blacklist-config {:blacklist-backoff-base-time-ms 10000
                       :max-blacklist-time-ms 300000}
@@ -152,7 +163,9 @@
    ;; 2. have the same discovery path with the same cluster name to allow computing router endpoints
    :cluster-config {:min-routers 1
                     :name "waiter"}
-   :entitlement-config {:kind :simple}
+   :consent-expiry-days 90
+   :entitlement-config {:kind :simple
+                        :simple {:factory-fn 'waiter.security/->SimpleEntitlementManager}}
    :health-check-timeout-ms 200
    :host "0.0.0.0"
    :hostname "localhost"
@@ -163,11 +176,12 @@
                                  :queue-timeout-ms 300000
                                  :streaming-timeout-ms 20000}
    :kv-config {:kind :zk
-               :relative-path "tokens"
-               :sync-timeout-ms 2000
-               :encrypt true
+               :zk {:factory-fn 'waiter.kv/new-zk-kv-store
+                    :sync-timeout-ms 2000}
                :cache {:threshold 1000
-                       :ttl 60}}
+                       :ttl 60}
+               :encrypt true
+               :relative-path "tokens"}
    :messages {:cannot-identify-service "Unable to identify service using waiter headers/token"
               :invalid-service-description "Service description using waiter headers/token improperly configured"}
    :metric-group-mappings []
@@ -177,7 +191,8 @@
                     :router-update-interval-ms 5000
                     :transient-metrics-timeout-ms 300000}
    :password-store-config {:kind :configured
-                           :passwords ["open-sesame"]}
+                           :configured {:factory-fn 'waiter.password-store/configured-provider
+                                        :passwords ["open-sesame"]}}
    :port 9091
    :router-id-prefix ""
    :router-syncer {:delay-ms 750
@@ -186,21 +201,30 @@
              ; throttles the rate at which kill requests are sent to the scheduler
              :inter-kill-request-wait-time-ms 1000}
    :scheduler-config {:kind :marathon
-                      :home-path-prefix "/home/"
-                      :http-options {:conn-timeout 10000
-                                     :socket-timeout 10000
-                                     :spnego-auth true}
-                      :force-kill-after-ms 60000
-                      :framework-id-ttl 900000}
+                      :marathon {:factory-fn 'waiter.marathon/marathon-scheduler
+                                 :home-path-prefix "/home/"
+                                 :http-options {:conn-timeout 10000
+                                                :socket-timeout 10000
+                                                :spnego-auth true}
+                                 :force-kill-after-ms 60000
+                                 :framework-id-ttl 900000}
+                      :shell {:factory-fn 'waiter.shell-scheduler/shell-scheduler
+                              :health-check-interval-ms 10000
+                              :health-check-timeout-ms 200
+                              :port-grace-period-ms 120000
+                              :port-range [10000 10999]
+                              :work-directory "scheduler"}}
    :scheduler-gc-config {:broken-service-min-hosts 2
                          :broken-service-timeout-mins 30
                          :scheduler-gc-broken-service-interval-ms 60000
                          :scheduler-gc-interval-ms 60000}
    :scheduler-syncer-interval-secs 5
-   :service-description-builder-config {:kind :default}
-   ; service-description-defaults should never contain default values for required fields, e.g. version, cmd, run-as-user, etc.
+   :service-description-builder-config {:kind :default
+                                        :default {:factory-fn
+                                                  'waiter.service-description/->DefaultServiceDescriptionBuilder}}
    :service-description-defaults {"blacklist-on-503" true
                                   "concurrency-level" 1
+                                  "distribution-scheme" "balanced"
                                   "env" {}
                                   "expired-instance-restart-rate" 0.1
                                   "grace-period-secs" 30
@@ -212,6 +236,7 @@
                                   "max-queue-length" 1000000
                                   "metadata" {}
                                   "min-instances" 1
+                                  "permitted-user" "*"
                                   "restart-backoff-factor" 2
                                   "scale-down-factor" 0.001
                                   "scale-factor" 1
@@ -220,35 +245,39 @@
    :thread-stack-state-refresh-interval-ms 600000 ; 10 minutes
    :work-stealing {:offer-help-interval-ms 100
                    :reserve-timeout-ms 1000}
-   ;; To be considered part of the same cluster, routers need to
-   ;; 1. have the same leader-latch-path to participate in leadership election
-   ;; 2. have the same discovery path with the same cluster name to allow computing router endpoints
    :zookeeper {:base-path "/waiter"
                :curator-retry-policy {:base-sleep-time-ms 100
                                       :max-retries 10
                                       :max-sleep-time-ms 120000}
                :discovery-relative-path "discovery"
                :gc-relative-path "gc-state"
-               :leader-latch-relative-path "leader-latch"}})
+               :leader-latch-relative-path "leader-latch"
+               :mutex-timeout-ms 1000}})
 
-(defn load-settings [config-file git-version]
-  (letfn [(deep-merge-settings
-            [map-1 map-2]
-            (merge-with
-              (fn [x y]
-                (if (and (map? x) (map? y))
-                  (let [x-kind (:kind x)
-                        y-kind (:kind y)]
-                    (if (and x-kind y-kind)
-                      (if (= x-kind y-kind)
-                        (merge x y)
-                        y)
-                      (deep-merge-settings x y)))
-                  y))
-              map-1 map-2))]
-    (deep-merge-settings
-      settings-defaults
-      (assoc
-        (load-settings-file config-file)
-        :git-version git-version))))
+(defn deep-merge-settings
+  "Merges the two settings maps, with special handling for maps with :kind"
+  [map-1 map-2]
+  (merge-with
+    (fn [x y]
+      (if (and (map? x) (map? y))
+        (let [x-kind (:kind x)
+              y-kind (:kind y)]
+          (if (and x-kind y-kind)
+            (let [kind y-kind
+                  x-sub-map (get x kind)
+                  y-sub-map (get y kind)]
+              (-> x
+                  (merge y)
+                  (assoc kind (merge x-sub-map y-sub-map))))
+            (deep-merge-settings x y)))
+        y))
+    map-1 map-2))
+
+(defn load-settings
+  [config-file git-version]
+  (deep-merge-settings
+    settings-defaults
+    (assoc
+      (load-settings-file config-file)
+      :git-version git-version)))
 

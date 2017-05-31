@@ -19,6 +19,7 @@
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.schema :as schema]
+            [waiter.security :as security]
             [waiter.utils :as utils]
             [slingshot.slingshot :as sling])
   (:import [schema.utils ValidationError]))
@@ -49,6 +50,7 @@
    (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
                                                schema/valid-string-length}
                                               #(< (count %) 100))
+   (s/optional-key "distribution-scheme") (s/enum "balanced" "simple")
    ; Marathon imposes a 512 character limit on environment variable keys and values
    (s/optional-key "env") (s/constrained {(s/both (s/constrained s/Str #(<= 1 (count %) 512))
                                                   #"^[A-Za-z][A-Za-z0-9_]*$"
@@ -80,9 +82,9 @@
 
 ; keys used in computing the service-id from the service description
 (def ^:const service-override-keys
-  #{"blacklist-on-503" "concurrency-level" "expired-instance-restart-rate" "grace-period-secs" "idle-timeout-mins" "instance-expiry-mins"
-    "jitter-threshold" "max-queue-length" "min-instances" "max-instances" "restart-backoff-factor"
-    "scale-down-factor" "scale-factor" "scale-up-factor"})
+  #{"blacklist-on-503" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate" "grace-period-secs"
+    "idle-timeout-mins" "instance-expiry-mins" "jitter-threshold" "max-queue-length" "min-instances" "max-instances"
+    "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 ; keys stored in the service description
 (def ^:const service-description-keys
@@ -293,11 +295,26 @@
   (validate [this service-description args-map]
     "Throws if the provided service-description is not valid"))
 
-(defrecord DefaultServiceDescriptionBuilder []
+(defn assoc-run-as-requester-fields
+  "Attaches the run-as-user and permitted-user fields to the service description.
+   We intentionally force permitted-user to be the username for run-as-requester feature."
+  [service-description username]
+  (assoc service-description "run-as-user" username "permitted-user" username))
+
+(defrecord DefaultServiceDescriptionBuilder [_]
   ServiceDescriptionBuilder
 
-  (build [_ core-service-description {:keys [service-id-prefix metric-group-mappings kv-store defaults]}]
-    (let [service-id (service-description->service-id service-id-prefix core-service-description)
+  (build [_ user-service-description {:keys [service-id-prefix metric-group-mappings kv-store defaults assoc-run-as-user-approved? username]}]
+    (let [core-service-description (if (get user-service-description "run-as-user")
+                                     user-service-description
+                                     (let [candidate-service-description (assoc-run-as-requester-fields user-service-description username)
+                                           candidate-service-id (service-description->service-id service-id-prefix candidate-service-description)]
+                                       (if (assoc-run-as-user-approved? candidate-service-id)
+                                         (do
+                                           (log/debug "appending run-as-user into pre-approved service" candidate-service-id)
+                                           candidate-service-description)
+                                         user-service-description)))
+          service-id (service-description->service-id service-id-prefix core-service-description)
           service-description (default-and-override core-service-description metric-group-mappings
                                                     kv-store defaults service-id)]
       {:core-service-description core-service-description
@@ -307,26 +324,10 @@
   (validate [_ service-description args-map]
     (validate-schema service-description (merge-with set/union args-map {:valid-cmd-types #{"shell"}}))))
 
-(defn create-service-description-builder [{:keys [kind] :as config}]
-  (condp = kind
-    :default (->DefaultServiceDescriptionBuilder)
-    :custom (utils/evaluate-config-fn config)
-    (do
-      (log/fatal "Unsupported service-description-builder kind:" kind)
-      (System/exit 1))))
-
 (defn service-description->health-check-url
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"
   [service-description]
   (or (get service-description "health-check-url") default-health-check-path))
-
-(defn store-service-description-for-token
-  "Store the token mapping of the service description template in the key-value store."
-  [kv-store ^String token service-description-template]
-  (log/info "Storing service description for token:" token)
-  (let [filtered-service-desc (sanitize-service-description service-description-template token-service-description-template-keys)]
-    (kv/store kv-store token filtered-service-desc)
-    (log/info "Stored service description template for" token)))
 
 (defn token->service-description-template
   "Retrieves the service description template for the given token."
@@ -449,7 +450,7 @@
      :token-preauthorized token-preauthorized}))
 
 (defn- merge-service-description-sources
-  [descriptor kv-store waiter-hostname service-description-defaults username]
+  [descriptor kv-store waiter-hostname service-description-defaults]
   "Merges the sources for a service-description into the descriptor."
   (let [sources (prepare-service-description-sources descriptor kv-store waiter-hostname service-description-defaults)]
     (assoc descriptor :sources sources)))
@@ -473,19 +474,23 @@
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user."
     [{:keys [token-preauthorized] :as sources} waiter-headers passthrough-headers kv-store service-id-prefix username
-     metric-group-mappings service-description-builder]
+     metric-group-mappings service-description-builder assoc-run-as-user-approved?]
     (let [service-description-based-on-headers (cond->> (:headers sources)
-                                                       ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
+                                                        ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
                                                         (seq (:headers sources)) (merge {"run-as-user" username}))
           service-description-from-headers-and-token-sources (merge (:tokens sources) service-description-based-on-headers)
-          sanitized-metadata-description (sanitize-metadata service-description-from-headers-and-token-sources)
+          sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
+                                                             ;; * run-as-user is the same as a missing run-as-user
+                                                             (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))
+                                                             (dissoc service-description-from-headers-and-token-sources "run-as-user"))
+          sanitized-metadata-description (sanitize-metadata sanitized-service-description-from-sources)
           ; run-as-user will not be set if description-from-headers or the token description contains it.
           ; else rely on presence of x-waiter headers to set the run-as-user
           contains-waiter-header? (headers/contains-waiter-header waiter-headers on-the-fly-service-description-keys)
           user-service-description (cond-> sanitized-metadata-description
                                            (and (not (contains? sanitized-metadata-description "run-as-user")) contains-waiter-header?)
                                            ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided
-                                           (assoc "run-as-user" username)
+                                           (assoc-run-as-requester-fields username)
                                            (and (not (contains? sanitized-metadata-description "permitted-user")) contains-waiter-header?)
                                            ; can only set the permitted-user if some on-the-fly-service-description-keys waiter header was provided
                                            (assoc "permitted-user" username))
@@ -498,7 +503,9 @@
               (build service-description-builder user-service-description {:service-id-prefix service-id-prefix
                                                                            :metric-group-mappings metric-group-mappings
                                                                            :kv-store kv-store
-                                                                           :defaults defaults})
+                                                                           :defaults defaults
+                                                                           :assoc-run-as-user-approved? assoc-run-as-user-approved?
+                                                                           :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
               stored-service-description? (fetch-core kv-store service-id)]
           ; Validating is expensive, so avoid validating if we've validated before, relying on the fact
@@ -518,21 +525,21 @@
 (defn merge-service-description-and-id
   "Populates the descriptor with the service-description and service-id."
   [{:keys [passthrough-headers sources waiter-headers] :as descriptor} kv-store service-id-prefix username
-   metric-group-mappings service-description-builder]
+   metric-group-mappings service-description-builder assoc-run-as-user-approved?]
   (merge descriptor (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix
-                                                 username metric-group-mappings service-description-builder)))
+                                                 username metric-group-mappings service-description-builder assoc-run-as-user-approved?)))
 
 (defn request->descriptor
   "Creates the service descriptor from the request.
    The result map contains the following elements:
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
   [service-description-defaults service-id-prefix kv-store waiter-hostname request metric-group-mappings
-   service-description-builder]
+   service-description-builder assoc-run-as-user-approved?]
   (let [current-request-user (get request :authorization/user)]
     (-> (headers/split-headers (:headers request))
-        (merge-service-description-sources kv-store waiter-hostname service-description-defaults current-request-user)
-        (merge-service-description-and-id kv-store service-id-prefix current-request-user
-                                          metric-group-mappings service-description-builder)
+        (merge-service-description-sources kv-store waiter-hostname service-description-defaults)
+        (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
+                                          service-description-builder assoc-run-as-user-approved?)
         (merge-suspended kv-store))))
 
 (defn service-id->service-description
@@ -549,9 +556,34 @@
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."
-  ([{:strs [run-as-user]} can-run-as? username]
-   (can-run-as? username run-as-user))
-  ([kv-store service-id can-run-as? username]
+  ([kv-store service-id authorized? username]
     ; the stored service description should already have a run-as-user
    (let [service-description (service-id->service-description kv-store service-id {} [])]
-     (can-manage-service? service-description can-run-as? username))))
+     (authorized? username :manage (security/make-service-resource service-id service-description)))))
+
+(defn consent-cookie-value
+  "Creates the consent cookie value vector based on the mode.
+   The returned vector is in the format: mode timestamp service-id|token [token-owner]"
+  [clock mode service-id token {:strs [owner]}]
+  (when mode
+    (-> [mode (clock)]
+        (concat (case mode
+                  "service" (when service-id [service-id])
+                  "token" (when (and owner token) [token owner])
+                  nil))
+        (vec))))
+
+(defn assoc-run-as-user-approved?
+  "Deconstructs the decoded cookie and validates whether the service has been pre-approved.
+   The validation step includes:
+   a. Ensuring service-id or token/owner pair are valid based on the mode, and
+   b. the consent has not expired based on the timestamp in the cookie."
+  [clock consent-expiry-days service-id token {:strs [owner]} decoded-consent-cookie]
+  (let [[consent-mode auth-timestamp consent-id consent-owner] (vec decoded-consent-cookie)]
+    (and
+      consent-id
+      auth-timestamp
+      (or (and (= "service" consent-mode) (= consent-id service-id))
+          (and (= "token" consent-mode) (= consent-id token) (= consent-owner owner)))
+      (> (+ auth-timestamp (-> consent-expiry-days t/days t/in-millis))
+         (clock)))))

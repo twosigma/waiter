@@ -12,6 +12,7 @@
   (:require [clojure.core.async :as async]
             [clojure.test :refer :all]
             [waiter.utils :as utils]
+            [waiter.test-helpers]
             [waiter.work-stealing :refer :all]))
 
 (defn- make-metrics
@@ -56,7 +57,8 @@
 (defmacro check-work-stealing-balancer-query-state [query-chan expected-result]
   `(let [response-chan# (async/chan 1)
          _# (async/>!! ~query-chan {:response-chan response-chan#})
-         query-result# (async/<!! response-chan#)]
+         query-result# (select-keys (async/<!! response-chan#)
+                                    (keys ~expected-result))]
      (when (not= ~expected-result query-result#)
        (println (first *testing-vars*))
        (println "Expected: " (utils/deep-sort-map ~expected-result))
@@ -89,6 +91,7 @@
           {:keys [exit-chan query-chan]}
           (work-stealing-balancer initial-state timeout-chan-factory service-id->router-id->metrics reserve-instance-fn
                                   release-instance-fn offer-help-fn router-id service-id)]
+      (reset! metrics-atom {"router-1" (make-metrics {:outstanding 10, :slots-available 20})})
       (check-work-stealing-balancer-query-state query-chan initial-state)
       (async/>!! exit-chan :exit)))
 
@@ -108,7 +111,7 @@
                                   release-instance-fn offer-help-fn router-id service-id)]
       (reset! metrics-atom {"router-1" (make-metrics {:outstanding 10, :slots-available 20})
                             "router-2" (make-metrics {:slots-available 20})})
-      (check-work-stealing-balancer-query-state query-chan {:iteration 10, :request-id->work-stealer {}})
+      (check-work-stealing-balancer-query-state query-chan {:iteration 10, :request-id->work-stealer {}, :slots-offered 0})
       (is (= 0 @reserve-instance-counter))
       (async/>!! exit-chan :exit)))
 
@@ -131,7 +134,7 @@
                             "router-1" (make-metrics {:outstanding 30, :slots-available 20})
                             "router-2" (make-metrics {:slots-available 20})})
       (async/>!! custom-timeout-chan :custom-timeout)
-      (check-work-stealing-balancer-query-state query-chan {:iteration 11, :request-id->work-stealer {}})
+      (check-work-stealing-balancer-query-state query-chan {:iteration 11, :request-id->work-stealer {}, :slots-offered 0, :extra-slots 5})
       (is (= 1 @reserve-instance-counter))
       (async/>!! exit-chan :exit)))
 
@@ -164,11 +167,12 @@
                             "router-1" (make-metrics {:outstanding 30, :slots-available 20})
                             "router-2" (make-metrics {:slots-available 20})})
       (async/>!! custom-timeout-chan :custom-timeout)
-      (check-work-stealing-balancer-query-state
-        query-chan {:iteration 11
-                    :request-id->work-stealer
-                    (-> {}
-                        (populate-request-id->workstealer 10 0 "router-1" "test-instance-id-1"))})
+      (check-work-stealing-balancer-query-state query-chan {:iteration 11
+                                                            :slots-offered 1
+                                                            :extra-slots 6
+                                                            :request-id->work-stealer
+                                                            (-> {}
+                                                                (populate-request-id->workstealer 10 0 "router-1" "test-instance-id-1"))})
 
       (is (pos? @reserve-instance-counter))
       (is (contains? @request-id->cleanup-chan-atom "test-service-id.test-router-id.ws10.offer0"))
@@ -176,7 +180,7 @@
       (response-callback "test-service-id.test-router-id.ws10.offer0" :success)
       (async/>!! custom-timeout-chan :custom-timeout)
       (check-work-stealing-balancer-query-state
-        query-chan {:iteration 14, :request-id->work-stealer {}})
+        query-chan {:iteration 14, :request-id->work-stealer {}, :slots-offered 0, :extra-slots 5})
       (is (contains? @released-instances-atom "test-instance-id-1"))
 
       (async/>!! exit-chan :exit)))
@@ -212,6 +216,8 @@
       (async/>!! custom-timeout-chan :custom-timeout)
       (check-work-stealing-balancer-query-state
         query-chan {:iteration 11
+                    :slots-offered 5
+                    :extra-slots 10
                     :request-id->work-stealer
                     (-> {}
                         (populate-request-id->workstealer 10 0 "router-2" "test-instance-id-1")
@@ -231,6 +237,8 @@
       (response-callback (make-request-id 10 2) :success)
       (check-work-stealing-balancer-query-state
         query-chan {:iteration 14
+                    :slots-offered 3
+                    :extra-slots 8
                     :request-id->work-stealer
                     (-> {}
                         (populate-request-id->workstealer 10 1 "router-2" "test-instance-id-2")
@@ -251,6 +259,8 @@
       (async/>!! custom-timeout-chan :custom-timeout)
       (check-work-stealing-balancer-query-state
         query-chan {:iteration 16
+                    :slots-offered 5
+                    :extra-slots 10
                     :request-id->work-stealer
                     (-> {}
                         (populate-request-id->workstealer 10 1 "router-2" "test-instance-id-2")
@@ -264,6 +274,8 @@
       (response-callback (make-request-id 15 1) :success)
       (check-work-stealing-balancer-query-state
         query-chan {:iteration 20,
+                    :slots-offered 2
+                    :extra-slots 7
                     :request-id->work-stealer
                     (-> {}
                         (populate-request-id->workstealer 10 4 "router-1" "test-instance-id-5")
@@ -272,6 +284,8 @@
       (async/>!! custom-timeout-chan :custom-timeout)
       (check-work-stealing-balancer-query-state
         query-chan {:iteration 22,
+                    :slots-offered 2
+                    :extra-slots 7
                     :request-id->work-stealer
                     (-> {}
                         (populate-request-id->workstealer 10 4 "router-1" "test-instance-id-5")

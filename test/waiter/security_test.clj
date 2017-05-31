@@ -10,28 +10,34 @@
 ;;
 (ns waiter.security-test
   (:require [clojure.test :refer :all]
-            [waiter.security :as sec]))
+            [waiter.security :as sec]
+            [waiter.utils :as utils]))
 
 (defrecord TestEntitlementManager [entitlements]
   sec/EntitlementManager
-  (can-run-as? [_ auth-user run-as-user]
-    (entitlements [auth-user run-as-user])))
+  (authorized? [_ subject action resource]
+    (entitlements [subject action (:user resource)])))
 
-(deftest test-new-entitlement-manager
+(defn test-em
+  "Creates a new TestEntitlementManager"
+  [_]
+  (TestEntitlementManager.
+    #{["foo@example.com" :run-as "waiteruser"]}))
+
+(deftest test-create-component
   (testing "Creating a new entitlement manager"
 
     (testing "should support custom implementations"
-      (let [em (sec/new-entitlement-manager {:kind :custom
-                                             :custom-impl (fn [_]
-                                                            (TestEntitlementManager.
-                                                              #{["foo@example.com" "waiteruser"]}))})]
+      (let [em (utils/create-component {:kind :test
+                                        :test {:factory-fn 'waiter.security-test/test-em}})]
         (is em)
-        (is (sec/can-run-as? em "foo@example.com" "waiteruser"))
-        (is (not (sec/can-run-as? em "foo@example.com" "waiteruser2")))
-        (is (not (sec/can-run-as? em "randomguy@example.com" "waiteruser")))))
+        (is (sec/authorized? em "foo@example.com" :run-as {:user "waiteruser"}))
+        (is (not (sec/authorized? em "foo@example.com" :run-as {:user "waiteruser2"})))
+        (is (not (sec/authorized? em "randomguy@example.com" :run-as {:user "waiteruser"})))))
 
     (testing "should support :kind :simple"
-      (let [em (sec/new-entitlement-manager {:kind :simple})]
+      (let [em (utils/create-component {:kind :simple
+                                        :simple {:factory-fn 'waiter.security/->SimpleEntitlementManager}})]
         (is em)
-        (is (sec/can-run-as? em "foo" "foo"))
-        (is (not (sec/can-run-as? em "foo" "bar")))))))
+        (is (sec/authorized? em "foo" :run-as {:user "foo"}))
+        (is (not (sec/authorized? em "foo" :run-as {:user "bar"})))))))

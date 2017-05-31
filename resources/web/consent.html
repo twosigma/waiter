@@ -1,0 +1,272 @@
+<!doctype html>
+<html>
+<head>
+    <title>Waiter - Run Web App?</title>
+    <meta http-equiv="x-ua-compatible" content="IE=edge" />
+    <style type="text/css">
+   html {
+     font-family: 'Lato', 'Helvetica Neue', Arial, Helvetica, sans-serif;
+     color: rgba(0,0,0,.87);
+   }
+
+   .dimmer {
+     top: 0;
+     left: 0;
+     width: 100%;
+     height: 100%;
+     text-align: center;
+     vertical-align: middle;
+     background-color: rgba(0, 0, 0, 0.85);
+     line-height: 1;
+     z-index: 1000;
+     transition: background-color 0.5s linear;
+     will-change: opacity;
+     position: fixed;
+   }
+
+   .dimmer .content {
+     width: 100%;
+     height: 100%;
+     display: table;
+   }
+
+   .dimmer .center {
+     display: table-cell;
+     vertical-align: middle;
+   }
+
+   .dimmer .popup {
+     width: 25em;
+     height: 15em;
+     margin: auto;
+     padding-top: 1em;
+     background-color: white;
+     color: rgba(0, 0, 0, 0.65);
+   }
+
+   .dimmer h2.error {
+     color: #BD5B5B;
+   }
+
+   .main-content {
+     margin: auto;
+     margin-top: 4em;
+     width: 800px;
+   }
+
+   .main-note {
+     color: #0e566c;
+     text-align: center;
+   }
+
+   .button-container {
+     margin-top: 3em;
+     text-align: center;
+   }
+
+   button.run-button {
+     /* .ui.button */
+     cursor: pointer;
+     display: inline-block;
+     min-height: 1em;
+     outline: none;
+     border: none;
+     vertical-align: baseline;
+     background: #e0e1e2 none;
+     color: rgba(0, 0, 0, 0.6);
+     margin: 0em 0.25em 0em 0em;
+     padding: 0.78571429em 1.5em 0.78571429em;
+     text-transform: none;
+     text-shadow: none;
+     font-weight: bold;
+     line-height: 1em;
+     font-style: normal;
+     text-align: center;
+     text-decoration: none;
+     border-radius: 0.28571429rem;
+     box-shadow: 0px 0px 0px 1px transparent inset, 0px 0em 0px 0px rgba(34, 36, 38, 0.15) inset;
+     -webkit-user-select: none;
+     -moz-user-select: none;
+     -ms-user-select: none;
+     user-select: none;
+     transition: opacity 0.1s ease, background-color 0.1s ease, color 0.1s ease, box-shadow 0.1s ease, background 0.1s ease;
+
+     background-color: #00b5ad;
+     color: #ffffff;
+     text-shadow: none;
+     background-image: none;
+     padding: 0.78571429em 0.78571429em 0.78571429em;
+     font-size: 1rem;
+
+     box-shadow: 0px 0em 0px 0px rgba(34, 36, 38, 0.15) inset;
+
+     /* Custom CSS */
+     width: 15em;
+     font-size: 2em;
+     margin-left: 2em;
+     margin-right: 2em;
+   }
+
+   .divider {
+     /* ui divider */
+     border-top: 1px solid rgba(34,36,38,.15);
+     border-bottom: 1px solid rgba(255,255,255,.1);
+     margin: 1rem 0;
+     line-height: 1;
+     height: 0;
+     font-weight: 700;
+     text-transform: uppercase;
+     letter-spacing: .05em;
+     color: rgba(0,0,0,.85);
+   }
+
+   .additional-info {
+     width: 800px;
+     margin: auto;
+     margin-top: 10em;
+   }
+
+   .additional-info h3 {
+     margin-top: 2em;
+   }
+
+   .additional-info li {
+     line-height: 2em;
+   }
+
+   span.code {
+     font-family: "Lucida Console", Monaco, monospace;
+     margin-left: 2em;
+     line-height: 2em;
+   }
+   .alert {
+     background-color: red;
+     color: white;
+     margin-bottom: 15px;
+     overflow: auto;
+     padding: 20px;
+   }
+
+    </style>
+</head>
+<body>
+
+<div id="dimmer" class="dimmer" style="display:none;">
+    <div class="content">
+        <div class="center">
+            <div id="dimmer-content" class="popup">
+                <h2>Starting web app...</h2>
+                <svg width='152px' height='152px' xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"
+                     preserveAspectRatio="xMidYMid" class="uil-ring-alt">
+                    <rect x="0" y="0" width="100" height="100" fill="none" class="bk"></rect>
+                    <circle cx="50" cy="50" r="40" stroke="rgba(206,201,201,0.349)" fill="none" stroke-width="10"
+                            stroke-linecap="round"></circle>
+                    <circle cx="50" cy="50" r="40" stroke="#00b5ad" fill="none" stroke-width="6" stroke-linecap="round">
+                        <animate attributeName="stroke-dashoffset" dur="3s" repeatCount="indefinite" from="0"
+                                 to="502"></animate>
+                        <animate attributeName="stroke-dasharray" dur="3s" repeatCount="indefinite"
+                                 values="175.7 75.30000000000001;1 250;175.7 75.30000000000001"></animate>
+                    </circle>
+                </svg>
+            </div>
+            <div id="error-content" class="popup" style="display:none;">
+                <h2 class="error">Error starting web app</h2>
+                <svg xmlns="http://www.w3.org/2000/svg" width="152px" height="152px" viewBox="0 0 100 100"
+                     preserveAspectRatio="xMidYMid" class="uil-ring-alt">
+                    <rect x="0" y="0" width="100" height="100" fill="none" class="bk"/>
+                    <circle cx="50" cy="50" r="40" stroke="rgba(206,201,201,0.349)" fill="none" stroke-width="10"
+                            stroke-linecap="round"/>
+                    <circle cx="50" cy="50" r="40" stroke="#BD5B5B" fill="none" stroke-width="6"
+                            stroke-linecap="round"></circle>
+                </svg>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="main-content">
+    <h2 class="main-note">
+        This web app needs to run as you
+    </h2>
+    <div class="button-container">
+        <button id="token-button" class="run-button">Run web app</button>
+    </div>
+</div>
+
+<div class="additional-info">
+    <div class="divider"></div>
+    <div>
+        <h3>Web App Info</h3>
+        <ul>
+            <li>Command: <br/><span class="code"><%= (get service-description-template "cmd") %></span></li>
+            <li>Version: <br/><span class="code"><%= (get service-description-template "version") %></span></li>
+        </ul>
+        <button id="service-button" class="run-button" style="font-size: 0.85em;">Run only this version</button>
+        <h3>Additional Info</h3>
+        <ul>
+            <li>The web app running as you can only be viewed by you.</li>
+            <li>Each user will run the web app as themself.</li>
+            <li>Your consent will be saved for <%= consent-expiry-days %> days.</li>
+        </ul>
+    </div>
+</div>
+
+<div style="display: none">
+    <form id="consent-form" name="consent-form">
+        <input name="service-id" type="hidden" value="<%= service-id %>"/>
+    </form>
+</div>
+
+<script type="text/javascript">
+
+    function attachListener(elementId, mode) {
+        var clickedMarker = "clicked";
+        var button = document.getElementById(elementId);
+        button.addEventListener(
+            "click",
+            function() {
+                if (button.classList.contains(clickedMarker)) {
+                    return false;
+                }
+
+                var request = new XMLHttpRequest();
+                request.open("POST", "/waiter-consent");
+                request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+
+                request.onreadystatechange = function() {
+                    if(request.readyState == XMLHttpRequest.DONE) {
+                        if (request.status == 200) {
+                            window.location = "<%= target-url %>";
+                        } else {
+                            setTimeout(function() {
+                                var dimmerContent = document.getElementById("dimmer-content");
+                                dimmerContent.setAttribute("style", "display:none;");
+                                var errorContent = document.getElementById("error-content");
+                                errorContent.removeAttribute("style");
+                            }, 1000);
+                        }
+                    }
+                }
+
+                var dimmer = document.getElementById("dimmer");
+                dimmer.removeAttribute("style");
+
+                var consentForm = document.getElementById("consent-form");
+                var formData = new FormData(consentForm);
+                formData.append("mode", mode);
+                request.send(formData);
+
+                var buttons = document.getElementsByClassName("run-button");
+                for (var i = 0; i < buttons.length; i++) {
+                    buttons[i].classList.add(clickedMarker);
+                }
+                return false;
+            });
+    }
+
+    attachListener("service-button", "service");
+    attachListener("token-button", "token");
+
+</script>
+</body>
+</html>

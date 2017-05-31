@@ -9,8 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.service
-  (:require [clj-http.client :as http]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clojure.core.cache :as cache]
             [clojure.core.async :as async]
             [clojure.tools.logging :as log]
@@ -22,11 +21,8 @@
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
-            [waiter.statsd :as statsd]
-            [slingshot.slingshot :as sling])
-  (:import (java.net ConnectException SocketTimeoutException)
-           java.util.concurrent.ExecutorService
-           org.apache.http.conn.ConnectTimeoutException))
+            [waiter.statsd :as statsd])
+  (:import java.util.concurrent.ExecutorService))
 
 (def ^:const status-check-path "/status")
 
@@ -48,78 +44,29 @@
   [task]
   (str "http://" (:host task) ":" (first (:ports task))))
 
-(defn available?
-  [task]
-  (let [service-id (scheduler/instance->service-id task)
-        on-error-fn (fn [meter-name log-level message-obj]
-                      (meters/mark! (metrics/service-meter service-id meter-name))
-                      (let [message (if (sequential? message-obj)
-                                      (clojure.string/join " " message-obj)
-                                      message-obj)]
-                        (condp = log-level
-                          :info (log/info message)
-                          :error (log/error message)
-                          (log/debug message)))
-                      false)]
-    (sling/try+
-      ; lookup the health check url from marathon
-      (let [health-check-url (:health-check-url task status-check-path)
-            health-check-endpoint (str (task->service task) health-check-url)]
-        (meters/mark! (metrics/service-meter service-id "health-check-rate"))
-        (timers/start-stop-time!
-          (metrics/service-timer service-id "health-check-duration")
-          (http/get
-            health-check-endpoint
-            {:conn-timeout 200
-             :socket-timeout 1000}))
-        task)
-      (catch [:status 503] _
-        (meters/mark! (metrics/service-meter service-id "health-check-generic-error-rate"))
-        false)
-      (catch [:status 404] _
-        (meters/mark! (metrics/service-meter service-id "health-check-generic-error-rate"))
-        false)
-      (catch ConnectException e
-        (on-error-fn
-          "health-check-connect-timeout-rate"
-          :debug
-          ["Unable to connect to backend for status." (.getMessage e) {:task task, :service (task->service task)}]))
-      (catch ConnectTimeoutException e
-        (on-error-fn
-          "health-check-connect-timeout-rate"
-          :info
-          ["Unable to connect to backend for status." (.getMessage e) {:task task, :service (task->service task)}]))
-      (catch SocketTimeoutException e
-        (on-error-fn
-          "health-check-socket-timeout-rate"
-          :info
-          ["Socket timeout in connection to backend for status." (.getMessage e) {:task task, :service (task->service task)}]))
-      (catch Object _
-        (on-error-fn
-          "health-check-generic-error-rate"
-          :error
-          (ex-info
-            "Unexpected error checking status of backend."
-            {:task task, :service (task->service task)}
-            (:throwable &throw-context)))))))
-
 ;;; Service instance blacklisting, work-stealing, access and creation
 
 ;; Attempt to blacklist instances
 (defmacro blacklist-instance!
-  "Sends a rpc to the router state to blacklist the given instance."
+  "Sends a rpc to the router state to blacklist the given instance.
+   Throws an exception if a blacklist channel cannot be found for the specfied service."
   [instance-rpc-chan service-id instance-id blacklist-period-ms response-chan]
   `(let [chan-resp-chan# (async/chan)]
      (log/info "Requesting blacklist channel for" ~service-id)
      (async/put! ~instance-rpc-chan [:blacklist ~service-id (cid/get-correlation-id) chan-resp-chan#])
-     (when-let [blacklist-chan# (async/<! chan-resp-chan#)]
-       (log/info "Received blacklist channel, making blacklist request.")
-       (when-not (au/offer! blacklist-chan# [{:instance-id ~instance-id
-                                              :blacklist-period-ms ~blacklist-period-ms
-                                              :cid (cid/get-correlation-id)}
-                                             ~response-chan])
-         (throw (ex-info "Unable to put instance on blacklist-chan. This is a fatal error."
-                         {:instance-id ~instance-id}))))))
+     (if-let [blacklist-chan# (async/<! chan-resp-chan#)]
+       (do
+         (log/info "Received blacklist channel, making blacklist request.")
+         (when-not (au/offer! blacklist-chan# [{:instance-id ~instance-id
+                                                :blacklist-period-ms ~blacklist-period-ms
+                                                :cid (cid/get-correlation-id)}
+                                               ~response-chan])
+           (throw (ex-info "Unable to put instance-id on blacklist chan."
+                           {:instance-id ~instance-id, :service-id ~service-id}))))
+       (do
+         (log/error "Unable to find blacklist chan for service" ~service-id)
+         (throw (ex-info "Unable to find blacklist chan"
+                         {:instance-id ~instance-id, :service-id ~service-id}))))))
 
 (defn blacklist-instance-go
   "Sends a rpc to the router state to blacklist the lock on the given instance."
@@ -132,16 +79,22 @@
 
 ;; Offer instances obtained via work-stealing mechanism
 (defmacro offer-instance!
-  "Sends a rpc to the proxy state to offer the given instance."
+  "Sends a rpc to the proxy state to offer the given instance.
+   Throws an exception if a work-stealing channel cannot be found for the specfied service."
   [instance-rpc-chan service-id offer-params]
   `(let [chan-resp-chan# (async/chan)]
      (log/debug "Requesting offer channel for" ~service-id)
      (async/put! ~instance-rpc-chan [:offer ~service-id (cid/get-correlation-id) chan-resp-chan#])
-     (when-let [work-stealing-chan# (async/<! chan-resp-chan#)]
-       (log/info "Received offer channel, making offer request.")
-       (when-not (au/offer! work-stealing-chan# ~offer-params)
-         (throw (ex-info "Unable to put instance on work-stealing-chan. This is a fatal error."
-                         {:service-id ~service-id, :offer-params ~offer-params}))))))
+     (if-let [work-stealing-chan# (async/<! chan-resp-chan#)]
+       (do
+         (log/info "Received offer channel, making offer request.")
+         (when-not (au/offer! work-stealing-chan# ~offer-params)
+           (throw (ex-info "Unable to put instance on work-stealing-chan."
+                           {:offer-params ~offer-params, :service-id ~service-id}))))
+       (do
+         (log/error "Unable to find work-stealing-chan for service" ~service-id)
+         (throw (ex-info "Unable to find work-stealing-chan."
+                         {:offer-params ~offer-params, :service-id ~service-id}))))))
 
 (defn offer-instance-go
   "Sends a rpc to the proxy state to offer the lock on the given instance."
@@ -169,15 +122,20 @@
        :priority true)))
 
 (defmacro query-instance!
-  "Sends a rpc to the router state to query the state of the given service."
+  "Sends a rpc to the router state to query the state of the given service.
+   Throws an exception if a query channel cannot be found for the specfied service."
   [instance-rpc-chan service-id response-chan]
   `(let [chan-resp-chan# (async/chan)]
      (query-maintainer-channel-map! ~instance-rpc-chan ~service-id chan-resp-chan# :query-state)
-     (when-let [query-state-chan# (async/<! chan-resp-chan#)]
+     (if-let [query-state-chan# (async/<! chan-resp-chan#)]
        (when-not (au/offer! query-state-chan# {:cid (cid/get-correlation-id)
                                                :response-chan ~response-chan
                                                :service-id ~service-id})
-         (throw (ex-info "Unable to put instance on query-state-chan. This is a fatal error."
+         (throw (ex-info "Unable to put instance on query-state-chan for service"
+                         {:service-id ~service-id})))
+       (do
+         (log/error "Unable to find query-state-chan for service" ~service-id)
+         (throw (ex-info "Unable to find query-state-chan for service"
                          {:service-id ~service-id}))))))
 
 (defn query-instance-go
@@ -191,14 +149,19 @@
 
 ;; Reserve and Release Instances
 (defmacro release-instance!
-  "Sends a rpc to the router state to release the lock on the given instance."
+  "Sends a rpc to the router state to release the lock on the given instance.
+   Throws an exception if a release channel cannot be found for the specfied service."
   [instance-rpc-chan instance reservation-result]
   `(let [chan-resp-chan# (async/chan)
          service-id# (scheduler/instance->service-id ~instance)]
      (async/put! ~instance-rpc-chan [:release service-id# (cid/get-correlation-id) chan-resp-chan#])
-     (when-let [release-chan# (async/<! chan-resp-chan#)]
+     (if-let [release-chan# (async/<! chan-resp-chan#)]
        (when-not (au/offer! release-chan# [~instance ~reservation-result])
-         (throw (ex-info "Unable to put instance on release-chan. This is a fatal error."
+         (throw (ex-info "Unable to put instance on release-chan."
+                         {:instance ~instance})))
+       (do
+         (log/error "Unable to find release-chan for service" service-id#)
+         (throw (ex-info "Unable to find release-chan."
                          {:instance ~instance}))))))
 
 (defn release-instance-go
@@ -226,11 +189,11 @@
                      :kill-instance :kill)]
        ;;TODO: handle back pressure
        (async/put! ~instance-rpc-chan [method# ~service-id (cid/get-correlation-id) chan-resp-chan#])
-       (when-let [service-reserve-chan# (async/<! chan-resp-chan#)]
+       (when-let [service-chan# (async/<! chan-resp-chan#)]
          (log/debug "found reservation channel for" ~service-id)
          (timers/start-stop-time!
            (metrics/service-timer ~service-id "reserve-instance")
-           (when-not (au/offer! service-reserve-chan# [~reason-map instance-resp-chan# ~exclude-ids-set ~timeout-in-millis])
+           (when-not (au/offer! service-chan# [~reason-map instance-resp-chan# ~exclude-ids-set ~timeout-in-millis])
              (throw (ex-info "Unable to request an instance."
                              {:status 503
                               :service-id ~service-id
@@ -306,8 +269,8 @@
 ;; Create service helpers
 
 (defn start-new-service
-  "Sends a call to Marathon to start an app with the descriptor.
-   Cached to prevent too many duplicate requests going to marathon."
+  "Sends a call to the scheduler to start an app with the descriptor.
+   Cached to prevent too many duplicate requests going to the scheduler."
   [scheduler service-id->password-fn descriptor cache-atom ^ExecutorService start-app-threadpool
    & {:keys [pre-start-fn start-fn] :or {pre-start-fn nil, start-fn nil}}]
   (let [cache-key (:service-id descriptor)]

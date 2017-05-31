@@ -11,24 +11,19 @@
 (ns waiter.spnego
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
-            [clojure.core.cache :as cache]
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
-            [ring.middleware.cookies :refer (cookies-response)]
-            [ring.util.response :refer (header status response)]
+            [ring.middleware.cookies :as cookies]
+            [ring.util.response :as rr]
+            [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
-            [waiter.metrics :as metrics]
-            [waiter.utils :as utils]
-            [taoensso.nippy :as nippy])
-  (:import [java.nio.charset StandardCharsets]
-           [org.eclipse.jetty.util UrlEncoded]
-           [org.ietf.jgss GSSManager GSSCredential GSSContext]))
+            [waiter.metrics :as metrics])
+  (:import [org.ietf.jgss GSSManager GSSCredential GSSContext]))
 
 (def ^:const WAITER-AUTH-COOKIE-NAME "x-waiter-auth")
-(def ^:const WAITER-AUTH-COOKIE-RE #"(?i)x-waiter-auth=([^;]+)")
 
 ;; Decode the input token from the negotiate line
 ;; expects the authorization token to exist
@@ -57,12 +52,12 @@
   (log/info "Triggering 401 negotiate for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "401"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
-  (-> (response "Unauthorized")
-      (status 401)
-      (header "Content-Type" "text/html")
-      (header "WWW-Authenticate" "Negotiate")
-      (header cid/HEADER-CORRELATION-ID (cid/get-correlation-id))
-      (cookies-response)))
+  (-> (rr/response "Unauthorized")
+      (rr/status 401)
+      (rr/header "Content-Type" "text/html")
+      (rr/header "WWW-Authenticate" "Negotiate")
+      (rr/header cid/HEADER-CORRELATION-ID (cid/get-correlation-id))
+      (cookies/cookies-response)))
 
 (defn gss-context-init
   "Initialize a new gss context with name 'svc_name'"
@@ -78,59 +73,13 @@
   [^GSSContext gss]
   (str (.getSrcName gss)))
 
-(defn correct-service-cookies
-  "Ring expects the Set-Cookie header to be a vector of cookies. This puts them in the 'right' format"
-  [resp]
-  (update-in resp [:headers "Set-Cookie"] #(if (string? %) [%] %)))
-
-(defn cookies-async-resp
-  [resp]
-  (log/debug "making a response with cookies: " resp)
-  (if (map? resp)
-    (cookies-response resp)
-    (async/go
-      (-> (async/<! resp)
-          correct-service-cookies
-          cookies-response))))
-
 (defn add-cached-auth
-  [resp password princ]
-  ;(nippy/thaw (b64/decode (.getBytes (String. (b64/encode (nippy/freeze "foo")) "utf-8"))))
-  (letfn [(add-auth [resp]
-            (assoc-in resp [:cookies WAITER-AUTH-COOKIE-NAME]
-                      {:value (String. ^bytes (b64/encode (nippy/freeze [princ (System/currentTimeMillis)] {:password password :compressor nil})) "utf-8")
-                       :max-age (-> 1 t/days t/in-seconds)}))]
-    (if (map? resp)
-      (add-auth resp)
-      (async/go (add-auth (async/<! resp))))))
-
-(defn url-decode
-  "Decode a URL-encoded string.  java.util.URLDecoder is super slow.  Also Jetty 9.3 adds an overload
-  to decodeString that takes just a string.  This implementation should use that once we upgrade."
-  [^String str]
-  (when str
-    (UrlEncoded/decodeString str 0 (count str) StandardCharsets/UTF_8)))
+  [response password princ]
+  (cookie-support/add-encoded-cookie response password WAITER-AUTH-COOKIE-NAME [princ (System/currentTimeMillis)] 1))
 
 (defn get-auth-cookie-value
   [cookie-string]
-  (when cookie-string
-    (if-let [^String cookie-value (-> (re-find WAITER-AUTH-COOKIE-RE cookie-string)
-                                     (second))]
-      (url-decode cookie-value))))
-
-(def cookie-cache (-> {}
-                      (cache/ttl-cache-factory :ttl (-> 300 t/seconds t/in-millis))
-                      atom))
-
-(defn decode-cookie
-  "Decode the Waiter auth cookie"
-  [^String waiter-cookie password]
-  (utils/atom-cache-get-or-load
-    cookie-cache waiter-cookie
-    (fn [] (-> waiter-cookie
-               (.getBytes)
-               (b64/decode)
-               (nippy/thaw {:password password :v1-compatibility? false :compressor nil})))))
+  (cookie-support/cookie-value cookie-string WAITER-AUTH-COOKIE-NAME))
 
 (defn require-gss
   "This middleware enables the application to require a SPNEGO
@@ -145,13 +94,13 @@
           (try
             (log/debug "Decoding cookie:" waiter-cookie)
             (when waiter-cookie
-              (let [decoded-cookie (decode-cookie waiter-cookie password)]
+              (let [decoded-cookie (cookie-support/decode-cookie-cached waiter-cookie password)]
                 (if (seq decoded-cookie)
                   decoded-cookie
                   (do (log/warn "Invalid decoded cookie:" decoded-cookie)
                       nil))))
-            (catch Exception _ (do
-                                 (log/info "Failed to decode cookie:" waiter-cookie)
+            (catch Exception e (do
+                                 (log/warn e "Failed to decode cookie:" waiter-cookie)
                                  nil)))
           well-formed? (and decoded-auth-cookie (integer? auth-time) (string? auth-princ) (= 2 (count decoded-auth-cookie)))]
       (log/debug "Well-formed?" decoded-auth-cookie (integer? auth-time) (string? auth-princ) (= 2 (count decoded-auth-cookie)))
@@ -164,7 +113,7 @@
                   :krb5-authenticated-princ auth-princ
                   :authorization/user (first (str/split auth-princ #"@" 2)))
                 (rh)
-                (cookies-async-resp)))
+                (cookie-support/cookies-async-response)))
         (get-in req [:headers "authorization"])
         (let [^GSSContext gss_context (gss-context-init)]
           (let [token (do-gss-auth-check gss_context req)]
@@ -176,13 +125,13 @@
                                :authorization/user (first (str/split princ #"@" 2)))
                              (rh)
                              (add-cached-auth password princ)
-                             (cookies-async-resp))]
+                             (cookie-support/cookies-async-response))]
                 (log/debug "Added cookies to response")
                 (if token
                   (if (map? resp)
-                    (header resp "WWW-Authenticate" token)
+                    (rr/header resp "WWW-Authenticate" token)
                     (async/go
-                      (header (async/<! resp) "WWW-Authenticate" token)))
+                      (rr/header (async/<! resp) "WWW-Authenticate" token)))
                   resp))
               (response-401-negotiate))))
         :else

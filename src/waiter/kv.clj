@@ -93,6 +93,23 @@
   (when (re-matches #"^\..*" key)
     (throw (ex-info "Key may not begin with '.'" {:key key}))))
 
+(defn zk-keys
+  "Create a lazy sequence of keys."
+  ([curator base-path]
+   (lazy-seq 
+     (let [buckets (seq (curator/children curator base-path :ignore-does-not-exist true))]
+       (zk-keys curator base-path buckets))))
+  ([curator base-path buckets]
+   (lazy-seq 
+     (when (seq buckets)
+       (let [ks (seq (curator/children curator (str base-path "/" (first buckets))))]
+         (zk-keys curator base-path (rest buckets) ks)))))
+  ([curator base-path buckets [f & r]]
+   (lazy-seq 
+     (if f 
+       (cons f (zk-keys curator base-path buckets r))
+       (zk-keys curator base-path buckets)))))
+
 ;; KV store that uses curator api to use zookeeper as its backing data source
 (defrecord ZooKeeperKeyValueStore [^CuratorFramework curator-client base-path sync-timeout-ms]
   KeyValueStore
@@ -130,8 +147,13 @@
   (state [_]
     {:base-path base-path, :variant "zookeeper"}))
 
-(defn new-zk-kv-store [{:keys [curator base-path sync-timeout-ms]}]
-  (ZooKeeperKeyValueStore. curator base-path sync-timeout-ms))
+(defn new-zk-kv-store
+  "Creates a new ZooKeeperKeyValueStore"
+  [{:keys [curator base-path sync-timeout-ms]}]
+  {:pre [(instance? CuratorFramework curator)
+         (string? base-path)
+         (utils/pos-int? sync-timeout-ms)]}
+  (->ZooKeeperKeyValueStore curator base-path sync-timeout-ms))
 
 ;; Encryption KV store that uses another KV store as its backing data source
 (defrecord EncryptedKeyValueStore [inner-kv-store passwords]
@@ -157,7 +179,7 @@
   (state [_]
     {:inner-state (state inner-kv-store), :variant "encrypted"}))
 
-(defn new-encrypted-kv-store [{:keys [passwords]} kv-store]
+(defn new-encrypted-kv-store [passwords kv-store]
   (if (or (empty? passwords) (some empty? passwords))
     (throw (.IllegalArgumentException "Passwords should not be empty!"))
     (EncryptedKeyValueStore. kv-store passwords)))
@@ -193,17 +215,22 @@
                             (cache/ttl-cache-factory :ttl (-> ttl t/seconds t/in-millis))
                             atom)))
 
-(defn new-kv-store [{:keys [kind cache encrypt] :as config}]
-  (let [conditional-kv-wrapper (fn [kv-impl name condition factory-fn]
-                                 (if condition
-                                   (do (log/info "Using key value store with" name)
-                                       (factory-fn kv-impl))
-                                   (do (log/info "Using key value store without" name)
-                                       kv-impl)))
-        raw-kv-impl (case kind
-                      :zk (new-zk-kv-store config)
-                      :local (new-local-kv-store config))]
-    ; Note: Order is important as we want cache lookups to be done before encryption
-    (-> raw-kv-impl
-        (conditional-kv-wrapper "encryption" encrypt (partial new-encrypted-kv-store encrypt))
+(defn- conditional-kv-wrapper
+  "Decorator pattern around the given kv-impl"
+  [kv-impl name condition factory-fn]
+  (if condition
+    (do (log/info "using key value store with" name)
+        (factory-fn kv-impl))
+    (do (log/info "using key value store without" name)
+        kv-impl)))
+
+(defn new-kv-store
+  "Returns a new key/value store using the given configuration"
+  [{:keys [cache encrypt relative-path] :as config} curator base-path passwords]
+  (let [kv-base-path (str base-path "/" relative-path)
+        kv-context {:base-path kv-base-path, :curator curator}
+        kv-impl (utils/create-component config :context kv-context)]
+    (-> kv-impl
+        ; Note: Order is important as we want cache lookups to be done before encryption
+        (conditional-kv-wrapper "encryption" encrypt (partial new-encrypted-kv-store passwords))
         (conditional-kv-wrapper "caching" cache (partial new-cached-kv-store cache)))))

@@ -15,30 +15,17 @@
 
 (defprotocol EntitlementManager 
   "Security related methods"
-  (can-run-as? [this auth-user run-as-user]
-               "Determines if a given auth-user can run as a given run-as-user."))
+  (authorized? [this subject action resource]
+               "Determines if a given subject can perform action on a given resource."))
 
-(defrecord CachingEntitlementManager [inner-em cache]
+(defrecord SimpleEntitlementManager [_]
   EntitlementManager
-  (can-run-as? [_ auth-user run-as-user]
-    (utils/atom-cache-get-or-load cache [auth-user run-as-user] 
-                                  (fn [] (can-run-as? inner-em auth-user run-as-user)))))
+  (authorized? [_ subject _ resource]
+    (= subject (:user resource))))
 
-(defn new-cached-entitlement-manager [{:keys [threshold ttl]} inner-em]
-  (CachingEntitlementManager. inner-em
-                              (-> {}
-                                  (cache/fifo-cache-factory :threshold threshold)
-                                  (cache/ttl-cache-factory :ttl (-> ttl t/seconds t/in-millis))
-                                  atom)))
-
-(defrecord SimpleEntitlementManager []
-  EntitlementManager
-  (can-run-as? [_ auth-user run-as-user]
-    (= auth-user run-as-user)))
-
-(defn new-entitlement-manager [{:keys [kind cache] :as config}]
-  (let [em (case kind 
-             :custom (utils/evaluate-config-fn config)
-             :simple (SimpleEntitlementManager.))]
-    (if cache (new-cached-entitlement-manager cache em) em)))
-
+(defn make-service-resource
+  "Creates a resource from a service description for use with an entitlement manager"
+  [service-id {:strs [run-as-user]}]
+  {:resource-type :service
+   :user run-as-user
+   :service-id service-id})

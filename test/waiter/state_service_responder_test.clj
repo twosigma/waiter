@@ -89,7 +89,7 @@
                                     :slots-used slots-used
                                     :status-tags status-tags})))
 
-  (defn- check-request-instance-fn [request-instance-chan instance-id &
+  (defn- check-request-instance-fn [request-instance-chan expected-result &
                                     {:keys [mode exclude-ids-set expect-deadlock]
                                      :or {mode :serve-request, exclude-ids-set #{}, expect-deadlock false}}]
     (swap! id-counter inc)
@@ -101,14 +101,14 @@
                                 (async/alt!! reserve-instance-response-chan ([instance] instance)
                                              (async/timeout 500) :no-matching-instance-found)
                                 (async/<!! reserve-instance-response-chan))]
-        (if (nil? instance-id)
-          (is (= :no-matching-instance-found reserved-instance))
+        (if (keyword? expected-result)
+          (is (= expected-result reserved-instance))
           (do
-            (when (not (= {:id instance-id} reserved-instance))
+            (when (not (= {:id expected-result} reserved-instance))
               (print (first *testing-contexts*) "check-request-instance-fn")
-              (print ": expected: " {:id instance-id})
+              (print ": expected: " {:id expected-result})
               (println ", actual:   " reserved-instance))
-            (is (= {:id instance-id} reserved-instance) (str "Error in requesting instance for cid-" @id-counter)))))))
+            (is (= {:id expected-result} reserved-instance) (str "Error in requesting instance for cid-" @id-counter)))))))
 
   (defn- make-work-stealing-offer [work-stealing-chan router-id instance-id]
     (let [response-chan (async/promise-chan)]
@@ -612,7 +612,7 @@
             (do
               (reset! current-time-atom (t/plus start-time (t/millis (+ 1000000 max-blacklist-time-ms))))
               ; no more unhealthy instances to kill, all healthy instances are busy
-              (check-request-instance-fn kill-instance-chan nil :mode :kill-instance :expect-deadlock true)
+              (check-request-instance-fn kill-instance-chan :no-matching-instance-found :mode :kill-instance :expect-deadlock true)
               (async/>!! unblacklist-instance-chan {:instance-id "testabcd.u1"})
               (async/>!! unblacklist-instance-chan {:instance-id "testabcd.u2"}))
             ; ensure blacklist was cleared due to expiry of period
@@ -1932,5 +1932,63 @@
                               (update-in [:instance-id->state] #(update-slot-state-fn %1 "testabcd.h3" 0 0 #{}))))
           (async/>!! response-chan-1 :not-response)
           (is (= :success (async/<!! response-chan-1))))
+
+        (async/>!! exit-chan :exit)))
+
+    (deftest test-start-service-chan-responder-no-instances-assigned-hence-none-available-for-kill
+      (let [initial-state {:instance-id->blacklist-expiry-time {}
+                           :instance-id->request-id->use-reason-map {}
+                           :instance-id->consecutive-failures {}
+                           :instance-id->state {}
+                           :request-id->work-stealer {}}
+            {:keys [exit-chan kill-instance-chan query-state-chan]}
+            (launch-service-chan-responder 16 initial-state)]
+
+        (testing "check kill when no instances assigned"
+          (check-request-instance-fn kill-instance-chan :no-matching-instance-found :mode :kill-instance)
+          (check-state-fn query-state-chan initial-state))
+
+        (async/>!! exit-chan :exit)))
+
+    (deftest test-start-service-chan-responder-no-slots-assigned-hence-none-available-for-kill
+      (let [initial-state {:instance-id->blacklist-expiry-time {}
+                           :instance-id->request-id->use-reason-map {}
+                           :instance-id->consecutive-failures {}
+                           :instance-id->state (-> {}
+                                                   (update-slot-state-fn "testabcd.h1" 0 0 #{:healthy})
+                                                   (update-slot-state-fn "testabcd.h2" 0 0 #{:healthy})
+                                                   (update-slot-state-fn "testabcd.h5" 0 0 #{:healthy})
+                                                   (update-slot-state-fn "testabcd.u3" 0 0 #{:locked}))
+                           :request-id->work-stealer {}}
+            {:keys [exit-chan kill-instance-chan query-state-chan]}
+            (launch-service-chan-responder 16 initial-state)]
+
+        (testing "check kill when no slots assigned"
+          (check-request-instance-fn kill-instance-chan :no-matching-instance-found :mode :kill-instance)
+          (check-state-fn query-state-chan initial-state))
+
+        (async/>!! exit-chan :exit)))
+
+    (deftest test-start-service-chan-responder-no-idle-instance-available-for-kill
+      (let [response-chan-1 (async/chan 4)
+            response-chan-2 (async/chan 4)
+            initial-state {:instance-id->blacklist-expiry-time {}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :serve-request}
+                                                                                    "req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
+                                                                     "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}}}
+                           :instance-id->consecutive-failures {}
+                           :instance-id->state (-> {}
+                                                   (update-slot-state-fn "testabcd.h1" 0 1 #{:healthy, :blacklisted})
+                                                   (update-slot-state-fn "testabcd.h2" 2 2 #{:healthy})
+                                                   (update-slot-state-fn "testabcd.h5" 0 0 #{:healthy})
+                                                   (update-slot-state-fn "testabcd.u3" 0 0 #{:locked}))
+                           :request-id->work-stealer {"req-4" (make-work-stealing-data "cid-4" "testabcd.h3" response-chan-1 "test-router-1")}}
+            {:keys [exit-chan kill-instance-chan query-state-chan]}
+            (launch-service-chan-responder 20 initial-state)]
+
+        (testing "check kill when no idle assigned instances"
+          (check-request-instance-fn kill-instance-chan :no-matching-instance-found :mode :kill-instance)
+          (check-state-fn query-state-chan initial-state))
 
         (async/>!! exit-chan :exit)))))

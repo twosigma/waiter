@@ -90,12 +90,12 @@
                       (assert-metrics-output app-metrics)))
                   (keys router->endpoint)))
 
-      (let [apps-json-response (make-request waiter-url (str "/apps/" service-id))
-            apps-response (json/read-str (:body apps-json-response))
+      (let [apps-response (service-settings waiter-url service-id :keywordize-keys false)
             routers->metrics (get-in apps-response ["metrics" "routers"])
             aggregate-metrics (get-in apps-response ["metrics" "aggregate"])]
         (when (get apps-response "error-messages")
           (log/info "Error messages from /apps:" (get apps-response "error-messages")))
+        (is (pos? (count routers->metrics)))
         (doseq [[router-id metrics] routers->metrics]
           (log/info "Asserting /apps output for" router-id)
           (assert-metrics-output metrics))

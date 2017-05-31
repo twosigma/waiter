@@ -35,17 +35,20 @@
             cookies (all-cookies waiter-url)
             make-request (fn [url]
                            (make-request-with-debug-info headers #(make-kitchen-request url % :cookies cookies)))
-            {:keys [status service-id router-id]} (make-request waiter-url)
-            _ (is (= 200 status))
-            router-url (router-endpoint waiter-url router-id)
-            cancellation-token (atom false)
-            background-requests (future
-                                  (while (not @cancellation-token)
-                                    (is (= 200 (:status (make-request router-url)))))
-                                  (log/debug "Done sending background requests"))
-            state (statsd-state waiter-url router-id)]
-        (reset! cancellation-token true)
-        (log/debug "State after request:" state)
-        (is (= {} state))
-        @background-requests
+            {:keys [status service-id router-id] :as response} (make-request waiter-url)]
+        (is (= 200 status))
+        (when (= 200 status)
+          (let [router-url (router-endpoint waiter-url router-id)
+                cancellation-token (atom false)
+                background-requests (future
+                                      (while (not @cancellation-token)
+                                        (is (= 200 (:status (make-request router-url)))))
+                                      (log/debug "Done sending background requests"))]
+            (try
+              (let [state (statsd-state waiter-url router-id)]
+                (log/debug "State after request:" state)
+                (is (= {} state)))
+              (finally
+                (reset! cancellation-token true)
+                @background-requests))))
         (delete-service waiter-url service-id)))))

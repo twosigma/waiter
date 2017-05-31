@@ -21,14 +21,9 @@
   PasswordProvider
   (retrieve-passwords [_] passwords))
 
-(defn create-password-provider [{:keys [kind] :as config}]
-  (condp = kind
-    :configured (let [passwords (:passwords config)]
-                  (->ConfiguredPasswordProvider passwords))
-    :custom (utils/evaluate-config-fn config)
-    (do
-      (log/fatal "Unsupported password-store kind:" kind)
-      (System/exit 1))))
+(defn configured-provider
+  [{:keys [passwords]}]
+  (->ConfiguredPasswordProvider passwords))
 
 (defn check-empty-passwords
   "Checks whether the input passwords are empty, if so invokes the callback.

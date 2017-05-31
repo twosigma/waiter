@@ -212,8 +212,7 @@
           (is (= #{"service6faulty", "service7", "service8stayalive", "service9stayalive"} @available-services-atom)))))))
 
 (deftest test-scheduler-syncer
-  (let [is-waiter-app? (fn [_] true)
-        scheduler-state-chan (async/chan 1)
+  (let [scheduler-state-chan (async/chan 1)
         scheduler-syncer-interval-secs 1
         service-id->service-description-fn (fn [id] {"health-check-url" (str "/" id)})
         started-at "2014-09-14T002446.965Z"
@@ -228,7 +227,7 @@
                      (async/go (cond
                                  (and (= "1.1" id) (= "/1" url)) true
                                  :else false)))
-        syncer-cancel (start-scheduler-syncer is-waiter-app? scheduler scheduler-state-chan
+        syncer-cancel (start-scheduler-syncer scheduler scheduler-state-chan
                                               scheduler-syncer-interval-secs service-id->service-description-fn available?
                                               {})]
     (Thread/sleep (* 1000 scheduler-syncer-interval-secs))

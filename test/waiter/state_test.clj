@@ -496,7 +496,7 @@
                          :router->ranked-instance-ids {"a" [["a1"] [] []]
                                                        "b" [[] ["a1"] []]
                                                        "c" [[] [] ["a1"]]}
-                         :concurrency-level 1}
+                         :concurrency-level 2}
                         {:name "Two instances, one router and CL=1"
                          :expected {"a" {{:id "a1"} 1, {:id "a2"} 1}}
                          :instances [{:id "a1"} {:id "a2"}]
@@ -598,11 +598,182 @@
                         )]
       (evenly-distribute-slots-test-fn test-case))))
 
+(deftest test-distribute-slots-across-routers
+  (let [distribute-slots-test-fn
+        (fn [expected instances router->ranked-instance-ids concurrency-level]
+          (let [actual (distribute-slots-across-routers instances router->ranked-instance-ids concurrency-level)]
+            (when (not= expected actual)
+              (log/info (first *testing-contexts*))
+              (log/info "Expected:")
+              (log/info (with-out-str (clojure.pprint/pprint expected)))
+              (log/info "Actual:")
+              (log/info (with-out-str (clojure.pprint/pprint actual))))
+            actual))]
+    (testing "Nil inputs"
+      (let [expected {}
+            instances nil
+            router->ranked-instance-ids nil
+            concurrency-level nil
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Nil inputs and integral concurrency level"
+      (let [expected {}
+            instances nil
+            router->ranked-instance-ids nil
+            concurrency-level 2
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Empty inputs and integral concurrency level"
+      (let [expected {}
+            instances []
+            router->ranked-instance-ids {}
+            concurrency-level 2
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Single instance, router and CL=1"
+      (let [expected {"a" {{:id "a1"} 1}}
+            instances [{:id "a1"}]
+            router->ranked-instance-ids {"a" [["a1"]]}
+            concurrency-level 1
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Single instance, one router and CL=2"
+      (let [expected {"a" {{:id "a1"} 2}}
+            instances [{:id "a1"}]
+            router->ranked-instance-ids {"a" [["a1"]]}
+            concurrency-level 2
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Single instance, two routers and CL=1"
+      (let [expected {"a" {{:id "a1"} 1}, "b" {}}
+            instances [{:id "a1"}]
+            router->ranked-instance-ids {"a" [["a1"] []], "b" [[] ["a1"]]}
+            concurrency-level 1
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Single instance, three routers and CL=1"
+      (let [expected {"a" {{:id "a1"} 1}, "b" {}, "c" {}}
+            instances [{:id "a1"}]
+            router->ranked-instance-ids {"a" [["a1"] [] []], "b" [[] ["a1"] []], "c" [[] [] ["a1"]]}
+            concurrency-level 1
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Single instance, three routers and CL=2"
+      (let [expected {"a" {{:id "a1"} 2}, "b" {}, "c" {}}
+            instances [{:id "a1"}]
+            router->ranked-instance-ids {"a" [["a1"] [] []], "b" [[] ["a1"] []], "c" [[] [] ["a1"]]}
+            concurrency-level 2
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Two instances, one router and CL=1"
+      (let [expected {"a" {{:id "a1"} 1, {:id "a2"} 1}}
+            instances [{:id "a1"} {:id "a2"}]
+            router->ranked-instance-ids {"a" [["a1" "a2"]]}
+            concurrency-level 1
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Two instances, one router and CL=2"
+      (let [expected {"a" {{:id "a1"} 2, {:id "a2"} 2}}
+            instances [{:id "a1"} {:id "a2"}]
+            router->ranked-instance-ids {"a" [["a1" "a2"]]}
+            concurrency-level 2
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Two instances, two routers and CL=1"
+      (let [expected {"a" {{:id "a1"} 1, {:id "a2"} 1}
+                      "b" {}}
+            instances [{:id "a1"} {:id "a2"}]
+            router->ranked-instance-ids {"a" [["a1" "a2"] []]
+                                         "b" [[] ["a1" "a2"]]}
+            concurrency-level 1
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Two partitioned instances, two routers and CL=1"
+      (let [expected {"a" {{:id "a1"} 1}, "b" {{:id "b1"} 1}}
+            instances [{:id "a1"} {:id "b1"}]
+            router->ranked-instance-ids {"a" [["a1"] ["b1"]], "b" [["b1"] ["a1"]]}
+            concurrency-level 1
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Two instances, two routers and CL=2"
+      (let [expected {"a" {{:id "a1"} 2, {:id "a2"} 2}, "b" {}}
+            instances [{:id "a1"} {:id "a2"}]
+            router->ranked-instance-ids {"a" [["a1" "a2"] []], "b" [[] ["a1" "a2"]]}
+            concurrency-level 2
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Two instances, three routers and CL=1"
+      (let [expected {"a" {{:id "a1"} 1, {:id "a2"} 1}, "b" {}, "c" {}}
+            instances [{:id "a1"} {:id "a2"}]
+            router->ranked-instance-ids {"a" [["a1" "a2"] [] []], "b" [[] ["a1" "a2"] []], "c" [[] [] ["a1" "a2"]]}
+            concurrency-level 1
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Two partitioned instances, three routers and CL=1"
+      (let [expected {"a" {{:id "a1"} 1}, "b" {{:id "b1"} 1}, "c" {}}
+            instances [{:id "a1"} {:id "b1"}]
+            router->ranked-instance-ids {"a" [["a1"] ["b1"] []], "b" [["b1"] ["a1"] []], "c" [[] ["b1"] ["a1"]]}
+            concurrency-level 1
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Two instances, three routers and CL=2"
+      (let [expected {"a" {{:id "a1"} 2, {:id "a2"} 2}, "b" {}, "c" {}}
+            instances [{:id "a1"} {:id "a2"}]
+            router->ranked-instance-ids {"a" [["a1" "a2"] [] []], "b" [[] ["a1" "a2"] []], "c" [[] [] ["a1" "a2"]]}
+            concurrency-level 2
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Two instances, three routers and CL=3"
+      (let [expected {"a" {{:id "a1"} 3, {:id "a2"} 3}, "b" {}, "c" {}}
+            instances [{:id "a1"} {:id "a2"}]
+            router->ranked-instance-ids {"a" [["a1" "a2"] [] []], "b" [[] ["a1" "a2"] []], "c" [[] [] ["a1" "a2"]]}
+            concurrency-level 3
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Ten instances, three routers and CL=1"
+      (let [expected {"a" {{:id "a1"} 1, {:id "a2"} 1, {:id "a3"} 1, {:id "a4"} 1, {:id "a5"} 1}
+                      "b" {{:id "b1"} 1, {:id "b2"} 1, {:id "b3"} 1}
+                      "c" {{:id "c1"} 1, {:id "c2"} 1}}
+            instances [{:id "a1"} {:id "a2"} {:id "a3"} {:id "a4"} {:id "a5"}
+                       {:id "b1"} {:id "b2"} {:id "b3"}
+                       {:id "c1"} {:id "c2"}]
+            router->ranked-instance-ids {"a" [["a1" "a2" "a3" "a4" "a5"] ["b3" "c2"] ["b1" "b2" "c1"]]
+                                         "b" [["b1" "b2" "b3"] ["a1" "a3" "a4" "a5" "c1"] ["a2" "c2"]]
+                                         "c" [["c1" "c2"] ["a2" "b1" "b2"] ["a1" "a3" "a4" "a5" "b3"]]}
+            concurrency-level 1
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Five instances, three routers and CL=2"
+      (let [expected {"a" {{:id "a1"} 2, {:id "a2"} 2, {:id "a3"} 2},
+                      "b" {{:id "b1"} 2},
+                      "c" {{:id "c1"} 2}}
+            instances [{:id "a1"} {:id "a2"} {:id "a3"} {:id "b1"} {:id "c1"}]
+            router->ranked-instance-ids {"a" [["a1" "a2" "a3"] ["b1"] ["c1"]]
+                                         "b" [["b1"] ["a1" "a3" "c1"] ["a2"]]
+                                         "c" [["c1"] ["a2"] ["a1" "a3" "b1"]]}
+            concurrency-level 2
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))
+    (testing "Ten instances, three routers and CL=2"
+      (let [expected {"a" {{:id "a1"} 2, {:id "a2"} 2, {:id "a3"} 2, {:id "a4"} 2, {:id "a5"} 2}
+                      "b" {{:id "b1"} 2, {:id "b2"} 2, {:id "b3"} 2}
+                      "c" {{:id "c1"} 2, {:id "c2"} 2}}
+            instances [{:id "a1"} {:id "a2"} {:id "a3"} {:id "a4"} {:id "a5"}
+                       {:id "b1"} {:id "b2"} {:id "b3"}
+                       {:id "c1"} {:id "c2"}]
+            router->ranked-instance-ids {"a" [["a1" "a2" "a3" "a4" "a5"] ["b3" "c2"] ["b1" "b2" "c1"]]
+                                         "b" [["b1" "b2" "b3"] ["a1" "a3" "a4" "a5" "c1"] ["a2" "c2"]]
+                                         "c" [["c1" "c2"] ["a2" "b1" "b2"] ["a1" "a3" "a4" "a5" "b3"]]}
+            concurrency-level 2
+            actual (distribute-slots-test-fn expected instances router->ranked-instance-ids concurrency-level)]
+        (is (= expected actual))))))
+
 (deftest test-evenly-distribute-slots-using-consistent-hash-distribution
   (let [all-instances (map (fn [id] {:id id}) ["i00" "i01" "i02" "i03" "i04" "i05" "i06" "i07" "i08" "i09"
                                                "i10" "i11" "i12" "i13" "i14" "i15" "i16" "i17" "i18" "i19"])
         all-routers ["p1" "p2" "p3" "p4" "p5" "p6"]
-        hash-fn (fn [p i] (mod (* (mod (hash p) 100) (mod (hash i) 100)) 1000))]
+        hash-fn (fn [p i] (mod (* (mod (hash p) 100) (mod (hash i) 100)) 1000))
+        distribution-scheme "balanced"]
     (doseq [concurrency-level (range 1 6)]
       (doseq [num-routers (range (count all-routers))
               num-instances (range (count all-instances))]
@@ -610,7 +781,7 @@
               routers (take num-routers all-routers)
               instances (take num-instances all-instances)]
           (testing (str "Test " name)
-            (let [actual (evenly-distribute-slots-using-consistent-hash-distribution routers instances hash-fn concurrency-level)]
+            (let [actual (distribute-slots-using-consistent-hash-distribution routers instances hash-fn concurrency-level distribution-scheme)]
               (is (= (set routers) (set (keys actual))))
               (when (> (count instances) 0)
                 ; ensure every router got assigned at least one instance
@@ -639,7 +810,7 @@
                     min-slots-allocated (reduce min (if (empty? instance-slot-distribution) 0 1000) instance-slot-distribution)]
                 (is (<= 0 (- max-slots-allocated min-slots-allocated) 1)))
               ; verify there was minimal change from previous configuration (i.e. benefited from our hash distribution)
-              (let [previous (evenly-distribute-slots-using-consistent-hash-distribution routers (rest (reverse instances)) hash-fn concurrency-level)
+              (let [previous (distribute-slots-using-consistent-hash-distribution routers (rest (reverse instances)) hash-fn concurrency-level distribution-scheme)
                     [left-diff & _] (data/diff previous actual)
                     instance-diff-set (let [extract-instance-id-fn (fn [diff-map]
                                                                      (reduce concat []
@@ -651,6 +822,22 @@
                 (if (<= num-instances num-routers)
                   (is (<= total-diff-count num-instances))
                   (is (<= total-diff-count (Math/ceil (/ num-instances 2)))))))))))))
+
+(deftest test-distribute-slots-using-consistent-hash-distribution-partitioning
+  (let [distribution-scheme-atom (atom nil)
+        instances [{:id "a1"} {:id "a2"} {:id "a3"} {:id "a4"} {:id "a5"}]
+        router-ids ["p1" "p2" "p3" "p4" "p5" "p6"]
+        hash-fn (fn [p i] (mod (* (mod (hash p) 100) (mod (hash i) 100)) 1000))
+        concurrency-level 1]
+    (with-redefs [evenly-distribute-slots-across-routers (fn [_ _ _] (reset! distribution-scheme-atom "balanced"))
+                  distribute-slots-across-routers (fn [_ _ _] (reset! distribution-scheme-atom "simple"))]
+      (testing "balanced-distribution-scheme"
+        (distribute-slots-using-consistent-hash-distribution router-ids instances hash-fn concurrency-level "balanced")
+        (is (= "balanced" @distribution-scheme-atom)))
+
+      (testing "simple-distribution-scheme"
+        (distribute-slots-using-consistent-hash-distribution router-ids instances hash-fn concurrency-level "simple")
+        (is (= "simple" @distribution-scheme-atom))))))
 
 (deftest test-router-state-maintainer-scheduler-state
   (testing "router-state-maintainer-removes-expired-instances"
@@ -689,6 +876,7 @@
         (is (empty? (get service-id->healthy-instances service-id)))
         (is (empty? (get service-id->expired-instances service-id))))
       (async/>!! exit-chan :exit)))
+
   (testing "router-state-maintainer-scheduler-state-incremental"
     (let [scheduler-state-chan (async/chan 1)
           router-chan (async/chan 1)
@@ -711,7 +899,7 @@
                                                         {"concurrency-level" concurrency-level
                                                          "instance-expiry-mins" service-num
                                                          "grace-period-secs" (* 60 service-num)}))]
-      (with-redefs [evenly-distribute-slots-using-consistent-hash-distribution (fn [routers instances _ _] (slot-partition-fn routers instances))]
+      (with-redefs [distribute-slots-using-consistent-hash-distribution (fn [routers instances _ _ _] (slot-partition-fn routers instances))]
 
         (let [{:keys [router-state-push-mult]} (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn)]
           (async/tap router-state-push-mult router-state-push-chan))
@@ -819,9 +1007,9 @@
                            (when (not (nil? expected#))
                              (when (not= expected# actual#)
                                (let [sanitize-data# (fn [data#] (cond->> data# (map? data#) (into (sorted-map))))]
-                                 (println (first *testing-vars*) ":" (name item-key#))
-                                 (println "Expected: " (sanitize-data# expected#))
-                                 (println "Actual:   " (sanitize-data# actual#))))
+                                 (log/info (first *testing-vars*) ":" (name item-key#))
+                                 (log/info "Expected: " (sanitize-data# expected#))
+                                 (log/info "Actual:   " (sanitize-data# actual#))))
                              (is (= expected# actual#) (str "Checking: " (name item-key#))))))]
          (check-fn# :service-id->channel-map)
          (check-fn# :maintainer-chan-available)

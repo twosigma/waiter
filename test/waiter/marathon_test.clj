@@ -18,7 +18,7 @@
             [waiter.marathon :refer :all]
             [waiter.scheduler :as scheduler]
             [waiter.utils :as utils])
-  (:import (clojure.lang ExceptionInfo)))
+  (:import waiter.marathon.MarathonScheduler))
 
 (deftest test-response-data->service-instances
   (let [test-cases (list {
@@ -193,138 +193,146 @@
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
 
 (deftest test-response-data->service->service-instances
-  (let [test-cases (list
-                     {
-                      :name "response-data->service->service-instances valid response"
-                      :input {
-                              :apps [
-                                     {
-                                      :id "test-app-1234",
-                                      :instances 2,
-                                      :healthChecks [{:path "/ping", :portIndex 0, :protocol "HTTP", :timeoutSeconds 10}],
-                                      :tasks [
-                                              {
-                                               :appId "/test-app-1234",
-                                               :healthCheckResults [{:alive true, :consecutiveFailures 0,
-                                                                     :firstSuccess "2014-09-13T002028.101Z",
-                                                                     :lastFailure nil, :lastSuccess "2014-09-13T002507.506Z",
-                                                                     :taskId "test-app-1234.A"}],
-                                               :host "10.141.141.11",
-                                               :id "test-app-1234.A",
-                                               :ports [31045],
-                                               :stagedAt "2014-09-12T232828.594Z",
-                                               :startedAt "2014-09-13T002446.959Z",
-                                               :version "2014-09-12T232821.737Z"},
-                                              {
-                                               :appId "test-app-1234",
-                                               :healthCheckResults [{:alive true, :consecutiveFailures 0,
-                                                                     :firstSuccess "2014-09-13T002028.101Z",
-                                                                     :lastFailure nil, :lastSuccess "2014-09-13T002507.508Z",
-                                                                     :taskId "test-app-1234.B"}],
-                                               :host "10.141.141.12",
-                                               :id "test-app-1234.B",
-                                               :ports [31234],
-                                               :stagedAt "2014-09-12T232822.587Z",
-                                               :startedAt "2014-09-13T002446.965Z",
-                                               :version "2014-09-12T232821.737Z"}],
-                                      :tasksRunning 2
-                                      :tasksHealthy 2
-                                      :tasksUnhealthy 0
-                                      :tasksStaged 0},
-                                     {
-                                      :id "test-app-6789",
-                                      :instances 3,
-                                      :lastTaskFailure {
-                                                        :appId "test-app-6789",
-                                                        :host "10.141.141.10",
-                                                        :message "Abnormal executor termination",
-                                                        :state "TASK_FAILED",
-                                                        :taskId "test-app-6789.D",
-                                                        :timestamp "2014-09-12T232341.711Z",
-                                                        :version "2014-09-12T232821.737Z"},
-                                      :healthChecks [{:path "/health", :portIndex 0, :protocol "HTTP", :timeoutSeconds 10}],
-                                      :tasks [
-                                              {
-                                               :appId "test-app-6789",
-                                               :healthCheckResults [{:alive true, :consecutiveFailures 0,
-                                                                     :firstSuccess "2014-09-13T002028.101Z",
-                                                                     :lastFailure nil, :lastSuccess "2014-09-13T002507.506Z",
-                                                                     :taskId "test-app-6789.A"}],
-                                               :host "10.141.141.11",
-                                               :id "/test-app-6789.A",
-                                               :ports [31045],
-                                               :stagedAt "2014-09-12T232828.594Z",
-                                               :startedAt "2014-09-13T002446.959Z",
-                                               :version "2014-09-12T232821.737Z"},
-                                              {
-                                               :appId "/test-app-6789",
-                                               :host "10.141.141.12",
-                                               :id "/test-app-6789.B",
-                                               :ports [36789],
-                                               :stagedAt "2014-09-12T232822.587Z",
-                                               :startedAt "2014-09-13T002456.965Z",
-                                               :version "2014-09-12T232821.737Z"},
-                                              {
-                                               :appId "/test-app-6789",
-                                               :healthCheckResults [{:alive false, :consecutiveFailures 10,
-                                                                     :firstSuccess "2014-09-13T002028.101Z",
-                                                                     :lastFailure "2014-09-13T002507.508Z", :lastSuccess nil,
-                                                                     :taskId "test-app-6789.C"}],
-                                               :host "10.141.141.13",
-                                               :id "test-app-6789.C",
-                                               :ports [46789],
-                                               :stagedAt "2014-09-12T232822.587Z",
-                                               :startedAt "2014-09-14T002446.965Z",
-                                               :version "2014-09-12T232821.737Z"}],}]}
-
-                      :expected (assoc {}
-
-                                  (scheduler/make-Service {:id "test-app-1234", :instances 2, :task-count 2,
-                                                           :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
-                                  {:active-instances
-                                   (list
-                                     (scheduler/make-ServiceInstance
-                                       {:id "test-app-1234.A", :service-id "test-app-1234", :healthy? true,
-                                        :host "10.141.141.11", :port 31045,
-                                        :started-at "2014-09-13T002446.959Z"}),
-                                     (scheduler/make-ServiceInstance
-                                       {:id "test-app-1234.B", :service-id "test-app-1234", :healthy? true,
-                                        :host "10.141.141.12", :port 31234,
-                                        :started-at "2014-09-13T002446.965Z"}))
-                                   :failed-instances []
-                                   :killed-instances []}
-
-                                  (scheduler/make-Service {:id "test-app-6789", :instances 3, :task-count 3})
-                                  {:active-instances
-                                   (list
-                                     (scheduler/make-ServiceInstance
-                                       {:id "test-app-6789.A", :service-id "test-app-6789", :healthy? true,
-                                        :host "10.141.141.11", :port 31045,
-                                        :started-at "2014-09-13T002446.959Z"}),
-                                     (scheduler/make-ServiceInstance
-                                       {:id "test-app-6789.B", :service-id "test-app-6789", :healthy? nil,
-                                        :host "10.141.141.12", :port 36789,
-                                        :started-at "2014-09-13T002456.965Z"}),
-                                     (scheduler/make-ServiceInstance
-                                       {:id "test-app-6789.C", :service-id "test-app-6789", :healthy? false,
-                                        :host "10.141.141.13", :port 46789,
-                                        :started-at "2014-09-14T002446.965Z"}))
-                                   :failed-instances
-                                   (list
-                                     (scheduler/make-ServiceInstance
-                                       {:id "test-app-6789.D", :service-id "test-app-6789", :healthy? false,
-                                        :host "10.141.141.10", :port 0,
-                                        :started-at "2014-09-12T232341.711Z", :message "Abnormal executor termination"}))
-                                   :killed-instances []
-                                   })})]
-    (doseq [{:keys [name input expected]} test-cases]
-      (testing (str "Test " name)
-        (let [service-id->failed-instances-transient-store (atom {})
-              actual (response-data->service->service-instances input (fn [] nil) nil
-                                                                service-id->failed-instances-transient-store)]
-          (is (= expected actual))
-          (scheduler/preserve-only-killed-instances-for-services! [])
-          (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
+  (let [input [{:id "test-app-1234"
+                :instances 2
+                :healthChecks [{:path "/ping", :portIndex 0, :protocol "HTTP", :timeoutSeconds 10}]
+                :tasks [{:appId "/test-app-1234"
+                         :healthCheckResults [{:alive true
+                                               :consecutiveFailures 0
+                                               :firstSuccess "2014-09-13T002028.101Z"
+                                               :lastFailure nil
+                                               :lastSuccess "2014-09-13T002507.506Z"
+                                               :taskId "test-app-1234.A"}]
+                         :host "10.141.141.11"
+                         :id "test-app-1234.A"
+                         :ports [31045]
+                         :stagedAt "2014-09-12T232828.594Z"
+                         :startedAt "2014-09-13T002446.959Z"
+                         :version "2014-09-12T232821.737Z"}
+                        {:appId "test-app-1234"
+                         :healthCheckResults [{:alive true
+                                               :consecutiveFailures 0
+                                               :firstSuccess "2014-09-13T002028.101Z"
+                                               :lastFailure nil
+                                               :lastSuccess "2014-09-13T002507.508Z"
+                                               :taskId "test-app-1234.B"}]
+                         :host "10.141.141.12"
+                         :id "test-app-1234.B"
+                         :ports [31234]
+                         :stagedAt "2014-09-12T232822.587Z"
+                         :startedAt "2014-09-13T002446.965Z"
+                         :version "2014-09-12T232821.737Z"}]
+                :tasksRunning 2
+                :tasksHealthy 2
+                :tasksUnhealthy 0
+                :tasksStaged 0}
+               {:id "test-app-6789"
+                :instances 3
+                :lastTaskFailure {:appId "test-app-6789"
+                                  :host "10.141.141.10"
+                                  :message "Abnormal executor termination"
+                                  :state "TASK_FAILED"
+                                  :taskId "test-app-6789.D"
+                                  :timestamp "2014-09-12T232341.711Z"
+                                  :version "2014-09-12T232821.737Z"}
+                :healthChecks [{:path "/health", :portIndex 0, :protocol "HTTP", :timeoutSeconds 10}]
+                :tasks [{:appId "test-app-6789"
+                         :healthCheckResults [{:alive true
+                                               :consecutiveFailures 0
+                                               :firstSuccess "2014-09-13T002028.101Z"
+                                               :lastFailure nil
+                                               :lastSuccess "2014-09-13T002507.506Z"
+                                               :taskId "test-app-6789.A"}]
+                         :host "10.141.141.11"
+                         :id "/test-app-6789.A"
+                         :ports [31045]
+                         :stagedAt "2014-09-12T232828.594Z"
+                         :startedAt "2014-09-13T002446.959Z"
+                         :version "2014-09-12T232821.737Z"}
+                        {:appId "/test-app-6789"
+                         :host "10.141.141.12"
+                         :id "/test-app-6789.B"
+                         :ports [36789]
+                         :stagedAt "2014-09-12T232822.587Z"
+                         :startedAt "2014-09-13T002456.965Z"
+                         :version "2014-09-12T232821.737Z"}
+                        {:appId "/test-app-6789"
+                         :healthCheckResults [{:alive false
+                                               :consecutiveFailures 10
+                                               :firstSuccess "2014-09-13T002028.101Z"
+                                               :lastFailure "2014-09-13T002507.508Z"
+                                               :lastSuccess nil
+                                               :taskId "test-app-6789.C"}]
+                         :host "10.141.141.13"
+                         :id "test-app-6789.C"
+                         :ports [46789]
+                         :stagedAt "2014-09-12T232822.587Z"
+                         :startedAt "2014-09-14T002446.965Z"
+                         :version "2014-09-12T232821.737Z"}]}]
+        expected (assoc {}
+                   (scheduler/make-Service {:id "test-app-1234"
+                                            :instances 2
+                                            :task-count 2
+                                            :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
+                   {:active-instances
+                    (list
+                      (scheduler/make-ServiceInstance
+                        {:id "test-app-1234.A"
+                         :service-id "test-app-1234"
+                         :healthy? true
+                         :host "10.141.141.11"
+                         :port 31045
+                         :started-at "2014-09-13T002446.959Z"})
+                      (scheduler/make-ServiceInstance
+                        {:id "test-app-1234.B"
+                         :service-id "test-app-1234"
+                         :healthy? true
+                         :host "10.141.141.12"
+                         :port 31234
+                         :started-at "2014-09-13T002446.965Z"}))
+                    :failed-instances []
+                    :killed-instances []}
+                   (scheduler/make-Service {:id "test-app-6789", :instances 3, :task-count 3})
+                   {:active-instances
+                    (list
+                      (scheduler/make-ServiceInstance
+                        {:id "test-app-6789.A"
+                         :service-id "test-app-6789"
+                         :healthy? true
+                         :host "10.141.141.11"
+                         :port 31045
+                         :started-at "2014-09-13T002446.959Z"})
+                      (scheduler/make-ServiceInstance
+                        {:id "test-app-6789.B"
+                         :service-id "test-app-6789"
+                         :healthy? nil
+                         :host "10.141.141.12"
+                         :port 36789
+                         :started-at "2014-09-13T002456.965Z"})
+                      (scheduler/make-ServiceInstance
+                        {:id "test-app-6789.C"
+                         :service-id "test-app-6789"
+                         :healthy? false
+                         :host "10.141.141.13"
+                         :port 46789
+                         :started-at "2014-09-14T002446.965Z"}))
+                    :failed-instances
+                    (list
+                      (scheduler/make-ServiceInstance
+                        {:id "test-app-6789.D"
+                         :service-id "test-app-6789"
+                         :healthy? false
+                         :host "10.141.141.10"
+                         :port 0
+                         :started-at "2014-09-12T232341.711Z"
+                         :message "Abnormal executor termination"}))
+                    :killed-instances []})
+        service-id->failed-instances-transient-store (atom {})
+        actual (response-data->service->service-instances input (fn [] nil) nil
+                                                          service-id->failed-instances-transient-store)]
+    (is (= expected actual))
+    (scheduler/preserve-only-killed-instances-for-services! [])
+    (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])))
 
 (deftest test-service-id->failed-instances-transient-store
   (let [faled-instance-response-fn (fn [service-id instance-id]
@@ -501,57 +509,63 @@
   (let [current-time (t/now)
         service-id "service-1"
         instance-id "service-1.A"
-        make-marathon-scheduler #(->MarathonScheduler (Object.) 5051 (fn [] nil) "/slave/directory" "/home/path/" (atom {}) %1 %2)]
+        make-marathon-scheduler #(->MarathonScheduler 5051 (fn [] nil) "/slave/directory" "/home/path/"
+                                                      (atom {}) %1 %2 (constantly true))
+        successful-kill-result {:instance-id instance-id :killed? true :service-id service-id}]
     (with-redefs [t/now (fn [] current-time)]
 
       (testing "first-instance-kill"
         (let [service-id->kill-info-store (atom {})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id _ params]
+          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
-                                                        (is (= {:force false, :scale true} params)))]
-            (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})
+                                                        (is (= {:force false, :scale true} params))
+                                                        successful-kill-result)]
+            (is (= successful-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
             (is (= {service-id {:last-kill-request current-time, :successful-kill current-time}} @service-id->kill-info-store)))))
 
       (testing "instance-kill-without-force-no-intervening-kill-calls"
         (let [service-id->kill-info-store (atom {service-id {:last-kill-request (t/minus current-time (t/millis 1500))
                                                              :successful-kill (t/minus current-time (t/millis 1500))}})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id _ params]
+          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
-                                                        (is (= {:force false, :scale true} params)))]
-            (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})
+                                                        (is (= {:force false, :scale true} params))
+                                                        successful-kill-result)]
+            (is (= successful-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
             (is (= {service-id {:last-kill-request current-time, :successful-kill current-time}} @service-id->kill-info-store)))))
 
       (testing "instance-kill-without-force-with-intervening-kill-calls"
         (let [service-id->kill-info-store (atom {service-id {:last-kill-request (t/minus current-time (t/millis 500))
                                                              :successful-kill (t/minus current-time (t/millis 500))}})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id _ params]
+          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
-                                                        (is (= {:force false, :scale true} params)))]
-            (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})
+                                                        (is (= {:force false, :scale true} params))
+                                                        successful-kill-result)]
+            (is (= successful-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
             (is (= {service-id {:last-kill-request current-time, :successful-kill current-time}} @service-id->kill-info-store)))))
 
       (testing "instance-kill-with-force"
         (let [service-id->kill-info-store (atom {service-id {:last-kill-request (t/minus current-time (t/millis 500))
                                                              :successful-kill (t/minus current-time (t/millis 1500))}})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id _ params]
+          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
-                                                        (is (= {:force true, :scale true} params)))]
-            (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})
+                                                        (is (= {:force true, :scale true} params))
+                                                        successful-kill-result)]
+            (is (= successful-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
             (is (= {service-id {:last-kill-request current-time, :successful-kill current-time}} @service-id->kill-info-store)))))
 
       (testing "instance-kill-exception"
         (let [service-id->kill-info-store (atom {service-id {:last-kill-request (t/minus current-time (t/millis 500))
                                                              :successful-kill (t/minus current-time (t/millis 1500))}})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id _ params]
+          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
                                                         (is (= {:force true, :scale true} params))
@@ -562,35 +576,34 @@
 
 (deftest test-service-id->state
   (let [service-id "service-id"
-        marathon-scheduler (->MarathonScheduler (Object.) 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        marathon-scheduler (->MarathonScheduler 5051 (fn [] nil) "/slave/directory" "/home/path/"
                                                 (atom {service-id [:failed-instances]})
                                                 (atom {service-id :kill-call-info})
-                                                100)
+                                                100 (constantly true))
         state (scheduler/service-id->state marathon-scheduler service-id)]
     (is (= {:failed-instances [:failed-instances], :killed-instances [], :kill-info :kill-call-info} state))))
 
 (deftest test-killed-instances-transient-store
   (let [current-time (t/now)
         current-time-str (utils/date-to-str current-time)
-        marathon-conn (Object.)
-        marathon-scheduler (->MarathonScheduler marathon-conn 5051 (fn [] nil) "/slave/directory" "/home/path/" (atom {}) (atom {}) 60000)
+        marathon-scheduler (->MarathonScheduler 5051 (fn [] nil) "/slave/directory" "/home/path/"
+                                                (atom {}) (atom {}) 60000 (constantly true))
         make-instance (fn [service-id instance-id]
                         {:id instance-id
                          :service-id service-id})]
-    (with-redefs [apps/kill-task (fn [marathon-conn-param service-id instance-id scale-key scale-value force-key force-value]
+    (with-redefs [apps/kill-task (fn [service-id instance-id scale-key scale-value force-key force-value]
                                    (is (= [scale-key scale-value force-key force-value]
                                           ["scale" "true" "force" "false"]))
-                                   (is (= marathon-conn marathon-conn-param))
-                                   {:service-id service-id, :instance-id instance-id, :killed true})
+                                   {:service-id service-id, :instance-id instance-id, :killed? true, :deploymentId "12982340972"})
                   t/now (fn [] current-time)]
       (testing "tracking-instance-killed"
 
         (scheduler/preserve-only-killed-instances-for-services! [])
 
-        (is (:killed (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.A"))))
-        (is (:killed (scheduler/kill-instance marathon-scheduler (make-instance "service-2" "service-2.A"))))
-        (is (:killed (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.C"))))
-        (is (:killed (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.B"))))
+        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.A"))))
+        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-2" "service-2.A"))))
+        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.C"))))
+        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.B"))))
 
         (is (= [{:id "service-1.A", :service-id "service-1", :killed-at current-time-str}
                 {:id "service-1.B", :service-id "service-1", :killed-at current-time-str}
@@ -606,8 +619,8 @@
                (scheduler/service-id->killed-instances "service-2")))
         (is (= [] (scheduler/service-id->killed-instances "service-3")))
 
-        (is (:killed (scheduler/kill-instance marathon-scheduler (make-instance "service-3" "service-3.A"))))
-        (is (:killed (scheduler/kill-instance marathon-scheduler (make-instance "service-3" "service-3.B"))))
+        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-3" "service-3.A"))))
+        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-3" "service-3.B"))))
         (is (= [] (scheduler/service-id->killed-instances "service-1")))
         (is (= [{:id "service-2.A" :service-id "service-2", :killed-at current-time-str}]
                (scheduler/service-id->killed-instances "service-2")))
@@ -655,77 +668,121 @@
 
 (deftest test-marathon-scheduler
   (testing "Creating a MarathonScheduler"
+
     (testing "should throw on invalid configuration"
-      (is (thrown-with-msg? ExceptionInfo #"Input to marathon-scheduler does not match schema"
-                            (marathon-scheduler {:framework-id-ttl 900000
-                                                 :home-path-prefix "/home/"
-                                                 :http-options {:conn-timeout 10000
-                                                                :socket-timeout 10000}
-                                                 :mesos-slave-port 5051
-                                                 :slave-directory "/foo"
-                                                 :url nil})))
-      (is (thrown-with-msg? ExceptionInfo #"Input to marathon-scheduler does not match schema"
-                            (marathon-scheduler {:framework-id-ttl 900000
-                                                 :home-path-prefix "/home/"
-                                                 :http-options {:conn-timeout 10000
-                                                                :socket-timeout 10000}
-                                                 :mesos-slave-port 5051
-                                                 :slave-directory nil
-                                                 :url "url"})))
-      (is (thrown-with-msg? ExceptionInfo #"Input to marathon-scheduler does not match schema"
-                            (marathon-scheduler {:framework-id-ttl 900000
-                                                 :home-path-prefix "/home/"
-                                                 :http-options {:conn-timeout 10000
-                                                                :socket-timeout 10000}
-                                                 :mesos-slave-port 0
-                                                 :slave-directory "/foo"
-                                                 :url "url"})))
-      (is (thrown-with-msg? ExceptionInfo #"Input to marathon-scheduler does not match schema"
-                            (marathon-scheduler {:framework-id-ttl 900000
-                                                 :home-path-prefix "/home/"
-                                                 :http-options {}
-                                                 :mesos-slave-port 5051
-                                                 :slave-directory "/foo"
-                                                 :url "url"})))
-      (is (thrown-with-msg? ExceptionInfo #"Input to marathon-scheduler does not match schema"
-                            (marathon-scheduler {:framework-id-ttl 900000
-                                                 :home-path-prefix nil
-                                                 :http-options {:conn-timeout 10000
-                                                                :socket-timeout 10000}
-                                                 :mesos-slave-port 5051
-                                                 :slave-directory "/foo"
-                                                 :url "url"})))
-      (is (thrown-with-msg? ExceptionInfo #"Input to marathon-scheduler does not match schema"
-                            (marathon-scheduler {:framework-id-ttl 0
-                                                 :home-path-prefix "/home/"
-                                                 :http-options {:conn-timeout 10000
-                                                                :socket-timeout 10000}
-                                                 :mesos-slave-port 5051
-                                                 :slave-directory "/foo"
-                                                 :url "url"}))))))
+      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
+                                                  :home-path-prefix "/home/"
+                                                  :http-options {:conn-timeout 10000
+                                                                 :socket-timeout 10000}
+                                                  :mesos-slave-port 5051
+                                                  :slave-directory "/foo"
+                                                  :url nil})))
+      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
+                                                  :home-path-prefix "/home/"
+                                                  :http-options {:conn-timeout 10000
+                                                                 :socket-timeout 10000}
+                                                  :mesos-slave-port 5051
+                                                  :slave-directory ""
+                                                  :url "url"})))
+      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
+                                                  :home-path-prefix "/home/"
+                                                  :http-options {:conn-timeout 10000
+                                                                 :socket-timeout 10000}
+                                                  :mesos-slave-port 0
+                                                  :slave-directory "/foo"
+                                                  :url "url"})))
+      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
+                                                  :home-path-prefix "/home/"
+                                                  :http-options {}
+                                                  :mesos-slave-port 5051
+                                                  :slave-directory "/foo"
+                                                  :url "url"})))
+      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
+                                                  :home-path-prefix nil
+                                                  :http-options {:conn-timeout 10000
+                                                                 :socket-timeout 10000}
+                                                  :mesos-slave-port 5051
+                                                  :slave-directory "/foo"
+                                                  :url "url"})))
+      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 0
+                                                  :home-path-prefix "/home/"
+                                                  :http-options {:conn-timeout 10000
+                                                                 :socket-timeout 10000}
+                                                  :mesos-slave-port 5051
+                                                  :slave-directory "/foo"
+                                                  :url "url"}))))
+
+    (testing "should work with valid configuration"
+      (is (instance? MarathonScheduler
+                     (marathon-scheduler {:home-path-prefix "/home/"
+                                          :http-options {:conn-timeout 10000
+                                                         :socket-timeout 10000}
+                                          :force-kill-after-ms 60000
+                                          :framework-id-ttl 900000
+                                          :url "url"}))))))
 
 (deftest test-process-kill-instance-request
   (let [service-id "test-service-id"
-        instance-id "instance-id"
-        marathon-conn (Object.)]
+        instance-id "instance-id"]
     (testing "successful-delete"
-      (with-redefs [apps/kill-task (fn [in-conn service-id instance-id scale-key scale-value force-key force-value]
-                                     (is (= marathon-conn in-conn))
+      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
+                                     (is (= service-id in-service-id))
+                                     (is (= instance-id in-instance-id))
                                      (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
-                                     {:service-id service-id, :instance-id instance-id})]
-        (is (process-kill-instance-request service-id instance-id marathon-conn {}))))
+                                     {:deploymentId "12982340972"})]
+        (is (= {:instance-id instance-id :killed? true :message "Successfully killed instance" :service-id service-id, :status 200}
+               (process-kill-instance-request service-id instance-id {})))))
+
+    (testing "unsuccessful-delete"
+      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
+                                     (is (= service-id in-service-id))
+                                     (is (= instance-id in-instance-id))
+                                     (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
+                                     {:failed true})]
+        (is (= {:instance-id instance-id :killed? false :message "Unable to kill instance" :service-id service-id, :status 500}
+               (process-kill-instance-request service-id instance-id {})))))
 
     (testing "deployment-conflict"
-      (with-redefs [apps/kill-task (fn [in-conn _ _ scale-key scale-value force-key force-value]
-                                     (is (= marathon-conn in-conn))
+      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
+                                     (is (= service-id in-service-id))
+                                     (is (= instance-id in-instance-id))
                                      (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
                                      (ss/throw+ {:status 409}))]
-        (is (nil? (process-kill-instance-request service-id instance-id marathon-conn {})))))
+        (is (= {:instance-id instance-id :killed? false :message "Locked by one or more deployments" :service-id service-id, :status 409}
+               (process-kill-instance-request service-id instance-id {})))))
+
+    (testing "marathon-404"
+      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
+                                     (is (= service-id in-service-id))
+                                     (is (= instance-id in-instance-id))
+                                     (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
+                                     (ss/throw+ {:body "Not Found",  :status 404}))]
+        (is (= {:instance-id instance-id :killed? false :message "Not Found" :service-id service-id, :status 404}
+               (process-kill-instance-request service-id instance-id {})))))
 
     (testing "exception-while-killing"
-      (with-redefs [apps/kill-task (fn [in-conn _ _ scale-key scale-value force-key force-value]
-                                     (is (= marathon-conn in-conn))
+      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
+                                     (is (= service-id in-service-id))
+                                     (is (= instance-id in-instance-id))
                                      (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
                                      (throw (Exception. "exception from test")))]
-        (is (thrown-with-msg? Exception #"exception from test"
-                              (process-kill-instance-request service-id instance-id marathon-conn {})))))))
+        (is (= {:instance-id instance-id :killed? false :message "exception from test" :service-id service-id, :status 500}
+               (process-kill-instance-request service-id instance-id {})))))))
+
+(deftest test-delete-app
+  (let [scheduler (->MarathonScheduler nil nil nil nil (atom {}) (atom {}) nil nil)]
+
+    (with-redefs [apps/delete-app (constantly {:deploymentId 12345})]
+      (is (= {:result :deleted
+              :message "Marathon deleted with deploymentId 12345"}
+             (scheduler/delete-app scheduler "foo"))))
+
+    (with-redefs [apps/delete-app (constantly {})]
+      (is (= {:result :error
+              :message "Marathon did not provide deploymentId for delete request"}
+             (scheduler/delete-app scheduler "foo"))))
+
+    (with-redefs [apps/delete-app (fn [_] (ss/throw+ {:status 404}))]
+      (is (= {:result :no-such-service-exists
+              :message "Marathon reports service does not exist"}
+             (scheduler/delete-app scheduler "foo"))))))

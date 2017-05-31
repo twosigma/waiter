@@ -7,29 +7,33 @@
 
 ; ---------- Custom Extensions ----------
 ;
-; Several of the configuration settings below allow for extending Waiter by providing :custom
+; Several of the configuration settings below allow for extending Waiter by providing custom
 ; implementations of a protocol. For example, if you want to have a custom way of providing
 ; entitlements in Waiter, you might specify:
 ;
-;     :entitlement-config {:kind :custom
-;                          :custom-impl "waiter-extensions.security/custom-entitlement-manager"
-;                          :foo "bar"
-;                          :baz "qux"}
+;      {
+;       ; ...
+;       :entitlement-config {:kind :custom
+;                            :custom {:factory-fn waiter-extensions.security/my-entitlement-manager
+;                                     :foo "bar"
+;                                     :baz "qux"}}
+;       ; ...
+;       }
 ;
 ; Which would invoke your custom implementation of the EntitlementManager protocol:
 ;
 ;     (ns waiter-extensions.security
 ;       (:require [waiter.security :as sec]))
 ;
-;     (defrecord CustomEntitlementManager [foo baz]
+;     (defrecord MyEntitlementManager [foo baz]
 ;       sec/EntitlementManager
 ;
-;       (can-run-as? [_ auth-user run-as-user]
+;       (authorized? [this subject action resource]
 ;         ; your custom entitlements code goes here
 ;         ))
 ;
-;     (defn custom-entitlement-manager [{:keys [foo baz]}]
-;       (CustomEntitlementManager. foo baz))
+;     (defn my-entitlement-manager [{:keys [foo baz]}]
+;       (MyEntitlementManager. foo baz))
 ;
 
 {
@@ -77,7 +81,10 @@
              :gc-relative-path "gc-state"
 
              ;; The path used for leader election:
-             :leader-latch-relative-path "leader-latch"}
+             :leader-latch-relative-path "leader-latch"
+            
+             ;; The timeout for acquiring a mutex 
+             :mutex-timeout-ms 1000}
 
  ;; Waiter starts a loop to query for the list of currently running routers:
  :router-syncer {
@@ -107,17 +114,23 @@
  ; ---------- Token Storage ----------
 
  :kv-config {
-             ;; Valid values are:
-             ;; - :zk, which uses Apache ZooKeeper
-             ;; - :local, which simply uses an in-memory store (not for production use,
-             ;;           and obviously does not work with multiple Waiter routers)
+             ;; :kind :zk uses Apache ZooKeeper (https://zookeeper.apache.org/):
              :kind :zk
+             :zk {
+                  ;; Custom implementations should specify a :factory-fn
+                  ;; that returns an instance of waiter.kv.KeyValueStore:
+                  :factory-fn waiter.kv/new-zk-kv-store
+
+                  ;; How long (milliseconds) to await a response from ZK synchronize call:
+                  :sync-timeout-ms 2000}
+
+             ;; Alternatively, :kind :local simply uses an in-memory store
+             ;; (not for production use, and obviously does not work with multiple Waiter routers):
+             ;:kind :local
+             :local {:factory-fn waiter.kv/new-local-kv-store}
 
              ;; The path used for token storage:
              :relative-path "tokens"
-
-             ;; How long (milliseconds) to await a response from ZK synchronize call:
-             :sync-timeout-ms 2000
 
              ;; Whether or not to store the data encrypted:
              :encrypt true
@@ -131,70 +144,100 @@
 
  ; ---------- Security ----------
 
+ ; Waiter supports the run-as-requester feature to launch a service as the requesting user.
+ ; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
+ ; The explicit consent is required to defend against CSRF attacks.
+ ; consent-expiry-days is used to configure how long to remember this consent and honor the presence of the cookie.
+ :consent-expiry-days 90
+
  ;; CORS (https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS) governs whether a web application
  ;; running in the browser may make AJAX requests to a different web application. Configuring CORS will be required for
  ;; clients who wish to interact with Waiter via Javascript in a web browser. CORS is not required to make requests to
  ;; your own application running on Waiter (because they will have the same origin) or to communicate with Waiter
  ;; outside the browser.
  :cors-config {
-               ;; Valid values are:
-               ;; - :patterns, which takes a simple list of regular expressions (see below)
-               ;; - :custom, which takes a :custom-impl factory function that returns an
-               ;;            instance of waiter.cors.CorsValidator
+               ;; :kind :patterns takes a simple list of regular expressions (see below):
                :kind :patterns
+               :patterns {
+                          ;; Custom implementations should specify a :factory-fn
+                          ;; that returns an instance of waiter.cors.CorsValidator:
+                          :factory-fn waiter.cors/pattern-based-validator
 
-               ;; List of regular expressions representing origins to allow:
-               :allowed-origins [#regex "^http://[^\\.]+\\.example\\.org(:80)?$"
-                                 #regex "^https://anotherapp.example.org:12345$"]
+                          ;; List of regular expressions representing origins to allow:
+                          :allowed-origins [#regex "^http://[^\\.]+\\.example\\.org(:80)?$"
+                                            #regex "^https://anotherapp.example.org:12345$"]}
 
                ;; The value to use for the Access-Control-Max-Age header:
                :max-age 3600}
 
  :entitlement-config {
-                      ;; Valid values are:
-                      ;; - :simple, which requires that the requesting user be the same as the run-as-user
-                      ;; - :custom, which takes a :custom-impl factory function that returns an
-                      ;;            instance of waiter.security.EntitlementManager (see example at
-                      ;;            the top of this file)
-                      :kind :simple}
+                      ;; :kind :simple requires that the requesting user be the same as the run-as-user:
+                      :kind :simple
+                      :simple {
+                               ;; Custom implementations should specify a :factory-fn
+                               ;; that returns an instance of waiter.security.EntitlementManager:
+                               :factory-fn waiter.security/->SimpleEntitlementManager}}
 
  :password-store-config {
-                         ;; Valid values are:
-                         ;; - :configured, which takes a simple list of passwords (see below)
-                         ;; - :custom, which takes a :custom-impl factory function that returns
-                         ;;            an instance of waiter.password-store.PasswordProvider
+                         ;; :kind :configured takes a simple list of passwords:
                          :kind :configured
+                         :configured {
+                                      ;; Custom implementations should specify a :factory-fn that
+                                      ;; returns an instance of waiter.password-store.PasswordProvider:
+                                      :factory-fn waiter.password-store/configured-provider
 
-                         ;; List of passwords:
-                         :passwords ["open-sesame"]}
+                                      ;; List of passwords:
+                                      :passwords ["open-sesame"]}}
 
  ; ---------- Scheduling ----------
 
  :scheduler-config {
-                    ;; Valid values are:
-                    ;; - :marathon, which uses Marathon for scheduling instances
-                    ;; - :custom, which takes a :custom-impl factory function that returns
-                    ;;            an instance of waiter.scheduler.ServiceScheduler
+                    ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     :kind :marathon
+                    :marathon {
+                               ;; Custom implementations should specify a :factory-fn
+                               ;; that returns an instance of waiter.scheduler.ServiceScheduler:
+                               :factory-fn waiter.marathon/marathon-scheduler
 
-                    ;; The location of home directories on your Mesos agents;
-                    ;; the HOME environment variable is set by joining this and the run-as-user:
-                    :home-path-prefix "/home/"
+                               ;; The location of home directories on your Mesos agents;
+                               ;; the HOME environment variable is set by joining this and the run-as-user:
+                               :home-path-prefix "/home/"
 
-                    ;; The HTTP options that will be used when accessing Marathon:
-                    :http-options {:conn-timeout 10000
-                                   :socket-timeout 10000}
+                               ;; The HTTP options that will be used when accessing Marathon:
+                               :http-options {:conn-timeout 10000
+                                              :socket-timeout 10000}
 
-                    ;; Marathon will fail deployments (e.g. scale-down) if there is an existing deployment in flight;
-                    ;; this represents the amount of time (milliseconds) Waiter will tolerate failed scale-down
-                    ;; deployments before using the force flag when scaling down:
-                    :force-kill-after-ms 60000
+                               ;; Marathon will fail deployments (e.g. scale-down) if there is an existing deployment in
+                               ;; flight; this represents the amount of time (milliseconds) Waiter will tolerate failed
+                               ;; scale-down deployments before using the force flag when scaling down:
+                               :force-kill-after-ms 60000
 
-                    ;; How long (milliseconds) to cache the framework id:
-                    :framework-id-ttl 900000
+                               ;; How long (milliseconds) to cache the framework id:
+                               :framework-id-ttl 900000
 
-                    ;; The URL for your Marathon HTTP API:
-                    :url "http://marathon.example.com:8080"}
+                               ;; The URL for your Marathon HTTP API:
+                               :url "http://marathon.example.com:8080"}
+
+                    ;; :kind :shell simply schedules instances on your local machine (for testing purposes only):
+                    ;:kind :shell
+                    :shell {
+                            :factory-fn waiter.shell-scheduler/shell-scheduler
+
+                            ;; The interval (milliseconds) at which instance health will be checked:
+                            :health-check-interval-ms 10000
+
+                            ;; The HTTP connect timeout and idle timeout (milliseconds) for instance health checks:
+                            :health-check-timeout-ms 200
+
+                            ;; The amount of time (milliseconds) after an instance is
+                            ;; killed before its port will become available for use:
+                            :port-grace-period-ms 120000
+
+                            ;; Defines the port range from which we allocate ports:
+                            :port-range [10000 10999]
+
+                            ;; The base work directory to use; both absolute and relative paths are supported:
+                            :work-directory "scheduler"}}
 
  ;; Waiter performs garbage collection of services by tracking two things:
  ;;
@@ -235,11 +278,13 @@
  ; ---------- Service Descriptions ----------
 
  :service-description-builder-config {
-                                      ;; Valid values are:
-                                      ;; - :default, which invokes the DefaultServiceDescriptionBuilder
-                                      ;; - :custom, which takes a :custom-impl factory function that returns an
-                                      ;;            instance of waiter.service-description.ServiceDescriptionBuilder
-                                      :kind :default}
+                                      ;; :kind :default invokes the DefaultServiceDescriptionBuilder
+                                      :kind :default
+                                      :default {
+                                                ;; Custom implementations should specify a
+                                                ;; :factory-fn that returns an instance of
+                                                ;; waiter.service-description.ServiceDescriptionBuilder:
+                                                :factory-fn waiter.service-description/->DefaultServiceDescriptionBuilder}}
 
  ;; The following service description parameters are required and
  ;; therefore don't have default values:
@@ -254,6 +299,7 @@
  ;; description, these defaults will be used:
  :service-description-defaults {"blacklist-on-503" true
                                 "concurrency-level" 1
+                                "distribution-scheme" "balanced"
                                 "env" {"FOO" "bar"
                                        "BAZ" "qux"}
                                 "expired-instance-restart-rate" 0.1
@@ -266,6 +312,7 @@
                                 "max-queue-length" 1000000
                                 "metadata" {}
                                 "min-instances" 1
+                                "permitted-user" "*"
                                 "restart-backoff-factor" 2
                                 "scale-down-factor" 0.001
                                 "scale-factor" 1
@@ -400,6 +447,4 @@
 
  ;; Waiter launches a loop that maintains the stacktraces for individual threads;
  ;; this value dictates how often (milliseconds) the stacktraces are refreshed:
- :thread-stack-state-refresh-interval-ms 600000
-
- }
+ :thread-stack-state-refresh-interval-ms 600000}

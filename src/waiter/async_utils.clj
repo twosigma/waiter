@@ -10,6 +10,7 @@
 ;;
 (ns waiter.async-utils
   (:require [clojure.core.async :as async]
+            [clojure.data.priority-map :as priority-map]
             [clojure.tools.logging :as log]
             [metrics.core]
             [metrics.histograms :as histograms]
@@ -49,22 +50,22 @@
     :priority true))
 
 (defmacro timed-offer!
- "Tries to put `v` onto `chan`.
-  It will wait `millis` to put, if it can it will, and return true
-  otherwise it will return false.
-  This function will return after at most `millis` milliseconds"
+  "Tries to put `v` onto `chan`.
+   It will wait `millis` to put, if it can it will, and return true
+   otherwise it will return false.
+   This function will return after at most `millis` milliseconds"
   [chan v millis]
   `(let [timeout# (async/timeout ~millis)]
-    (async/alt!
-      [[~chan ~v]] ([r#] r#) ; Will return false if chan is closed
-      timeout# false
-      :priority true)))
+     (async/alt!
+       [[~chan ~v]] ([r#] r#) ; Will return false if chan is closed
+       timeout# false
+       :priority true)))
 
 (defn timed-offer!!
- "Tries to put `v` onto `chan`.
-  It will wait `millis` to put, if it can it will, and return true
-  otherwise it will return false.
-  This function will return after at most `millis` milliseconds"
+  "Tries to put `v` onto `chan`.
+   It will wait `millis` to put, if it can it will, and return true
+   otherwise it will return false.
+   This function will return after at most `millis` milliseconds"
   [chan v millis]
   (let [timeout (async/timeout millis)]
     (async/alt!!
@@ -102,22 +103,33 @@
    `buffer-diff-counter` will store difference in length of the size of the buffer for processing messages.
    `ex-handler` will be called if an exception occurs while calling `af`
    It will also be called if there is a fatal error in processing"
-  [pipeline-id buffer-size-histogram in max-size id-fn af ex-handler]
+  [pipeline-id buffer-size-histogram in max-size id-fn priority-fn af ex-handler]
   (let [time-out-chan (async/chan 5)
         out (async/chan)]
     (async/go
       (try
-        (loop [buf []]
-          (histograms/update! buffer-size-histogram (count buf))
-          (let [chans [time-out-chan]
-                chans (if (< (count buf) max-size)
+        ;; We maintain two data structures, a regular requests buffer for requests that did not specify priorities
+        ;; and another prioritized-requests priority queue for requests that did specify priority.
+        ;; This helps us improve performance for the common use-case (no priorities).
+        ;; Effectively, this means requests that do not specify a priority are treated as highest priority and
+        ;; does not allow requests (from newer clients) to jump the queue by using the priority feature.
+        (loop [regular-requests []
+               prioritized-requests (priority-map/priority-map-by #(compare %2 %1))]
+          (let [num-pending-requests (+ (count regular-requests) (count prioritized-requests))
+                _ (histograms/update! buffer-size-histogram num-pending-requests)
+                chans [time-out-chan]
+                chans (if (< num-pending-requests max-size)
                         (conj chans in)
                         chans)
-                chans (if (seq buf)
-                        (conj chans [out (:data (first buf))])
+                head-request (if (seq regular-requests)
+                               (first regular-requests)
+                               (when (seq prioritized-requests)
+                                 (first (peek prioritized-requests))))
+                chans (if head-request
+                        (conj chans [out (:data head-request)])
                         chans)
                 [v ch] (async/alts! chans :priority true)
-                buf'
+                [regular-requests' prioritized-requests' :as request-queues']
                 (condp = ch
                   in (when v
                        (let [c (async/chan)]
@@ -128,25 +140,37 @@
                                (catch Exception e
                                  (log/warn e pipeline-id "af function threw error while processing" v)
                                  (ex-handler e)))
-                           (do
-                             (log/debug pipeline-id "Enqueuing message" v)
-                             (conj buf {:data v :chan c :id (id-fn v)}))
-                           buf)))
+                           (let [priority (priority-fn v)
+                                 item {:data v :chan c :id (id-fn v)}]
+                             (log/debug pipeline-id "Enqueuing message" v "with priority" priority)
+                             (if priority
+                               [regular-requests
+                                (assoc prioritized-requests item priority)]
+                               [(conj regular-requests item)
+                                prioritized-requests]))
+                           [regular-requests prioritized-requests])))
 
                   time-out-chan (let [{:keys [id resp-chan]} v]
-                                  (if (some #(= id (:id %)) buf)
-                                    (let [filtered-buf (filterv #(not= id (:id %)) buf)]
-                                      (log/debug pipeline-id "removing buffer entries having id =" id)
+                                  (if (some #(= id (:id %)) regular-requests)
+                                    (let [filtered-requests (filterv #(not= id (:id %)) regular-requests)]
+                                      (log/debug pipeline-id "removing regular request entries having id =" id)
                                       (async/close! resp-chan)
-                                      filtered-buf)
-                                    buf))
+                                      [filtered-requests prioritized-requests])
+                                    (if-let [filtered-items (->> prioritized-requests keys (filter #(= id (:id %))) seq)]
+                                      (let [filtered-requests (apply dissoc prioritized-requests filtered-items)]
+                                        (log/debug pipeline-id "removing prioritized request entries having id =" id)
+                                        (async/close! resp-chan)
+                                        [regular-requests filtered-requests])
+                                      [regular-requests prioritized-requests])))
 
-                  out (let [removed (first buf)]
+                  out (let [removed head-request]
                         (log/debug pipeline-id "Closing channel for" removed)
                         (async/close! (:chan removed))
-                        (subvec buf 1)))]
-            (if buf'
-              (recur buf')
+                        (if (seq regular-requests)
+                          [(subvec regular-requests 1) prioritized-requests]
+                          [regular-requests (pop prioritized-requests)])))]
+            (if request-queues'
+              (recur regular-requests' prioritized-requests')
               (log/info pipeline-id "Terminating pipeline."))))
         (catch Exception e
           (ex-handler e)

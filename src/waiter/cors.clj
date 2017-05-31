@@ -10,7 +10,8 @@
 ;;
 (ns waiter.cors
   (:require [clojure.core.async :as async]
-            [waiter.utils :as utils]))
+            [waiter.utils :as utils])
+  (:import java.util.regex.Pattern))
 
 (defprotocol CorsValidator
   "A simple protocol for validating CORS requests.
@@ -58,13 +59,6 @@
               (bless %)
               (async/go (bless (async/<! %)))))))))
 
-
-(defn same-origin [{:keys [headers scheme]}]
-  (let [{:strs [host origin x-forwarded-proto]} headers
-        scheme (or x-forwarded-proto scheme)]
-    (when (and host origin scheme)
-      (= origin (str (name scheme) "://" host)))))
-
 (defrecord PatternBasedCorsValidator [pattern-matches?]
   CorsValidator
   (preflight-allowed? [_ request] (pattern-matches? request))
@@ -74,18 +68,12 @@
   "Creates two validator functions, one for preflight requests, and one for regular requests.
   This validator uses the same function for both."
   [{:keys [allowed-origins]}]
-  {:pre [allowed-origins]}
+  {:pre [(vector? allowed-origins)
+         (every? #(instance? Pattern %) allowed-origins)]}
   (let [pattern-matches?
         (fn [{:keys [headers] :as request}]
           (let [{:strs [origin]} headers]
             (and origin
-                 (or (same-origin request)
+                 (or (utils/same-origin request)
                      (some #(re-matches % origin) allowed-origins)))))]
     (->PatternBasedCorsValidator pattern-matches?)))
-
-(defn create-cors-validator
-  [cors-config]
-  (let [kind (:kind cors-config)]
-    (case kind
-      :patterns (pattern-based-validator cors-config)
-      :custom (utils/evaluate-config-fn cors-config))))

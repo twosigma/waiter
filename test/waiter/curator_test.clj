@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.curator-test
-  (:require [clojure.set :as set]
+  (:require [clojure.core.async :as async]
+            [clojure.set :as set]
             [clojure.test :refer :all]
             [waiter.curator :refer :all])
   (:import (org.apache.curator.framework CuratorFrameworkFactory)
@@ -90,6 +91,72 @@
           (is (= {:service-id service-id}
                  (->> (read-path curator (str services-base-path "/new/" service-id) :serializer serializer) (:data)))
               (str "Data not equal for " service-id))))
+      (finally
+        (.close curator)
+        (.stop zk-server)))))
+
+(deftest test-children
+  (let [zk (start-in-process-zookeeper)
+        ^TestingServer zk-server (:zk-server zk)
+        curator (CuratorFrameworkFactory/newClient (:zk-connection-string zk) (RetryNTimes. 10 100))]
+    (try
+      (.start curator)
+      (testing "children"
+        (write-path curator "/parent1/child1" nil :create-parent-zknodes? true)
+        (write-path curator "/parent1/child2" nil)
+        (write-path curator "/parent1/child3" nil)
+        (let [c (children curator "/parent1")]
+          (is (= #{"child1" "child2" "child3"} (set c)))))
+
+      (is (not (children curator "/non-existent-path" :ignore-does-not-exist true)))
+
+      (finally
+        (.close curator)
+        (.stop zk-server)))))
+
+(deftest test-synchronize
+  (let [zk (start-in-process-zookeeper)
+        ^TestingServer zk-server (:zk-server zk)
+        curator (CuratorFrameworkFactory/newClient (:zk-connection-string zk) (RetryNTimes. 10 100))]
+    (try
+      (.start curator)
+      (testing "synchronize"
+        (let [counter (atom 0)
+              calls-per-thread 10
+              num-threads 10
+              threads (map
+                        (fn [_]
+                          (async/thread
+                            (dotimes [_ calls-per-thread]
+                              (synchronize curator "/lock" 100000
+                                (fn []
+                                  (reset! counter (inc @counter)))))))
+                        (range num-threads))]
+          (doseq [thread threads]
+            (async/<!! thread))
+          (is (= (* num-threads calls-per-thread) @counter))))
+      (finally
+        (.close curator)
+        (.stop zk-server)))))
+
+(deftest test-synchronize-fail-to-acquire
+  (let [zk (start-in-process-zookeeper)
+        ^TestingServer zk-server (:zk-server zk)
+        curator (CuratorFrameworkFactory/newClient (:zk-connection-string zk) (RetryNTimes. 10 100))]
+    (try
+      (.start curator)
+      (testing "synchronize-fail-to-acquire-lock"
+        (is (thrown-with-msg?
+              clojure.lang.ExceptionInfo 
+              #"^Could not acquire lock.$"
+              (let [chan (async/chan)
+                    locking-thread (async/thread 
+                                     (synchronize curator "/lock-fail" 100 (fn [] 
+                                                                             (async/>!! chan :go)
+                                                                             (Thread/sleep 1000))))]
+                ; wait for lock to be acquired
+                (async/<!! chan)
+                (synchronize curator "/lock-fail" 100 nil)))))
       (finally
         (.close curator)
         (.stop zk-server)))))

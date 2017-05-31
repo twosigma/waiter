@@ -78,16 +78,17 @@
 (defn start-waiter [config-file]
   (try
     (cid/replace-pattern-layout-in-log4j-appenders)
-    (log/info "Starting Waiter...")
+    (log/info "starting waiter...")
     (let [async-threads (System/getProperty "clojure.core.async.pool-size")
           settings (assoc (settings/load-settings config-file (retrieve-git-version))
                      :async-threads async-threads
                      :started-at (utils/date-to-str (t/now)))]
-      (log/info "core.async threadpool configured to use " async-threads " threads.")
+      (log/info "core.async threadpool configured to use" async-threads "threads.")
+      (log/info "loaded settings:\n" (with-out-str (clojure.pprint/pprint settings)))
       (let [app-map (wire-app settings)]
         ((graph/eager-compile app-map) {})))
     (catch Throwable e
-      (log/fatal e "Encountered exception starting Waiter")
+      (log/fatal e "encountered exception starting waiter")
       (utils/exit 1 (str "Exiting: " (.getMessage e))))))
 
 (defn validate-config-schema
@@ -111,6 +112,10 @@
 
 (defn -main
   [config & args]
+  (Thread/setDefaultUncaughtExceptionHandler
+    (reify Thread$UncaughtExceptionHandler
+      (uncaughtException [_ thread throwable]
+        (log/error throwable (str (.getName thread) " threw exception: " (.getMessage throwable))))))
   (let [{:keys [validate-config]} (parse-options args)]
     (if validate-config
       (validate-config-schema config)

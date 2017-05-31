@@ -259,12 +259,12 @@
         async-request-terminate-fn (fn [in-request-id]
                                      (reset! terminate-call-atom "local")
                                      (is (= request-id in-request-id)))
-        make-inter-router-requests-fn (fn [endpoint method-key method-val fn-key acceptable-router?]
+        make-inter-router-requests-fn (fn [endpoint fn-key acceptable-router? method-key method-val]
                                         (reset! terminate-call-atom "remote")
                                         (is (= (str "waiter-async/complete/" request-id "/" service-id) endpoint))
+                                        (is (= :acceptable-router? fn-key))
                                         (is (= :method method-key))
                                         (is (= :get method-val))
-                                        (is (= :acceptable-router? fn-key))
                                         (is (acceptable-router? remote-router-id)))]
 
     (testing "local-trigger-terminate"

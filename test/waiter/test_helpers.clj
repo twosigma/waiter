@@ -10,13 +10,17 @@
 ;;
 (ns waiter.test-helpers
   (:require [clj-time.core :as t]
+            [clojure.core.async :as async ]
             [clojure.data :as data]
             [clojure.java.io :as io]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.tools.namespace.find :as find]
             [waiter.client-tools :as ct]
-            [waiter.correlation-id :as cid]))
+            [waiter.correlation-id :as cid])
+  (:import java.io.ByteArrayOutputStream
+           (javax.servlet ServletOutputStream
+                          ServletResponse)))
 
 (def ^:const ANSI-RESET "\033[0m")
 (def ^:const ANSI-BLUE "\033[34m")
@@ -41,13 +45,16 @@
   (defmethod clojure.test/report :begin-test-var [m]
     (let [test-name (full-test-name m)]
       @replaced-layout
-      (log/info (magenta "START:") test-name)
+      (with-test-out
+        (println \tab (magenta "START: ") test-name))
       (swap! running-tests #(assoc % test-name (str (t/now))))
       (log-running-tests)))
 
   (defmethod clojure.test/report :end-test-var [m]
     (let [test-name (full-test-name m)]
-      (log/info (blue "FINISH:") test-name)
+      (with-test-out
+        (println \tab (blue "FINISH:") test-name)
+        (println \tab "COUNTS:" (assoc @*report-counters* :name test-name)))
       (swap! running-tests #(dissoc % test-name))
       (log-running-tests))))
 
@@ -75,6 +82,39 @@
                      timeout 150
                      unit-multiplier 1000}}]
   (ct/wait-for predicate :interval interval :timeout timeout :unit-multiplier unit-multiplier))
+
+
+(defn json-response->str
+  "Accepts a function that takes a ServletResponse and returns the body generated"
+  [body]
+  (let [baos (ByteArrayOutputStream.)
+        sos (proxy [ServletOutputStream] []
+              (write
+                ([b] (.write baos b))
+                ([b o l] (.write baos b o l))))
+        response (proxy [ServletResponse] []
+                   (getOutputStream [] sos))]
+    (body response)
+    (.toString baos)))
+
+(defn- process-streaming-body [{:keys [body headers] :as resp}]
+  (if (and (= "application/json" (get headers "Content-Type"))
+           (fn? body))
+    (assoc resp :body (json-response->str body))
+    resp))
+
+(defn wrap-handler-json-response
+  "Wraps a handler which returns a streaming json response and converts it to a string"
+  [handler]
+  (fn [& args]
+    (process-streaming-body (apply handler args))))
+
+(defn wrap-async-handler-json-response
+  "Wraps an async handler which returns a streaming json response and converts it to a string"
+  [handler]
+  (fn [& args]
+    (async/go
+      (process-streaming-body (async/<! (apply handler args))))))
 
 (defn diff-message
   "Returns a string with any differences between a and b"

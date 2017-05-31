@@ -160,7 +160,7 @@
     (counters/inc! slots-available-counter (- (state->slots-available new-state) (state->slots-available old-state)))
     new-state))
 
-(defn- complete-work-stealing-offer
+(defn- complete-work-stealing-offer!
   "Completes a work-stealing offer by sending `response-status` in the response channel."
   [service-id {:keys [cid instance response-chan router-id] :as work-stealing-offer}
    response-status work-stealing-received-in-flight-counter]
@@ -178,7 +178,7 @@
       (log/info "cleaning up work-stealing offers before exiting")
       ; cleanup state by rejecting any outstanding work-stealing offers, return nil since :exit was sent
       (doseq [work-stealing-offer (vec work-stealing-queue)]
-        (complete-work-stealing-offer service-id work-stealing-offer :rejected work-stealing-received-in-flight-counter)))
+        (complete-work-stealing-offer! service-id work-stealing-offer :rejected work-stealing-received-in-flight-counter)))
     current-state))
 
 (defn update-slots-metrics
@@ -259,14 +259,181 @@
           :instance-id->state instance-id->state'
           :sorted-instance-ids sorted-instance-ids)))))
 
+(defn handle-work-stealing-offer
+  "Handles a work-stealing offer.  Response may be nil if there's no immediate response."
+  [{:keys [work-stealing-queue] :as current-state} service-id slots-in-use-counter slots-available-counter 
+   work-stealing-received-in-flight-counter requests-outstanding-counter {:keys [cid instance response-chan router-id] :as data}]
+  (cid/cdebug cid "received work-stealing instance" (:id instance) "from" router-id)
+  (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "offers"))
+  (if (pos?
+        (utils/compute-help-required
+          (counters/value slots-in-use-counter) (counters/value slots-available-counter)
+          (counters/value work-stealing-received-in-flight-counter) (counters/value requests-outstanding-counter)))
+    (do
+      (cid/cdebug cid "accepting work-stealing instance" (:id instance) "from" router-id)
+      (counters/inc! work-stealing-received-in-flight-counter)
+      {:current-state' (assoc current-state :work-stealing-queue (conj work-stealing-queue data))})
+    (do
+      (cid/cdebug cid "promptly rejecting work-stealing instance" (:id instance) "from" router-id)
+      (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "rejects"))
+      {:current-state' current-state
+       :response-chan response-chan
+       :response :promptly-rejected})))
+
+(defn handle-reserve-instance-request
+  "Handles a reserve request."
+  [{:keys [id->instance instance-id->state request-id->work-stealer sorted-instance-ids work-stealing-queue] :as current-state} 
+   service-id update-slot-state-fn [{:keys [cid request-id] :as reason-map} resp-chan exclude-ids-set _]]
+  (if-let [{:keys [instance router-id] :as work-stealer-data} (first work-stealing-queue)]
+    ; using instance offered via work-stealing
+    (let [instance-id (:id instance)]
+      (cid/cdebug (str cid "|" (:cid work-stealer-data)) "offering work-stealing instance" instance-id)
+      (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "accepts"))
+      {:current-state' (-> current-state
+                           (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
+                           (assoc :request-id->work-stealer (assoc request-id->work-stealer request-id work-stealer-data)
+                                  :work-stealing-queue (pop work-stealing-queue)))
+       :response-chan resp-chan
+       :response instance})
+    ; lookup available slots from router's pre-allocated instances
+    (let [{instance-id :id :as instance-to-offer}
+          (find-available-instance sorted-instance-ids id->instance instance-id->state #(not (contains? exclude-ids-set %)))]
+      (if instance-to-offer
+        {:current-state' (-> current-state
+                             (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
+                             (update-slot-state-fn instance-id #(inc %2)))
+         :response-chan resp-chan
+         :response instance-to-offer}
+        {:current-state' current-state
+         :response-chan resp-chan
+         :response :no-matching-instance-found}))))
+
+(defn handle-kill-instance-request
+  "Handles a kill request."
+  [{:keys [id->instance instance-id->state] :as current-state} service-id update-status-tag-fn 
+   [{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _]]
+  (let [{instance-id :id :as instance-to-offer}
+        (find-killable-instance id->instance instance-id->state #(not (contains? exclude-ids-set %)))]
+    (if instance-to-offer
+      {:current-state' (-> current-state 
+                           (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
+                           ; mark instance as locked if it is going to be killed.
+                           (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :locked)))
+       :response-chan resp-chan
+       :response instance-to-offer}
+      {:current-state' current-state
+       :response-chan resp-chan
+       :response :no-matching-instance-found})))
+
+(defn handle-release-instance-request
+  "Handles a release instance request."
+  [{:keys [instance-id->consecutive-failures instance-id->request-id->use-reason-map request-id->work-stealer] :as current-state} service-id 
+   update-slot-state-fn update-status-tag-fn update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
+   work-stealing-received-in-flight-counter max-blacklist-time-ms blacklist-backoff-base-time-ms max-backoff-exponent
+   [{instance-id :id :as instance-to-release} {:keys [cid request-id status] :as reservation-result}]]
+  (let [{:keys [reason] :as reason-map} (get-in instance-id->request-id->use-reason-map [instance-id request-id])
+        work-stealing-data (get request-id->work-stealer request-id)]
+    (if (nil? reason-map)
+      current-state ;; no processing required if the request-id cannot be found
+      (let [current-state'
+            (if (not= status :success-async)
+              (cond-> (-> current-state
+                          (update-in [:instance-id->request-id->use-reason-map] #(utils/dissoc-in % [instance-id request-id]))
+                          (update-in [:instance-id->state instance-id] sanitize-instance-state))
+                ; instance offered from work-stealing, do not change slot state
+                (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
+                ; mark instance as no longer locked.
+                (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
+                ; clear work-stealing entry
+                work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id))
+              (-> current-state
+                  (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id :variant] :async-request)
+                  (update-in [:instance-id->state instance-id] sanitize-instance-state)))]
+        (when-not (= status :success-async)
+          (when work-stealing-data
+            (complete-work-stealing-offer! service-id work-stealing-data status work-stealing-received-in-flight-counter)))
+        (if (#{:instance-error :killed :instance-busy} status)
+          ; mark as blacklisted and track the instance
+          (let [consecutive-failures (inc (get instance-id->consecutive-failures instance-id 0))
+                expiry-time-ms (min max-blacklist-time-ms
+                                    (if (= :killed status)
+                                      max-blacklist-time-ms
+                                      (* blacklist-backoff-base-time-ms
+                                         (Math/pow 2 (min max-backoff-exponent (dec consecutive-failures))))))]
+            (cid/cinfo cid instance-id "with status" status "has" consecutive-failures "consecutive failures")
+            (-> current-state'
+                ; mark instance as blacklisted and killed based on status.
+                (update-in [:instance-id->state instance-id] update-status-tag-fn #(cond-> (conj % :blacklisted) (= :killed status) (conj :killed)))
+                ; track the blacklist expiry time
+                (update-state-by-blacklisting-instance-fn cid instance-id expiry-time-ms)
+                ; track the consecutive failure count
+                (update-in [:instance-id->consecutive-failures] #(assoc % instance-id consecutive-failures))))
+          ; else: clear out any failure records if instance has successfully processed a request
+          (-> current-state'
+              (update-instance-id->blacklist-expiry-time-fn #(if (= :not-killed status) % (dissoc % instance-id)))
+              (update-in [:instance-id->consecutive-failures] #(if (= :not-killed status) % (dissoc % instance-id)))
+              (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))))))
+
+(defn handle-blacklist-request
+  "Handle a request to blacklist an instance."
+  [{:keys [instance-id->request-id->use-reason-map instance-id->state] :as current-state} service-id 
+   update-status-tag-fn update-state-by-blacklisting-instance-fn [{:keys [instance-id blacklist-period-ms cid]} response-chan]]
+  (cid/with-correlation-id cid
+    (log/info "attempt to blacklist" instance-id "which has"
+              (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
+              (get instance-id->state instance-id))
+    ;; cannot blacklist if the instance is currently servicing a request
+    (let [response-code (if (and (contains? instance-id->request-id->use-reason-map instance-id)
+                                 (some #(= :serve-request (:reason %)) (vals (get instance-id->request-id->use-reason-map instance-id))))
+                          :in-use
+                          :blacklisted)]
+      {:current-state' (if (= :blacklisted response-code)
+                         (-> current-state
+                             ; mark instance as blacklisted and set the expiry time
+                             (update-in [:instance-id->state instance-id] sanitize-instance-state)
+                             (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
+                             (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
+                         current-state)
+       :response-chan response-chan
+       :response response-code})))
+
+(defn handle-unblacklist-request
+  "Handle a request to unblacklist an instance."
+  [{:keys [instance-id->blacklist-expiry-time instance-id->state] :as current-state} update-status-tag-fn 
+   update-instance-id->blacklist-expiry-time-fn {:keys [instance-id]}]
+  (let [expiry-time (get instance-id->blacklist-expiry-time instance-id)
+        unblacklist? (and (not (nil? expiry-time)) (not (t/after? expiry-time (t/now))))]
+    (if unblacklist?
+      (do
+        (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
+        (cond-> (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
+          (contains? instance-id->state instance-id)
+          (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
+      current-state)))
+
+(defn release-unneeded-work-stealing-offers!
+  "Clean up the work-stealing queue."
+  [current-state service-id slots-in-use-counter slots-available-counter work-stealing-received-in-flight-counter requests-outstanding-counter]
+  (update-in current-state
+             [:work-stealing-queue]
+             (fn [work-stealing-queue]
+               (when work-stealing-queue
+                 (if (neg? (utils/compute-help-required
+                             (counters/value slots-in-use-counter) (counters/value slots-available-counter)
+                             (counters/value work-stealing-received-in-flight-counter) (counters/value requests-outstanding-counter)))
+                   (do
+                     (log/info "service-chan-responder deleting a work-stealing offer since help deemed unnecessary")
+                     (complete-work-stealing-offer! service-id (first work-stealing-queue) :rejected work-stealing-received-in-flight-counter)
+                     (pop work-stealing-queue))
+                   work-stealing-queue)))))
+
 (defn start-service-chan-responder
   "go block that maintains the available instances for one service.
-
-   Instances are reserved using the reserve-instance-chan,
-   instances are released using the release-instance-chan,
-   instances are blacklisted using the blacklist-instance-chan,
-   updated state is passed into the block through the update-state-chan,
-   state queries are passed into the block through the query-state-chan."
+  Instances are reserved using the reserve-instance-chan,
+  instances are released using the release-instance-chan,
+  instances are blacklisted using the blacklist-instance-chan,
+  updated state is passed into the block through the update-state-chan,
+  state queries are passed into the block through the query-state-chan."
   [service-id trigger-unblacklist-process-fn
    {:keys [max-blacklist-time-ms blacklist-backoff-base-time-ms]}
    {:keys [blacklist-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
@@ -274,42 +441,42 @@
    initial-state]
   (when (some nil? (vals initial-state))
     (throw (ex-info "Initial state contains nil values!" initial-state)))
-  (async/go
-    (try
-      (log/info "service-chan-responder started for" service-id "with initial state:" initial-state)
-      ; `instance-id->blacklist-expiry-time` maintains a list of recently 'killed' or 'erroneous' instances (via the :killed or :instance-error status while releasing an instance).
-      ; Such instances are guaranteed not to be served up as an available instance until sufficient time has elapsed since their last use.
-      ; Killed instances are blacklisted for max-blacklist-time-ms milliseconds.
-      ; Erroneous instances are blacklisted using an exponential delay based on number of successive failures and blacklist-backoff-base-time-ms.
-      ; If inside this period the instance gets actually killed, it will no longer show up as a live instance from the scheduler.
-      ; After the time period has elapsed and the instance is not actually killed, it will start showing up in the state.
-      ; This can possibly happen as either the previous kill request for that instance backend has failed or the temporary error at the instance has gone away.
-      (let [max-backoff-exponent (int (max 1 (inc (/ (Math/log max-blacklist-time-ms) (Math/log blacklist-backoff-base-time-ms)))))
-            responder-timer (metrics/service-timer service-id "service-chan-responder-iteration")
-            slots-available-counter (metrics/service-counter service-id "instance-counts" "slots-available")
-            slots-assigned-counter (metrics/service-counter service-id "instance-counts" "slots-assigned")
-            slots-in-use-counter (metrics/service-counter service-id "instance-counts" "slots-in-use")
-            update-responder-state-timer (metrics/service-timer service-id "update-responder-state")
-            update-responder-state-meter (metrics/service-meter service-id "update-responder-state")
-            blacklisted-instance-counter (metrics/service-counter service-id "instance-counts" "blacklisted")
-            in-use-instance-counter (metrics/service-counter service-id "instance-counts" "in-use")
-            requests-outstanding-counter (metrics/service-counter service-id "request-counts" "outstanding")
-            work-stealing-received-in-flight-counter (metrics/service-counter service-id "work-stealing" "received-from" "in-flight")
-            update-slot-state-fn #(update-slot-state %1 %2 %3 slots-in-use-counter slots-available-counter)
-            update-status-tag-fn #(update-status-tag %1 %2 slots-available-counter)
-            update-instance-id->blacklist-expiry-time-fn
-            (fn update-instance-id->blacklist-expiry-time-fn [current-state transform-fn]
-              (update-in current-state [:instance-id->blacklist-expiry-time]
-                         (fn inner-update-instance-id->blacklist-expiry-time-fn [instance-id->blacklist-expiry-time]
-                           (let [instance-id->blacklist-expiry-time' (transform-fn instance-id->blacklist-expiry-time)]
-                             (metrics/reset-counter blacklisted-instance-counter (count instance-id->blacklist-expiry-time'))
-                             instance-id->blacklist-expiry-time'))))
-            update-state-by-blacklisting-instance-fn
-            (fn update-state-by-blacklisting-instance-fn [current-state correlation-id instance-id expiry-time-ms]
-              (let [actual-expiry-time (t/plus (t/now) (t/millis expiry-time-ms))]
-                (cid/cinfo correlation-id "blacklisting instance" instance-id "for" expiry-time-ms "ms.")
-                (trigger-unblacklist-process-fn correlation-id instance-id expiry-time-ms unblacklist-instance-chan)
-                (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))]
+  (let [max-backoff-exponent (int (max 1 (inc (/ (Math/log max-blacklist-time-ms) (Math/log blacklist-backoff-base-time-ms)))))
+        responder-timer (metrics/service-timer service-id "service-chan-responder-iteration")
+        slots-available-counter (metrics/service-counter service-id "instance-counts" "slots-available")
+        slots-assigned-counter (metrics/service-counter service-id "instance-counts" "slots-assigned")
+        slots-in-use-counter (metrics/service-counter service-id "instance-counts" "slots-in-use")
+        update-responder-state-timer (metrics/service-timer service-id "update-responder-state")
+        update-responder-state-meter (metrics/service-meter service-id "update-responder-state")
+        blacklisted-instance-counter (metrics/service-counter service-id "instance-counts" "blacklisted")
+        in-use-instance-counter (metrics/service-counter service-id "instance-counts" "in-use")
+        requests-outstanding-counter (metrics/service-counter service-id "request-counts" "outstanding")
+        work-stealing-received-in-flight-counter (metrics/service-counter service-id "work-stealing" "received-from" "in-flight")
+        update-slot-state-fn #(update-slot-state %1 %2 %3 slots-in-use-counter slots-available-counter)
+        update-status-tag-fn #(update-status-tag %1 %2 slots-available-counter)
+        update-instance-id->blacklist-expiry-time-fn
+        (fn update-instance-id->blacklist-expiry-time-fn [current-state transform-fn]
+          (update-in current-state [:instance-id->blacklist-expiry-time]
+                     (fn inner-update-instance-id->blacklist-expiry-time-fn [instance-id->blacklist-expiry-time]
+                       (let [instance-id->blacklist-expiry-time' (transform-fn instance-id->blacklist-expiry-time)]
+                         (metrics/reset-counter blacklisted-instance-counter (count instance-id->blacklist-expiry-time'))
+                         instance-id->blacklist-expiry-time'))))
+        update-state-by-blacklisting-instance-fn
+        (fn update-state-by-blacklisting-instance-fn [current-state correlation-id instance-id expiry-time-ms]
+          (let [actual-expiry-time (t/plus (t/now) (t/millis expiry-time-ms))]
+            (cid/cinfo correlation-id "blacklisting instance" instance-id "for" expiry-time-ms "ms.")
+            (trigger-unblacklist-process-fn correlation-id instance-id expiry-time-ms unblacklist-instance-chan)
+            (update-instance-id->blacklist-expiry-time-fn current-state #(assoc % instance-id actual-expiry-time))))]
+    (async/go
+      (try
+        (log/info "service-chan-responder started for" service-id "with initial state:" initial-state)
+        ; `instance-id->blacklist-expiry-time` maintains a list of recently 'killed' or 'erroneous' instances (via the :killed or :instance-error status while releasing an instance).
+        ; Such instances are guaranteed not to be served up as an available instance until sufficient time has elapsed since their last use.
+        ; Killed instances are blacklisted for max-blacklist-time-ms milliseconds.
+        ; Erroneous instances are blacklisted using an exponential delay based on number of successive failures and blacklist-backoff-base-time-ms.
+        ; If inside this period the instance gets actually killed, it will no longer show up as a live instance from the scheduler.
+        ; After the time period has elapsed and the instance is not actually killed, it will start showing up in the state.
+        ; This can possibly happen as either the previous kill request for that instance backend has failed or the temporary error at the instance has gone away.
         ; status-tags inside instance-id->state contains only
         ; :healthy|:unhealthy => instance is known to be (un)healthy from state updates
         ; :blacklisted => instance was blacklisted based on its response
@@ -345,10 +512,9 @@
                          ; to be used preferentially. `exit-chan` and `query-state-chan` must be lowest priority
                          ; to facilitate unit testing.
                          chans (concat (cond-> [update-state-chan]
-                                               (or slots-available? (seq work-stealing-queue)) (conj reserve-instance-chan)
-                                               idle-instances-available? (conj kill-instance-chan))
-                                       [release-instance-chan blacklist-instance-chan unblacklist-instance-chan work-stealing-chan
-                                        query-state-chan exit-chan])
+                                         (or slots-available? (seq work-stealing-queue)) (conj reserve-instance-chan))
+                                       [release-instance-chan blacklist-instance-chan unblacklist-instance-chan kill-instance-chan
+                                        work-stealing-chan query-state-chan exit-chan])
                          [data chan-selected] (async/alts! chans :priority true)]
                      (cond->
                        ;; first obtain new state by pre-processing based on selected channel
@@ -357,108 +523,30 @@
                          (handle-exit-request service-id current-state work-stealing-received-in-flight-counter data)
 
                          work-stealing-chan
-                         (let [{:keys [cid instance response-chan router-id]} data
-                               outstanding-requests (counters/value requests-outstanding-counter)]
-                           (cid/cdebug cid "received work-stealing instance" (:id instance) "from" router-id)
-                           (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "offers"))
-                           (if (pos?
-                                 (utils/compute-help-required
-                                   (counters/value slots-in-use-counter) (counters/value slots-available-counter)
-                                   (counters/value work-stealing-received-in-flight-counter) outstanding-requests))
-                             (do
-                               (cid/cdebug cid "accepting work-stealing instance" (:id instance) "from" router-id)
-                               (counters/inc! work-stealing-received-in-flight-counter)
-                               (assoc current-state :work-stealing-queue (conj work-stealing-queue data)))
-                             (do
-                               (cid/cdebug cid "promptly rejecting work-stealing instance" (:id instance) "from" router-id)
-                               (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "rejects"))
-                               (async/>! response-chan :promptly-rejected)
-                               current-state)))
+                         (let [{:keys [current-state' response-chan response]}
+                               (handle-work-stealing-offer current-state service-id slots-in-use-counter slots-available-counter 
+                                                           work-stealing-received-in-flight-counter requests-outstanding-counter data)]
+                           (when response
+                             (async/>! response-chan response))
+                           current-state')
 
                          reserve-instance-chan
-                         (let [[{:keys [cid request-id] :as reason-map} resp-chan exclude-ids-set _] data]
-                           (if-let [{:keys [instance router-id] :as work-stealer-data} (first work-stealing-queue)]
-                             ; using instance offered via work-stealing
-                             (let [instance-id (:id instance)]
-                               (cid/cdebug (str cid "|" (:cid work-stealer-data)) "offering work-stealing instance" instance-id)
-                               (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "accepts"))
-                               (if (async/put! resp-chan instance)
-                                 (-> current-state
-                                     (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
-                                     (assoc :request-id->work-stealer (assoc request-id->work-stealer request-id work-stealer-data)
-                                            :work-stealing-queue (pop work-stealing-queue)))
-                                 current-state))
-                             ; lookup available slots from router's pre-allocated instances
-                             (let [{instance-id :id :as instance-to-offer}
-                                   (find-available-instance sorted-instance-ids id->instance instance-id->state #(not (contains? exclude-ids-set %)))]
-                               (if instance-to-offer
-                                 (if (async/put! resp-chan instance-to-offer)
-                                   (-> current-state
-                                       (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
-                                       (update-slot-state-fn instance-id #(inc %2)))
-                                   current-state)
-                                 (do
-                                   (async/put! resp-chan :no-matching-instance-found)
-                                   current-state)))))
+                         (let [{:keys [current-state' response-chan response]}
+                               (handle-reserve-instance-request current-state service-id update-slot-state-fn data)]
+                           (async/>! response-chan response)
+                           current-state')
 
                          kill-instance-chan
-                         (let [[{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _] data
-                               {instance-id :id :as instance-to-offer}
-                               (find-killable-instance id->instance instance-id->state #(not (contains? exclude-ids-set %)))]
-                           (if instance-to-offer
-                             (if (async/put! resp-chan instance-to-offer)
-                               (let [current-state' (assoc-in current-state [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)]
-                                 ; mark instance as locked if it is going to be killed.
-                                 (update-in current-state' [:instance-id->state instance-id] update-status-tag-fn #(conj % :locked)))
-                               current-state)
-                             (do
-                               (async/put! resp-chan :no-matching-instance-found)
-                               current-state)))
+                         (let [{:keys [current-state' response-chan response]}
+                               (handle-kill-instance-request current-state service-id update-status-tag-fn data)]
+                           (async/>! response-chan response)
+                           current-state')
 
                          release-instance-chan
-                         (let [[{instance-id :id :as instance-to-release} {:keys [cid request-id status] :as reservation-result}] data
-                               {:keys [reason] :as reason-map} (get-in instance-id->request-id->use-reason-map [instance-id request-id])
-                               work-stealing-data (get request-id->work-stealer request-id)]
-                           (if (nil? reason-map)
-                             current-state ;; no processing required if the request-id cannot be found
-                             (let [current-state'
-                                   (if (not= status :success-async)
-                                     (cond-> (-> current-state
-                                                 (update-in [:instance-id->request-id->use-reason-map] #(utils/dissoc-in % [instance-id request-id]))
-                                                 (update-in [:instance-id->state instance-id] sanitize-instance-state))
-                                             ; instance offered from work-stealing, do not change slot state
-                                             (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
-                                             ; mark instance as no longer locked.
-                                             (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
-                                             ;clear work-stealing entry
-                                             work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id))
-                                     (-> current-state
-                                         (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id :variant] :async-request)
-                                         (update-in [:instance-id->state instance-id] sanitize-instance-state)))]
-                               (when-not (= status :success-async)
-                                 (when work-stealing-data
-                                   (complete-work-stealing-offer service-id work-stealing-data status work-stealing-received-in-flight-counter)))
-                               (if (#{:instance-error :killed :instance-busy} status)
-                                 ; mark as blacklisted and track the instance
-                                 (let [consecutive-failures (inc (get instance-id->consecutive-failures instance-id 0))
-                                       expiry-time-ms (min max-blacklist-time-ms
-                                                           (if (= :killed status)
-                                                             max-blacklist-time-ms
-                                                             (* blacklist-backoff-base-time-ms
-                                                                (Math/pow 2 (min max-backoff-exponent (dec consecutive-failures))))))]
-                                   (cid/cinfo cid instance-id "with status" status "has" consecutive-failures "consecutive failures")
-                                   (-> current-state'
-                                       ; mark instance as blacklisted and killed based on status.
-                                       (update-in [:instance-id->state instance-id] update-status-tag-fn #(cond-> (conj % :blacklisted) (= :killed status) (conj :killed)))
-                                       ; track the blacklist expiry time
-                                       (update-state-by-blacklisting-instance-fn cid instance-id expiry-time-ms)
-                                       ; track the consecutive failure count
-                                       (update-in [:instance-id->consecutive-failures] #(assoc % instance-id consecutive-failures))))
-                                 ; else: clear out any failure records if instance has successfully processed a request
-                                 (-> current-state'
-                                     (update-instance-id->blacklist-expiry-time-fn #(if (= :not-killed status) % (dissoc % instance-id)))
-                                     (update-in [:instance-id->consecutive-failures] #(if (= :not-killed status) % (dissoc % instance-id)))
-                                     (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted)))))))
+                         (handle-release-instance-request current-state service-id update-slot-state-fn update-status-tag-fn 
+                                                          update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
+                                                          work-stealing-received-in-flight-counter max-blacklist-time-ms 
+                                                          blacklist-backoff-base-time-ms max-backoff-exponent data)
 
                          query-state-chan
                          (let [{:keys [cid response-chan service-id]} data]
@@ -472,71 +560,36 @@
                                                       slots-assigned-counter slots-available-counter slots-in-use-counter)
 
                          blacklist-instance-chan
-                         (let [[{:keys [instance-id blacklist-period-ms cid]} response-chan] data]
-                           (cid/with-correlation-id
-                             cid
-                             (log/info "attempt to blacklist" instance-id "which has"
-                                       (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
-                                       (get instance-id->state instance-id))
-                             ;; cannot blacklist if the instance is currently servicing a request
-                             (let [response-code (if (and (contains? instance-id->request-id->use-reason-map instance-id)
-                                                          (some #(= :serve-request (:reason %)) (vals (get instance-id->request-id->use-reason-map instance-id))))
-                                                   :in-use
-                                                   :blacklisted)]
-                               (async/put! response-chan response-code)
-                               (if (= :blacklisted response-code)
-                                 (-> current-state
-                                     ; mark instance as blacklisted and set the expiry time
-                                     (update-in [:instance-id->state instance-id] sanitize-instance-state)
-                                     (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
-                                     (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
-                                 current-state))))
+                         (let [{:keys [current-state' response-chan response]}
+                               (handle-blacklist-request current-state service-id update-status-tag-fn 
+                                                         update-state-by-blacklisting-instance-fn data)]
+                           (async/put! response-chan response)
+                           current-state')
 
                          unblacklist-instance-chan
-                         (let [{:keys [instance-id]} data
-                               expiry-time (get instance-id->blacklist-expiry-time instance-id)
-                               unblacklist? (and (not (nil? expiry-time)) (not (t/after? expiry-time (t/now))))]
-                           (if unblacklist?
-                             (do
-                               (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
-                               (cond-> (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
-                                       (contains? instance-id->state instance-id)
-                                       (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
-                             current-state)))
+                         (handle-unblacklist-request current-state update-status-tag-fn update-instance-id->blacklist-expiry-time-fn data))
 
                        ;; cleanup items from work-stealing queue one at a time if they are not needed
                        (and (seq work-stealing-queue)
                             (not (contains? #{query-state-chan, reserve-instance-chan, work-stealing-chan} chan-selected)))
-                       (update-in
-                         [:work-stealing-queue]
-                         (fn [work-stealing-queue]
-                           (when work-stealing-queue
-                             (if (neg? (utils/compute-help-required
-                                         (counters/value slots-in-use-counter) (counters/value slots-available-counter)
-                                         (counters/value work-stealing-received-in-flight-counter) (counters/value requests-outstanding-counter)))
-                               (do
-                                 (log/info "service-chan-responder deleting a work-stealing offer since help deemed unnecessary")
-                                 (complete-work-stealing-offer service-id (first work-stealing-queue) :rejected work-stealing-received-in-flight-counter)
-                                 (pop work-stealing-queue))
-                               work-stealing-queue))))))]
+                       (release-unneeded-work-stealing-offers! service-id slots-in-use-counter slots-available-counter 
+                                                               work-stealing-received-in-flight-counter requests-outstanding-counter)))]
             (do
               (metrics/reset-counter in-use-instance-counter (count (:instance-id->request-id->use-reason-map new-state)))
               (timers/stop timer-context)
               (recur (assoc new-state :timer-context (timers/start responder-timer))))
-            (log/info "service-chan-responder shutting down for" service-id))))
+            (log/info "service-chan-responder shutting down for" service-id)))
       (catch Exception e
         (log/error e "Fatal error in service-chan-responder for" service-id)
-        (System/exit 1)))))
+        (System/exit 1))))))
 
 (defn trigger-unblacklist-process
   "Launches a go-block that sends a message to unblacklist-instance-chan to unblacklist instance-id after blacklist-period-ms have elapsed."
   [correlation-id instance-id blacklist-period-ms unblacklist-instance-chan]
   (async/go
-    (cid/with-correlation-id
-      correlation-id
-      (async/<! (async/timeout blacklist-period-ms))
-      (log/info "requesting instance instance" instance-id "to be unblacklisted")
-      (async/>! unblacklist-instance-chan {:instance-id instance-id}))))
+    (async/<! (async/timeout blacklist-period-ms))
+    (cid/cinfo correlation-id "requesting instance instance" instance-id "to be unblacklisted")
+    (async/>! unblacklist-instance-chan {:instance-id instance-id})))
 
 (defn prepare-and-start-service-chan-responder
   "Starts the service channel responder."
@@ -562,6 +615,7 @@
               in
               1024
               first
+              (fn priority-fn [[{:keys [priority]} & _]] priority)
               (partial timeout-request-fn service-id)
               (fn [e]
                 (log/error e "Error in service-chan timing-out-pipeline")))
@@ -848,7 +902,7 @@
     (loop [counter 0
            [router-id & sorted-router-ids'] sorted-router-ids ; Important: ensure routers are processed in their sorted order
            instance-id->available-slots (pc/map-from-keys (constantly concurrency-level) (map :id instances))
-           routers->instances->slots {}]
+           router-id->instances->slots {}]
       (if router-id
         (let [router-target-slots (max 1 (int (Math/ceil (/ (reduce + (vals instance-id->available-slots)) (inc (count sorted-router-ids'))))))
               sorted-instance-ids (reduce (fn [accum instance-ids]
@@ -858,48 +912,88 @@
                                           [] (get router-id->ranked-instance-ids router-id))
               my-instance-id->slots (allocate-from-available-slots router-target-slots instance-id->available-slots sorted-instance-ids)
               instance-ids->available-slots' (update-instance-id->available-slots instance-id->available-slots my-instance-id->slots)
-              routers->instances->slots' (assoc routers->instances->slots
-                                           router-id (pc/map-keys #(get id->instance %) my-instance-id->slots))]
-          (recur (inc counter) sorted-router-ids' instance-ids->available-slots' routers->instances->slots'))
-        routers->instances->slots))))
+              router-ids->instances->slots' (assoc router-id->instances->slots
+                                              router-id (pc/map-keys #(get id->instance %) my-instance-id->slots))]
+          (recur (inc counter) sorted-router-ids' instance-ids->available-slots' router-ids->instances->slots'))
+        router-id->instances->slots))))
 
-(defn evenly-distribute-slots-using-consistent-hash-distribution
+(defn distribute-slots-across-routers
+  "Performs distribution of slots across all routers as per the preferetial (first ranked) instances.
+   All slots (the concurrency-level) for each instance is assigned to exactly one router.
+   This may lead to imbalance in assignment of instances to routers but avoids shuffling of instances during scaling.
+   We can rely on work-stealing to address the imbalance."
+  [instances router-id->ranked-instance-ids concurrency-level]
+  (let [id->instance (zipmap (map :id instances) instances)]
+    (pc/map-vals (fn [ranked-instance-ids]
+                   (->> ranked-instance-ids
+                        (first)
+                        (map #(get id->instance %))
+                        (map (fn [instance] [instance concurrency-level]))
+                        (into {})))
+                 router-id->ranked-instance-ids)))
+
+(defn distribute-slots-using-consistent-hash-distribution
   "Initially, perform a consistent hash distribution by invoking consistent-hash-distribution.
    Then it performs a round of load-balancing to ensure slots are evenly distributed across all routers.
 
    The hash order is used to define an 'affinity' for an instance to a router.
    During imbalance in slot distribution, a router will prefer slots from instances with higher affinity."
-  [router-ids instances hash-fn concurrency-level]
+  [router-ids instances hash-fn concurrency-level distribution-scheme]
   (let [router-id->ranked-instance-ids (consistent-hash-distribution router-ids instances hash-fn)]
-    (evenly-distribute-slots-across-routers instances router-id->ranked-instance-ids concurrency-level)))
+    (if (= "balanced" distribution-scheme)
+      (evenly-distribute-slots-across-routers instances router-id->ranked-instance-ids concurrency-level)
+      (distribute-slots-across-routers instances router-id->ranked-instance-ids concurrency-level))))
 
-(defn- update-router-state
-  "Update the instance maintainer state to reflect the new services, instances and router list."
-  [iteration service-id->service-description-fn service-id->healthy-instances service-id->unhealthy-instances service-id->sorted-instance-ids service-id->expired-instances
-   service-id->starting-instances router-id->http-endpoint time router-id]
+(defn- compute-service-id->my-instance->slots
+  "Computes the slot distribution of instances on a given router."
+  [router-id router-id->http-endpoint service-id->service-description-fn service-id->healthy-instances]
   (let [service-id->router->instance->slots
         (into {}
               (map (fn [[service-id instances]]
-                     (let [{:strs [concurrency-level]} (service-id->service-description-fn service-id)
-                           router->instance->slots (evenly-distribute-slots-using-consistent-hash-distribution
-                                                     (keys router-id->http-endpoint) instances md5-hash-function concurrency-level)]
-                       [service-id router->instance->slots]))
-                   service-id->healthy-instances))
-        service-id->my-instance->slots (pc/map-vals #(get % router-id) service-id->router->instance->slots)]
-    (doseq [[service-id my-instances] service-id->my-instance->slots]
-      (metrics/reset-counter (metrics/service-counter service-id "instance-counts" "healthy") (count (get service-id->healthy-instances service-id)))
-      (metrics/reset-counter (metrics/service-counter service-id "instance-counts" "unhealthy") (count (get service-id->unhealthy-instances service-id)))
-      (metrics/reset-counter (metrics/service-counter service-id "instance-counts" "expired") (count (get service-id->expired-instances service-id)))
-      (metrics/reset-counter (metrics/service-counter service-id "instance-counts" "my-instances") (count my-instances)))
-    {:service-id->healthy-instances service-id->healthy-instances
-     :service-id->unhealthy-instances service-id->unhealthy-instances
-     :service-id->sorted-instance-ids service-id->sorted-instance-ids
-     :service-id->my-instance->slots service-id->my-instance->slots
-     :service-id->expired-instances service-id->expired-instances
-     :service-id->starting-instances service-id->starting-instances
-     :iteration (inc iteration)
-     :routers router-id->http-endpoint
-     :time time}))
+                     (let [{:strs [concurrency-level distribution-scheme]} (service-id->service-description-fn service-id)
+                           router-id->instance->slots (distribute-slots-using-consistent-hash-distribution
+                                                        (keys router-id->http-endpoint) instances md5-hash-function concurrency-level distribution-scheme)]
+                       [service-id router-id->instance->slots]))
+                   service-id->healthy-instances))]
+    (pc/map-vals #(get % router-id) service-id->router->instance->slots)))
+
+(defn- update-router-instance-counts
+  "Updates the local instance-count metrics."
+  [{:keys [service-id->expired-instances service-id->healthy-instances service-id->my-instance->slots service-id->unhealthy-instances]
+    :as candidate-state}]
+  (doseq [[service-id my-instances] service-id->my-instance->slots]
+    (metrics/reset-counter (metrics/service-counter service-id "instance-counts" "healthy") (count (get service-id->healthy-instances service-id)))
+    (metrics/reset-counter (metrics/service-counter service-id "instance-counts" "unhealthy") (count (get service-id->unhealthy-instances service-id)))
+    (metrics/reset-counter (metrics/service-counter service-id "instance-counts" "expired") (count (get service-id->expired-instances service-id)))
+    (metrics/reset-counter (metrics/service-counter service-id "instance-counts" "my-instances") (count my-instances)))
+  candidate-state)
+
+(defn- update-router-state
+  "Update the instance maintainer state to reflect the new services, instances and router list.
+   Avoids recomputation of instance distribution for services that have not changed from last state update."
+  [router-id {:keys [iteration service-id->my-instance->slots] :as current-state} candidate-new-state service-id->service-description-fn]
+  (timers/start-stop-time!
+    (metrics/waiter-timer "state" "update-router-state")
+    (let [service-id->healthy-instances (:service-id->healthy-instances current-state)
+          service-id->healthy-instances' (:service-id->healthy-instances candidate-new-state)
+          router-id->http-endpoint (:routers current-state)
+          router-id->http-endpoint' (:routers candidate-new-state)
+          routers-changed? (not= router-id->http-endpoint router-id->http-endpoint')
+          delta-service-id->healthy-instances (utils/filterm
+                                                (fn [[service-id healthy-instances]]
+                                                  (or routers-changed?
+                                                      (not= healthy-instances (service-id->healthy-instances service-id))))
+                                                service-id->healthy-instances')
+          _ (log/info "avoiding distribution computation of" (- (count service-id->healthy-instances') (count delta-service-id->healthy-instances))
+                      "out of" (count service-id->healthy-instances') "services.")
+          delta-service-id->my-instance->slots (compute-service-id->my-instance->slots
+                                                 router-id router-id->http-endpoint service-id->service-description-fn delta-service-id->healthy-instances)
+          service-id->my-instance->slots' (into (select-keys service-id->my-instance->slots (keys service-id->healthy-instances'))
+                                                delta-service-id->my-instance->slots)]
+      (-> candidate-new-state
+          (assoc :iteration (inc iteration)
+                 :service-id->my-instance->slots service-id->my-instance->slots')
+          update-router-instance-counts))))
 
 (defn start-router-state-maintainer
   "Start the instance state maintainer.
@@ -914,13 +1008,7 @@
      :go-chan
      (async/go
        (try
-         (loop [{:keys [service-id->healthy-instances
-                        service-id->unhealthy-instances
-                        service-id->sorted-instance-ids
-                        service-id->expired-instances
-                        service-id->starting-instances
-                        iteration
-                        routers] :as current-state}
+         (loop [{:keys [iteration routers] :as current-state}
                 {:service-id->healthy-instances {}
                  :service-id->unhealthy-instances {}
                  :service-id->sorted-instance-ids {}
@@ -1019,17 +1107,7 @@
                                    (log/warn "scheduler-state-chan unknown message type=" message-type)
                                    loop-state))]
                            (if (nil? remaining)
-                             (let [new-state (update-router-state
-                                               iteration
-                                               service-id->service-description-fn
-                                               (:service-id->healthy-instances loop-state')
-                                               (:service-id->unhealthy-instances loop-state')
-                                               (:service-id->sorted-instance-ids loop-state')
-                                               (:service-id->expired-instances loop-state')
-                                               (:service-id->starting-instances loop-state')
-                                               (:routers loop-state')
-                                               (:time loop-state')
-                                               router-id)]
+                             (let [new-state (update-router-state router-id current-state loop-state' service-id->service-description-fn)]
                                (when (not= (select-keys current-state [:service-id->healthy-instances :service-id->unhealthy-instances
                                                                        :service-id->expired-instances :service-id->starting-instances])
                                            (select-keys new-state [:service-id->healthy-instances :service-id->unhealthy-instances
@@ -1046,19 +1124,9 @@
                        (let [router-id->endpoint-url data
                              new-state
                              (if (not= routers router-id->endpoint-url)
-                               (do
+                               (let [candidate-state (assoc current-state :routers router-id->endpoint-url)]
                                  (metrics/update-counter (metrics/waiter-counter "core" "number-of-routers") routers router-id->endpoint-url)
-                                 (update-router-state
-                                   iteration
-                                   service-id->service-description-fn
-                                   service-id->healthy-instances
-                                   service-id->unhealthy-instances
-                                   service-id->sorted-instance-ids
-                                   service-id->expired-instances
-                                   service-id->starting-instances
-                                   router-id->endpoint-url
-                                   (:time current-state)
-                                   router-id))
+                                 (update-router-state router-id current-state candidate-state service-id->service-description-fn))
                                current-state)]
                          (async/put! router-state-push-chan new-state)
                          new-state)))

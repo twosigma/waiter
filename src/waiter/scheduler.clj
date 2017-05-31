@@ -66,7 +66,9 @@
      The failed-instances are guaranteed to be dead.")
 
   (kill-instance [this instance]
-    "Instructs the scheduler to kill a specific ServiceInstance.")
+    "Instructs the scheduler to kill a specific ServiceInstance.
+     Returns a map containing the following structure:
+     {:instance-id instance-id, :killed? <boolean>, :message <string>,  :service-id service-id, :status status-code}")
 
   (app-exists? [this ^String service-id]
     "Returns truth-y value if the app exists and nil otherwise.")
@@ -77,7 +79,10 @@
 
   (delete-app [this ^String service-id]
     "Instructs the scheduler to delete the specified service.
-     Returns truth-y value if the app deletion was successful and nil otherwise.")
+     Returns a map containing the following structure:
+     {:message message
+      :result :deleted|:error|:no-such-service-exists
+      :success true|false}")
 
   (scale-app [this ^String service-id target-instances]
     "Instructs the scheduler to scale up/down instances of the specified service to
@@ -88,7 +93,10 @@
      specified `host`. It includes links to browse subdirectories and download files.")
 
   (service-id->state [this ^String service-id]
-    "Retrieves the state the scheduler is maintaining for the given service-id."))
+    "Retrieves the state the scheduler is maintaining for the given service-id.")
+
+  (state [this]
+    "Returns the global (i.e. non-service-specific) state the scheduler is maintaining"))
 
 (defn retry-on-transient-server-exceptions-fn
   "Helper function for `retry-on-transient-server-exceptions`.
@@ -171,28 +179,33 @@
   ([service-instance health-check-path protocol]
    (end-point-url service-instance protocol health-check-path)))
 
+(defn log-health-check-issues
+  "Logs messages based on the type of error (if any) encountered by a health check"
+  [service-instance instance-health-check-url status error]
+  (if error
+    (let [error-map {:instance service-instance
+                     :service instance-health-check-url}]
+      (condp instance? error
+        ConnectException (log/debug error "error while connecting to backend for health check" error-map)
+        SocketTimeoutException (log/debug error "timeout while connecting to backend for health check" error-map)
+        TimeoutException (log/debug error "timeout while connecting to backend for health check" error-map)
+        Throwable (log/error error "unexpected error while connecting to backend for health check" error-map)))
+    (when (not (or (<= 200 status 299)
+                   (= 404 status)
+                   (= 504 status)))
+      (log/info "unexpected status from health check" {:status status
+                                                       :instance service-instance
+                                                       :service instance-health-check-url}))))
+
 (defn available?
   "Async go block which returns true if a health check can be completed successfully
   Returns false if such a connection cannot be established."
-  [service-instance health-check-path http-client]
+  [{:keys [port] :as service-instance} health-check-path http-client]
   (async/go
-    (if (pos? (:port service-instance))
+    (if (pos? port)
       (let [instance-health-check-url (health-check-url service-instance health-check-path)
             {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))]
-        (if error
-          (let [error-map {:instance service-instance
-                           :service instance-health-check-url}]
-            (condp instance? error
-              ConnectException (log/debug error "Error while connecting to backend for health check" error-map)
-              SocketTimeoutException (log/debug error "Timeout while connecting to backend for health check" error-map)
-              TimeoutException (log/debug error "Timeout while connecting to backend for health check" error-map)
-              Throwable (log/error error "Unexpected error while connecting to backend for health check" error-map)))
-          (when (not (or (<= 200 status 299)
-                         (= 404 status)
-                         (= 504 status)))
-            (log/info "Unexpected status from health check" {:status status
-                                                             :instance service-instance
-                                                             :service instance-health-check-url})))
+        (log-health-check-issues service-instance instance-health-check-url status error)
         (and (not error)
              (<= 200 status 299)))
       false)))
@@ -322,13 +335,12 @@
 
 (defn- request-available-waiter-apps
   "Queries the scheduler and builds a list of available Waiter apps."
-  [scheduler is-waiter-app?]
+  [scheduler]
   (when-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "get-apps")
                                           (retry-on-transient-server-exceptions
                                             "request-available-waiter-apps"
-                                            (utils/filterm (fn [[service _]] (is-waiter-app? (:id service)))
-                                                           (get-apps->instances scheduler))))]
+                                            (get-apps->instances scheduler)))]
     (log/trace "request-available-waiter-apps:apps" (keys service->service-instances))
     service->service-instances))
 
@@ -378,7 +390,7 @@
 (defn start-scheduler-syncer
   "Starts loop to query marathon for the app and instance statuses and sends
   the data to the router state maintainer."
-  [is-waiter-app? scheduler scheduler-state-chan scheduler-syncer-interval-secs
+  [scheduler scheduler-state-chan scheduler-syncer-interval-secs
    service-id->service-description-fn available? http-client]
   (log/info "Starting scheduler syncer")
   (utils/start-timer-task
@@ -392,7 +404,7 @@
           (log/trace "scheduler-syncer: querying scheduler")
           (if-let [service->service-instances (timers/start-stop-time!
                                                 (metrics/waiter-timer "core" "scheduler" "app->available-tasks")
-                                                (do-health-checks (request-available-waiter-apps scheduler is-waiter-app?)
+                                                (do-health-checks (request-available-waiter-apps scheduler)
                                                                   (fn available [instance health-check-path]
                                                                     (available? instance health-check-path http-client))
                                                                   service-id->service-description-fn))]
@@ -472,3 +484,13 @@
        service-id->killed-instances-transient-store max-instances-to-keep service-id
        (assoc instance :killed-at (utils/date-to-str (t/now)))
        #(PersistentQueue/EMPTY) pop))))
+
+(defn environment
+  "Returns a new environment variable map with some basic variables added in"
+  [service-id {:strs [env run-as-user]} service-id->password-fn home-path]
+  (merge env
+         {"WAITER_USERNAME" "waiter"
+          "WAITER_PASSWORD" (service-id->password-fn service-id)
+          "HOME" home-path
+          "LOGNAME" run-as-user
+          "USER" run-as-user}))

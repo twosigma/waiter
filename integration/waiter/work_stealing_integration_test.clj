@@ -35,9 +35,9 @@
                               (log/info router-id " process metrics:" (get-in service-metrics [:routers (keyword router-id) :timers :process])))))]
 
       ;; set up
-      (log/info "Service ID:" service-id)
+      (log/info "service-id:" service-id)
       (parallelize-requests (+ max-instances 2) 2 #(request-fn waiter-url (assoc extra-headers :x-kitchen-delay-ms 6000)))
-      (log/info "Num tasks running" (num-tasks-running waiter-url service-id))
+      (log/info "num instances running" (num-instances waiter-url service-id))
       (print-metrics service-id)
       ;; actual test
       (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
@@ -77,18 +77,16 @@
     (let [headers {:x-waiter-name (rand-name "test-slots-in-use-consistency")
                    :x-waiter-max-instances 7
                    :x-kitchen-delay-ms 4000}
-          router->endpoint (routers waiter-url)
           {:keys [service-id request-headers cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
-          _ (parallelize-requests 7 20 #(let [router (-> router->endpoint (keys) (rand-nth))
-                                              target-url (router->endpoint router)]
+          _ (parallelize-requests 7 20 #(let [target-url (rand-router-url waiter-url)]
                                          (make-kitchen-request target-url (dissoc request-headers "x-cid") :cookies cookies)))
           waiter-settings (waiter-settings waiter-url)
           _ (Thread/sleep (* 4 (get-in waiter-settings [:work-stealing :offer-help-interval-ms])))
           service-settings (service-settings waiter-url service-id)
-          routers (keys (get-in service-settings [:metrics :routers]))]
-      (when (= 1 (count router->endpoint))
+          metrics-routers (keys (get-in service-settings [:metrics :routers]))]
+      (when (= 1 (count (routers waiter-url)))
         (log/info "Assertions will be trivially true as only one router is running"))
-      (doseq [router routers]
+      (doseq [router metrics-routers]
         (let [slots-in-use (get-in service-settings [:metrics :routers router :counters :instance-counts :slots-in-use])]
-          (is (zero? slots-in-use) (str "Expected zero slots-in-use, but found" slots-in-use "in router" (name router)))))
+          (is (zero? slots-in-use) (str "Expected zero slots-in-use, but found " slots-in-use " in router " (name router)))))
       (delete-service waiter-url service-id))))

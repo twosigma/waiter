@@ -12,6 +12,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.core]
             [metrics.counters :as counters]
@@ -28,12 +29,12 @@
 (defn get-app-instance-stats
   "Queries scheduler to find the number of instances and running tasks for all apps"
   [scheduler]
-  (if-let [apps (try
-                  (scheduler/retry-on-transient-server-exceptions
-                    "get-app-instance-stats"
-                    (scheduler/get-apps scheduler))
-                  (catch Exception ex
-                    (log/warn ex "Marathon fetch failed for instance count")))]
+  (when-let [apps (try
+                    (scheduler/retry-on-transient-server-exceptions
+                      "get-app-instance-stats"
+                      (scheduler/get-apps scheduler))
+                    (catch Exception ex
+                      (log/warn ex "Marathon fetch failed for instance count")))]
     (zipmap (map :id apps)
             (map #(select-keys % [:instances :task-count]) apps))))
 
@@ -117,25 +118,23 @@
                     instance-id (:id instance)]
                 (if instance-id
                   (if (peers-acknowledged-blacklist-requests-fn instance true blacklist-backoff-base-time-ms :prepare-to-kill)
-                    (if (try
-                          (log/info "scaling down instance candidate" instance)
-                          (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
-                          (scheduler/kill-instance scheduler instance)
-                          (catch Exception e
-                            (log/warn e "exception thrown when calling kill-instance")))
-                      (do
-                        (log/info "marking instance" instance-id "as killed")
-                        (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
-                        (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
-                        (service/release-instance! instance-rpc-chan instance (result-map-fn :killed))
-                        (peers-acknowledged-blacklist-requests-fn instance false max-blacklist-time-ms :killed)
-                        (when response-chan (async/>! response-chan instance))
-                        true)
-                      (do
-                        (log/info "failed kill attempt, releasing instance" instance-id)
-                        (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
-                        (service/release-instance! instance-rpc-chan instance (result-map-fn :not-killed))
-                        false))
+                    (do
+                      (log/info "scaling down instance candidate" instance)
+                      (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
+                      (let [{:keys [killed?] :as kill-result} (scheduler/kill-instance scheduler instance)]
+                        (if killed?
+                          (do
+                            (log/info "marking instance" instance-id "as killed")
+                            (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
+                            (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
+                            (service/release-instance! instance-rpc-chan instance (result-map-fn :killed))
+                            (peers-acknowledged-blacklist-requests-fn instance false max-blacklist-time-ms :killed))
+                          (do
+                            (log/info "failed kill attempt, releasing instance" instance-id)
+                            (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
+                            (service/release-instance! instance-rpc-chan instance (result-map-fn :not-killed))))
+                        (when response-chan (async/>! response-chan kill-result))
+                        killed?))
                     (do
                       (log/info "kill was vetoed, releasing instance" instance-id)
                       (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "vetoed-instance"))
@@ -150,13 +149,39 @@
           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "fail"))
           (log/error ex "unable to scale down service" service-id))))))
 
+(defn kill-instance-handler
+  "Handler that supports killing instances of a particular service on a specific router."
+  [scheduler instance-rpc-chan get-instance-timeout-ms blacklist-config peers-acknowledged-blacklist-requests-fn
+   src-router-id {:keys [route-params]}]
+  (let [{:keys [service-id]} route-params
+        correlation-id (cid/get-correlation-id)]
+    (cid/cinfo correlation-id "received request to kill instance of" service-id "from" src-router-id)
+    (async/go
+      (let [response-chan (async/promise-chan)
+            instance-killed? (async/<!
+                               (execute-scale-down-request
+                                 scheduler instance-rpc-chan get-instance-timeout-ms blacklist-config peers-acknowledged-blacklist-requests-fn
+                                 service-id correlation-id 1 response-chan))
+            {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
+                                                               {:message :no-instance-killed, :status 404})]
+        (if instance-killed?
+          (cid/cinfo correlation-id "killed instance" instance-id)
+          (cid/cinfo correlation-id "unable to kill instance" kill-response))
+        (-> (utils/map->json-response {:kill-response kill-response
+                                       :service-id service-id
+                                       :source-router-id src-router-id
+                                       :success instance-killed?}
+                                      :status (or status 500))
+            (update :headers assoc "x-cid" correlation-id))))))
+
 (defn service-scaling-executor
   "The scaling executor that scales individual services up or down.
    It uses the scheduler to trigger scale up/down operations.
    While a scale-up request can cause many new instances to be spawned, a scale-down request can end up killing at most one instance.
+   Killing of an instance may be delegated to peer routers via delegate-instance-kill-request-fn if no instance is available locally.
    The executor also respects inter-kill-request-wait-time-ms between successive scale-down operations."
-  [service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn inter-kill-request-wait-time-ms
-   blacklist-config]
+  [service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn delegate-instance-kill-request-fn
+   inter-kill-request-wait-time-ms blacklist-config]
   {:pre [(>= inter-kill-request-wait-time-ms 0)]}
   (log/info "[scaling-executor] starting instance killer for" service-id)
   (let [base-correlation-id (str "scaling-executor-" service-id)
@@ -205,10 +230,11 @@
                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "total"))
                           (if (or (nil? last-scale-down-time)
                                   (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
-                            (if (async/<!
-                                  (execute-scale-down-request scheduler instance-rpc-chan inter-kill-request-wait-time-ms
-                                                              blacklist-config peers-acknowledged-blacklist-requests-fn
-                                                              service-id correlation-id num-instances-to-kill response-chan))
+                            (if (or (async/<!
+                                      (execute-scale-down-request scheduler instance-rpc-chan inter-kill-request-wait-time-ms
+                                                                  blacklist-config peers-acknowledged-blacklist-requests-fn
+                                                                  service-id correlation-id num-instances-to-kill response-chan))
+                                    (delegate-instance-kill-request-fn service-id))
                               (assoc executor-state :last-scale-down-time (t/now))
                               executor-state)
                             (do
@@ -237,8 +263,8 @@
       (normalize-factor 0.9 2) => 0.99"
   [^double factor n]
   (loop [i 0
-         result 0
-         remaining 1]
+         result 0.0
+         remaining 1.0]
     (if (>= i n)
       result
       (recur (inc i)
@@ -262,7 +288,7 @@
   Scaling up dominates scaling down.
   The exponential moving average is recursive, and works by applying a smoothing factor, such that:
     target-instances' = outstanding-requests * smoothing-factor + ((1 - smoothing-factor) * target-instances)
-  The ideal number of instances, target-instances, is a continous (float) number.
+  The ideal number of instances, target-instances, is a continuous (float) number.
   The scheduler needs a whole number (int) of instances, total-instances, which is mapped from target-instances
   using a threshold to prevent jitter.
   Smoothing factors are normalized such that they are independent of the amount of time that has passed
@@ -316,43 +342,47 @@
 (defn scale-apps
   "Scales a sequence of services given the scale state of each service, and returns a new scale state which
   is fed back in the for the next call to scale-apps."
-  [service-ids app->service-description app->outstanding-requests app->scale-state apply-scaling-fn scale-ticks
-   scale-app-fn service-id->router-state service-id->scheduler-state]
-  (log/trace "scaling apps" {:service-ids service-ids
-                             :app->service-description app->service-description
-                             :app->outstanding-requests app->outstanding-requests
-                             :service-id->router-state service-id->router-state
-                             :service-id->scheduler-state service-id->scheduler-state
-                             :app->scale-state app->scale-state
-                             :scale-ticks scale-ticks})
-  (zipmap service-ids
-          (map (fn [service-id]
-                 (let [outstanding-requests (or (app->outstanding-requests service-id) 0)
-                       {:keys [healthy-instances expired-instances]} (service-id->router-state service-id)
-                       {:keys [instances task-count]} (service-id->scheduler-state service-id)
-                       ; if we don't have a target instance count, default to the number of tasks
-                       target-instances (get-in app->scale-state [service-id :target-instances] task-count)
-                       {:keys [target-instances scale-to-instances scale-amount]}
-                       (if (and target-instances scale-ticks)
-                         (scale-app-fn (assoc (get app->service-description service-id)
-                                         "scale-ticks" scale-ticks)
-                                       {:healthy-instances healthy-instances
-                                        :expired-instances expired-instances
-                                        :outstanding-requests outstanding-requests
-                                        :target-instances target-instances
-                                        :total-instances instances})
-                         {:scale-to-instances instances :target-instances target-instances :scale-amount 0})]
-                   (when-not (zero? scale-amount)
-                     (apply-scaling-fn service-id
-                                       {:outstanding-requests outstanding-requests
-                                        :task-count task-count
-                                        :total-instances instances
-                                        :scale-amount scale-amount
-                                        :scale-to-instances scale-to-instances}))
-                   {:target-instances target-instances
-                    :scale-to-instances scale-to-instances
-                    :scale-amount scale-amount}))
-               service-ids)))
+  [service-ids service-id->service-description service-id->outstanding-requests service-id->scale-state apply-scaling-fn
+   scale-ticks scale-app-fn service-id->router-state service-id->scheduler-state]
+  (try
+    (log/trace "scaling apps" {:service-ids service-ids
+                               :service-id->service-description service-id->service-description
+                               :service-id->outstanding-requests service-id->outstanding-requests
+                               :service-id->router-state service-id->router-state
+                               :service-id->scheduler-state service-id->scheduler-state
+                               :service-id->scale-state service-id->scale-state
+                               :scale-ticks scale-ticks})
+    (zipmap service-ids
+            (map (fn [service-id]
+                   (let [outstanding-requests (or (service-id->outstanding-requests service-id) 0)
+                         {:keys [healthy-instances expired-instances]} (service-id->router-state service-id)
+                         {:keys [instances task-count]} (service-id->scheduler-state service-id)
+                         ; if we don't have a target instance count, default to the number of tasks
+                         target-instances (get-in service-id->scale-state [service-id :target-instances] task-count)
+                         {:keys [target-instances scale-to-instances scale-amount]}
+                         (if (and target-instances scale-ticks)
+                           (scale-app-fn (assoc (get service-id->service-description service-id)
+                                           "scale-ticks" scale-ticks)
+                                         {:healthy-instances healthy-instances
+                                          :expired-instances expired-instances
+                                          :outstanding-requests outstanding-requests
+                                          :target-instances target-instances
+                                          :total-instances instances})
+                           {:scale-to-instances instances :target-instances target-instances :scale-amount 0})]
+                     (when-not (zero? scale-amount)
+                       (apply-scaling-fn service-id
+                                         {:outstanding-requests outstanding-requests
+                                          :task-count task-count
+                                          :total-instances instances
+                                          :scale-amount scale-amount
+                                          :scale-to-instances scale-to-instances}))
+                     {:target-instances target-instances
+                      :scale-to-instances scale-to-instances
+                      :scale-amount scale-amount}))
+                 service-ids))
+    (catch Exception e
+      (log/error e "exception in scale-apps")
+      service-id->scale-state)))
 
 (defn autoscaler-goroutine
   "Autoscaler encapsulated in goroutine.
@@ -416,27 +446,19 @@
                                     (if (seq service-id->router-state)
                                       (cid/with-correlation-id
                                         correlation-id
-                                        (try
-                                          (let [scalable-service-ids (set/intersection (set (keys service-id->router-state))
-                                                                                       (set (keys service-id->scheduler-state')))]
-                                            (scale-apps scalable-service-ids
-                                                        (zipmap scalable-service-ids
-                                                                (map #(service-id->service-description-fn %)
-                                                                     scalable-service-ids))
-                                                        (zipmap scalable-service-ids
-                                                                ; default to 0 outstanding requests for services without metrics
-                                                                (map #(get-in global-state' [% "outstanding"] 0)
-                                                                     scalable-service-ids))
-                                                        service-id->scale-state
-                                                        apply-scaling-fn
-                                                        (when previous-cycle-start-time
-                                                          (int (/ (- (.getMillis cycle-start-time) (.getMillis previous-cycle-start-time)) 1000)))
-                                                        scale-app-fn
-                                                        service-id->router-state
-                                                        service-id->scheduler-state'))
-                                          (catch Exception e
-                                            (log/error e "Exception in scale apps")
-                                            (throw e))))
+                                        (let [scalable-service-ids (set/intersection (set (keys service-id->router-state))
+                                                                                     (set (keys service-id->scheduler-state')))]
+                                          (scale-apps scalable-service-ids
+                                                      (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
+                                                      ; default to 0 outstanding requests for services without metrics
+                                                      (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
+                                                      service-id->scale-state
+                                                      apply-scaling-fn
+                                                      (when previous-cycle-start-time
+                                                        (int (/ (- (.getMillis cycle-start-time) (.getMillis previous-cycle-start-time)) 1000)))
+                                                      scale-app-fn
+                                                      service-id->router-state
+                                                      service-id->scheduler-state')))
                                       service-id->scale-state)]
                                 (cid/cinfo correlation-id "scaling iteration took" (- (.getMillis (t/now)) (.getMillis cycle-start-time))
                                            "ms for" (count service->scale-state') "services.")

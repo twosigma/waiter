@@ -16,6 +16,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [plumbing.core :as pc]
+            [qbits.jet.client.http :as http]
             [waiter.core :refer :all]
             [waiter.cors :as cors]
             [waiter.curator :as curator]
@@ -28,6 +29,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.spnego :as spnego]
+            [waiter.test-helpers :refer :all]
             [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
            java.io.StringBufferInputStream))
@@ -37,43 +39,42 @@
   {:request-method request-method :uri resource :params (first params)})
 
 (deftest test-peers-acknowledged-blacklist-requests?
-  (let [my-router-id "my-router-id"
-        service-id "service-id"
+  (let [service-id "service-id"
         instance-id "service-id.instance-id"
-        passwords [[:cached "cached-password"]]
+        endpoint "router/endpoint"
         test-cases (list
                      {:name "no-routers-in-input"
                       :short-circuit true
-                      :router-id->endpoint {}
+                      :router-ids []
                       :expected-result true
                       :expected-routers-connected []}
                      {:name "all-routers-approve-kill"
                       :short-circuit true
-                      :router-id->endpoint {"abcd" "http://success", "bcde" "http://success", "defg" "http://success"}
+                      :router-ids ["abcd-success" "bcde-success" "defg-success"]
                       :expected-result true
-                      :expected-routers-connected ["abcd" "bcde" "defg"]}
+                      :expected-routers-connected ["abcd-success" "bcde-success" "defg-success"]}
                      {:name "second-router-vetoes-kill-with-short-circuit"
                       :short-circuit true
-                      :router-id->endpoint {"abcd" "http://success", "bcde" "http://fail", "defg" "http://success"}
+                      :router-ids ["abcd-success" "bcde-fail" "defg-success"]
                       :expected-result false
-                      :expected-routers-connected ["abcd" "bcde"]}
+                      :expected-routers-connected ["abcd-success" "bcde-fail"]}
                      {:name "second-router-vetoes-kill-without-short-circuit"
                       :short-circuit false
-                      :router-id->endpoint {"abcd" "http://success", "bcde" "http://fail", "defg" "http://success"}
+                      :router-ids ["abcd-success" "bcde-fail" "defg-success"]
                       :expected-result false
-                      :expected-routers-connected ["abcd" "bcde" "defg"]})]
-    (doseq [{:keys [name short-circuit router-id->endpoint expected-result expected-routers-connected]} test-cases]
+                      :expected-routers-connected ["abcd-success" "bcde-fail" "defg-success"]})]
+    (doseq [{:keys [name short-circuit router-ids expected-result expected-routers-connected]} test-cases]
       (testing (str "Test " name)
         (let [invoked-routers-atom (atom [])
-              make-blacklist-request-fn (fn [in-dest-router-id in-dest-endpoint in-my-router-id in-secret-word instance reason]
+              make-blacklist-request-fn (fn [in-dest-router-id in-dest-endpoint instance reason]
                                           (swap! invoked-routers-atom conj in-dest-router-id)
-                                          (is (= (utils/generate-secret-word in-my-router-id in-dest-router-id passwords) in-secret-word))
                                           (is (= service-id (:service-id instance)))
                                           (is (= instance-id (:id instance)))
                                           (is (= "blacklist-reason" reason))
-                                          (if (str/includes? in-dest-endpoint "fail") {:status 400} {:status 200}))
+                                          (is (= endpoint in-dest-endpoint))
+                                          (if (str/includes? in-dest-router-id "fail") {:status 400} {:status 200}))
               actual-result (peers-acknowledged-blacklist-requests?
-                              my-router-id {:id instance-id, :service-id service-id} passwords short-circuit router-id->endpoint
+                              {:id instance-id, :service-id service-id} short-circuit router-ids endpoint
                               make-blacklist-request-fn "blacklist-reason")]
           (is (= expected-routers-connected @invoked-routers-atom))
           (is (= expected-result actual-result)))))))
@@ -164,16 +165,15 @@
 (deftest test-suspend-or-resume-service-handler
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
-        can-run-as? #(= %1 %2)
         waiter-request?-fn (fn [_] true)
+        authorized? (fn [subject _ {:keys [user]}] (= subject user))
         allowed-to-manage-service? (fn [service-id auth-user]
-                                     (sd/can-manage-service? kv-store service-id can-run-as? auth-user))
-        make-inter-router-requests-fn (fn [path _ _] (is (str/includes? path "service-id-")))
+                                     (sd/can-manage-service? kv-store service-id authorized? auth-user))
+        make-inter-router-requests-sync-fn (fn [path _ _] (is (str/includes? path "service-id-")))
         configuration {:curator {:kv-store kv-store}
                        :handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
-                                  :can-run-as? can-run-as?
-                                  :make-inter-router-requests-fn make-inter-router-requests-fn
+                                  :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
                                   :service-description-defaults service-description-defaults}}
         handlers {:service-resume-handler-fn ((:service-resume-handler-fn request-handlers) configuration)
                   :service-suspend-handler-fn ((:service-suspend-handler-fn request-handlers) configuration)}
@@ -208,16 +208,15 @@
 (deftest test-override-service-handler
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
-        can-run-as? #(= %1 %2)
         waiter-request?-fn (fn [_] true)
+        authorized? (fn [subject _ {:keys [user]}] (= subject user))
         allowed-to-manage-service? (fn [service-id auth-user]
-                                     (sd/can-manage-service? kv-store service-id can-run-as? auth-user))
-        make-inter-router-requests-fn (fn [path _ _] (is (str/includes? path "service-id-")))
+                                     (sd/can-manage-service? kv-store service-id authorized? auth-user))
+        make-inter-router-requests-sync-fn (fn [path _ _] (is (str/includes? path "service-id-")))
         configuration {:curator {:kv-store kv-store}
                        :handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
-                                  :can-run-as? can-run-as?
-                                  :make-inter-router-requests-fn make-inter-router-requests-fn
+                                  :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
                                   :service-description-defaults service-description-defaults}}
         handlers {:service-override-handler-fn ((:service-override-handler-fn request-handlers) configuration)}
         test-service-id "service-id-1"]
@@ -268,9 +267,9 @@
           (check-has-prestashed-tickets query-chan {:service-description {"run-as-user" "kuser"}})
           (is false "Expected exception to be thrown")
           (catch ExceptionInfo e
-            (let [{:keys [status message supress-logging]} (ex-data e)]
+            (let [{:keys [status message suppress-logging]} (ex-data e)]
               (is (= 403 status))
-              (is supress-logging "Exception should be thrown with supress-logging")
+              (is suppress-logging "Exception should be thrown with supress-logging")
               (is (str/includes? message "Prestashed tickets"))
               (is (str/includes? message "kuser")))))))
     (testing "queries on cache miss"
@@ -287,7 +286,8 @@
         (is (nil? (check-has-prestashed-tickets query-chan {})))))))
 
 (deftest test-service-view-logs-handler
-  (let [scheduler (marathon/->MarathonScheduler nil 5051 (fn [] nil) "/slave/directory" "/home/path/" (atom {}) (atom {}) 0)
+  (let [scheduler (marathon/->MarathonScheduler 5051 (fn [] nil) "/slave/directory" "/home/path/"
+                                                (atom {}) (atom {}) 0 (constantly true))
         configuration {:handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:prepend-waiter-url identity}
                        :state {:scheduler scheduler}}
@@ -364,24 +364,27 @@
 (deftest test-apps-handler-delete
   (let [user "test-user"
         service-id "test-service-1"
-        can-run-as? =
+        kv-store (kv/->LocalKeyValueStore (atom {}))
         waiter-request?-fn (fn [_] true)
+        authorized? (fn [subject _ {:keys [user]}] (= subject user))
+        allowed-to-manage-service? (fn [service-id auth-user]
+                                     (sd/can-manage-service? kv-store service-id authorized? auth-user))
         configuration {:curator {:kv-store nil}
                        :handle-secure-request-fn (fn [handler request] (handler request))
-                       :routines {:can-run-as?-fn can-run-as?
-                                  :make-inter-router-requests-fn nil
+                       :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
+                                  :make-inter-router-requests-sync-fn nil
                                   :prepend-waiter-url nil}
                        :state {:router-id "router-id"
                                :scheduler (Object.)}}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
     (testing "service-handler:delete-successful"
-      (with-redefs [scheduler/delete-app (fn [_ service-id] {:deploymentId "12389132987", :service-id service-id})
+      (with-redefs [scheduler/delete-app (fn [_ service-id] {:result :deleted, :service-id service-id})
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 200 status))
           (is (= {"Content-Type" "application/json"} headers))
-          (is (= {"success" true, "service-id" service-id, "deploymentId" "12389132987"} (json/read-str body))))))
+          (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
     (testing "service-handler:delete-nil-response"
       (with-redefs [scheduler/delete-app (fn [_ _] nil)
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
@@ -426,20 +429,20 @@
 (deftest test-apps-handler-get
   (let [user "waiter-user"
         service-id "test-service-1"
-        can-run-as? =
         waiter-request?-fn (fn [_] true)
         configuration {:curator {:kv-store nil}
                        :handle-secure-request-fn (fn [handler request] (handler request))
-                       :routines {:can-run-as?-fn can-run-as?
-                                  :make-inter-router-requests-fn nil
+                       :routines {:allowed-to-manage-service?-fn (constantly true)
+                                  :make-inter-router-requests-sync-fn nil
                                   :prepend-waiter-url #(str "http://www.example.com" %)}
                        :state {:router-id "router-id"
                                :scheduler (Object.)}}
-        handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
+        handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
+        ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
     (testing "service-handler:get-missing-service-description"
       (with-redefs [sd/fetch-core (constantly nil)]
         (let [request {:request-method :get, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} (ring-handler request)]
           (is (= 404 status))
           (is (= {"Content-Type" "application/json"} headers))
           (let [body-json (json/read-str (str body))]
@@ -455,7 +458,7 @@
                                                                    :started-at "2014-09-13T002446.959Z"}]
                                                :failed-instances []})]
         (let [request {:request-method :get, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
           (is (= {"Content-Type" "application/json"} headers))
           (let [body-json (json/read-str (str body))]
@@ -480,7 +483,7 @@
                                                :failed-instances [{:id (str service-id ".F"), :service-id service-id}]
                                                :killed-instances [{:id (str service-id ".K"), :service-id service-id}]})]
         (let [request {:request-method :get, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
           (is (= {"Content-Type" "application/json"} headers))
           (let [body-json (json/read-str (str body))]
@@ -502,10 +505,25 @@
                    {"name" "test-service-1-name", "run-as-user" "waiter-user"}))))))))
 
 (deftest test-make-inter-router-requests
-  (let [my-router-id "router-0"
+  (let [auth-object (Object.)
+        my-router-id "router-0"
         discovery "dicovery-object!"
-        instance-request-properties {:connection-timeout-ms 1, :initial-socket-timeout-ms 1}
-        passwords ["password-1" "password-2"]]
+        passwords ["password-1" "password-2"]
+        make-response #(let [response-chan (async/promise-chan)
+                             body-chan (async/promise-chan)]
+                         (async/>!! body-chan "dummy response body")
+                         (async/>!! response-chan {:body body-chan})
+                         response-chan)
+        make-basic-auth-fn (fn make-basic-auth-fn [_ _ _] auth-object)
+        make-request-fn-factory (fn [urls-invoked-atom]
+                                  (fn [method endpoint-url auth body config error-handler]
+                                    (is (str/blank? body))
+                                    (is (empty? config))
+                                    (is (= utils/exception->strs error-handler))
+                                    (is (= :get method))
+                                    (is (= auth-object auth))
+                                    (swap! urls-invoked-atom conj endpoint-url)
+                                    (make-response)))]
     (with-redefs [discovery/router-id->endpoint-url
                   (fn [_ protocol endpoint & {:keys [exclude-set] :or {exclude-set #{}}}]
                     (pc/map-from-keys (fn [router-id]
@@ -513,34 +531,84 @@
                                       (remove #(contains? exclude-set %)
                                               ["router-0", "router-1", "router-2", "router-3", "router-4"])))]
       (testing "make-call-to-all-other-routers"
-        (let [urls-invoked-atom (atom [])]
-          (with-redefs [clj-http.client/request (fn [config]
-                                                  (is (contains? config :basic-auth))
-                                                  (swap! urls-invoked-atom conj (:url config)))]
-            (make-inter-router-requests my-router-id discovery instance-request-properties passwords
-                                        "test/endpoint1")
-            (is (= 4 (count @urls-invoked-atom)))
-            (is (= 1 (count (filter #(= "http://router-1/test/endpoint1" %) @urls-invoked-atom))))
-            (is (= 1 (count (filter #(= "http://router-2/test/endpoint1" %) @urls-invoked-atom))))
-            (is (= 1 (count (filter #(= "http://router-3/test/endpoint1" %) @urls-invoked-atom))))
-            (is (= 1 (count (filter #(= "http://router-4/test/endpoint1" %) @urls-invoked-atom)))))))
+        (let [urls-invoked-atom (atom [])
+              make-request-fn (make-request-fn-factory urls-invoked-atom)]
+          (make-inter-router-requests make-request-fn make-basic-auth-fn my-router-id discovery passwords "test/endpoint1")
+          (is (= 4 (count @urls-invoked-atom)))
+          (is (= 1 (count (filter #(= "http://router-1/test/endpoint1" %) @urls-invoked-atom))))
+          (is (= 1 (count (filter #(= "http://router-2/test/endpoint1" %) @urls-invoked-atom))))
+          (is (= 1 (count (filter #(= "http://router-3/test/endpoint1" %) @urls-invoked-atom))))
+          (is (= 1 (count (filter #(= "http://router-4/test/endpoint1" %) @urls-invoked-atom))))))
       (testing "filter-some-routers"
-        (let [urls-invoked-atom (atom [])]
-          (with-redefs [clj-http.client/request (fn [{:keys [url]}] (swap! urls-invoked-atom conj url))]
-            (make-inter-router-requests my-router-id discovery instance-request-properties passwords
-                                        "test/endpoint2"
-                                        :acceptable-router? (fn [router-id] (some #(str/includes? router-id %) ["0" "1" "2" "4"])))
-            (is (= 3 (count @urls-invoked-atom)))
-            (is (= 1 (count (filter #(= "http://router-1/test/endpoint2" %) @urls-invoked-atom))))
-            (is (= 1 (count (filter #(= "http://router-2/test/endpoint2" %) @urls-invoked-atom))))
-            (is (= 1 (count (filter #(= "http://router-4/test/endpoint2" %) @urls-invoked-atom)))))))
+        (let [urls-invoked-atom (atom [])
+              make-request-fn (make-request-fn-factory urls-invoked-atom)]
+          (make-inter-router-requests make-request-fn make-basic-auth-fn my-router-id discovery passwords "test/endpoint2"
+                                      :acceptable-router? (fn [router-id] (some #(str/includes? router-id %) ["0" "1" "2" "4"])))
+          (is (= 3 (count @urls-invoked-atom)))
+          (is (= 1 (count (filter #(= "http://router-1/test/endpoint2" %) @urls-invoked-atom))))
+          (is (= 1 (count (filter #(= "http://router-2/test/endpoint2" %) @urls-invoked-atom))))
+          (is (= 1 (count (filter #(= "http://router-4/test/endpoint2" %) @urls-invoked-atom))))))
       (testing "filter-all-routers"
-        (let [urls-invoked-atom (atom [])]
-          (with-redefs [clj-http.client/request (fn [{:keys [url]}] (swap! urls-invoked-atom conj url))]
-            (make-inter-router-requests my-router-id discovery instance-request-properties passwords
-                                        "test/endpoint3"
-                                        :acceptable-router? (fn [router-id] (some #(str/includes? router-id %) ["A" "B" "C"])))
-            (is (= 0 (count @urls-invoked-atom)))))))))
+        (let [urls-invoked-atom (atom [])
+              make-request-fn (make-request-fn-factory urls-invoked-atom)]
+          (make-inter-router-requests make-request-fn make-basic-auth-fn my-router-id discovery passwords "test/endpoint3"
+                                      :acceptable-router? (fn [router-id] (some #(str/includes? router-id %) ["A" "B" "C"])))
+          (is (= 0 (count @urls-invoked-atom))))))))
+
+(deftest test-make-request-async
+  (let [http-client (Object.)
+        idle-timeout 1234
+        method :test
+        endpoint-url "endpoint/url"
+        auth (Object.)
+        body "body-str"
+        config {:foo :bar, :test :map}
+        error-handler identity
+        expected-response (async/chan)]
+    (with-redefs [http/request (fn [in-http-client config-map]
+                                 (is (= http-client in-http-client))
+                                 (is (= (merge {:auth auth
+                                                :body body
+                                                :follow-redirects? false
+                                                :idle-timeout idle-timeout
+                                                :method method
+                                                :url endpoint-url}
+                                               config)
+                                        config-map))
+                                 expected-response)]
+      (is (= expected-response
+             (make-request-async http-client idle-timeout method endpoint-url auth body config error-handler))))))
+
+(deftest test-make-request-sync
+  (let [http-client (Object.)
+        idle-timeout 1234
+        method :test
+        endpoint-url "endpoint/url"
+        auth (Object.)
+        config {:foo :bar, :test :map}
+        error-handler (fn [error] (throw error))]
+    (with-redefs [make-request-async (fn [in-http-client in-idle-timeout in-method in-endpoint-url in-auth body in-config _]
+                                       (is (= http-client in-http-client))
+                                       (is (= idle-timeout in-idle-timeout))
+                                       (is (= method in-method))
+                                       (is (= endpoint-url in-endpoint-url))
+                                       (is (= auth in-auth))
+                                       (is (= config in-config))
+                                       (let [response-chan (async/promise-chan)
+                                             body-chan (async/promise-chan)]
+                                         (if (str/includes? body "error")
+                                           (async/>!! response-chan {:body body-chan, :error (Exception. (str body))})
+                                           (async/>!! response-chan {:body body-chan, :status 200}))
+                                         (async/>!! body-chan body)
+                                         response-chan))]
+      (testing "error-in-response"
+        (is (thrown-with-msg? Exception #"error-in-request"
+                              (make-request-sync http-client idle-timeout method endpoint-url auth "error-in-request" config error-handler))))
+
+      (testing "successful-response"
+        (let [body-string "successful-response"]
+          (is (= {:body body-string, :status 200}
+                 (make-request-sync http-client idle-timeout method endpoint-url auth body-string config error-handler))))))))
 
 (deftest test-waiter-request?-factory
   (testing "waiter-request?"
@@ -695,112 +763,48 @@
         (is (not (leader?)) "not leader when too few peers")))))
 
 (deftest test-metrics-request-handler
-  (testing "metrics-request-handler:all-metrics"
-    (with-redefs [metrics/get-metrics (fn get-metrics [] {:data "metrics-from-get-metrics"})]
-      (let [request {:request-method :get, :uri "/metrics"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:metrics-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "metrics-from-get-metrics")))))
+  (let [handlers {:metrics-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
+        waiter-request?-fn (fn [_] true)
+        ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
+    (testing "metrics-request-handler:all-metrics"
+      (with-redefs [metrics/get-metrics (fn get-metrics [] {:data "metrics-from-get-metrics"})]
+        (let [request {:request-method :get, :uri "/metrics"}
+              {:keys [body headers status]} (ring-handler request)]
+          (is (= 200 status))
+          (is (= {"Content-Type" "application/json"} headers))
+          (is (str/includes? (str body) "metrics-from-get-metrics")))))
 
-  (testing "metrics-request-handler:all-metrics:error"
-    (with-redefs [metrics/get-metrics (fn get-metrics [] (throw (Exception. "get-metrics")))]
-      (let [request {:request-method :get, :uri "/metrics"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:metrics-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 500 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "get-metrics")))))
+    (testing "metrics-request-handler:all-metrics:error"
+      (with-redefs [metrics/get-metrics (fn get-metrics [] (throw (Exception. "get-metrics")))]
+        (let [request {:request-method :get, :uri "/metrics"}
+              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+          (is (= 500 status))
+          (is (= {"Content-Type" "application/json"} headers))
+          (is (str/includes? (str body) "get-metrics")))))
 
-  (testing "metrics-request-handler:waiter-metrics"
-    (with-redefs [metrics/get-waiter-metrics (fn get-waiter-metrics-fn [] {:data (str "metrics-for-waiter")})]
-      (let [request {:request-method :get, :uri "/metrics", :query-string "exclude-services=true"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:metrics-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "metrics-for-waiter")))))
+    (testing "metrics-request-handler:waiter-metrics"
+      (with-redefs [metrics/get-waiter-metrics (fn get-waiter-metrics-fn [] {:data (str "metrics-for-waiter")})]
+        (let [request {:request-method :get, :uri "/metrics", :query-string "exclude-services=true"}
+              {:keys [body headers status]} (ring-handler request)]
+          (is (= 200 status))
+          (is (= {"Content-Type" "application/json"} headers))
+          (is (str/includes? (str body) "metrics-for-waiter")))))
 
-  (testing "metrics-request-handler:service-metrics"
-    (with-redefs [metrics/get-service-metrics (fn get-service-metrics [service-id] {:data (str "metrics-for-" service-id)})]
-      (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:metrics-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "metrics-for-abcd")))))
+    (testing "metrics-request-handler:service-metrics"
+      (with-redefs [metrics/get-service-metrics (fn get-service-metrics [service-id] {:data (str "metrics-for-" service-id)})]
+        (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
+              {:keys [body headers status]} (ring-handler request)]
+          (is (= 200 status))
+          (is (= {"Content-Type" "application/json"} headers))
+          (is (str/includes? (str body) "metrics-for-abcd")))))
 
-  (testing "metrics-request-handler:service-metrics:error"
-    (with-redefs [metrics/get-service-metrics (fn get-service-metrics [_] (throw (Exception. "get-service-metrics")))]
-      (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:metrics-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 500 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "get-service-metrics"))))))
-
-(deftest test-stats-request-handler
-  (testing "stats-request-handler:resolution"
-    (let [metrics-request-handler-fn (Object.)]
-      (is (= metrics-request-handler-fn
-             ((:stats-request-handler-fn request-handlers)
-               {:metrics-request-handler-fn metrics-request-handler-fn})))))
-
-  (testing "stats-request-handler:all-metrics"
-    (with-redefs [metrics/get-metrics (fn get-metrics [] {:data "metrics-from-get-metrics"})]
-      (let [request {:request-method :get, :uri "/stats"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:stats-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "metrics-from-get-metrics")))))
-
-  (testing "stats-request-handler:all-metrics:error"
-    (with-redefs [metrics/get-metrics (fn get-metrics [] (throw (Exception. "get-metrics")))]
-      (let [request {:request-method :get, :uri "/stats"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:stats-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 500 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "get-metrics")))))
-
-  (testing "stats-request-handler:waiter-metrics"
-    (with-redefs [metrics/get-waiter-metrics (fn get-waiter-metrics-fn [] {:data (str "metrics-for-waiter")})]
-      (let [request {:request-method :get, :uri "/stats", :query-string "exclude-services=true"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:stats-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "metrics-for-waiter")))))
-
-  (testing "stats-request-handler:service-metrics"
-    (with-redefs [metrics/get-service-metrics (fn get-service-metrics [service-id] {:data (str "metrics-for-" service-id)})]
-      (let [request {:request-method :get, :uri "/stats", :query-string "service-id=abcd"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:stats-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "metrics-for-abcd")))))
-
-  (testing "stats-request-handler:service-metrics:error"
-    (with-redefs [metrics/get-service-metrics (fn get-service-metrics [_] (throw (Exception. "get-service-metrics")))]
-      (let [request {:request-method :get, :uri "/stats", :query-string "service-id=abcd"}
-            waiter-request?-fn (fn [_] true)
-            handlers {:stats-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-            {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-        (is (= 500 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "get-service-metrics"))))))
+    (testing "metrics-request-handler:service-metrics:error"
+      (with-redefs [metrics/get-service-metrics (fn get-service-metrics [_] (throw (Exception. "get-service-metrics")))]
+        (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
+              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+          (is (= 500 status))
+          (is (= {"Content-Type" "application/json"} headers))
+          (is (str/includes? (str body) "get-service-metrics")))))))
 
 (deftest test-async-result-handler-call
   (testing "test-async-result-handler-call"
@@ -896,14 +900,20 @@
            (exec-routes-mapper "/state")))
     (is (= {:handler :service-state-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/state/test-service")))
-    (is (= {:handler :stats-request-handler-fn}
+    (is (= {:handler :process-request-fn}
            (exec-routes-mapper "/stats")))
     (is (= {:handler :status-handler-fn}
            (exec-routes-mapper "/status")))
     (is (= {:handler :token-handler-fn}
            (exec-routes-mapper "/token")))
-    (is (= {:handler :token-refresh-handler-fn, :route-params {:token "test-token"}}
-           (exec-routes-mapper "/token/test-token/refresh")))
+    (is (= {:handler :token-list-handler-fn}
+           (exec-routes-mapper "/tokens")))
+    (is (= {:handler :token-owners-handler-fn}
+           (exec-routes-mapper "/tokens/owners")))
+    (is (= {:handler :token-refresh-handler-fn}
+           (exec-routes-mapper "/tokens/refresh")))
+    (is (= {:handler :token-reindex-handler-fn}
+           (exec-routes-mapper "/tokens/reindex")))
     (is (= {:handler :process-request-fn}
            (exec-routes-mapper "/through-to-backend")))
     (is (= {:handler :async-complete-handler-fn, :route-params {:request-id "test-request-id", :service-id "test-service-id"}}
@@ -926,7 +936,99 @@
            (exec-routes-mapper "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location?a=b")))
     (is (= {:handler :waiter-auth-handler-fn}
            (exec-routes-mapper "/waiter-auth")))
+    (is (= {:handler :waiter-acknowledge-consent-handler-fn}
+           (exec-routes-mapper "/waiter-consent")))
+    (is (= {:handler :waiter-request-consent-handler-fn
+            :route-params {:path ""}}
+           (exec-routes-mapper "/waiter-consent/")))
+    (is (= {:handler :waiter-request-consent-handler-fn
+            :route-params {:path "simple-path"}}
+           (exec-routes-mapper "/waiter-consent/simple-path")))
+    (is (= {:handler :waiter-request-consent-handler-fn
+            :route-params {:path "simple-path"}}
+           (exec-routes-mapper "/waiter-consent/simple-path?with=params")))
+    (is (= {:handler :waiter-request-consent-handler-fn
+            :route-params {:path "nested/path/example"}}
+           (exec-routes-mapper "/waiter-consent/nested/path/example")))
+    (is (= {:handler :waiter-request-consent-handler-fn
+            :route-params {:path "nested/path/example"}}
+           (exec-routes-mapper "/waiter-consent/nested/path/example?with=params")))
+    (is (= {:handler :kill-instance-handler-fn, :route-params {:service-id "test-service"}}
+           (exec-routes-mapper "/waiter-kill-instance/test-service")))
     (is (= {:handler :thread-dump-handler-fn}
            (exec-routes-mapper "/waiter-thread-dump")))
     (is (= {:handler :work-stealing-handler-fn}
            (exec-routes-mapper "/work-stealing")))))
+
+(deftest test-delegate-instance-kill-request
+  (let [service-id "service-id"]
+
+    (testing "no-peers-available"
+      (let [router-id->endpoint {}
+            make-kill-instance-request-fn (fn [_ _] (is false "Unexpected call to make-kill-instance-request-fn") {})]
+        (is (not (delegate-instance-kill-request service-id router-id->endpoint make-kill-instance-request-fn)))))
+
+    (testing "one-peer-available-unable-to-kill"
+      (let [router-ids #{"peer-1"}
+            make-kill-instance-request-fn (fn [dest-router-id dest-endpoint]
+                                            (is (= (str "waiter-kill-instance/" service-id) dest-endpoint))
+                                            (is (= dest-router-id "peer-1"))
+                                            {})]
+        (is (not (delegate-instance-kill-request service-id router-ids make-kill-instance-request-fn)))))
+
+    (testing "three-peers-available-none-able-to-kill"
+      (let [router-ids #{"peer-1" "peer-2" "peer-3"}
+            requested-router-ids-atom (atom #{})
+            make-kill-instance-request-fn (fn [dest-router-id dest-endpoint]
+                                            (swap! requested-router-ids-atom (fn [s] (conj s dest-router-id)))
+                                            (is (= (str "waiter-kill-instance/" service-id) dest-endpoint))
+                                            {})]
+        (is (not (delegate-instance-kill-request service-id router-ids make-kill-instance-request-fn)))
+        (is (= router-ids @requested-router-ids-atom))))
+
+    (testing "three-peers-available-first-able-to-kill"
+      (let [router-ids #{"peer-1" "peer-2" "peer-3"}
+            make-kill-instance-request-count-atom (atom 0)
+            make-kill-instance-request-fn (fn [_ dest-endpoint]
+                                            (swap! make-kill-instance-request-count-atom inc)
+                                            (is (= (str "waiter-kill-instance/" service-id) dest-endpoint))
+                                            (when (= 1 @make-kill-instance-request-count-atom)
+                                              {:status 200}))]
+        (is (delegate-instance-kill-request service-id router-ids make-kill-instance-request-fn))
+        (is (= 1 @make-kill-instance-request-count-atom))))
+
+    (testing "three-peers-available-last-able-to-kill"
+      (let [router-ids #{"peer-1" "peer-2" "peer-3"}
+            make-kill-instance-request-count-atom (atom 0)
+            make-kill-instance-request-fn (fn [_ dest-endpoint]
+                                            (swap! make-kill-instance-request-count-atom inc)
+                                            (is (= (str "waiter-kill-instance/" service-id) dest-endpoint))
+                                            (when (= (count router-ids) @make-kill-instance-request-count-atom)
+                                              {:status 200}))]
+        (is (delegate-instance-kill-request service-id router-ids make-kill-instance-request-fn))
+        (is (= (count router-ids) @make-kill-instance-request-count-atom))))))
+
+(deftest test-delegate-instance-kill-request-routine
+  (let [my-router-id "my-router-id"
+        service-id "service-id"
+        discovery (Object.)
+        make-inter-router-requests-sync-fn (Object.)
+        configuration {:curator {:discovery discovery}
+                       :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
+                       :state {:router-id my-router-id}}
+        delegate-instance-kill-request-fn ((:delegate-instance-kill-request-fn routines) configuration)
+        router-ids #{"peer-1" "peer-2" "peer-3"}
+        make-kill-instance-peer-ids-atom (atom #{})]
+    (with-redefs [discovery/router-ids (fn [in-discovery exclude-set-key exclude-set-value]
+                                         (is (= discovery in-discovery))
+                                         (is (= :exclude-set exclude-set-key))
+                                         (is (= #{my-router-id} exclude-set-value))
+                                         router-ids)
+                  make-kill-instance-request (fn [in-make-inter-router-requests-fn in-service-id dest-router-id kill-instance-endpoint]
+                                               (swap! make-kill-instance-peer-ids-atom (fn [s] (conj s dest-router-id)))
+                                               (is (= make-inter-router-requests-sync-fn in-make-inter-router-requests-fn))
+                                               (is (= service-id in-service-id))
+                                               (is (= (str "waiter-kill-instance/" service-id) kill-instance-endpoint))
+                                               false)]
+      (delegate-instance-kill-request-fn service-id)
+      (is (= router-ids @make-kill-instance-peer-ids-atom)))))

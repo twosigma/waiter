@@ -124,7 +124,7 @@
       (async-request-terminate-fn request-id))
     (let [endpoint (str "waiter-async/complete/" request-id "/" service-id)]
       (log/info "requesting termination of async request" request-id "at router" target-router-id)
-      (make-inter-router-requests-fn endpoint :method :get :acceptable-router? #(= target-router-id %)))))
+      (make-inter-router-requests-fn endpoint :acceptable-router? #(= target-router-id %) :method :get))))
 
 (defn route-params->uri
   "Converts the route params to a uri.

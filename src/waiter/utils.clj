@@ -22,10 +22,14 @@
             [taoensso.nippy.compression :as compression])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            clojure.lang.PersistentQueue
+           java.io.OutputStreamWriter
+           java.lang.Process
+           java.net.ServerSocket
            java.nio.ByteBuffer
            java.util.UUID
            java.util.concurrent.ThreadLocalRandom
            java.util.regex.Pattern
+           javax.servlet.ServletResponse
            (org.joda.time DateTime ReadablePeriod)))
 
 (defn select-keys-pred
@@ -85,39 +89,6 @@
   [cache key]
   (swap! cache #(cache/evict % key)))
 
-
-(defn resolve-fn
-  "Accepts either a clojure function or a namespaced function name.
-  If the input is a clojure function, this function just return the input clojure function.
-  If the input is a namespaced function name, this function resolves it and returns the clojure function."
-  [function-arg]
-  (if (fn? function-arg)
-    function-arg
-    (let [function-name (str function-arg)
-          index-of-slash (.lastIndexOf function-name "/")
-          result-fn (if (neg? index-of-slash)
-                      (do
-                        (log/fatal "Function name must be namespaced, e.g. waiter.password-store/->ConfiguredPasswordProvider")
-                        (System/exit 1))
-                      (let [lookup-env (use (symbol (subs function-name 0 index-of-slash)))
-                            fn-symbol (symbol (subs function-name (inc index-of-slash)))]
-                        ; `(resolve (read-string function-name))` worked in unit tests but not when using `lein run`
-                        (resolve lookup-env fn-symbol)))]
-      (when (nil? result-fn)
-        (log/fatal "Unresolved function:" function-name)
-        (System/exit 1))
-      result-fn)))
-
-(defn evaluate-config-fn
-  "A common pattern in our configuration is a map that 
-  contains a key :custom-impl with a value that names a 
-  function to be called.  The function is called with the
-  same config map."
-  [config]
-  (let [fully-qualified-factory-name (:custom-impl config)
-        factory-fn (resolve-fn fully-qualified-factory-name)]
-    (factory-fn config)))
-
 (defn extract-expired-keys
   "Extracts the expired keys from the input map (key->expiry time) given the expiry time."
   [input-map expiry-time]
@@ -138,10 +109,13 @@
       (str (subs in-str 0 (- max-len ellipsis-len)) ellipsis)
       in-str)))
 
-(defn date-to-str [date-time]
-  (f/unparse
-    (f/with-zone (f/formatter "yyyy-MM-dd HH:mm:ss.SSS") (t/default-time-zone))
-    date-time))
+(defn date-to-str
+  ([date-time]
+   (date-to-str date-time (f/formatter "yyyy-MM-dd HH:mm:ss.SSS")))
+  ([date-time formatter]
+   (f/unparse
+     (f/with-zone formatter (t/default-time-zone))
+     date-time)))
 
 (defn non-neg? [x]
   (or (zero? x) (pos? x)))
@@ -150,7 +124,7 @@
   [src-id dest-id processed-passwords]
   (let [password (second (first processed-passwords))
         secret-word (digest/md5 (str src-id ":" dest-id ":" password))]
-    (log/info "generate-secret-word" [src-id dest-id] "->" secret-word)
+    (log/debug "generate-secret-word" [src-id dest-id] "->" secret-word)
     secret-word))
 
 (defn stringify-elements
@@ -163,7 +137,9 @@
       (instance? Pattern v) (str v)
       (instance? PersistentQueue v) (vec v)
       (instance? ManyToManyChannel v) (str v)
+      (instance? Process v) (str v)
       (= k :time) (str v)
+      (symbol? v) (str/join "/" ((juxt namespace name) v))
       :else v)))
 
 (defn map->json-response
@@ -172,6 +148,19 @@
   {:body (json/write-str data-map :value-fn stringify-elements)
    :status status
    :headers {"Content-Type" "application/json"}})
+
+(defn map->streaming-json-response
+  "Converts the data into a json response which can be streamed back to the client."
+  [data-map & {:keys [status] :or {status 200}}]
+  (let [data-map (doall data-map)]
+    {:status status
+     :headers {"Content-Type" "application/json"}
+     :body (fn [^ServletResponse resp]
+             (let [writer (OutputStreamWriter. (.getOutputStream resp))]
+               (try
+                 (json/write data-map writer :value-fn stringify-elements)
+                 (finally
+                   (.flush writer)))))}))
 
 (defn exception->strs
   "Converts the exception stacktrace into a string list."
@@ -184,22 +173,28 @@
     (or (:friendly-error-message ex-data)
         (vec (concat (exception-to-list-fn e) (exception-to-list-fn (.getCause e)))))))
 
+(defn exception->status
+  "Returns the status code for the exception by looking up :status in the ex-data, else it returns the default."
+  [ex & {:keys [status]}]
+  (:status (ex-data ex) (or status 400)))
+
 (defn exception->response
   "Converts an exception into a 400 plain text response with the stack trace."
-  [log-message ^Exception e & {:keys [headers status] :or {headers {}, status 400}}]
+  [log-message ^Exception e & {:keys [headers status] :or {headers {}}}]
   (let [processed-headers (into {} (for [[k v] headers] [(name k) (str v)]))
         ex-data (ex-data e)]
-    (when-not (:supress-logging ex-data)
+    (when-not (:suppress-logging ex-data)
       (log/error e log-message processed-headers))
     {:body (:message ex-data (str/join (System/lineSeparator) (exception->strs e)))
-     :status (:status ex-data status)
+     :status (exception->status e :status status)
      :headers (merge {"Content-Type" "text/plain"} processed-headers)}))
 
 (defn exception->json-response
   "Convert the input data into a json response."
-  [^Exception e & {:keys [status] :or {status 400}}]
+  [^Exception e & {:keys [status]}]
+  (log/error e "Generating JSON exception response")
   {:body (json/write-str {:exception (exception->strs e)} :value-fn stringify-elements)
-   :status (:status (ex-data e) status)
+   :status (exception->status e :status status)
    :headers {"Content-Type" "application/json"}})
 
 (defmacro log-and-suppress-when-exception-thrown
@@ -364,3 +359,54 @@
   'true' in the provided request params"
   [params flag]
   (Boolean/parseBoolean (str (get params flag "false"))))
+
+(defn authority->host
+  "Retrieves the host from the authority."
+  [authority]
+  (let [port-index (str/index-of (str authority) ":")]
+    (cond-> authority port-index (subs 0 port-index))))
+
+(defn authority->port
+  "Retrieves the port from the authority."
+  [authority & {:keys [default]}]
+  (let [port-index (str/index-of (str authority) ":")]
+    (if port-index (subs authority (inc port-index)) (str default))))
+
+(defn same-origin
+  "Returns true if the host and origin are non-nil and are equivalent."
+  [{:keys [headers scheme]}]
+  (let [{:strs [host origin x-forwarded-proto]} headers
+        scheme (or x-forwarded-proto scheme)]
+    (when (and host origin scheme)
+      (= origin (str (name scheme) "://" host)))))
+
+(defn create-component
+  "Creates a component based on the specified :kind"
+  [{:keys [kind] :as component-config} & {:keys [context]}]
+  (log/info "component:" kind "with config" component-config (if context (str "and context " context) ""))
+  (let [kind-config (get component-config kind)
+        factory-fn (:factory-fn kind-config)]
+    (if factory-fn
+      (let [ns (namespace factory-fn)
+            lookup-env (when ns (use (symbol ns)))
+            resolved-fn (resolve lookup-env factory-fn)]
+        (if resolved-fn
+          (resolved-fn (merge context kind-config))
+          (throw (ex-info "Unable to resolve factory function" (assoc component-config :ns ns)))))
+      (throw (ex-info "No :factory-fn specified" component-config)))))
+
+(defn pos-int?
+  "Returns true if x is a positive integer"
+  [x]
+  (and (integer? x) (pos? x)))
+
+(defn port-available?
+  "Returns true if port is not in use"
+  [port]
+  (try
+    (let [ss (ServerSocket. port)]
+      (.setReuseAddress ss true)
+      (.close ss)
+      true)
+    (catch Exception _
+      false)))

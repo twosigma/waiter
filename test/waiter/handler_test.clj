@@ -11,16 +11,21 @@
 (ns waiter.handler-test
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
+            [comb.template :as template]
             [full.async :as fa]
             [plumbing.core :as pc]
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
-            [waiter.scheduler :as scheduler])
-  (:import clojure.lang.ExceptionInfo
-           java.io.StringBufferInputStream))
+            [waiter.scheduler :as scheduler]
+            [waiter.test-helpers :refer :all])
+  (:import (clojure.core.async.impl.channels ManyToManyChannel)
+           (clojure.lang ExceptionInfo)
+           (java.io StringBufferInputStream StringReader)
+           (waiter.scheduler ServiceScheduler)))
 
 (deftest test-complete-async-handler
   (testing "missing-request-id"
@@ -112,7 +117,7 @@
       (let [make-http-request-fn (fn [in-service-id location auth-user request-method passthrough-headers _]
                                    (is (= service-id in-service-id))
                                    (is (= "http://host:port/location/1234" location))
-                                   (is (= "test-user" auth-user))
+                                   (is (= {:username "test-user", :principal "test-user@DOMAIN"} auth-user))
                                    (is (= :http-method request-method))
                                    (is (= {} passthrough-headers))
                                    (async/go {:error (Exception. "backend-status-error")}))
@@ -121,6 +126,7 @@
                                          (is (= service-id in-service-id))
                                          (is (= "req-1234" in-request-id)))
             request {:authorization/user "test-user"
+                     :krb5-authenticated-princ "test-user@DOMAIN"
                      :request-method :http-method
                      :route-params (make-route-params "local")}
             {:keys [body headers status]}
@@ -155,11 +161,12 @@
                       (is (= service-id in-service-id))
                       (is (= (str "http://host:port/location/" (if (= router-type "local") "1234" "6789")) location)
                           (str location))
-                      (is (= "test-user" auth-user))
+                      (is (= {:username "test-user", :principal "test-user@DOMAIN"} auth-user))
                       (is (= request-method in-request-method))
                       (is (= {} passthrough-headers))
                       (async/go {:body "async-result-response", :headers {}, :status return-status}))
                     request {:authorization/user "test-user"
+                             :krb5-authenticated-princ "test-user@DOMAIN"
                              :request-method request-method,
                              :route-params (make-route-params router-type)}
                     {:keys [status headers]}
@@ -251,12 +258,13 @@
       (let [make-http-request-fn (fn [in-service-id location auth-user request-method passthrough-headers _]
                                    (is (= service-id in-service-id))
                                    (is (= "http://host:port/location/1234" location))
-                                   (is (= "test-user" auth-user))
+                                   (is (= {:username "test-user", :principal "test-user@DOMAIN"} auth-user))
                                    (is (= :http-method request-method))
                                    (is (= {} passthrough-headers))
                                    (async/go {:error (Exception. "backend-status-error")}))
             async-trigger-terminate-fn nil
-            request {:authorization/user "test-user", :route-params (make-route-params "local"), :request-method :http-method}
+            request {:authorization/user "test-user", :krb5-authenticated-princ "test-user@DOMAIN"
+                     :route-params (make-route-params "local"), :request-method :http-method}
             {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
@@ -296,13 +304,14 @@
                     (fn [in-service-id location auth-user in-request-method passthrough-headers _]
                       (is (= service-id in-service-id))
                       (is (= (str "http://host:port/query/location/" (if (= router-type "local") "1234" "6789")) location))
-                      (is (= "test-user" auth-user))
+                      (is (= {:username "test-user", :principal "test-user@DOMAIN"} auth-user))
                       (is (= request-method in-request-method))
                       (is (= {} passthrough-headers))
                       (async/go {:body "status-check-response"
                                  :headers (if (= return-status 303) {"location" (or result-location (result-location-fn router-type))} {})
                                  :status return-status}))
                     request {:authorization/user "test-user"
+                             :krb5-authenticated-princ "test-user@DOMAIN"
                              :request-method request-method
                              :route-params (make-route-params router-type)}
                     {:keys [status headers]}
@@ -373,11 +382,14 @@
                                               (is (every? #(contains? (get service-entry :instance-counts) %)
                                                           [:healthy-instances, :unhealthy-instances])))
                                             parsed-body)))
-        can-run-as? =
-        prepend-waiter-url identity]
+        prepend-waiter-url identity
+        authorized? (fn [user action {:keys [service-id]}]
+                      (and (= user test-user)
+                           (= action :manage)
+                           (some #(= % service-id) test-user-services)))
+        list-services-handler (wrap-handler-json-response list-services-handler)]
     (let [service-id->service-description-fn
-          (fn [service-id & _]
-            {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})]
+          (fn [service-id & _] {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})]
 
       (testing "list-services-handler:success-regular-user"
         (async/>!! state-chan {:service-id->healthy-instances {"service1" []
@@ -387,14 +399,15 @@
                                                                "service6" []}
                                :service-id->unhealthy-instances {"service3" []
                                                                  "service5" []}})
-        (let [{:keys [body headers status]} (list-services-handler can-run-as? state-chan prepend-waiter-url service-id->service-description-fn request)]
+        (let [{:keys [body headers status]}
+              (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "Content-Type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 4)))
           (is (not-any? #(str/includes? (str body) (str "service" %)) (range 4 7)))
           (is (instance-counts-present body))))
 
-      (testing "list-services-handler:success-regular-user-withfilter-for-another-user"
+      (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user")]
           (async/>!! state-chan {:service-id->healthy-instances {"service1" []
                                                                  "service2" []
@@ -403,11 +416,30 @@
                                                                  "service6" []}
                                  :service-id->unhealthy-instances {"service3" []
                                                                    "service5" []}})
-          (let [{:keys [body headers status]} (list-services-handler can-run-as? state-chan prepend-waiter-url service-id->service-description-fn request)]
+          (let [{:keys [body headers status]}
+                (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "Content-Type")))
-            (is (every? #(str/includes? (str body) (str "service" %)) (range 4 7)))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
+            (is (every? #(str/includes? (str body) (str "service" %)) (range 4 7)))
+            (is (instance-counts-present body)))))
+
+      (testing "list-services-handler:success-regular-user-with-filter-for-same-user"
+        (let [request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
+          (async/>!! state-chan {:service-id->healthy-instances {"service1" []
+                                                                 "service2" []
+                                                                 "service3" []
+                                                                 "service4" []
+                                                                 "service6" []}
+                                 :service-id->unhealthy-instances {"service3" []
+                                                                   "service5" []}})
+          (let [{:keys [body headers status]}
+                ; use (constantly true) for authorized? to verify that filter still applies
+                (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn (constantly true) request)]
+            (is (= 200 status))
+            (is (= "application/json" (get headers "Content-Type")))
+            (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
+            (is (every? #(str/includes? (str body) (str "service" %)) (range 4 7)))
             (is (instance-counts-present body)))))
 
       (testing "list-services-handler:failure"
@@ -415,27 +447,49 @@
         (let [request {:authorization/user test-user}
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (RuntimeException. exception-message)))
-              {:keys [body headers status]} (list-services-handler can-run-as? state-chan prepend-waiter-url service-id->service-description-fn request)]
+              {:keys [body headers status]}
+              (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "Content-Type")))
-          (is (str/includes? (str body) exception-message)))))))
+          (is (str/includes? (str body) exception-message))))
+
+      (testing "list-services-handler:success-super-user-sees-all-apps"
+        (async/>!! state-chan {:service-id->healthy-instances {"service1" []
+                                                               "service2" []
+                                                               "service3" []
+                                                               "service4" []
+                                                               "service6" []}
+                               :service-id->unhealthy-instances {"service3" []
+                                                                 "service5" []}})
+        (let [authorized? (fn [user action {:keys [service-id]}]
+                            (and (= user test-user)
+                                 (= :manage action)
+                                 (some #(= (str "service" %) service-id) (range 1 7))))
+              {:keys [body headers status]}
+              ; without a run-as-user, should return all apps
+              (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
+          (is (= 200 status))
+          (is (= "application/json" (get headers "Content-Type")))
+          (is (every? #(str/includes? (str body) (str "service" %)) (range 1 7)))
+          (is (instance-counts-present body)))))))
 
 (deftest test-delete-service-handler
   (let [test-user "test-user"
         test-service-id "service-1"
-        can-run-as? =]
+        allowed-to-manage-service?-fn (fn [service-id user] (and (= test-service-id service-id) (= test-user user)))]
     (let [core-service-description {"run-as-user" test-user}]
 
       (testing "delete-service-handler:success-regular-user"
         (let [scheduler (reify scheduler/ServiceScheduler
                           (delete-app [_ service-id]
                             (is (= test-service-id service-id))
-                            {:deploymentId (str "deleted-" service-id)}))
+                            {:result :deleted
+                             :message "Worked!"}))
               request {:authorization/user test-user}
-              {:keys [body headers status]} (delete-service-handler test-service-id core-service-description scheduler can-run-as? request)]
+              {:keys [body headers status]} (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "Content-Type")))
-          (is (every? #(str/includes? (str body) (str %)) [(str "deleted-" test-service-id)]))))
+          (is (every? #(str/includes? (str body) (str %)) ["Worked!"]))))
 
       (testing "delete-service-handler:success-regular-user-deleting-for-another-user"
         (let [scheduler (reify scheduler/ServiceScheduler
@@ -444,7 +498,7 @@
                             {:deploymentId "good"}))
               request {:authorization/user "another-user"}]
           (is (thrown-with-msg? ExceptionInfo #"User not allowed to delete service"
-                                (delete-service-handler test-service-id core-service-description scheduler can-run-as? request))))))))
+                                (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn request))))))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
@@ -533,16 +587,51 @@
           (is (= expected-status status))
           (is (every? #(str/includes? (str body) %) expected-body-fragments)))))))
 
+(deftest test-work-stealing-handler-cannot-find-channel
+  (let [instance-rpc-chan (async/chan)
+        service-id "test-service-id"
+        request {:body (StringBufferInputStream.
+                         (json/write-str
+                           {"cid" "test-cid"
+                            "instance" {"id" "test-instance-id", "service-id" service-id}
+                            "request-id" "test-request-id"
+                            "router-id" "test-router-id"
+                            "service-id" service-id}))}
+        response-chan (work-stealing-handler instance-rpc-chan request)]
+    (async/thread
+      (let [[method in-service-id correlation-id result-chan] (async/<!! instance-rpc-chan)]
+        (is (= :offer method))
+        (is (= service-id in-service-id))
+        (is correlation-id)
+        (is (instance? ManyToManyChannel result-chan))
+        (async/close! result-chan)))
+    (let [response-body (async/<!! response-chan)]
+      (is (str/includes? response-body "Unable to find work-stealing-chan")))))
+
 (deftest test-get-router-state
-  (testing "Getting router state"
-    (testing "should handle exceptions gracefully"
-      (let [state-chan (async/chan)
-            router-metrics-state-fn (fn [] {})
-            kv-store (kv/new-local-kv-store {})]
-        (async/put! state-chan []) ; vector instead of a map to trigger an error
-        (let [{:keys [status body]} (get-router-state state-chan router-metrics-state-fn kv-store)]
-          (is (str/includes? (str body) "clojure.lang.APersistentVector.assoc"))
-          (is (= 500 status)))))))
+  (let [get-router-state (wrap-handler-json-response get-router-state)]
+    (testing "Getting router state"
+      (testing "should handle exceptions gracefully"
+        (let [state-chan (async/chan)
+              router-metrics-state-fn (fn [] {})
+              kv-store (kv/new-local-kv-store {})
+              leader?-fn (constantly true)
+              scheduler (reify ServiceScheduler (state [_] nil))]
+          (async/put! state-chan []) ; vector instead of a map to trigger an error
+          (let [{:keys [status body]} (get-router-state state-chan router-metrics-state-fn kv-store leader?-fn scheduler)]
+            (is (str/includes? (str body) "clojure.lang.APersistentVector.assoc"))
+            (is (= 500 status)))))
+
+      (testing "display router state"
+        (let [state-chan (async/chan)
+              router-metrics-state-fn (fn [] {})
+              kv-store (kv/new-local-kv-store {})
+              leader?-fn (constantly true)
+              scheduler (reify ServiceScheduler (state [_] nil))]
+          (async/put! state-chan {:state-data []}) ; vector instead of a map to trigger an error
+          (let [{:keys [status body]} (get-router-state state-chan router-metrics-state-fn kv-store leader?-fn scheduler)]
+            (is (every? #(str/includes? (str body) %1) ["state-data", "leader", "kv-store", "router-metrics-state", "statsd"]))
+            (is (= 200 status))))))))
 
 (deftest test-get-service-state
   (let [router-id "router-id"
@@ -572,7 +661,8 @@
                                     (async/>! response-chan work-stealing-state))))
           start-maintainer-fn (fn []
                                 (async/go (let [{:keys [service-id response-chan]} (async/<! maintainer-state-chan)]
-                                            (async/>! response-chan (assoc maintainer-state :service-id service-id)))))]
+                                            (async/>! response-chan (assoc maintainer-state :service-id service-id)))))
+          get-service-state (wrap-async-handler-json-response get-service-state)]
       (start-instance-rpc-fn)
       (start-query-chan-fn)
       (start-maintainer-fn)
@@ -583,3 +673,269 @@
         (is (= work-stealing-state (get-in service-state [:state :work-stealing-state])))
         (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))))))
 
+(deftest test-acknowledge-consent-handler
+  (let [current-time-ms (System/currentTimeMillis)
+        clock (constantly current-time-ms)
+        token->service-description-template (fn [token]
+                                              (when (= token "www.example.com")
+                                                {"cmd" "some-cmd", "cpus" 1, "mem" 1024,
+                                                 "token" token, "owner" "user"})) ;; produces service-6.110
+        service-description->service-id (fn [service-description]
+                                          (str "service-" (count service-description) "." (count (str service-description))))
+        add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
+                             (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-days}))
+        consent-expiry-days 1
+        consent-cookie-value (fn [clock mode service-id token {:strs [owner]}]
+                               (when mode
+                                 (-> [mode (clock)]
+                                     (concat (case mode
+                                               "service" (when service-id [service-id])
+                                               "token" (when (and owner token) [token owner])
+                                               nil))
+                                     (vec))))
+        acknowledge-consent-handler-fn (fn [request]
+                                         (let [request' (-> request
+                                                            (update :authorization/user #(or %1 "test-user"))
+                                                            (update :request-method #(or %1 :post))
+                                                            (update :scheme #(or %1 :http)))]
+                                           (acknowledge-consent-handler clock token->service-description-template service-description->service-id
+                                                                        consent-cookie-value add-encoded-cookie consent-expiry-days request')))]
+    (testing "unsupported request method"
+      (let [request {:request-method :get}
+            {:keys [body headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 405 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (str/includes? body "Only POST supported!"))))
+
+    (testing "host and origin mismatch"
+      (let [request {:headers {"host" "www.example2.com"
+                               "origin" "http://www.example.com"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 400 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (nil? cookie))
+        (is (str/includes? body "Origin is not the same as the host!"))))
+
+    (testing "referer and origin mismatch"
+      (let [request {:headers {"host" "www.example.com"
+                               "origin" "http://www.example.com"
+                               "referer" "http://www.example2.com/consent"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 400 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (nil? cookie))
+        (is (str/includes? body "Referer does not start with origin!"))))
+
+    (testing "mismatch in x-requested-with"
+      (let [request {:headers {"host" "www.example.com"
+                               "origin" "http://www.example.com"
+                               "referer" "http://www.example.com/consent"
+                               "x-requested-with" "AJAX"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 400 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (nil? cookie))
+        (is (str/includes? body "Header x-requested-with does not match expected value!"))))
+
+    (testing "missing mode param"
+      (let [request {:headers {"host" "www.example.com"
+                               "origin" "http://www.example.com"
+                               "referer" "http://www.example.com/consent"
+                               "x-requested-with" "XMLHttpRequest"}
+                     :params {"service-id" "service-id-1"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 400 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (nil? cookie))
+        (is (str/includes? body "Missing or invalid mode!"))))
+
+    (testing "invalid mode param"
+      (let [request {:authorization/user "test-user"
+                     :headers {"host" "www.example.com"
+                               "origin" "http://www.example.com"
+                               "referer" "http://www.example.com/consent"
+                               "x-requested-with" "XMLHttpRequest"}
+                     :params {"mode" "unsupported", "service-id" "service-id-1"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 400 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (nil? cookie))
+        (is (str/includes? body "Missing or invalid mode!"))))
+
+    (testing "missing service-id param"
+      (let [request {:authorization/user "test-user"
+                     :headers {"host" "www.example.com"
+                               "origin" "http://www.example.com"
+                               "referer" "http://www.example.com/consent"
+                               "x-requested-with" "XMLHttpRequest"}
+                     :params {"mode" "service"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 400 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (nil? cookie))
+        (is (str/includes? body "Missing service-id!"))))
+
+    (testing "missing service description for token"
+      (let [request {:authorization/user "test-user"
+                     :headers {"host" "www.example2.com"
+                               "origin" "http://www.example2.com"
+                               "referer" "http://www.example2.com/consent"
+                               "x-requested-with" "XMLHttpRequest"}
+                     :params {"mode" "service", "service-id" "service-id-1"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 400 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (nil? cookie))
+        (is (str/includes? body "Unable to load description for token!"))))
+
+    (testing "invalid service-id param"
+      (let [request {:authorization/user "test-user"
+                     :headers {"host" "www.example.com:1234"
+                               "origin" "http://www.example.com:1234"
+                               "referer" "http://www.example.com:1234/consent"
+                               "x-requested-with" "XMLHttpRequest"}
+                     :params {"mode" "service", "service-id" "service-id-1"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 400 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (nil? cookie))
+        (is (str/includes? body "Invalid service-id for specified token"))))
+
+    (testing "valid service mode request"
+      (let [request {:authorization/user "test-user"
+                     :headers {"host" "www.example.com:1234"
+                               "origin" "http://www.example.com:1234"
+                               "referer" "http://www.example.com:1234/consent"
+                               "x-requested-with" "XMLHttpRequest"}
+                     :params {"mode" "service", "service-id" "service-7.140"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 200 status))
+        (is (= {"x-waiter-consent" {:value ["service" current-time-ms "service-7.140"], :age consent-expiry-days}} cookie))
+        (is (= {} headers))
+        (is (str/includes? body "Added cookie x-waiter-consent"))))
+
+    (testing "valid service mode request with missing origin"
+      (let [request {:authorization/user "test-user"
+                     :headers {"host" "www.example.com:1234"
+                               "referer" "http://www.example.com:1234/consent"
+                               "x-requested-with" "XMLHttpRequest"}
+                     :params {"mode" "service", "service-id" "service-7.140"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 200 status))
+        (is (= {"x-waiter-consent" {:value ["service" current-time-ms "service-7.140"], :age consent-expiry-days}} cookie))
+        (is (= {} headers))
+        (is (str/includes? body "Added cookie x-waiter-consent"))))
+
+    (testing "valid token mode request"
+      (let [request {:authorization/user "test-user"
+                     :headers {"host" "www.example.com:1234"
+                               "origin" "http://www.example.com:1234"
+                               "referer" "http://www.example.com:1234/consent"
+                               "x-requested-with" "XMLHttpRequest"}
+                     :params {"mode" "token"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 200 status))
+        (is (= {"x-waiter-consent" {:value ["token" current-time-ms "www.example.com" "user"], :age consent-expiry-days}} cookie))
+        (is (= {} headers))
+        (is (str/includes? body "Added cookie x-waiter-consent"))))
+
+    (testing "valid token mode request with missing origin"
+      (let [request {:authorization/user "test-user"
+                     :headers {"host" "www.example.com:1234"
+                               "referer" "http://www.example.com:1234/consent"
+                               "x-requested-with" "XMLHttpRequest"}
+                     :params {"mode" "token"}}
+            {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
+        (is (= 200 status))
+        (is (= {"x-waiter-consent" {:value ["token" current-time-ms "www.example.com" "user"], :age consent-expiry-days}} cookie))
+        (is (= {} headers))
+        (is (str/includes? body "Added cookie x-waiter-consent"))))))
+
+(deftest test-request-consent-handler
+  (let [token->service-description-template (fn [token]
+                                              (when (= token "www.example.com")
+                                                {"cmd" "some-cmd", "cpus" 1, "mem" 1024})) ;; produces service-4.67
+        service-description->service-id (fn [service-description]
+                                          (str "service-" (count service-description) "." (count (str service-description))))
+        consent-expiry-days 1
+        request-consent-handler-fn (fn [request]
+                                     (let [request' (-> request
+                                                        (update :authorization/user #(or %1 "test-user"))
+                                                        (update :request-method #(or %1 :get)))]
+                                       (request-consent-handler token->service-description-template service-description->service-id
+                                                                consent-expiry-days request')))]
+    (testing "unsupported request method"
+      (let [request {:authorization/user "test-user"
+                     :request-method :post
+                     :scheme :http}
+            {:keys [body headers status]} (request-consent-handler-fn request)]
+        (is (= 405 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (str/includes? body "Only GET supported!"))))
+
+    (testing "token without service description"
+      (let [request {:authorization/user "test-user"
+                     :headers {"host" "www.example2.com:6789"}
+                     :request-method :get
+                     :route-params {:path "some-path"}
+                     :scheme :http}
+            {:keys [body headers status]} (request-consent-handler-fn request)]
+        (is (= 400 status))
+        (is (= {"Content-Type" "text/plain"} headers))
+        (is (str/includes? body "Unable to load description for token!"))))
+
+    (with-redefs [io/resource (fn [file-path]
+                                (is (= "web/consent.html" file-path))
+                                (StringReader. "some-content"))
+                  template/eval (fn [content data]
+                                  (is (= {:auth-user "test-user"
+                                          :consent-expiry-days 1
+                                          :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
+                                          :service-id "service-5.97"
+                                          :target-url "http://www.example.com:6789/some-path"
+                                          :token "www.example.com"}
+                                         data))
+                                  (str "template:" content))]
+      (testing "token without service description"
+        (let [request {:authorization/user "test-user"
+                       :headers {"host" "www.example.com:6789"}
+                       :request-method :get
+                       :route-params {:path "some-path"}
+                       :scheme :http}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {} headers))
+          (is (= body "template:some-content")))))))
+
+(deftest test-blacklist-instance-cannot-find-channel
+  (let [instance-rpc-chan (async/chan)
+        service-id "test-service-id"
+        request {:body (StringBufferInputStream.
+                         (json/write-str
+                           {"instance" {"id" "test-instance-id", "service-id" service-id}
+                            "period-in-ms" 1000
+                            "reason" "blacklist"}))}
+        response-chan (blacklist-instance instance-rpc-chan request)]
+    (async/thread
+      (let [[method in-service-id correlation-id result-chan] (async/<!! instance-rpc-chan)]
+        (is (= :blacklist method))
+        (is (= service-id in-service-id))
+        (is correlation-id)
+        (is (instance? ManyToManyChannel result-chan))
+        (async/close! result-chan)))
+    (let [response-body (async/<!! response-chan)]
+      (is (str/includes? response-body "Unable to find blacklist chan")))))
+
+(deftest test-get-blacklisted-instances-cannot-find-channel
+  (let [instance-rpc-chan (async/chan)
+        service-id "test-service-id"
+        response-chan (get-blacklisted-instances instance-rpc-chan service-id)]
+    (async/thread
+      (let [[method in-service-id correlation-id result-chan] (async/<!! instance-rpc-chan)]
+        (is (= :query-state method))
+        (is (= service-id in-service-id))
+        (is correlation-id)
+        (is (instance? ManyToManyChannel result-chan))
+        (async/close! result-chan)))
+    (let [response-body (async/<!! response-chan)]
+      (is (str/includes? response-body "Unable to find query-state-chan for service")))))

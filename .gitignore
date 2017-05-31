@@ -20,3 +20,6 @@ test2junit/
 
 # Configuration for your local environment
 *config-local.edn
+
+# Shell scheduler directory
+scheduler/

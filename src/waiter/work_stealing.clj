@@ -31,7 +31,7 @@
 (defn- make-work-stealing-offers
   "Makes work-stealing offers to victim routers when the current router has idle slots.
    Routers which are more heavily loaded preferentially receive help offers."
-  [label offer-help-fn reserve-instance-fn {:keys [iteration] :as current-state} extra-slots router->metrics
+  [label offer-help-fn reserve-instance-fn {:keys [iteration] :as current-state} extra-slots
    router-id->help-required cleanup-chan router-id service-id]
   (async/go
     (loop [counter 0
@@ -46,8 +46,8 @@
           (if instance-id
             (let [target-router-id (-> (juxt val key)
                                        (sort-by router-id->help-required)
-                                       (last)
-                                       (key))
+                                       last
+                                       key)
                   help-required (get router-id->help-required target-router-id)
                   offer-parameters (assoc reservation-parameters
                                      :instance instance
@@ -135,7 +135,7 @@
                              (-> (if (and (pos? extra-slots) (some pos? (vals router-id->help-required)))
                                    (async/<!
                                      (make-work-stealing-offers
-                                       label offer-help-fn reserve-instance-fn current-state extra-slots router-id->metrics
+                                       label offer-help-fn reserve-instance-fn current-state extra-slots
                                        router-id->help-required cleanup-chan router-id service-id))
                                    (do
                                      (log/debug label "no work-stealing offers this iteration"
@@ -145,9 +145,23 @@
 
                          query-chan
                          ([data]
-                           (let [{:keys [response-chan]} data]
+                           (let [{:keys [response-chan]} data
+                                 router-id->metrics (service-id->router-id->metrics service-id)
+                                 slots-offered (count request-id->work-stealer)
+                                 extra-slots (-> (router-id->metrics router-id)
+                                                 (assoc "slots-offered" slots-offered)
+                                                 (utils/compute-help-required)
+                                                 (unchecked-negate))
+                                 router-id->help-required (-> router-id->metrics
+                                                              (dissoc router-id)
+                                                              (router-id->metrics->router-id->help-required))]
                              (log/info label "state has been queried")
-                             (async/put! response-chan (dissoc current-state :timeout-chan))
+                             (async/put! response-chan (-> current-state
+                                                           (dissoc :timeout-chan)
+                                                           (assoc :router-id->metrics router-id->metrics
+                                                                  :slots-offered slots-offered
+                                                                  :extra-slots extra-slots
+                                                                  :router-id->help-required router-id->help-required)))
                              current-state))
 
                          :priority true)]
@@ -189,23 +203,29 @@
           (offer-help-fn
             [{:keys [request-id target-router-id] :as reservation-parameters} cleanup-chan]
             (async/go
-              (let [response-result-promise (promise)]
+              (let [response-result-promise (promise)
+                    response->body (fn [{:keys [body error]}]
+                                       (if error
+                                         (throw error)
+                                         body))]
                 (try
                   (deliver response-result-promise
                            (-> (make-inter-router-requests-fn
                                  "work-stealing"
-                                 :method :post
                                  :acceptable-router? #(= target-router-id %)
                                  :body (-> reservation-parameters
                                            (assoc :router-id router-id
                                                   :service-id service-id)
                                            (utils/map->json-response)
-                                           :body))
+                                           :body)
+                                 :method :post)
                                (get target-router-id)
-                               (:body)
-                               (str)
-                               (json/read-str)
-                               (walk/keywordize-keys)
+                               async/<!
+                               response->body
+                               async/<! ;; rely on http client library to close the body
+                               str
+                               json/read-str
+                               walk/keywordize-keys
                                (get :response-status "work-stealing-error")))
                   (catch Exception e
                     (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" target-router-id "errors"))

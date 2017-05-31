@@ -14,7 +14,7 @@
             [waiter.curator :as curator]
             [waiter.kv :as kv])
   (:import (java.util Arrays)
-           (org.apache.curator.framework CuratorFrameworkFactory)
+           (org.apache.curator.framework CuratorFrameworkFactory CuratorFramework)
            (org.apache.curator.retry RetryNTimes)))
 
 (deftest test-local-kv-store
@@ -39,9 +39,8 @@
 (deftest test-encrypted-kv-store
   (let [passwords ["test1" "test2" "test3"]
         processed-passwords (mapv #(vector :cached %) passwords)
-        serialize-config {:passwords processed-passwords}
         local-kv-store (kv/new-local-kv-store {})
-        encrypted-kv-store (kv/new-encrypted-kv-store serialize-config local-kv-store)]
+        encrypted-kv-store (kv/new-encrypted-kv-store processed-passwords local-kv-store)]
     (is (nil? (kv/fetch local-kv-store :a)))
     (is (nil? (kv/fetch encrypted-kv-store :a)))
     (is (nil? (kv/fetch local-kv-store :b)))
@@ -121,12 +120,13 @@
   (is (= "/base2/42d3/blahblah" (kv/key->zk-path "/base2" "blahblah"))))
 
 (deftest test-zk-kv-store
-  (is (kv/new-zk-kv-store {:curator {}
-                           :base-path "/waiter-tokens"}))
   (let [zk (curator/start-in-process-zookeeper)
         zk-server (:zk-server zk)
         curator (CuratorFrameworkFactory/newClient (:zk-connection-string zk) (RetryNTimes. 10 100))
         services-base-path "/test-zk-kv-store/base-path"]
+    (is (kv/new-zk-kv-store {:curator curator
+                             :base-path "/waiter-tokens"
+                             :sync-timeout-ms 1}))
     (try
       (.start curator)
       (testing "in-memory-zk"
@@ -134,7 +134,8 @@
                                        (.forPath (.checkExists curator)
                                                  (kv/key->zk-path services-base-path key)))
               test-store (kv/new-zk-kv-store {:curator curator
-                                              :base-path services-base-path})
+                                              :base-path services-base-path
+                                              :sync-timeout-ms 1})
               bytes (byte-array 10)]
           (Arrays/fill bytes (byte 1))
           (is (nil? (kv/fetch test-store "a")))
@@ -158,3 +159,49 @@
       (finally
         (.close curator)
         (.stop zk-server)))))
+
+(deftest test-new-kv-store
+  (let [base-path "/waiter"
+        kv-config {:kind :zk
+                   :zk {:factory-fn 'waiter.kv/new-zk-kv-store
+                        :sync-timeout-ms 2000}
+                   :relative-path "tokens"}
+        zk (curator/start-in-process-zookeeper)
+        zk-server (:zk-server zk)
+        curator (CuratorFrameworkFactory/newClient (:zk-connection-string zk) (RetryNTimes. 10 100))
+        kv-store (kv/new-kv-store kv-config curator base-path nil)]
+    (try
+      (.start curator)
+      (kv/store kv-store "foo" "bar")
+      (is (= "bar" (kv/retrieve kv-store "foo" true)))
+      (finally
+        (.close curator)
+        (.stop zk-server)))))
+
+(deftest test-new-zk-kv-store
+  (testing "Creating a new ZooKeeper key/value store"
+    (testing "should throw on non-integer sync-timeout-ms"
+      (is (thrown? AssertionError (kv/new-zk-kv-store {:curator (reify CuratorFramework)
+                                                       :base-path ""
+                                                       :sync-timeout-ms 1.1}))))))
+
+(deftest test-zk-keys
+  (testing "List ZK keys"
+    (let [base-path "/waiter"
+          kv-config {:kind :zk
+                     :zk {:factory-fn 'waiter.kv/new-zk-kv-store
+                          :sync-timeout-ms 2000}
+                     :relative-path "tokens"}
+          zk (curator/start-in-process-zookeeper)
+          zk-server (:zk-server zk)
+          curator (CuratorFrameworkFactory/newClient (:zk-connection-string zk) (RetryNTimes. 10 100))
+          kv-store (kv/new-kv-store kv-config curator base-path nil)]
+      (try
+        (.start curator)
+        (kv/store kv-store "foo" "bar")
+        (kv/store kv-store "foo2" "bar2")
+        (kv/store kv-store "foo3" "bar3")
+        (is (= #{"foo" "foo2" "foo3"} (set (kv/zk-keys curator (str base-path "/" (:relative-path kv-config))))))
+        (finally
+          (.close curator)
+          (.stop zk-server))))))

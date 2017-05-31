@@ -529,16 +529,15 @@
               (is (= expected actual)))))))))
 
 (defn- service-description
-  ([sources]
-   (service-description sources {}))
-  ([sources waiter-headers]
-   (service-description sources waiter-headers (kv/->LocalKeyValueStore (atom {}))))
-  ([sources waiter-headers kv-store]
+  ([sources & {:keys [waiter-headers kv-store assoc-run-as-user-approved?]
+               :or {waiter-headers {}
+                    kv-store (kv/->LocalKeyValueStore (atom {}))
+                    assoc-run-as-user-approved? (constantly false)}}]
    (with-redefs [metric-group-filter (fn [sd _] sd)
                  service-description-schema {s/Str s/Any}]
      (:service-description
        (compute-service-description sources waiter-headers {} kv-store "test-service-" "current-request-user"
-                                    [] (->DefaultServiceDescriptionBuilder))))))
+                                    [] (->DefaultServiceDescriptionBuilder nil) assoc-run-as-user-approved?)))))
 
 (deftest test-compute-service-description
   (testing "Service description computation"
@@ -563,7 +562,7 @@
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
                                    :tokens {"cmd" "token-cmd"}}
-                                  {"x-waiter-token" "value-does-not-matter"}))))
+                                  :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
 
     (testing "only token from host with defaults missing permitted user"
       (is (= {"cmd" "token-cmd"
@@ -578,14 +577,14 @@
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"}
                                    :tokens {"cmd" "token-cmd"}}
-                                  {"x-waiter-token" "value-does-not-matter"}))))
+                                  :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
 
     (testing "only token from host with dummy header"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"}
              (service-description {:defaults {"health-check-url" "/ping"}
                                    :tokens {"cmd" "token-cmd"}}
-                                  {"x-waiter-dummy" "value-does-not-matter"}))))
+                                  :waiter-headers {"x-waiter-dummy" "value-does-not-matter"}))))
 
     (testing "only on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -716,6 +715,67 @@
                                    :tokens {"run-as-user" "token-ru"},
                                    :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}))))
 
+    (testing "run as user provided from on-the-fly header with hostname token"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "current-request-user"
+              "run-as-user" "chris"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :tokens {"cmd" "token-cmd", "run-as-user" "alice"},
+                                   :headers {"run-as-user" "chris"}}
+                                  :waiter-headers {"x-waiter-run-as-user" "chris"}))))
+
+    (testing "run as user star from on-the-fly header with hostname token"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "current-request-user"
+              "run-as-user" "current-request-user"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :tokens {"cmd" "token-cmd", "run-as-user" "alice"},
+                                   :headers {"run-as-user" "*"}}
+                                  :waiter-headers {"x-waiter-run-as-user" "*"}))))
+
+    (testing "run as user star from hostname token"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "bob"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :tokens {"cmd" "token-cmd", "run-as-user" "*"},
+                                   :headers {}}
+                                  :waiter-headers {}))))
+
+    (testing "run as user star from on-the-fly token"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "current-request-user"
+              "run-as-user" "current-request-user"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :tokens {"cmd" "token-cmd", "run-as-user" "*"},
+                                   :headers {}}
+                                  :waiter-headers {"x-waiter-token" "on-the-fly-token"}))))
+
+    (testing "run as user star from on-the-fly headers without permitted-user"
+      (is (= {"cmd" "on-the-fly-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "current-request-user"
+              "run-as-user" "current-request-user"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :tokens {"run-as-user" "token-ru"},
+                                   :headers {"cmd" "on-the-fly-cmd", "run-as-user" "*"}}
+                                  :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd", "x-waiter-run-as-user" "*"}))))
+
+    (testing "run as user star from on-the-fly headers with permitted-user"
+      (is (= {"cmd" "on-the-fly-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "current-request-user"
+              "run-as-user" "current-request-user"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :tokens {"run-as-user" "token-ru"},
+                                   :headers {"cmd" "on-the-fly-cmd", "permitted-user" "alice", "run-as-user" "*"}}
+                                  :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd"
+                                                   "x-waiter-permitted-user" "alice"
+                                                   "x-waiter-run-as-user" "*"}))))
+
     (testing "active overrides"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
         (store-service-description-overrides
@@ -733,8 +793,7 @@
                                      :headers {"cmd" "on-the-fly-cmd"
                                                "run-as-user" "on-the-fly-ru"
                                                "name" "active-override"}}
-                                    {}
-                                    kv-store)))))
+                                    :kv-store kv-store)))))
 
     (testing "inactive overrides"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
@@ -757,8 +816,7 @@
                                      :headers {"cmd" "on-the-fly-cmd"
                                                "run-as-user" "on-the-fly-ru"
                                                "name" "inactive-override"}}
-                                    {}
-                                    kv-store)))))
+                                    :kv-store kv-store)))))
 
     (testing "override token metadata from headers"
       (is (= {"cmd" "token-cmd"
@@ -778,7 +836,7 @@
               "metadata" {"abc" "DEF"}}
              (service-description {:defaults {"health-check-url" "/ping"}
                                    :tokens {"cmd" "token-cmd", "metadata" {"Abc" "DEF"}}}
-                                  {"x-waiter-token" "value-does-not-matter"}))))
+                                  :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
 
     (testing "metric group from token"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -804,7 +862,17 @@
               "metric-group" "on-the-fly-mg"}
              (service-description {:defaults {"health-check-url" "/health"}
                                    :tokens {"metric-group" "token-mg"}
-                                   :headers {"cmd" "on-the-fly-cmd", "metric-group" "on-the-fly-mg"}}))))))
+                                   :headers {"cmd" "on-the-fly-cmd", "metric-group" "on-the-fly-mg"}}))))
+
+    (testing "auto-populate run-as-user"
+      (is (= {"cmd" "some-cmd"
+              "health-check-url" "/health"
+              "run-as-user" "current-request-user"
+              "permitted-user" "current-request-user"
+              "metric-group" "token-mg"}
+             (service-description {:defaults {"health-check-url" "/health"}
+                                   :tokens {"cmd" "some-cmd", "metric-group" "token-mg"}}
+                                  :assoc-run-as-user-approved? (constantly true)))))))
 
 (deftest test-compute-service-description-error-scenarios
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -819,7 +887,8 @@
                                                         "run-as-user" test-user}
                                                :headers {}}
                                               {} {} kv-store service-id-prefix test-user []
-                                              (->DefaultServiceDescriptionBuilder))))
+                                              (->DefaultServiceDescriptionBuilder nil)
+                                              (constantly false))))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" 1},
                                                :tokens {"cmd" "test command"
@@ -829,17 +898,32 @@
                                                         "run-as-user" test-user}
                                                :headers {}}
                                               {} {} kv-store service-id-prefix test-user []
-                                              (->DefaultServiceDescriptionBuilder))))
+                                              (->DefaultServiceDescriptionBuilder nil)
+                                              (constantly false))))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" 1}
                                                :tokens {}
                                                :headers {}}
                                               {} {} kv-store service-id-prefix test-user []
-                                              (->DefaultServiceDescriptionBuilder))))))
+                                              (->DefaultServiceDescriptionBuilder nil)
+                                              (constantly false))))
+    (is (thrown? Exception
+                 (compute-service-description {:defaults {"health-check-url" "/health"}
+                                               :tokens {"cmd" "cmd for missing run-as-user"
+                                                        "cpus" 1
+                                                        "mem" 200
+                                                        "version" "a1b2c3"}}
+                                              {} {} kv-store service-id-prefix test-user []
+                                              (->DefaultServiceDescriptionBuilder nil)
+                                              (constantly false))))))
 
 (deftest test-service-id-and-token-storing
   (with-redefs [service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd service-description-keys))))]
-    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+    (let [lock (Object.)
+          synchronize-fn (fn [_ f]
+                           (locking lock
+                             (f)))
+          kv-store (kv/->LocalKeyValueStore (atom {}))
           service-id-prefix "test#"
           token "test-token"
           service-description {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "token" token,
@@ -853,26 +937,7 @@
       (testing "test:token->service-description-2"
         (is (= service-description (token->service-description-template kv-store token)))
         (is (= {} (token->service-description-template kv-store "invalid-token" :error-on-missing false)))
-        (is (thrown? ExceptionInfo (token->service-description-template kv-store "invalid-token"))))
-      (testing "test:service-id->raw-service-description"
-        (store-service-description-for-token kv-store token service-description)
-        (is (empty? (fetch-core kv-store service-id)))
-        (is (empty? (fetch-core kv-store "invalid-service-id")))))))
-
-(deftest test-store-service-description
-  (with-redefs [service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd service-description-keys))))]
-    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-          service-id-prefix "test#"
-          token "test-token"
-          service-description (clojure.walk/stringify-keys
-                                {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                 :permitted-user "tu2", :name token, :min-instances 2, :max-instances 10})
-          service-id (service-description->service-id service-id-prefix service-description)]
-      (store-service-description-for-token kv-store token service-description)
-      (is (= (sanitize-service-description service-description)
-             (kv/fetch kv-store token)))
-      ; Storing token does not automatically store the service-description for a service -id
-      (is (nil? (kv/fetch kv-store service-id))))))
+        (is (thrown? ExceptionInfo (token->service-description-template kv-store "invalid-token")))))))
 
 (deftest test-service-suspend-resume
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -882,12 +947,13 @@
         service-description {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
         service-description-1 (assoc service-description "run-as-user" username)
         service-description-2 (assoc service-description "run-as-user" (str username "2"))
-        can-run-as? #(= %1 %2)]
+        authorized? (fn [subject _ {:keys [user]}] (= subject user))
+        validate-description (constantly true)]
     (testing "test-service-suspend-resume"
-      (store-core kv-store service-id-1 service-description-1 (constantly true))
-      (store-core kv-store service-id-2 service-description-2 (constantly true))
-      (is (can-manage-service? service-description-1 can-run-as? username))
-      (is (not (can-manage-service? service-description-2 can-run-as? username)))
+      (store-core kv-store service-id-1 service-description-1 validate-description)
+      (store-core kv-store service-id-2 service-description-2 validate-description)
+      (is (can-manage-service? kv-store service-id-1 authorized? username))
+      (is (not (can-manage-service? kv-store service-id-2 authorized? username)))
       (is (nil? (service-id->suspended-state kv-store service-id-1)))
       (is (nil? (service-id->suspended-state kv-store service-id-2)))
       (suspend-service kv-store service-id-1 username)
@@ -896,6 +962,34 @@
       (resume-service kv-store service-id-1 username)
       (is (= {:suspended false, :last-updated-by username} (dissoc (service-id->suspended-state kv-store service-id-1) :time)))
       (is (nil? (service-id->suspended-state kv-store service-id-2))))))
+
+(deftest test-can-manage-service?
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        service-id-1 "test-service-1"
+        service-id-2 "test-service-2"
+        service-id-3 "test-service-3"
+        username-1 "tu1"
+        username-2 "tu2"
+        admin-username "admin"
+        service-description-1 {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1a", "permitted-user" "tu2"}
+        service-description-2 (assoc service-description-1 "run-as-user" username-1)
+        service-description-3 (assoc service-description-1 "run-as-user" "tu2")
+        authorized? (fn [subject verb {:keys [user]}]
+                      (and (= verb :manage) (or (str/includes? user subject) (= admin-username subject))))
+        validate-description (constantly true)]
+    (testing "test-service-suspend-resume"
+      (store-core kv-store service-id-1 service-description-1 validate-description)
+      (store-core kv-store service-id-2 service-description-2 validate-description)
+      (store-core kv-store service-id-3 service-description-3 validate-description)
+      (is (can-manage-service? kv-store service-id-1 authorized? username-1))
+      (is (can-manage-service? kv-store service-id-2 authorized? username-1))
+      (is (not (can-manage-service? kv-store service-id-3 authorized? username-1)))
+      (is (not (can-manage-service? kv-store service-id-1 authorized? username-2)))
+      (is (not (can-manage-service? kv-store service-id-2 authorized? username-2)))
+      (is (can-manage-service? kv-store service-id-3 authorized? username-2))
+      (is (can-manage-service? kv-store service-id-1 authorized? admin-username))
+      (is (can-manage-service? kv-store service-id-2 authorized? admin-username))
+      (is (can-manage-service? kv-store service-id-3 authorized? admin-username)))))
 
 (deftest test-metadata-error-message
   (let [service-description {"cpus" 1, "mem" 1, "cmd" "exit 0", "version" "1", "run-as-user" "someone"}]
@@ -1025,8 +1119,41 @@
 (deftest test-validate-cmd-type
   (testing "DefaultServiceDescriptionBuilder validation"
     (testing "should accept no cmd-type or shell cmd-type"
-      (validate (->DefaultServiceDescriptionBuilder) {} {})
-      (validate (->DefaultServiceDescriptionBuilder) {"cmd-type" "shell"} {})
-      (is (thrown? Exception (validate (->DefaultServiceDescriptionBuilder) {"cmd-type" ""} {})))
+      (validate (->DefaultServiceDescriptionBuilder nil) {} {})
+      (validate (->DefaultServiceDescriptionBuilder nil) {"cmd-type" "shell"} {})
+      (is (thrown? Exception (validate (->DefaultServiceDescriptionBuilder nil) {"cmd-type" ""} {})))
       (is (thrown-with-msg? Exception #"Command type invalid is not supported"
-                            (validate (->DefaultServiceDescriptionBuilder) {"cmd-type" "invalid"} {}))))))
+                            (validate (->DefaultServiceDescriptionBuilder nil) {"cmd-type" "invalid"} {}))))))
+
+(deftest test-consent-cookie-value
+  (let [current-time-ms (System/currentTimeMillis)
+        clock (constantly current-time-ms)]
+    (is (= nil (consent-cookie-value clock nil nil nil nil)))
+    (is (= ["unsupported" current-time-ms] (consent-cookie-value clock "unsupported" nil nil nil)))
+    (is (= ["service" current-time-ms] (consent-cookie-value clock "service" nil nil nil)))
+    (is (= ["service" current-time-ms "service-id"] (consent-cookie-value clock "service" "service-id" nil nil)))
+    (is (= ["token" current-time-ms] (consent-cookie-value clock "token" nil nil nil)))
+    (is (= ["token" current-time-ms] (consent-cookie-value clock "token" nil nil {"owner" "user"})))
+    (is (= ["token" current-time-ms] (consent-cookie-value clock "token" nil "token-id" {})))
+    (is (= ["token" current-time-ms "token-id" "user"] (consent-cookie-value clock "token" nil "token-id" {"owner" "user"})))))
+
+(deftest test-assoc-run-as-user-approved?
+  (let [current-time-ms (System/currentTimeMillis)
+        clock (constantly current-time-ms)
+        consent-expiry-days 10
+        valid-timestamp-ms (->> (dec consent-expiry-days) (t/days) (t/in-millis) (- current-time-ms))
+        invalid-timestamp-ms (->> (inc consent-expiry-days) (t/days) (t/in-millis) (- current-time-ms))
+        test-fn (fn [service-id token service-description decoded-consent-cookie]
+                  (assoc-run-as-user-approved? clock consent-expiry-days service-id token service-description decoded-consent-cookie))
+        service-description {"owner" "user"}]
+    (is (not (test-fn "service-id" {} nil ["service" invalid-timestamp-ms "service-id"])))
+    (is (test-fn "service-id" {} nil ["service" valid-timestamp-ms "service-id"]))
+    (is (test-fn "service-id" nil service-description ["service" valid-timestamp-ms "service-id"]))
+    (is (not (test-fn "service-id" nil service-description ["service" valid-timestamp-ms])))
+    (is (not (test-fn "service-id-2" nil service-description ["service" valid-timestamp-ms "service-id"])))
+    (is (not (test-fn "service-id" nil {} ["token" invalid-timestamp-ms "token-id" "user"])))
+    (is (not (test-fn "service-id" "token-id" {} ["token" invalid-timestamp-ms "token-id" "user"])))
+    (is (test-fn "service-id" "token-id" service-description ["token" valid-timestamp-ms "token-id" "user"]))
+    (is (not (test-fn "service-id" "token-id" service-description ["token" valid-timestamp-ms "token-id"])))
+    (is (not (test-fn "service-id" "token-id" service-description ["token" valid-timestamp-ms])))
+    (is (not (test-fn "service-id" "token-id-2" service-description ["token" valid-timestamp-ms "token-id" "user"])))))

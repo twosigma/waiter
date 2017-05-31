@@ -50,3 +50,14 @@
   a non-empty string (representing a connection string), or the keyword
   :in-process, indicating that ZK should be started in-process"
   (s/either non-empty-string (s/constrained s/Keyword #(= :in-process %))))
+
+(def require-symbol-factory-fn
+  "In any of the configs that accept :kind, we use this to require that any
+  nested map that defines :factory-fn must define it as a symbol"
+  (s/if map? {(s/optional-key :factory-fn) s/Symbol, s/Keyword s/Any} s/Any))
+
+(defn contains-kind-sub-map?
+  "Returns true if there is a valid sub-map for the configured :kind"
+  [{:keys [kind] :as config}]
+  (nil? (s/check {(s/required-key :factory-fn) s/Symbol, s/Keyword s/Any} (get config kind))))
+

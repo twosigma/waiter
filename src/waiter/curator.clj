@@ -12,7 +12,9 @@
   (:require [clojure.tools.logging :as log]
             [taoensso.nippy :as nippy])
   (:import java.net.ServerSocket
+           java.util.concurrent.TimeUnit
            org.apache.curator.framework.CuratorFramework
+           org.apache.curator.framework.recipes.locks.InterProcessMutex
            org.apache.curator.test.TestingServer
            org.apache.zookeeper.KeeperException$NodeExistsException
            org.apache.zookeeper.KeeperException$NoNodeException
@@ -132,10 +134,17 @@
          (throw e))))))
 
 (defn children
-  ([^CuratorFramework curator path]
-   (.. curator
-       (getChildren)
-       (forPath path))))
+  "Gets the children of a ZK node."
+  ([^CuratorFramework curator path & {:keys [ignore-does-not-exist]
+                                      :or {ignore-does-not-exist false}}]
+   (try 
+     (.. curator
+         (getChildren)
+         (forPath path))
+     (catch KeeperException$NoNodeException e
+       (log/info path "does not exist!")
+       (if-not ignore-does-not-exist
+         (throw e))))))
 
 (defn start-in-process-zookeeper []
   (let [ss (ServerSocket. 0)
@@ -145,3 +154,18 @@
         zk-server (TestingServer. available-port true)]
     {:zk-server zk-server
      :zk-connection-string (.getConnectString zk-server)}))
+
+(defn synchronize
+  "Creates a function that takes a function and ensures that it runs
+  only once at the same time, globally across the cluster."
+  [^CuratorFramework curator lock-path timeout-ms f]
+  (let [mutex (InterProcessMutex. curator lock-path)]
+    (when-not (.acquire mutex timeout-ms TimeUnit/MILLISECONDS)
+      (throw (ex-info "Could not acquire lock." 
+                      {:timeout-ms timeout-ms
+                       :lock-path lock-path})))
+    (try 
+      (f)
+      (catch Exception e
+        (log/error e "Error during synchronized"))
+      (finally (.release mutex)))))

@@ -66,26 +66,34 @@
     (.addShutdownHook (Runtime/getRuntime)
                       (Thread. unregister "discovery-unregister"))))
 
+(defn- routers
+  "Returns all known routers that exclude items that pass the exclude-set."
+  [discovery exclude-set]
+  (let [my-service-name (.getName (:service-instance discovery))
+        all-instances (.getInstances ^ServiceCache (:service-cache discovery))
+        waiter-instances (filter #(= my-service-name (.getName %)) all-instances)]
+    (remove #(contains? exclude-set (.getId %)) waiter-instances)))
+
+(defn router-ids
+  "Returns all known router ids that exclude items that pass the exclude-set."
+  [discovery & {:keys [exclude-set] :or {exclude-set #{}}}]
+  (let [filtered-instances (routers discovery exclude-set)]
+    (map #(str (.getId %)) filtered-instances)))
+
 (defn router-id->endpoint-url
   "Returns a mapping from all known router-ids to instances."
   [discovery protocol endpoint & {:keys [exclude-set] :or {exclude-set #{}}}]
-  (let [my-service-name (.getName (:service-instance discovery))
-        all-instances (.getInstances ^ServiceCache (:service-cache discovery))
-        waiter-instances (filter #(= my-service-name (.getName %)) all-instances)
-        filtered-instances (remove #(contains? exclude-set (.getId %)) waiter-instances)]
+  (let [filtered-instances (routers discovery exclude-set)]
     (zipmap (map #(str (.getId %)) filtered-instances)
             (map #(get-instance-url % protocol endpoint) filtered-instances))))
 
 (defn cluster-size
   "Returns the number of routers particpating in the ZooKeeper cluster."
   [discovery]
-  (let [my-service-name (.getName (:service-instance discovery))
-        all-instances (.getInstances ^ServiceCache (:service-cache discovery))
-        waiter-instances (filter #(= my-service-name (.getName %)) all-instances)]
-    (count waiter-instances)))
+  (count (routers discovery #{})))
 
 (defn register
-  [router-id curator service-name discovery-path {:keys [host port] :as opts}]
+  [router-id curator service-name discovery-path {:keys [port]}]
   (let [instance (->service-instance router-id service-name {:port port})
         discovery (->service-discovery curator discovery-path instance)
         ^ServiceCache cache (->service-cache discovery service-name)]

@@ -10,6 +10,7 @@
 ;;
 (ns waiter.basic-test
   (:require [clj-http.client :as http]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -134,10 +135,10 @@
     (let [headers {:x-waiter-name (rand-name "testbasicshellcommand")
                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
           {:keys [status service-id]} (make-request-with-debug-info headers #(make-shell-request waiter-url %))
+          _ (is (not (nil? service-id)))
+          _ (is (= 200 status))
           service-settings (service-settings waiter-url service-id)
           command (get-in service-settings [:service-description :cmd])]
-      (is (not (nil? service-id)))
-      (is (= 200 status))
       (is (= (:x-waiter-cmd headers) command))
       (delete-service waiter-url service-id))))
 
@@ -275,17 +276,17 @@
   (testing-using-waiter-url
     (let [waiter-headers {:x-waiter-name (rand-name "test-suspend-resume")}
           {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
-      (let [results (parallelize-requests 30 2 #(let [response (make-kitchen-request waiter-url waiter-headers)]
+      (let [results (parallelize-requests 10 2 #(let [response (make-kitchen-request waiter-url waiter-headers)]
                                                   (= 200 (:status response))))]
         (is (every? true? results)))
       (log/info "Suspending service " service-id)
       (http/get (str HTTP-SCHEME waiter-url "/apps/" service-id "/suspend") {:headers {} :spnego-auth true})
-      (let [results (parallelize-requests 30 2 #(let [{:keys [body]} (make-kitchen-request waiter-url waiter-headers)]
+      (let [results (parallelize-requests 10 2 #(let [{:keys [body]} (make-kitchen-request waiter-url waiter-headers)]
                                                   (str/includes? body "Service has been suspended!")))]
         (is (every? true? results)))
       (log/info "Resuming service " service-id)
       (http/get (str HTTP-SCHEME waiter-url "/apps/" service-id "/resume") {:headers {} :spnego-auth true})
-      (let [results (parallelize-requests 30 2 #(let [response (make-kitchen-request waiter-url waiter-headers)]
+      (let [results (parallelize-requests 10 2 #(let [response (make-kitchen-request waiter-url waiter-headers)]
                                                   (= 200 (:status response))))]
         (is (every? true? results)))
       (delete-service waiter-url service-id))))
@@ -340,29 +341,62 @@
 ;     actual: (not (not-empty #{}))
 (deftest ^:parallel ^:integration-slow ^:explicit test-killed-instances
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "testkilledinstances")
+    (let [headers {:x-waiter-name (rand-name "test-killed-instances")
                    :x-waiter-max-instances 6
                    :x-waiter-scale-up-factor 0.99
                    :x-waiter-scale-down-factor 0.85
                    :x-kitchen-delay-ms 5000}
+          _ (log/info "making canary request...")
           {:keys [service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
-          _ (is (not (nil? service-id)))
           request-fn (fn [] (->> #(make-kitchen-request waiter-url %)
                                  (make-request-with-debug-info headers)
                                  (:instance-id)))
+          _ (log/info "starting parallel requests")
           all-instance-ids (->> request-fn
                                 (parallelize-requests 12 5)
                                 (set))
           _ (parallelize-requests 1 5 request-fn)]
+      (log/info "waiting for at least one instance to get killed")
       (is (wait-for #(let [service-settings (service-settings waiter-url service-id)
-                           killed-instance-ids (->> (get-in service-settings [:instances :killed-instances]) (map :id) (set))]
+                           killed-instance-ids (->> (get-in service-settings [:instances :killed-instances])
+                                                    (map :id)
+                                                    (set))]
                        (pos? (count killed-instance-ids)))
                     :interval 2 :timeout 30)
           (str "No killed instances found for " service-id))
       (let [service-settings (service-settings waiter-url service-id)
             killed-instance-ids (->> (get-in service-settings [:instances :killed-instances]) (map :id) (set))]
-        (log/info "Used instances:" all-instance-ids)
-        (log/info "Killed instances:" killed-instance-ids)
+        (log/info "used instances (" (count all-instance-ids) "):" all-instance-ids)
+        (log/info "killed instances (" (count killed-instance-ids) "):" killed-instance-ids)
         (is (not-empty (set/intersection all-instance-ids killed-instance-ids))
             "Not intersection between used and killed instances!"))
+      (delete-service waiter-url service-id))))
+
+(deftest ^:parallel ^:integration-fast test-basic-priority-support
+  (testing-using-waiter-url
+    (let [headers {:x-waiter-name (rand-name "test-basic-priority-support")
+                   :x-waiter-distribution-scheme "simple" ;; disallow work-stealing interference from balanced
+                   :x-waiter-max-instances 1}
+          {:keys [cookies service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+          router-url (some-router-url-with-assigned-slots waiter-url service-id)
+          response-priorities-atom (atom [])
+          num-threads 15
+          request-priorities (vec (shuffle (range num-threads)))
+          request-counter-atom (atom 0)
+          make-prioritized-request (fn [priority delay-ms]
+                                     (let [request-headers (assoc headers
+                                                             :x-kitchen-delay-ms delay-ms
+                                                             :x-waiter-priority priority)]
+                                       (make-kitchen-request router-url request-headers :cookies cookies)))]
+      (async/thread ; long request to make the following requests queue up
+        (make-prioritized-request -1 5000))
+      (Thread/sleep 500)
+      (parallelize-requests num-threads 1
+                            (fn []
+                              (let [index (dec (swap! request-counter-atom inc))
+                                    priority (nth request-priorities index)]
+                                (make-prioritized-request priority 1000)
+                                (swap! response-priorities-atom conj priority))))
+      ;; first item may be processed out of order as it can arrive before at the server
+      (is (= (-> num-threads range reverse) @response-priorities-atom))
       (delete-service waiter-url service-id))))
