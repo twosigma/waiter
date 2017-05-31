@@ -1,6 +1,6 @@
 (defproject kitchen "0.1.0-SNAPSHOT"
-  :dependencies [^{:voom {:repo "https://gitlab.twosigma.com/platform-services/jet.git"}}
-                 [cc.qbits/jet "0.7.10-20170505_212704-g2e9e967"]
+  :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
+                 [cc.qbits/jet "0.7.10-20170524_203939-gd23596c"]
                  [log4j/log4j "1.2.17" :exclusions [javax.mail/mail
                                                     javax.jms/jms
                                                     com.sun.jmdk/jmxtools
