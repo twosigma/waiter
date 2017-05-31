@@ -86,15 +86,11 @@
                  [ring-basic-authentication "1.0.5"]
                  [slingshot "0.12.2"]]
 
-  ; this contains a patched version of the parallel-test plugin with a PR open to the project on github.
-  ; once the PR is merged, we should remove this repo and update to the new external version
-  :repositories [["gitlab" "https://gitlab.twosigma.com/platform-services/jetty-jars/raw/master/jars/"]]
   :resource-paths ["resources"]
   :main waiter.main
   :plugins [[lein-voom "0.1.0-20150115_230705-gd96d771"
              :exclusions [org.clojure/clojure]]
-            [test2junit "1.2.2"]
-            [com.holychao/parallel-test "0.3.0-20161006_181003-g216af22"]]
+            [test2junit "1.2.2"]]
   :global-vars {*warn-on-reflection* true}
   ; In case of kerberos problems, export KRB5_KTNAME=/var/spool/keytabs/$(id -un)
   :jvm-opts ["-server"
