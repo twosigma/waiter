@@ -14,13 +14,17 @@
             [ring.middleware.params :as params])
   (:gen-class)
   (:import (java.io InputStream ByteArrayOutputStream)
+           (java.nio ByteBuffer)
            (java.util UUID)
-           (org.eclipse.jetty.server HttpOutput)
-           (java.util.zip GZIPOutputStream)))
+           (java.util.zip GZIPOutputStream)
+           (org.eclipse.jetty.server HttpOutput)))
 
 
 (def async-requests (atom {}))
-(def pending-requests (atom 0))
+(def pending-http-requests (atom 0))
+(def total-http-requests (atom 0))
+(def pending-ws-requests (atom 0))
+(def total-ws-requests (atom 0))
 
 (defn request->cid [request]
   (get-in request [:headers "x-cid"]))
@@ -69,7 +73,7 @@
     async-requests
     (fn [request-id->metdadata]
       (when (contains? request-id->metdadata request-id)
-        (swap! pending-requests dec))
+        (swap! pending-http-requests dec))
       (dissoc request-id->metdadata request-id))))
 
 (defn- async-request-handler
@@ -95,7 +99,7 @@
     (printlog request "async-request-handler:exclude-headers" exclude-headers)
     (printlog request "async-request-handler: metadata" request-metadata)
     (swap! async-requests assoc request-id request-metadata)
-    (swap! pending-requests inc)
+    (swap! pending-http-requests inc)
     (printlog request "async-request-handler: starting processing")
     (let [async-handle (async/go
                          (async/<! (async/timeout processing-time-ms))
@@ -212,7 +216,7 @@
     (printlog request "chunked-handler: fail-after-bytes: " fail-after-bytes)
     (printlog request "chunked-handler: fail-by-terminating-jvm: " fail-by-terminating-jvm)
     (printlog request "chunked-handler: chunk-size-in-bytes: " chunk-size-in-bytes)
-    (swap! pending-requests inc)
+    (swap! pending-http-requests inc)
     (async/go
       (try
         (loop [bytes-sent 0]
@@ -235,7 +239,7 @@
         (finally
           (printlog request "chunked-handler: closing channel")
           (async/close! resp-chan)
-          (swap! pending-requests dec))))
+          (swap! pending-http-requests dec))))
     {:status 200
      :headers {"Content-Type" "text/plain"
                "Transfer-Encoding" "chunked"}
@@ -265,7 +269,7 @@
           bytes-to-send (byte-array (min (count compressed-bytes) fail-after-bytes) (cycle compressed-bytes))]
       (printlog request "gzip-handler: num data-bytes: " (count data-bytes))
       (printlog request "gzip-handler: num compressed-bytes: " (count compressed-bytes))
-      (swap! pending-requests inc)
+      (swap! pending-http-requests inc)
       (async/go
         (try
           (async/>! resp-chan bytes-to-send)
@@ -277,7 +281,7 @@
           (finally
             (printlog request "gzip-handler: closing channel")
             (async/close! resp-chan)
-            (swap! pending-requests dec))))
+            (swap! pending-http-requests dec))))
       {:status 200
        :headers (cond-> {"Content-Type" "text/plain"
                          "Content-Encoding" "gzip"}
@@ -305,7 +309,7 @@
     (printlog request "unchunked-handler: response-size-bytes: " response-size-bytes)
     (printlog request "unchunked-handler: fail-after-bytes: " fail-after-bytes)
     (printlog request "unchunked-handler: fail-by-terminating-jvm: " fail-by-terminating-jvm)
-    (swap! pending-requests inc)
+    (swap! pending-http-requests inc)
     (async/go
       (try
         (async/>! resp-chan (byte-array (min response-size-bytes fail-after-bytes) (cycle data-string-bytes)))
@@ -318,7 +322,7 @@
         (finally
           (printlog request "unchunked-handler: closing channel")
           (async/close! resp-chan)
-          (swap! pending-requests dec))))
+          (swap! pending-http-requests dec))))
     {:status 200
      :headers {"Content-Type" "text/plain"
                "Content-Length" (str response-size-bytes)}
@@ -328,7 +332,10 @@
   {:status 200
    :body (json/write-str
            {:async-requests @async-requests
-            :pending-requests @pending-requests})})
+            :pending-http-requests @pending-http-requests
+            :pending-ws-requests @pending-ws-requests
+            :total-http-requests @total-http-requests
+            :total-ws-requests @total-ws-requests})})
 
 (defn parse-cookies [header-value]
   (when-not (nil? header-value)
@@ -355,9 +362,10 @@
                                            (utils/parse-positive-int threads 1)))
      :headers {"content-type" "application/json"}}))
 
-(defn handler
+(defn http-handler
   [request]
   (try
+    (swap! total-http-requests inc)
     (let [{:keys [request-method uri] :as request}
           (-> request
               (update-in [:headers "x-cid"] (fn [cid] (or cid (str (UUID/randomUUID)))))
@@ -381,6 +389,58 @@
       (log/error e "handler: encountered exception")
       (utils/exception->json-response e))))
 
+(defn websocket-handler
+  [request]
+  (swap! total-ws-requests inc)
+  (let [{:keys [in out] :as request}
+        (-> request
+            (update-in [:headers "x-cid"] (fn [cid] (or cid (str (UUID/randomUUID)))))
+            (assoc-in [:headers "x-kitchen-request-id"] (str (UUID/randomUUID))))]
+    (printlog request "Received websocket request:" request)
+    (swap! pending-ws-requests inc)
+    (async/go
+      (async/>! out "Connected to kitchen")
+      (loop []
+        (let [in-data (async/<! in)]
+          (printlog request "Received data on websocket:" in-data)
+          (if (or (str/blank? (str in-data)) (= "exit" in-data))
+            (do
+              (async/>! out "bye")
+              (printlog request "Closing connection.")
+              (async/close! out)
+              (swap! pending-ws-requests dec))
+            (do
+              (cond
+                (instance? ByteBuffer in-data)
+                (let [response-bytes (byte-array (.remaining in-data))]
+                  (.get in-data response-bytes)
+                  (async/>! out response-bytes))
+
+                (= "request-info" in-data)
+                (async/>! out (-> request request-info-handler :body))
+
+                (= "kitchen-state" in-data)
+                (async/>! out (-> request state-handler :body))
+
+                (and (string? in-data) (str/starts-with? in-data "chars-") (> (count in-data) (count "chars-")))
+                (let [num-chars-str (subs in-data (count "chars-"))
+                      num-chars-int (Integer/parseInt num-chars-str)
+                      chars (map char (range 65 91))
+                      string-data (->> (repeatedly #(rand-nth chars))
+                                       (take num-chars-int)
+                                       (reduce str))]
+                  (async/>! out string-data))
+
+                (and (string? in-data) (str/starts-with? in-data "bytes-") (> (count in-data) (count "bytes-")))
+                (let [num-bytes-str (subs in-data (count "bytes-"))
+                      num-bytes-int (Integer/parseInt num-bytes-str)
+                      byte-data (byte-array (take num-bytes-int (cycle (range 103))))]
+                  (async/>! out byte-data))
+
+                :else
+                (async/>! out in-data))
+              (recur))))))))
+
 (defn -main
   [& args]
   (let [cli-options [["-p" "--port PORT" "Port number"
@@ -399,7 +459,8 @@
         (do
           (log/info "kitchen running on port" port)
           (Thread/sleep start-up-sleep-ms)
-          (server/run-jetty {:ring-handler (params/wrap-params handler)
+          (server/run-jetty {:ring-handler (params/wrap-params http-handler)
+                             :websocket-handler websocket-handler
                              :port port
                              :request-header-size 32768})))
       (shutdown-agents)

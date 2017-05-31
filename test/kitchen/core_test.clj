@@ -3,7 +3,9 @@
             [clojure.data.json :as json]
             [clojure.test :refer :all]
             [kitchen.core :refer :all])
-  (:import (clojure.lang ExceptionInfo)))
+  (:import (clojure.lang ExceptionInfo)
+           (java.nio ByteBuffer)
+           (java.util Arrays)))
 
 (deftest default-handler-test
   (testing "Default handler"
@@ -30,12 +32,12 @@
 (deftest handler-test
   (testing "Top-level handler"
     (testing "should not let exceptions flow out"
-      (is (= 500 (:status (handler {:uri "/foo", :headers {"x-kitchen-throw" true}})))))))
+      (is (= 500 (:status (http-handler {:uri "/foo", :headers {"x-kitchen-throw" true}})))))))
 
 (deftest pi-handler-test
   (testing "pi handler"
     (testing "should return expected fields"
-      (let [{:keys [body]} (handler {:uri "/pi"
+      (let [{:keys [body]} (http-handler {:uri "/pi"
                                      :form-params {"iterations" "100"
                                                    "threads" "2"}})
             {:strs [iterations inside pi-estimate]} (json/read-str body)]
@@ -45,7 +47,7 @@
   (testing "async-request:expected-workflow"
     (let [request {:headers {"x-kitchen-delay-ms" "2000", "x-kitchen-store-async-response-ms" "1000"}
                    :uri "/async/request"}
-          {:keys [body headers status]} (handler request)]
+          {:keys [body headers status]} (http-handler request)]
       (is (= 202 status))
       (is (= "text/plain" (get headers "Content-Type")))
       (let [request-id (get headers "x-kitchen-request-id")]
@@ -65,7 +67,7 @@
     (let [request {:headers {"x-kitchen-delay-ms" "2000", "x-kitchen-store-async-response-ms" "1",
                              "x-kitchen-exclude-headers" "expires,location"}
                    :uri "/async/request"}
-          {:keys [body headers status]} (handler request)]
+          {:keys [body headers status]} (http-handler request)]
       (is (= 202 status))
       (is (= "text/plain" (get headers "Content-Type")))
       (let [request-id (get headers "x-kitchen-request-id")]
@@ -85,7 +87,7 @@
       (let [request {:request-method :get
                      :query-params {}
                      :uri "/async/status"}
-            {:keys [body headers status]} (handler request)]
+            {:keys [body headers status]} (http-handler request)]
         (is (= 400 status))
         (is (= "text/plain" (get headers "Content-Type")))
         (is (= "Missing request-id" body))))
@@ -94,7 +96,7 @@
       (let [request {:request-method :get
                      :query-params {"request-id" (str request-id "-unknown")}
                      :uri "/async/status"}
-            {:keys [body headers status]} (handler request)]
+            {:keys [body headers status]} (http-handler request)]
         (is (= 410 status))
         (is (= "text/plain" (get headers "Content-Type")))
         (is (= (str "No data found for request-id " request-id "-unknown") body))))
@@ -103,7 +105,7 @@
       (let [request {:request-method :get
                      :query-params {"request-id" request-id}
                      :uri "/async/status"}
-            {:keys [body headers status]} (handler request)]
+            {:keys [body headers status]} (http-handler request)]
         (is (= 200 status))
         (is (= "text/plain" (get headers "Content-Type")))
         (is (str "Still processing request-id " request-id) body)))
@@ -113,7 +115,7 @@
       (let [request {:request-method :get
                      :query-params {"request-id" request-id}
                      :uri "/async/status"}
-            {:keys [body headers status]} (handler request)]
+            {:keys [body headers status]} (http-handler request)]
         (is (= 303 status))
         (is (= "text/plain" (get headers "Content-Type")))
         (is (= (str "/async/result?request-id=" request-id) (get headers "Location")))
@@ -127,10 +129,67 @@
     (let [request {:headers {}
                    :query-params {"request-id" request-id}
                    :uri "/async/result"}
-          {:keys [body headers status]} (handler request)]
+          {:keys [body headers status]} (http-handler request)]
       (is (= 200 status))
       (is (= "application/json" (get headers "Content-Type")))
       (is (= {"result" {"request-id" "my-test-request-id"}} (json/read-str body)))
       (is (nil? (get @async-requests request-id))))
     (swap! async-requests dissoc request-id)))
 
+(deftest test-websocket-handler
+  (let [out (async/chan)
+        in (async/chan)
+        request {:in in, :out out}]
+    (reset! async-requests {})
+    (reset! pending-http-requests 0)
+    (reset! pending-ws-requests 0)
+    (reset! total-http-requests 0)
+    (reset! total-ws-requests 0)
+    (websocket-handler request)
+    (is (= "Connected to kitchen" (async/<!! out)))
+
+    (testing "echo support"
+      (let [echo-message "echo-me"]
+        (async/>!! in echo-message)
+        (is (= echo-message (async/<!! out)))))
+
+    (testing "request-info"
+      (async/>!! in "request-info")
+      (let [response (-> (async/<!! out) json/read-str)]
+        (is (get-in response ["headers" "x-cid"]))
+        (is (get-in response ["headers" "x-kitchen-request-id"]))))
+
+    (testing "kitchen-state"
+      (async/>!! in "kitchen-state")
+      (let [response (-> (async/<!! out) json/read-str)]
+        (is (= response {"async-requests" {},
+                         "pending-http-requests" 0, "total-http-requests" 0,
+                         "pending-ws-requests" 1, "total-ws-requests" 1}))))
+
+    (testing "chars-10000"
+      (async/>!! in "chars-10000")
+      (let [response (async/<!! out)]
+        (is (string? response))
+        (is (= 10000 (count response)))))
+
+    (testing "bytes-10000"
+      (async/>!! in "bytes-10000")
+      (let [response-data (async/<!! out)
+            expected-data (byte-array (take 10000 (cycle (range 103))))]
+        (is (Arrays/equals ^bytes expected-data ^bytes  response-data))))
+
+    (testing "raw-bytes"
+      (let [byte-data (byte-array (take 100000 (cycle (range 2121))))
+            byte-buffer (ByteBuffer/wrap byte-data)
+            _ (async/>!! in byte-buffer)
+            response-data (async/<!! out)]
+        (is (not (identical? byte-data response-data)))
+        (is (Arrays/equals ^bytes byte-data ^bytes  response-data))))
+
+    (testing "exit"
+      (async/>!! in "exit")
+      (is (= "bye" (async/<!! out)))
+      (is (nil? (async/<!! out))))
+
+    (async/close! in)
+    (async/close! out)))
