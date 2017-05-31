@@ -1,0 +1,147 @@
+;;
+;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       All Rights Reserved
+;;
+;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+;;       Two Sigma Investments, LLC.
+;;
+;;       The copyright notice above does not evidence any
+;;       actual or intended publication of such source code.
+;;
+(ns waiter.curator
+  (:require [clojure.tools.logging :as log]
+            [taoensso.nippy :as nippy])
+  (:import java.net.ServerSocket
+           org.apache.curator.framework.CuratorFramework
+           org.apache.curator.test.TestingServer
+           org.apache.zookeeper.KeeperException$NodeExistsException
+           org.apache.zookeeper.KeeperException$NoNodeException
+           org.apache.zookeeper.CreateMode
+           org.apache.zookeeper.data.Stat))
+
+(defn close
+  [^java.io.Closeable c]
+  (.close c))
+
+(def create-modes
+  {:ephemeral CreateMode/EPHEMERAL
+   CreateMode/EPHEMERAL CreateMode/EPHEMERAL
+   :ephemeral-seq CreateMode/EPHEMERAL_SEQUENTIAL
+   CreateMode/EPHEMERAL_SEQUENTIAL CreateMode/EPHEMERAL_SEQUENTIAL
+   :persistent CreateMode/PERSISTENT
+   CreateMode/PERSISTENT CreateMode/PERSISTENT
+   :persistent-seq CreateMode/PERSISTENT_SEQUENTIAL
+   CreateMode/PERSISTENT_SEQUENTIAL CreateMode/PERSISTENT_SEQUENTIAL})
+
+(defn serialize
+  [serializer data]
+  (condp = serializer
+    :nippy (nippy/freeze data)
+    :none data
+    :else (throw (ex-info "Unknown serializer" {:serializer serializer}))))
+
+(defn deserialize
+  [serializer data]
+  (condp = serializer
+    :nippy (nippy/thaw data)
+    :none data
+    :else (throw (ex-info "Unknown serializer" {:serializer serializer}))))
+
+(defn create-path
+  ([^CuratorFramework curator path & {:keys [mode noop-on-exists? create-parent-zknodes?]
+                                      :or {mode :persistent ;match curator default
+                                           noop-on-exists? true
+                                           create-parent-zknodes? false}}]
+   (when-not (create-modes mode)
+     (throw (ex-info "Unknown mode requested" {:mode mode :modes-available create-modes})))
+   (when create-parent-zknodes?
+     (.. (.newNamespaceAwareEnsurePath curator path)
+         (excludingLast)
+         (ensure (.getZookeeperClient curator))))
+   (try
+     (.. curator
+         (create)
+         (withMode (create-modes mode))
+         (forPath path))
+     (catch KeeperException$NodeExistsException e
+       (when-not noop-on-exists?
+         (throw e))))))
+
+(defn write-path
+  ([^CuratorFramework curator path data & {:keys [mode create-parent-zknodes? serializer]
+                                           :or {mode :persistent
+                                                create-parent-zknodes? false
+                                                serializer :none}}]
+   (when-not (create-modes mode)
+     (throw (ex-info "Unknown mode requested" {:mode mode :modes-available create-modes})))
+   (when create-parent-zknodes?
+     (.. (.newNamespaceAwareEnsurePath curator path)
+         (excludingLast)
+         (ensure (.getZookeeperClient curator))))
+   (let [create-path (fn create-path []
+                       (.. curator
+                           (create)
+                           (withMode (create-modes mode))
+                           (forPath path (serialize serializer data))))
+         update-path (fn update-path []
+                       (.. curator
+                           (setData)
+                           (forPath path (serialize serializer data))))]
+     (try
+       (if (-> curator (.checkExists) (.forPath path) (nil?))
+         (create-path)
+         (update-path))
+       (catch KeeperException$NodeExistsException _
+         (log/warn "Error in writing to existing path" path)
+         (update-path))))))
+
+(defn read-path
+  ([^CuratorFramework curator path & {:keys [serializer nil-on-missing?]
+                                      :or {serializer :none nil-on-missing? false}}]
+   (try
+     (let [stat (Stat.)]
+       {:data (->> (.. curator
+                       (getData)
+                       (storingStatIn stat)
+                       (forPath path))
+                   (deserialize serializer))
+        :stat (bean stat)})
+     (catch KeeperException$NoNodeException e
+       (when-not nil-on-missing?
+         (throw e))))))
+
+(defn delete-path
+  "Deletes the contents of a specified path."
+  ([^CuratorFramework curator path & {:keys [delete-children ignore-does-not-exist throw-exceptions]
+                                      :or {delete-children false
+                                           ignore-does-not-exist false
+                                           throw-exceptions true}}]
+   (try
+     (cond-> (.delete curator)
+             delete-children (.deletingChildrenIfNeeded)
+             true (.forPath path))
+     {:result :success}
+     (catch KeeperException$NoNodeException e
+       (log/info path "does not exist!")
+       (if-not ignore-does-not-exist
+         (throw e)
+         {:result :no-node-exists}))
+     (catch Exception e
+       (log/error e "Unable to delete path:" path)
+       (when throw-exceptions
+         (throw e))))))
+
+(defn children
+  ([^CuratorFramework curator path]
+   (.. curator
+       (getChildren)
+       (forPath path))))
+
+(defn start-in-process-zookeeper []
+  (let [ss (ServerSocket. 0)
+        available-port (.getLocalPort ss)
+        _ (.close ss)
+        _ (log/info "Starting in-process zookeeper on port" available-port)
+        zk-server (TestingServer. available-port true)]
+    {:zk-server zk-server
+     :zk-connection-string (.getConnectString zk-server)}))
