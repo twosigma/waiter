@@ -1,4 +1,4 @@
-language: clojure
+language: java
 env:
   global:
     - DEPS_CMD='lein with-profiles +test voom build-deps'
