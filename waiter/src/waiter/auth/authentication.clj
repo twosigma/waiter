@@ -14,13 +14,15 @@
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
 (defprotocol Authenticator
+  (auth-type [this]
+    "Returns a keyword identifying the type of authenticator.")
+  (check-user [this user service-id]
+    "Checks if the user has valid tickets under the authentication scheme. Throws an exception if not.")
   (create-auth-handler [this request-handler]
     "Attaches middleware that enables the application to perform authentication.
      The middleware should
      - either issue a 401 challenge asking the client to authenticate itself,
-     - or upon successful authentication populate the request with :authorization/user and :authenticated-principal")
-  (auth-type [this]
-    "Returns a keyword identifying the type of authenticator."))
+     - or upon successful authentication populate the request with :authorization/user and :authenticated-principal"))
 
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.
@@ -29,6 +31,10 @@
 ;; Use of this authentication mechanism is strongly discouraged for production use.
 (defrecord AnonymousAuthenticator []
   Authenticator
+  (auth-type [_]
+    :anonymous)
+  (check-user [_ _ _]
+    (comment "do nothing"))
   (create-auth-handler [_ request-handler]
     (let [process-username (System/getProperty "user.name")]
       (log/warn "use of AnonymousAuthenticator is strongly discouraged for production use:"
@@ -37,9 +43,7 @@
         (let [request' (assoc request
                          :authorization/user process-username
                          :authenticated-principal process-username)]
-          (request-handler request')))))
-  (auth-type [_]
-    :anonymous))
+          (request-handler request'))))))
 
 (defn anonymous-authenticator
   "Factory function for creating AnonymousAuthenticator"

@@ -20,4 +20,5 @@
           request {}
           expected-request (assoc request :authorization/user username :authenticated-principal username)]
       (is (= expected-request
-             (request-handler request))))))
+             (request-handler request)))
+      (is (nil? (check-user authenticator "user" "service-id"))))))

@@ -86,29 +86,36 @@
 
 (defn check-has-prestashed-tickets
   "Checks if the run-as-user has prestashed tickets available. Throws an exception if not."
-  [query-chan {:keys [service-description service-id]}]
-  (let [run-as-user (get service-description "run-as-user")]
-    (when (not (is-prestashed? run-as-user))
-      (let [response-chan (async/promise-chan)
-            _ (async/>!! query-chan {:response-chan response-chan})
-            [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)
-            response-map {:message (utils/message :prestashed-tickets-not-available)
-                          :user run-as-user
-                          :service-id service-id}]
-        (when (and (= response-chan chan) (not (contains? users run-as-user)))
-          (log/info (:message response-map) (dissoc response-map :message))
-          (throw (ex-info "No prestashed tickets available" {:message (json/write-str response-map)
-                                                             :status 403
-                                                             :suppress-logging true})))))))
+  [query-chan run-as-user service-id]
+  (when (not (is-prestashed? run-as-user))
+    (let [response-chan (async/promise-chan)
+          _ (async/>!! query-chan {:response-chan response-chan})
+          [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)
+          response-map {:message (utils/message :prestashed-tickets-not-available)
+                        :user run-as-user
+                        :service-id service-id}]
+      (when (and (= response-chan chan) (not (contains? users run-as-user)))
+        (log/info (:message response-map) (dissoc response-map :message))
+        (throw (ex-info "No prestashed tickets available" {:message (json/write-str response-map)
+                                                           :status 403
+                                                           :suppress-logging true}))))))
 
-(defrecord KerberosAuthenticator [password]
+(defrecord KerberosAuthenticator [password query-chan]
   auth/Authenticator
-  (create-auth-handler [_ request-handler]
-    (spnego/require-gss request-handler password))
   (auth-type [_]
-    :kerberos))
+    :kerberos)
+  (check-user [_ user service-id]
+    (check-has-prestashed-tickets query-chan service-id user))
+  (create-auth-handler [_ request-handler]
+    (spnego/require-gss request-handler password)))
 
 (defn kerberos-authenticator
   "Factory function for creating KerberosAuthenticator"
-  [{:keys [password]}]
-  (->KerberosAuthenticator password))
+  [{:keys [password prestash-cache-min-refresh-ms prestash-cache-refresh-ms prestash-query-host]}]
+  {:pre [(not (str/blank? password))
+         (utils/pos-int? prestash-cache-min-refresh-ms)
+         (utils/pos-int? prestash-cache-refresh-ms)
+         (not (str/blank? prestash-query-host))]}
+  (let [query-chan (async/chan 1024)]
+    (start-prestash-cache-maintainer prestash-cache-refresh-ms prestash-cache-min-refresh-ms prestash-query-host query-chan)
+    (->KerberosAuthenticator password query-chan)))

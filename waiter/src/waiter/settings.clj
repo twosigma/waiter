@@ -48,9 +48,6 @@
                                                   (s/required-key :initial-socket-timeout-ms) schema/positive-int
                                                   (s/required-key :streaming-timeout-ms) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int}
-   (s/optional-key :kerberos) {(s/required-key :prestash-cache-min-refresh-ms) schema/positive-int
-                               (s/required-key :prestash-cache-refresh-ms) schema/positive-int
-                               (s/required-key :prestash-query-host) schema/non-empty-string}
    (s/required-key :kv-config) (s/constrained
                                  {:kind s/Keyword
                                   (s/optional-key :encrypt) s/Bool

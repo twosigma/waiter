@@ -144,20 +144,26 @@
 
  ; ---------- Security ----------
 
- ; Waiter supports authenticating requests to identify the principal of the requesting user.
- ; The principal is then used to validate access to services and also to launch services.
+ ;; Waiter supports authenticating requests to identify the principal of the requesting user.
+ ;; The principal is then used to validate access to services and also to launch services.
  :authenticator-config {
-                        ;; :kind :patterns takes a simple list of regular expressions (see below):
-                        :kind :authenticator
-                        :authenticator {
-                                        ;; Custom implementations should specify a :factory-fn
-                                        ;; that returns an instance of waiter.auth.authentication.Authenticator:
-                                        :factory-fn waiter.auth.authentication/anonymous-authenticator}}
+                        ;; :kind :anonymous allows anonymous access to services (for testing purposes only):
+                        :kind :anonymous
+                        :anonymous {;; Custom implementations should specify a :factory-fn
+                                    ;; that returns an instance of waiter.auth.authentication.Authenticator:
+                                    :factory-fn waiter.auth.authentication/anonymous-authenticator}
 
- ; Waiter supports the run-as-requester feature to launch a service as the requesting user.
- ; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
- ; The explicit consent is required to defend against CSRF attacks.
- ; consent-expiry-days is used to configure how long to remember this consent and honor the presence of the cookie.
+                        ;; :kind :anonymous allows anonymous access to services:
+                        ;:kind :kerberos
+                        :kerberos {:factory-fn waiter.auth.kerberos/kerberos-authenticator
+                                   :prestash-cache-min-refresh-ms 100
+                                   :prestash-cache-refresh-ms  1000
+                                   :prestash-query-host "www.example.com"}}
+
+ ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
+ ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
+ ;; The explicit consent is required to defend against CSRF attacks.
+ ;; consent-expiry-days is used to configure how long to remember this consent and honor the presence of the cookie.
  :consent-expiry-days 90
 
  ;; CORS (https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS) governs whether a web application

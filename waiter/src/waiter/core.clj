@@ -30,7 +30,6 @@
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
-            [waiter.auth.kerberos :as krb]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.cors :as cors]
@@ -409,9 +408,6 @@
                         _ (.setCookieStore client (HttpCookieStore$Empty.))]
                     client))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
-   :kerberos-prestash-query-chan (pc/fnk [authenticator]
-                                   (when (= :kerberos (auth/auth-type authenticator))
-                                     (async/chan 1024)))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
                       passwords (password-store/retrieve-passwords password-provider)
@@ -639,11 +635,11 @@
                                            (sd/service-id->service-description
                                              kv-store service-id service-description-defaults
                                              metric-group-mappings :effective? effective?)))
-   :start-new-service-fn (pc/fnk [[:state kerberos-prestash-query-chan scheduler start-app-cache-atom task-threadpool]
+   :start-new-service-fn (pc/fnk [[:state authenticator scheduler start-app-cache-atom task-threadpool]
                                   service-id->password-fn store-service-description-fn]
                            (fn start-new-service [{:keys [service-id core-service-description] :as descriptor}]
-                             (when kerberos-prestash-query-chan
-                               (krb/check-has-prestashed-tickets kerberos-prestash-query-chan descriptor))
+                             (let [run-as-user (get descriptor [:service-description "run-as-user"])]
+                               (auth/check-user authenticator run-as-user service-id))
                              (service/start-new-service
                                scheduler service-id->password-fn descriptor start-app-cache-atom task-threadpool
                                :pre-start-fn #(store-service-description-fn service-id core-service-description))))
@@ -714,12 +710,6 @@
                                      {:keys [service-id->metrics-fn]} router-metrics-helpers]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
                                  metrics-gc-chans))
-   :kerberos-prestash-cache (pc/fnk [[:settings {kerberos nil}]
-                                     [:state kerberos-prestash-query-chan]]
-                              (let [{:keys [prestash-cache-refresh-ms prestash-cache-min-refresh-ms prestash-query-host]} kerberos]
-                                (when (and prestash-cache-refresh-ms prestash-cache-min-refresh-ms prestash-query-host kerberos-prestash-query-chan)
-                                  (krb/start-prestash-cache-maintainer prestash-cache-refresh-ms prestash-cache-min-refresh-ms
-                                                                       prestash-query-host kerberos-prestash-query-chan))))
    :messages (pc/fnk [[:settings {messages nil}]]
                (when messages
                  (utils/load-messages messages)))
