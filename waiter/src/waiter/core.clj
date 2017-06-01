@@ -676,7 +676,7 @@
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
                                waiter-router-ip (.getHostAddress local-router)]
-                           (waiter-request?-factory #{hostname waiter-router-hostname waiter-router-ip})))})
+                           (waiter-request?-factory (set [hostname waiter-router-hostname waiter-router-ip]))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]
