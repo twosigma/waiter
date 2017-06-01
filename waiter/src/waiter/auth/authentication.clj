@@ -16,8 +16,11 @@
 (defprotocol Authenticator
   (auth-type [this]
     "Returns a keyword identifying the type of authenticator.")
+
   (check-user [this user service-id]
-    "Checks if the user has valid tickets under the authentication scheme. Throws an exception if not.")
+    "Checks if the user is setup correctly to successfully launch a service using the authentication scheme.
+     Throws an exception if not.")
+
   (create-auth-handler [this request-handler]
     "Attaches middleware that enables the application to perform authentication.
      The middleware should
@@ -26,26 +29,29 @@
 
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.
-;; The anonymous authenticator attaches the prinicpal of the user running Waiter to the request.
-;; In particular, this enables requests to launch processes as the user running Waiter.
+;; The anonymous authenticator attaches the principal of launch-as-user to the request.
+;; In particular, this enables requests to launch processes as launch-as-user.
 ;; Use of this authentication mechanism is strongly discouraged for production use.
-(defrecord AnonymousAuthenticator []
+(defrecord AnonymousAuthenticator [launch-as-user]
+
   Authenticator
+
   (auth-type [_]
     :anonymous)
+
   (check-user [_ _ _]
     (comment "do nothing"))
+
   (create-auth-handler [_ request-handler]
-    (let [process-username (System/getProperty "user.name")]
-      (log/warn "use of AnonymousAuthenticator is strongly discouraged for production use:"
-                "requests will use principal" process-username)
-      (fn anonymous-handler [request]
-        (let [request' (assoc request
-                         :authorization/user process-username
-                         :authenticated-principal process-username)]
-          (request-handler request'))))))
+    (fn anonymous-handler [request]
+      (let [request' (assoc request
+                       :authorization/user launch-as-user
+                       :authenticated-principal launch-as-user)]
+        (request-handler request')))))
 
 (defn anonymous-authenticator
   "Factory function for creating AnonymousAuthenticator"
-  [_]
-  (->AnonymousAuthenticator))
+  [{:keys [launch-as-user]}]
+  (log/warn "use of AnonymousAuthenticator is strongly discouraged for production use:"
+            "requests will use principal" launch-as-user)
+  (->AnonymousAuthenticator launch-as-user))

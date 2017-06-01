@@ -101,11 +101,15 @@
                                                            :suppress-logging true}))))))
 
 (defrecord KerberosAuthenticator [password query-chan]
+
   auth/Authenticator
+
   (auth-type [_]
     :kerberos)
+
   (check-user [_ user service-id]
     (check-has-prestashed-tickets query-chan service-id user))
+
   (create-auth-handler [_ request-handler]
     (spnego/require-gss request-handler password)))
 

@@ -154,7 +154,8 @@
 
 (def settings-defaults
   {:authenticator-config {:kind :anonymous
-                          :anonymous {:factory-fn 'waiter.auth.authentication/anonymous-authenticator}}
+                          :anonymous {:factory-fn 'waiter.auth.authentication/anonymous-authenticator
+                                      :launch-as-user (System/getProperty "user.name")}}
    :cors-config {:kind :patterns
                  :patterns {:factory-fn 'waiter.cors/pattern-based-validator
                             :allowed-origins []}
