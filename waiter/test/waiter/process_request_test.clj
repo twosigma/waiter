@@ -353,7 +353,7 @@
 (deftest test-make-request
   (let [instance {:service-id "test-service-id", :host "example.com", :port 8080}
         request {:authorization/user "test-user"
-                 :krb5-authenticated-princ "test-user@test.com"
+                 :authenticated-principal "test-user@test.com"
                  :body "body"}
         request-properties {:connection-timeout-ms 123456, :initial-socket-timeout-ms 654321}
         passthrough-headers {"accept" "text/html"

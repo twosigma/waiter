@@ -110,7 +110,7 @@
         (do (log/debug "Using sane cookies")
             (-> req
                 (assoc
-                  :krb5-authenticated-princ auth-princ
+                  :authenticated-principal auth-princ
                   :authorization/user (first (str/split auth-princ #"@" 2)))
                 (rh)
                 (cookie-support/cookies-async-response)))
@@ -121,7 +121,7 @@
               (let [princ (gss-get-princ gss_context)
                     resp (-> req
                              (assoc
-                               :krb5-authenticated-princ princ
+                               :authenticated-principal princ
                                :authorization/user (first (str/split princ #"@" 2)))
                              (rh)
                              (add-cached-auth password princ)
