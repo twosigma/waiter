@@ -1,4 +1,6 @@
 language: java
+jdk:
+- oraclejdk8
 env:
   global:
     - DEPS_CMD='lein with-profiles +test voom build-deps'
