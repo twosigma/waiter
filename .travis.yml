@@ -7,9 +7,7 @@ branches:
 jobs:
   include:
     - stage: unit tests
-      before_script: (cd waiter && lein with-profiles +test voom build-deps)
-      script: cd waiter && ./bin/ci/run-unit-tests.sh
-      before_script: (cd kitchen && lein with-profiles +test voom build-deps)
-      script: cd kitchen && lein test
+      script: cd waiter && lein with-profiles +test voom build-deps && ./bin/ci/run-unit-tests.sh
+      script: cd kitchen && lein with-profiles +test do voom build-deps, test
     - stage: integration tests
       script: echo running integration tests...
