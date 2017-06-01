@@ -461,7 +461,7 @@
                                    :size 4000
                                    :type "directory"
                                    :path "/path/to/instance2/directory/dir4"})]
-        (is (= expected-result (retrieve-directory-content-from-host mesos-slave-port service-id instance-id host directory)))))))
+        (is (= expected-result (retrieve-directory-content-from-host {} mesos-slave-port service-id instance-id host directory)))))))
 
 (deftest test-marathon-descriptor
   (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
