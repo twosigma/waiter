@@ -429,7 +429,7 @@
                                                    }]
                                     }"]
                                {:body response-body}))]
-      (is (= "/path/to/instance2/directory" (retrieve-log-url mesos-slave-port instance-id host))))))
+      (is (= "/path/to/instance2/directory" (retrieve-log-url {} mesos-slave-port instance-id host))))))
 
 (deftest test-retrieve-directory-content-from-host
   (let [service-id "service-id-1"
@@ -509,7 +509,7 @@
   (let [current-time (t/now)
         service-id "service-1"
         instance-id "service-1.A"
-        make-marathon-scheduler #(->MarathonScheduler 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        make-marathon-scheduler #(->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
                                                       (atom {}) %1 %2 (constantly true))
         successful-kill-result {:instance-id instance-id :killed? true :service-id service-id}]
     (with-redefs [t/now (fn [] current-time)]
@@ -576,7 +576,7 @@
 
 (deftest test-service-id->state
   (let [service-id "service-id"
-        marathon-scheduler (->MarathonScheduler 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        marathon-scheduler (->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
                                                 (atom {service-id [:failed-instances]})
                                                 (atom {service-id :kill-call-info})
                                                 100 (constantly true))
@@ -586,7 +586,7 @@
 (deftest test-killed-instances-transient-store
   (let [current-time (t/now)
         current-time-str (utils/date-to-str current-time)
-        marathon-scheduler (->MarathonScheduler 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        marathon-scheduler (->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
                                                 (atom {}) (atom {}) 60000 (constantly true))
         make-instance (fn [service-id instance-id]
                         {:id instance-id
@@ -770,7 +770,7 @@
                (process-kill-instance-request service-id instance-id {})))))))
 
 (deftest test-delete-app
-  (let [scheduler (->MarathonScheduler nil nil nil nil (atom {}) (atom {}) nil nil)]
+  (let [scheduler (->MarathonScheduler {} nil nil nil nil (atom {}) (atom {}) nil nil)]
 
     (with-redefs [apps/delete-app (constantly {:deploymentId 12345})]
       (is (= {:result :deleted

@@ -286,7 +286,7 @@
         (is (nil? (check-has-prestashed-tickets query-chan {})))))))
 
 (deftest test-service-view-logs-handler
-  (let [scheduler (marathon/->MarathonScheduler 5051 (fn [] nil) "/slave/directory" "/home/path/"
+  (let [scheduler (marathon/->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
                                                 (atom {}) (atom {}) 0 (constantly true))
         configuration {:handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:prepend-waiter-url identity}
