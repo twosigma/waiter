@@ -8,12 +8,15 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.kerberos
+(ns waiter.auth.kerberos
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [waiter.auth.authentication :as auth]
+            [waiter.auth.spnego :as spnego]
             [waiter.utils :as utils]))
 
 (defn get-opt-in-accounts
@@ -45,7 +48,7 @@
     [max-update-interval min-update-interval host query-chan]
     (let [exit-chan (async/chan 1)]
       (refresh-prestash-cache host)
-      (async/go-loop [{:keys [timeout-chan continue-looping last-updated] :as current-state}
+      (async/go-loop [{:keys [timeout-chan last-updated] :as current-state}
                       {:timeout-chan (async/timeout max-update-interval)
                        :last-updated (t/now)
                        :continue-looping true}]
@@ -80,3 +83,32 @@
     [user]
     (let [users @prestash-cache]
       (or (empty? users) (contains? users user)))))
+
+(defn check-has-prestashed-tickets
+  "Checks if the run-as-user has prestashed tickets available. Throws an exception if not."
+  [query-chan {:keys [service-description service-id]}]
+  (let [run-as-user (get service-description "run-as-user")]
+    (when (not (is-prestashed? run-as-user))
+      (let [response-chan (async/promise-chan)
+            _ (async/>!! query-chan {:response-chan response-chan})
+            [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)
+            response-map {:message (utils/message :prestashed-tickets-not-available)
+                          :user run-as-user
+                          :service-id service-id}]
+        (when (and (= response-chan chan) (not (contains? users run-as-user)))
+          (log/info (:message response-map) (dissoc response-map :message))
+          (throw (ex-info "No prestashed tickets available" {:message (json/write-str response-map)
+                                                             :status 403
+                                                             :suppress-logging true})))))))
+
+(defrecord KerberosAuthenticator [password]
+  auth/Authenticator
+  (create-auth-handler [_ request-handler]
+    (spnego/require-gss request-handler password))
+  (auth-type [_]
+    :kerberos))
+
+(defn kerberos-authenticator
+  "Factory function for creating KerberosAuthenticator"
+  [{:keys [password]}]
+  (->KerberosAuthenticator password))

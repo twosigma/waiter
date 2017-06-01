@@ -29,7 +29,8 @@
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
-            [waiter.auth.spnego :as spnego]
+            [waiter.auth.authentication :as auth]
+            [waiter.auth.kerberos :as krb]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.cors :as cors]
@@ -37,7 +38,6 @@
             [waiter.discovery :as discovery]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
-            [waiter.kerberos :as krb]
             [waiter.kv :as kv]
             [waiter.marathon :as marathon]
             [waiter.metrics :as metrics]
@@ -68,23 +68,6 @@
            org.apache.curator.retry.BoundedExponentialBackoffRetry
            org.eclipse.jetty.client.util.BasicAuthentication$BasicResult
            org.eclipse.jetty.util.HttpCookieStore$Empty))
-
-(defn check-has-prestashed-tickets
-  "Checks if the run-as-user has prestashed tickets available. Throws an exception if not."
-  [query-chan {:keys [service-description service-id]}]
-  (let [run-as-user (get service-description "run-as-user")]
-    (when (not (krb/is-prestashed? run-as-user))
-      (let [response-chan (async/promise-chan)
-            _ (async/>!! query-chan {:response-chan response-chan})
-            [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)
-            response-map {:message (utils/message :prestashed-tickets-not-available)
-                          :user run-as-user
-                          :service-id service-id}]
-        (when (and (= response-chan chan) (not (contains? users run-as-user)))
-          (log/info (:message response-map) (dissoc response-map :message))
-          (throw (ex-info "No prestashed tickets available" {:message (json/write-str response-map)
-                                                             :status 403
-                                                             :suppress-logging true})))))))
 
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
@@ -414,6 +397,9 @@
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
+   :authenticator (pc/fnk [[:settings authenticator-config]
+                           passwords]
+                    (utils/create-component authenticator-config :context {:password (first passwords)}))
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
    :http-client (pc/fnk [[:settings instance-request-properties]]
@@ -423,8 +409,8 @@
                         _ (.setCookieStore client (HttpCookieStore$Empty.))]
                     client))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
-   :kerberos-prestash-query-chan (pc/fnk [[:settings {kerberos nil}]]
-                                   (when kerberos
+   :kerberos-prestash-query-chan (pc/fnk [authenticator]
+                                   (when (= :kerberos (auth/auth-type authenticator))
                                      (async/chan 1024)))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
@@ -657,7 +643,7 @@
                                   service-id->password-fn store-service-description-fn]
                            (fn start-new-service [{:keys [service-id core-service-description] :as descriptor}]
                              (when kerberos-prestash-query-chan
-                               (check-has-prestashed-tickets kerberos-prestash-query-chan descriptor))
+                               (krb/check-has-prestashed-tickets kerberos-prestash-query-chan descriptor))
                              (service/start-new-service
                                scheduler service-id->password-fn descriptor start-app-cache-atom task-threadpool
                                :pre-start-fn #(store-service-description-fn service-id core-service-description))))
@@ -731,7 +717,7 @@
    :kerberos-prestash-cache (pc/fnk [[:settings {kerberos nil}]
                                      [:state kerberos-prestash-query-chan]]
                               (let [{:keys [prestash-cache-refresh-ms prestash-cache-min-refresh-ms prestash-query-host]} kerberos]
-                                (when (and prestash-cache-refresh-ms prestash-cache-min-refresh-ms prestash-query-host)
+                                (when (and prestash-cache-refresh-ms prestash-cache-min-refresh-ms prestash-query-host kerberos-prestash-query-chan)
                                   (krb/start-prestash-cache-maintainer prestash-cache-refresh-ms prestash-cache-min-refresh-ms
                                                                        prestash-query-host kerberos-prestash-query-chan))))
    :messages (pc/fnk [[:settings {messages nil}]]
@@ -927,12 +913,12 @@
                                                                     (on-succesful-auth-handler-fn @src-router-id request))
                                                                   (partial router-comm-authenticated? router-id passwords))]
                                          (basic-auth-handler request))))
-   :handle-secure-request-fn (pc/fnk [[:state cors-validator passwords]]
+   :handle-secure-request-fn (pc/fnk [[:state authenticator cors-validator]]
                                (fn handle-secure-request-fn [request-handler {:keys [uri] :as request}]
                                  (log/debug "secure request received at" uri)
-                                 (let [handler (-> request-handler
-                                                   (cors/handler cors-validator)
-                                                   (spnego/require-gss (first passwords)))]
+                                 (let [handler (auth/create-auth-handler
+                                                 authenticator
+                                                 (cors/handler request-handler cors-validator))]
                                    (handler request))))
    :kill-instance-handler-fn (pc/fnk [[:routines peers-acknowledged-blacklist-requests-fn]
                                       [:settings [:scaling inter-kill-request-wait-time-ms] blacklist-config]

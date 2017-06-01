@@ -17,7 +17,11 @@
             [waiter.utils :as utils]))
 
 (def settings-schema
-  {(s/required-key :blacklist-config) {(s/required-key :blacklist-backoff-base-time-ms) schema/positive-int
+  {(s/required-key :authenticator-config) (s/constrained
+                                            {:kind s/Keyword
+                                             s/Keyword schema/require-symbol-factory-fn}
+                                            schema/contains-kind-sub-map?)
+   (s/required-key :blacklist-config) {(s/required-key :blacklist-backoff-base-time-ms) schema/positive-int
                                        (s/required-key :max-blacklist-time-ms) schema/positive-int}
    (s/required-key :cors-config) (s/constrained
                                    {:kind s/Keyword
@@ -152,7 +156,9 @@
   (utils/map->json-response (into (sorted-map) (sanitize-settings settings))))
 
 (def settings-defaults
-  {:cors-config {:kind :patterns
+  {:authenticator-config {:kind :anonymous
+                          :anonymous {:factory-fn 'waiter.auth.authentication/anonymous-authenticator}}
+   :cors-config {:kind :patterns
                  :patterns {:factory-fn 'waiter.cors/pattern-based-validator
                             :allowed-origins []}
                  :max-age 3600}

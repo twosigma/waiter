@@ -18,12 +18,11 @@
             [metrics.meters :as meters]
             [ring.middleware.cookies :as cookies]
             [ring.util.response :as rr]
+            [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics])
   (:import [org.ietf.jgss GSSManager GSSCredential GSSContext]))
-
-(def ^:const WAITER-AUTH-COOKIE-NAME "x-waiter-auth")
 
 ;; Decode the input token from the negotiate line
 ;; expects the authorization token to exist
@@ -75,11 +74,11 @@
 
 (defn add-cached-auth
   [response password princ]
-  (cookie-support/add-encoded-cookie response password WAITER-AUTH-COOKIE-NAME [princ (System/currentTimeMillis)] 1))
+  (cookie-support/add-encoded-cookie response password auth/AUTH-COOKIE-NAME [princ (System/currentTimeMillis)] 1))
 
 (defn get-auth-cookie-value
   [cookie-string]
-  (cookie-support/cookie-value cookie-string WAITER-AUTH-COOKIE-NAME))
+  (cookie-support/cookie-value cookie-string auth/AUTH-COOKIE-NAME))
 
 (defn require-gss
   "This middleware enables the application to require a SPNEGO
