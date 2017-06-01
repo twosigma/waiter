@@ -1,4 +1,7 @@
 (ns kitchen.utils
+  ; Despite not being explicitly used, the clojure.core.async
+  ; require is needed because lein uberjar fails in some
+  ; environments without it (https://github.com/twosigma/waiter/pull/10).
   (:require [clj-time.core :as t]
             [clj-time.format :as f]
             [clojure.core.async :as async]
