@@ -1,3 +1,5 @@
+The kitchen app is an HTTP server designed specifically for exercising test scenarios in waiter. The [waiter integration tests](../waiter/integration) rely heavily on kitchen for verifying that waiter behaves as expected in various situations.
+
 # Build Uberjar
 
 ```bash
@@ -10,15 +12,15 @@ Created /path-to-waiter-kitchen/target/uberjar/kitchen-0.1.0-SNAPSHOT-standalone
 # Test
 
 ```bash
-$ lein run --port <PORT>
+$ lein run --port PORT
 
-$ curl -XPOST $(hostname):<PORT>
+$ curl -XPOST $(hostname):PORT
 Hello World
 
-$ curl -XPOST -H "x-kitchen-echo;" -d "some text I want back" $(hostname):<PORT>
+$ curl -XPOST -H "x-kitchen-echo;" -d "some text I want back" $(hostname):PORT
 some text I want back
 
-$ curl -v -XPOST -H "x-kitchen-cookies: a=b,c=d" $(hostname):<PORT>
+$ curl -v -XPOST -H "x-kitchen-cookies: a=b,c=d" $(hostname):PORT
 ...
 < HTTP/1.1 200 OK
 < Set-Cookie: a=b
