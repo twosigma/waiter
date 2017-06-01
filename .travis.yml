@@ -1,0 +1,12 @@
+language: java
+jdk:
+- oraclejdk8
+env:
+  global:
+    - DEPS_CMD='lein with-profiles +test voom build-deps'
+    - TEST_CMD='lein test'
+  matrix:
+    - TEST_DIR=waiter  
+    - TEST_DIR=kitchen
+before_script: (cd $TEST_DIR && $DEPS_CMD)
+script: cd $TEST_DIR && $TEST_CMD
