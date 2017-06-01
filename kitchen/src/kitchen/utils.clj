@@ -1,6 +1,7 @@
 (ns kitchen.utils
   (:require [clj-time.core :as t]
             [clj-time.format :as f]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
