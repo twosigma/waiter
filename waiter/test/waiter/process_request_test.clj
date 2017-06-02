@@ -263,12 +263,7 @@
 
       (let [bytes-reported (stream-response (-> 1024 (* 977) (inc)))]
         (is (= 2 (count bytes-reported)))
-        (is (= [1000448 1] bytes-reported)))
-
-      (let [bytes-reported (stream-response 10000000)]
-        (is (= 10 (count bytes-reported)))
-        (is (= 10000000 (reduce + bytes-reported)))
-        (is (= [1000448 1000448 1000448 1000448 1000448 1000448 1000448 1000448 1000448 995968] bytes-reported))))))
+        (is (= [1000448 1] bytes-reported))))))
 
 (deftest test-inspect-for-202-async-request-response
   (letfn [(execute-inspect-for-202-async-request-response
