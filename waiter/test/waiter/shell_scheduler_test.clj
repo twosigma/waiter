@@ -14,6 +14,7 @@
             [clojure.core.async :as async]
             [clojure.java.io :as io]
             [clojure.test :refer :all]
+            [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :as ct]
             [waiter.scheduler :as scheduler]
@@ -299,32 +300,36 @@
                   reserve-port! (constantly port)]
       (is (= {:success true, :result :created, :message "Created foo"}
              (create-test-service scheduler "foo"))))
-    (let [result (scheduler/service-id->state scheduler "foo")]
-      (is (= {:service (scheduler/map->Service
-                         {:id "foo"
-                          :instances 1
-                          :task-count 1
-                          :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
-                          :environment {"WAITER_USERNAME" "waiter"
-                                        "WAITER_PASSWORD" "password"
-                                        "HOME" (work-dir)
-                                        "LOGNAME" nil
-                                        "USER" nil}
-                          :service-description {"cmd" "ls"}})
-              :id->instance {"foo.bar" (scheduler/map->ServiceInstance
-                                         {:id "foo.bar"
-                                          :service-id "foo"
-                                          :started-at (utils/date-to-str started-at (f/formatters :date-time))
-                                          :healthy? nil
-                                          :host "localhost"
-                                          :port port
-                                          :log-directory instance-dir
-                                          :message nil
-                                          :shell-scheduler/working-directory instance-dir
-                                          :shell-scheduler/last-health-check-time (t/epoch)
-                                          :shell-scheduler/pid fake-pid
-                                          :shell-scheduler/process (get-in result [:id->instance "foo.bar" :shell-scheduler/process])})}}
-             result)))))
+    (is (th/wait-for
+          (fn []
+            (let [result (scheduler/service-id->state scheduler "foo")]
+              (log/debug "service state:" result)
+              (= {:service (scheduler/map->Service
+                             {:id "foo"
+                              :instances 1
+                              :task-count 1
+                              :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                              :environment {"WAITER_USERNAME" "waiter"
+                                            "WAITER_PASSWORD" "password"
+                                            "HOME" (work-dir)
+                                            "LOGNAME" nil
+                                            "USER" nil}
+                              :service-description {"cmd" "ls"}})
+                  :id->instance {"foo.bar" (scheduler/map->ServiceInstance
+                                             {:id "foo.bar"
+                                              :service-id "foo"
+                                              :started-at (utils/date-to-str started-at (f/formatters :date-time))
+                                              :healthy? nil
+                                              :host "localhost"
+                                              :port port
+                                              :log-directory instance-dir
+                                              :message nil
+                                              :shell-scheduler/working-directory instance-dir
+                                              :shell-scheduler/last-health-check-time (t/epoch)
+                                              :shell-scheduler/pid fake-pid
+                                              :shell-scheduler/process
+                                              (get-in result [:id->instance "foo.bar" :shell-scheduler/process])})}}
+                 result)))))))
 
 (deftest test-port-reserved?
   (let [port->reservation-atom (atom {})
