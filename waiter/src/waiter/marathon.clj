@@ -192,11 +192,11 @@
 
 (defn retrieve-log-url
   "Retrieve the directory path for the specified instance running on the specified host."
-  [mesos-slave-port instance-id host]
+  [http-options mesos-slave-port instance-id host]
   (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
   (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
   (let [url (str "http://" host ":" mesos-slave-port "/state.json")
-        response-body (:body (http/get url {:headers {}, :spnego-auth true, :throw-exceptions false}))
+        response-body (:body (http/get url (assoc http-options :headers {} :throw-exceptions false)))
         _ (log/info "Mesos state on" host "is" response-body)
         response-parsed (walk/keywordize-keys (json/read-str response-body))
         frameworks (concat (:completed_frameworks response-parsed) (:frameworks response-parsed))
@@ -207,12 +207,12 @@
 
 (defn retrieve-directory-content-from-host
   "Retrieve the content of the directory for the given isntance on the specified host"
-  [mesos-slave-port service-id instance-id host directory]
+  [http-options mesos-slave-port service-id instance-id host directory]
   (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {})))
   (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
   (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
   (when (str/blank? directory) (throw (ex-info "No directory found for instance!" {})))
-  (let [response (http/get (str "http://" host ":" mesos-slave-port "/files/browse?path=" directory) {:headers {}, :spnego-auth true, :throw-exceptions false})
+  (let [response (http/get (str "http://" host ":" mesos-slave-port "/files/browse?path=" directory) (assoc http-options :headers {} :throw-exceptions false))
         response-parsed (walk/keywordize-keys (json/read-str (:body response)))]
     (map (fn [entry]
            (merge {:name (subs (:path entry) (inc (count directory)))
@@ -224,7 +224,7 @@
                      :path (:path entry)})))
          response-parsed)))
 
-(defrecord MarathonScheduler [mesos-slave-port retrieve-framework-id-fn
+(defrecord MarathonScheduler [http-options mesos-slave-port retrieve-framework-id-fn
                               slave-directory home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store force-kill-after-ms is-waiter-app?-fn]
 
@@ -333,8 +333,8 @@
 
   (retrieve-directory-content [_ service-id instance-id host directory]
     (when mesos-slave-port
-      (let [log-directory (or directory (retrieve-log-url mesos-slave-port instance-id host))]
-        (retrieve-directory-content-from-host mesos-slave-port service-id instance-id host log-directory))))
+      (let [log-directory (or directory (retrieve-log-url http-options mesos-slave-port instance-id host))]
+        (retrieve-directory-content-from-host http-options mesos-slave-port service-id instance-id host log-directory))))
 
   (service-id->state [_ service-id]
     {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
@@ -370,6 +370,6 @@
   (let [retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id) :ttl/threshold framework-id-ttl)
         service-id->failed-instances-transient-store (atom {})
         service-id->last-force-kill-store (atom {})]
-    (->MarathonScheduler mesos-slave-port retrieve-framework-id-fn slave-directory home-path-prefix
+    (->MarathonScheduler http-options mesos-slave-port retrieve-framework-id-fn slave-directory home-path-prefix
                          service-id->failed-instances-transient-store service-id->last-force-kill-store
                          force-kill-after-ms is-waiter-app?-fn)))

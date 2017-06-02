@@ -40,7 +40,7 @@
   "Creates a map containing the username and principal from a request"
   [request]
   {:username (:authorization/user request)
-   :principal (:krb5-authenticated-princ request)})
+   :principal (:authenticated-principal request)})
 
 (defn- async-make-http-request
   "Helper function for async status/result handlers."

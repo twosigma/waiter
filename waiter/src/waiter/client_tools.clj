@@ -34,6 +34,8 @@
 (def ^:const WAITER-PORT 9091)
 (def ^:const HTTP-SCHEME "http://")
 
+(def ^:const use-spnego (-> (System/getenv "USE_SPNEGO") str Boolean/parseBoolean))
+
 (def ^:const ANSI-YELLOW "\033[1m\033[33m")
 (def ^:const ANSI-CYAN "\033[36m")
 (def ^:const ANSI-RESET "\033[0m")
@@ -190,7 +192,7 @@
          (log/info "request headers:" (into (sorted-map) request-headers)))
        (let [{:keys [body headers status]}
              (http-method-fn request-url
-                             (cond-> {:spnego-auth true
+                             (cond-> {:spnego-auth use-spnego
                                       :throw-exceptions false
                                       :decompress-body decompress-body
                                       :follow-redirects false
@@ -268,7 +270,7 @@
         response (http-method-fn url {:headers headers
                                       :cookie-store cs
                                       :throw-exceptions false
-                                      :spnego-auth true
+                                      :spnego-auth use-spnego
                                       :body body})]
     (assoc response :cookies (clj-http.cookies/get-cookies cs)
                     :request-headers headers)))
@@ -368,7 +370,7 @@
 
 (defn num-tasks-running [waiter-url service-id & {:keys [verbose prev-tasks-running] :or {verbose false prev-tasks-running -1}}]
   (let [marathon-url (marathon-url waiter-url :verbose verbose)
-        info-response (binding [mc/*mconn* (atom (Connection. marathon-url {:spnego-auth true}))]
+        info-response (binding [mc/*mconn* (atom (Connection. marathon-url {:spnego-auth use-spnego}))]
                         (apps/get-app service-id))
         tasks-running' (get-in info-response [:app :tasksRunning])]
     (when (not= prev-tasks-running tasks-running')
@@ -390,13 +392,13 @@
 (defn scale-app-to [waiter-url service-id target-instances]
   (let [marathon-url (marathon-url waiter-url)]
     (log/info service-id "being scaled to" target-instances "task(s).")
-    (let [old-descriptor (binding [mc/*mconn* (atom (Connection. marathon-url {:spnego-auth true}))]
+    (let [old-descriptor (binding [mc/*mconn* (atom (Connection. marathon-url {:spnego-auth use-spnego}))]
                            (:app (apps/get-app service-id)))
           new-descriptor (update-in
                            (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
                            [:instances]
                            (fn [_] target-instances))]
-      (with-out-str (binding [mc/*mconn* (atom (Connection. marathon-url {:spnego-auth true}))]
+      (with-out-str (binding [mc/*mconn* (atom (Connection. marathon-url {:spnego-auth use-spnego}))]
                       (apps/update-app service-id new-descriptor "force" "true"))))))
 
 (defn delete-service
@@ -411,7 +413,7 @@
        ((utils/retry-strategy {:delay-multiplier 1.2, :inital-delay-ms 250, :max-retries limit})
          (fn []
            (let [app-delete-url (str HTTP-SCHEME waiter-url "/apps/" service-id "?force=true")
-                 delete-response (http/delete app-delete-url {:spnego-auth true, :throw-exceptions false})
+                 delete-response (http/delete app-delete-url {:spnego-auth use-spnego, :throw-exceptions false})
                  delete-json (json/read-str (:body delete-response))
                  delete-success (true? (get delete-json "success"))
                  no-such-service (= "no-such-service-exists" (get delete-json "result"))]
@@ -513,7 +515,7 @@
   (let [response (http/delete (str HTTP-SCHEME waiter-url "/token")
                               {:headers {"host" token}
                                :throw-exceptions false
-                               :spnego-auth true
+                               :spnego-auth use-spnego
                                :body ""})]
     (assert-response-status response 200)))
 
@@ -731,7 +733,7 @@
   [waiter-url service-id]
   (let [marathon-url (marathon-url waiter-url)
         app-info-url (str marathon-url "/v2/apps/" service-id)
-        app-info-response (http/get app-info-url {:spnego-auth true})
+        app-info-response (http/get app-info-url {:spnego-auth use-spnego})
         app-info-map (walk/keywordize-keys (json/read-str (:body app-info-response)))]
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 

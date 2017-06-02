@@ -82,7 +82,7 @@
 
              ;; The path used for leader election:
              :leader-latch-relative-path "leader-latch"
-            
+
              ;; The timeout for acquiring a mutex 
              :mutex-timeout-ms 1000}
 
@@ -144,10 +144,31 @@
 
  ; ---------- Security ----------
 
- ; Waiter supports the run-as-requester feature to launch a service as the requesting user.
- ; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
- ; The explicit consent is required to defend against CSRF attacks.
- ; consent-expiry-days is used to configure how long to remember this consent and honor the presence of the cookie.
+ ;; Waiter supports authenticating requests to identify the principal of the requesting user.
+ ;; The principal is then used to validate access to services and also to launch services.
+ :authenticator-config {
+                        ;; :kind :anonymous allows anonymous access to services (for testing purposes only):
+                        :kind :anonymous
+                        :anonymous {;; Custom implementations should specify a :factory-fn
+                                    ;; that returns an instance of waiter.auth.authentication.Authenticator:
+                                    :factory-fn waiter.auth.authentication/anonymous-authenticator
+                                    ;; the user account used to launch services
+                                    :launch-as-user "launch-username"}
+
+                        ;; :kind :kerberos enables authentication using the Kerberos protocol
+                        ;:kind :kerberos
+                        :kerberos {:factory-fn waiter.auth.kerberos/kerberos-authenticator
+                                   ;; the minimum interval after which prestash kerberos tickets needs to refreshed
+                                   :prestash-cache-min-refresh-ms 100
+                                   ;; the maximum interval after which prestash kerberos tickets are forcibly refreshed
+                                   :prestash-cache-refresh-ms  1000
+                                   ;; The prestash query host
+                                   :prestash-query-host "www.example.com"}}
+
+ ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
+ ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
+ ;; The explicit consent is required to defend against CSRF attacks.
+ ;; consent-expiry-days is used to configure how long to remember this consent and honor the presence of the cookie.
  :consent-expiry-days 90
 
  ;; CORS (https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS) governs whether a web application

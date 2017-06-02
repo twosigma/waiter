@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.spnego
+(ns waiter.auth.spnego
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
@@ -18,12 +18,11 @@
             [metrics.meters :as meters]
             [ring.middleware.cookies :as cookies]
             [ring.util.response :as rr]
+            [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics])
   (:import [org.ietf.jgss GSSManager GSSCredential GSSContext]))
-
-(def ^:const WAITER-AUTH-COOKIE-NAME "x-waiter-auth")
 
 ;; Decode the input token from the negotiate line
 ;; expects the authorization token to exist
@@ -75,11 +74,11 @@
 
 (defn add-cached-auth
   [response password princ]
-  (cookie-support/add-encoded-cookie response password WAITER-AUTH-COOKIE-NAME [princ (System/currentTimeMillis)] 1))
+  (cookie-support/add-encoded-cookie response password auth/AUTH-COOKIE-NAME [princ (System/currentTimeMillis)] 1))
 
 (defn get-auth-cookie-value
   [cookie-string]
-  (cookie-support/cookie-value cookie-string WAITER-AUTH-COOKIE-NAME))
+  (cookie-support/cookie-value cookie-string auth/AUTH-COOKIE-NAME))
 
 (defn require-gss
   "This middleware enables the application to require a SPNEGO
@@ -110,7 +109,7 @@
         (do (log/debug "Using sane cookies")
             (-> req
                 (assoc
-                  :krb5-authenticated-princ auth-princ
+                  :authenticated-principal auth-princ
                   :authorization/user (first (str/split auth-princ #"@" 2)))
                 (rh)
                 (cookie-support/cookies-async-response)))
@@ -121,7 +120,7 @@
               (let [princ (gss-get-princ gss_context)
                     resp (-> req
                              (assoc
-                               :krb5-authenticated-princ princ
+                               :authenticated-principal princ
                                :authorization/user (first (str/split princ #"@" 2)))
                              (rh)
                              (add-cached-auth password princ)

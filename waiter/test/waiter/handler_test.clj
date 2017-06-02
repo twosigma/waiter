@@ -126,7 +126,7 @@
                                          (is (= service-id in-service-id))
                                          (is (= "req-1234" in-request-id)))
             request {:authorization/user "test-user"
-                     :krb5-authenticated-princ "test-user@DOMAIN"
+                     :authenticated-principal "test-user@DOMAIN"
                      :request-method :http-method
                      :route-params (make-route-params "local")}
             {:keys [body headers status]}
@@ -166,7 +166,7 @@
                       (is (= {} passthrough-headers))
                       (async/go {:body "async-result-response", :headers {}, :status return-status}))
                     request {:authorization/user "test-user"
-                             :krb5-authenticated-princ "test-user@DOMAIN"
+                             :authenticated-principal "test-user@DOMAIN"
                              :request-method request-method,
                              :route-params (make-route-params router-type)}
                     {:keys [status headers]}
@@ -263,7 +263,7 @@
                                    (is (= {} passthrough-headers))
                                    (async/go {:error (Exception. "backend-status-error")}))
             async-trigger-terminate-fn nil
-            request {:authorization/user "test-user", :krb5-authenticated-princ "test-user@DOMAIN"
+            request {:authorization/user "test-user", :authenticated-principal "test-user@DOMAIN"
                      :route-params (make-route-params "local"), :request-method :http-method}
             {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn request))]
         (is (= 400 status))
@@ -311,7 +311,7 @@
                                  :headers (if (= return-status 303) {"location" (or result-location (result-location-fn router-type))} {})
                                  :status return-status}))
                     request {:authorization/user "test-user"
-                             :krb5-authenticated-princ "test-user@DOMAIN"
+                             :authenticated-principal "test-user@DOMAIN"
                              :request-method request-method
                              :route-params (make-route-params router-type)}
                     {:keys [status headers]}

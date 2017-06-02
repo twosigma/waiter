@@ -10,6 +10,12 @@
              ;; Use an in-process ZK (not for production use):
              :connect-string :in-process}
 
+ ; ---------- Security ----------
+
+ :authenticator-config {:anonymous {
+                                    ;; the user account used to launch services
+                                    :launch-as-user "launch-username"}}
+
  ; ---------- Scheduling ----------
 
  :scheduler-config {

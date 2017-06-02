@@ -17,22 +17,20 @@
             [clojure.test :refer :all]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
+            [waiter.auth.authentication :as auth]
             [waiter.core :refer :all]
             [waiter.cors :as cors]
             [waiter.curator :as curator]
             [waiter.discovery :as discovery]
             [waiter.handler :as handler]
-            [waiter.kerberos :as kerberos]
             [waiter.kv :as kv]
             [waiter.marathon :as marathon]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
-            [waiter.spnego :as spnego]
             [waiter.test-helpers :refer :all]
             [waiter.utils :as utils])
-  (:import clojure.lang.ExceptionInfo
-           java.io.StringBufferInputStream))
+  (:import java.io.StringBufferInputStream))
 
 (defn request
   [resource request-method & params]
@@ -255,38 +253,8 @@
         (is (= 403 status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id]))))))
 
-(deftest test-check-has-prestashed-tickets
-  (let [query-chan (async/chan 1)]
-    (testing "returns error for user without tickets"
-      (with-redefs [kerberos/is-prestashed? (fn [_] false)]
-        (async/go
-          (let [{:keys [response-chan]} (async/<! query-chan)]
-            (async/>! response-chan #{})))
-        (try
-          (utils/load-messages {:prestashed-tickets-not-available "Prestashed tickets"})
-          (check-has-prestashed-tickets query-chan {:service-description {"run-as-user" "kuser"}})
-          (is false "Expected exception to be thrown")
-          (catch ExceptionInfo e
-            (let [{:keys [status message suppress-logging]} (ex-data e)]
-              (is (= 403 status))
-              (is suppress-logging "Exception should be thrown with supress-logging")
-              (is (str/includes? message "Prestashed tickets"))
-              (is (str/includes? message "kuser")))))))
-    (testing "queries on cache miss"
-      (with-redefs [kerberos/is-prestashed? (fn [_] false)]
-        (async/go
-          (let [{:keys [response-chan]} (async/<! query-chan)]
-            (async/>! response-chan #{"kuser"})))
-        (is (nil? (check-has-prestashed-tickets query-chan {:service-description {"run-as-user" "kuser"}})))))
-    (testing "returns nil on query timeout"
-      (with-redefs [kerberos/is-prestashed? (fn [_] false)]
-        (is (nil? (check-has-prestashed-tickets (async/chan 1) {:service-description {"run-as-user" "kuser"}})))))
-    (testing "returns nil for a user with tickets"
-      (with-redefs [kerberos/is-prestashed? (fn [_] true)]
-        (is (nil? (check-has-prestashed-tickets query-chan {})))))))
-
 (deftest test-service-view-logs-handler
-  (let [scheduler (marathon/->MarathonScheduler 5051 (fn [] nil) "/slave/directory" "/home/path/"
+  (let [scheduler (marathon/->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
                                                 (atom {}) (atom {}) 0 (constantly true))
         configuration {:handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:prepend-waiter-url identity}
@@ -808,8 +776,7 @@
 
 (deftest test-async-result-handler-call
   (testing "test-async-result-handler-call"
-    (with-redefs [cors/handler (fn [handler _] handler)
-                  spnego/require-gss (fn [handler _] handler)]
+    (with-redefs [cors/handler (fn [handler _] handler)]
       (let [request {:authorization/user "test-user"
                      :request-method :get
                      :uri "/waiter-async/result/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location"}
@@ -820,13 +787,14 @@
                         (is (= request (select-keys in-request (keys request))))
                         response-map)
                       :handle-secure-request-fn ((:handle-secure-request-fn request-handlers)
-                                                  {:state {:cors-validator [], :passwords []}})}]
+                                                  {:state {:authenticator (auth/anonymous-authenticator {})
+                                                           :cors-validator []
+                                                           :passwords []}})}]
         (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
 
 (deftest test-async-status-handler-call
   (testing "test-async-status-handler-call"
-    (with-redefs [cors/handler (fn [handler _] handler)
-                  spnego/require-gss (fn [handler _] handler)]
+    (with-redefs [cors/handler (fn [handler _] handler)]
       (let [request {:authorization/user "test-user"
                      :request-method :get
                      :uri "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location"}
@@ -837,7 +805,9 @@
                         (is (= request (select-keys in-request (keys request))))
                         response-map)
                       :handle-secure-request-fn ((:handle-secure-request-fn request-handlers)
-                                                  {:state {:cors-validator [], :passwords []}})}]
+                                                  {:state {:authenticator (auth/anonymous-authenticator {})
+                                                           :cors-validator []
+                                                           :passwords []}})}]
         (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
 
 (deftest test-async-complete-handler-call

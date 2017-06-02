@@ -8,11 +8,15 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.kerberos-test
+(ns waiter.auth.kerberos-test
   (:require [clojure.core.async :as async]
             [clojure.java.shell :as shell]
+            [clojure.string :as str]
             [clojure.test :refer :all]
-            [waiter.kerberos :refer :all]))
+            [waiter.auth.authentication :as auth]
+            [waiter.auth.kerberos :refer :all]
+            [waiter.utils :as utils])
+  (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-get-opt-in-accounts
   (testing "success"
@@ -71,3 +75,44 @@
           (let [response (async/<!! response-chan)]
             (is (= response users)))
           (async/>!! exit-chan :exit))))))
+
+(deftest test-check-has-prestashed-tickets
+  (let [query-chan (async/chan 1)]
+    (testing "returns error for user without tickets"
+      (with-redefs [is-prestashed? (fn [_] false)]
+        (async/go
+          (let [{:keys [response-chan]} (async/<! query-chan)]
+            (async/>! response-chan #{})))
+        (try
+          (utils/load-messages {:prestashed-tickets-not-available "Prestashed tickets"})
+          (check-has-prestashed-tickets query-chan "kuser" "service-id")
+          (is false "Expected exception to be thrown")
+          (catch ExceptionInfo e
+            (let [{:keys [status message suppress-logging]} (ex-data e)]
+              (is (= 403 status))
+              (is suppress-logging "Exception should be thrown with supress-logging")
+              (is (str/includes? message "Prestashed tickets"))
+              (is (str/includes? message "kuser")))))))
+
+    (testing "queries on cache miss"
+      (with-redefs [is-prestashed? (fn [_] false)]
+        (async/go
+          (let [{:keys [response-chan]} (async/<! query-chan)]
+            (async/>! response-chan #{"kuser"})))
+        (is (nil? (check-has-prestashed-tickets query-chan "kuser" "service-id")))))
+
+    (testing "returns nil on query timeout"
+      (with-redefs [is-prestashed? (fn [_] false)]
+        (is (nil? (check-has-prestashed-tickets (async/chan 1) "kuser" "service-id")))))
+
+    (testing "returns nil for a user with tickets"
+      (with-redefs [is-prestashed? (fn [_] true)]
+        (is (nil? (check-has-prestashed-tickets query-chan nil "service-id")))))))
+
+(deftest test-kerberos-authenticator
+  (let [config {:password "test-password"
+                :prestash-cache-refresh-ms 100
+                :prestash-cache-min-refresh-ms 10
+                :prestash-query-host "example.com"}
+        authenticator (kerberos-authenticator config)]
+    (is (= :kerberos (auth/auth-type authenticator)))))

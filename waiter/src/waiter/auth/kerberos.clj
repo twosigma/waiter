@@ -8,12 +8,15 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.kerberos
+(ns waiter.auth.kerberos
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [waiter.auth.authentication :as auth]
+            [waiter.auth.spnego :as spnego]
             [waiter.utils :as utils]))
 
 (defn get-opt-in-accounts
@@ -45,7 +48,7 @@
     [max-update-interval min-update-interval host query-chan]
     (let [exit-chan (async/chan 1)]
       (refresh-prestash-cache host)
-      (async/go-loop [{:keys [timeout-chan continue-looping last-updated] :as current-state}
+      (async/go-loop [{:keys [timeout-chan last-updated] :as current-state}
                       {:timeout-chan (async/timeout max-update-interval)
                        :last-updated (t/now)
                        :continue-looping true}]
@@ -80,3 +83,43 @@
     [user]
     (let [users @prestash-cache]
       (or (empty? users) (contains? users user)))))
+
+(defn check-has-prestashed-tickets
+  "Checks if the run-as-user has prestashed tickets available. Throws an exception if not."
+  [query-chan run-as-user service-id]
+  (when (not (is-prestashed? run-as-user))
+    (let [response-chan (async/promise-chan)
+          _ (async/>!! query-chan {:response-chan response-chan})
+          [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)
+          response-map {:message (utils/message :prestashed-tickets-not-available)
+                        :user run-as-user
+                        :service-id service-id}]
+      (when (and (= response-chan chan) (not (contains? users run-as-user)))
+        (log/info (:message response-map) (dissoc response-map :message))
+        (throw (ex-info "No prestashed tickets available" {:message (json/write-str response-map)
+                                                           :status 403
+                                                           :suppress-logging true}))))))
+
+(defrecord KerberosAuthenticator [password query-chan]
+
+  auth/Authenticator
+
+  (auth-type [_]
+    :kerberos)
+
+  (check-user [_ user service-id]
+    (check-has-prestashed-tickets query-chan service-id user))
+
+  (create-auth-handler [_ request-handler]
+    (spnego/require-gss request-handler password)))
+
+(defn kerberos-authenticator
+  "Factory function for creating KerberosAuthenticator"
+  [{:keys [password prestash-cache-min-refresh-ms prestash-cache-refresh-ms prestash-query-host]}]
+  {:pre [(not (str/blank? password))
+         (utils/pos-int? prestash-cache-min-refresh-ms)
+         (utils/pos-int? prestash-cache-refresh-ms)
+         (not (str/blank? prestash-query-host))]}
+  (let [query-chan (async/chan 1024)]
+    (start-prestash-cache-maintainer prestash-cache-refresh-ms prestash-cache-min-refresh-ms prestash-query-host query-chan)
+    (->KerberosAuthenticator password query-chan)))
