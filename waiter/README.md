@@ -21,15 +21,15 @@ Logs are in `/log`, and `waiter.log` should contain info on what went wrong if W
 
 Once Waiter has started, to run a very basic integration test:
 
-`WAITER_TEST_KITCHEN_CMD=<kitchen-cmd> lein test :only waiter.basic-test/test-basic-shell-command`
+`lein test :only waiter.basic-test/test-basic-shell-command`
 
-where `<kitchen-cmd>` tells the test what command to use for starting up Waiter's "kitchen" test service (e.g. `java -Xmx128M -jar kitchen.jar`). To run all "fast" integration tests:
+To run all "fast" integration tests:
 
-`WAITER_TEST_KITCHEN_CMD=<kitchen-cmd> lein test :integration-fast`
+`lein test :integration-fast`
 
 To run all "slow" integration tests:
 
-`WAITER_TEST_KITCHEN_CMD=<kitchen-cmd> lein test :integration-slow`
+`lein test :integration-slow`
 
 ## What is Waiter
 
