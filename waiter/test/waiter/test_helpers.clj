@@ -44,8 +44,9 @@
       (let [runtime (Runtime/getRuntime)
             free-mem (.freeMemory runtime)
             total-mem (.totalMemory runtime)
-            used-mem (- total-mem free-mem)]
-        (println \tab "free memory:" free-mem "total memory:" total-mem "used memory:" used-mem))))
+            used-mem (- total-mem free-mem)
+            max-mem (.maxMemory runtime)]
+        (println \tab "free memory:" free-mem "total memory:" total-mem "used memory:" used-mem "max memory:" max-mem))))
 
   (defmethod clojure.test/report :begin-test-var [m]
     (let [test-name (full-test-name m)]
