@@ -39,6 +39,7 @@
 
 (defn- log-memory-info
   "Logs memory usage information"
+  []
   (let [runtime (Runtime/getRuntime)
         free-mem (.freeMemory runtime)
         total-mem (.totalMemory runtime)
