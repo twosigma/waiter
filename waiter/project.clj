@@ -111,7 +111,10 @@
   :profiles {:test-log {:jvm-opts
                         ["-Dlog4j.configuration=log4j-test.properties"
                          "-XX:+PrintGCDetails"
-                         "-XX:+PrintGCTimeStamps"]}
+                         "-XX:+PrintGCTimeStamps"
+                         "-XX:+PrintReferenceGC"
+                         "-XX:+PrintAdaptiveSizePolicy"
+                         "-Xmx512m"]}
              :test-repl {:jvm-opts
                          ["-Dlog4j.configuration=log4j-repl.properties"]}
              :test {:jvm-opts
