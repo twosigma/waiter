@@ -45,7 +45,7 @@
         total-mem (.totalMemory runtime)
         used-mem (- total-mem free-mem)
         max-mem (.maxMemory runtime)]
-    (log/debug \tab "free memory:" free-mem "total memory:" total-mem "used memory:" used-mem "max memory:" max-mem)))
+    (log/debug "free memory:" free-mem "total memory:" total-mem "used memory:" used-mem "max memory:" max-mem)))
 
 (let [running-tests (atom {})]
   (defn- log-running-tests []

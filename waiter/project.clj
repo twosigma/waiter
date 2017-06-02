@@ -109,15 +109,15 @@
                       :bytes (.trim (:out (clojure.java.shell/sh
                                             "git" "rev-parse" "HEAD")))})}]
   :profiles {:test-log {:jvm-opts
-                        ["-Dlog4j.configuration=log4j-test.properties"
-                         "-XX:+PrintGCDetails"
-                         "-XX:+PrintGCTimeStamps"
-                         "-XX:+PrintReferenceGC"
-                         "-XX:+PrintAdaptiveSizePolicy"
-                         "-Xmx512m"
-                         "-Xloggc:log/gc.log"]}
+                        ["-Dlog4j.configuration=log4j-test.properties"]}
              :test-repl {:jvm-opts
-                         ["-Dlog4j.configuration=log4j-repl.properties"]}
+                         ["-Dlog4j.configuration=log4j-repl.properties"
+                          "-XX:+PrintGCDetails"
+                          "-XX:+PrintGCTimeStamps"
+                          "-XX:+PrintReferenceGC"
+                          "-XX:+PrintAdaptiveSizePolicy"
+                          "-Xmx512m"
+                          "-Xloggc:log/gc.log"]}
              :test {:jvm-opts
                     [~(str "-Dwaiter.test.kitchen.cmd=" (System/getenv "WAITER_TEST_KITCHEN_CMD"))]}}
   :uberjar-name ~(System/getenv "UBERJAR_NAME"))
