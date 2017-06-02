@@ -10,7 +10,7 @@
 ;;
 (ns waiter.test-helpers
   (:require [clj-time.core :as t]
-            [clojure.core.async :as async ]
+            [clojure.core.async :as async]
             [clojure.data :as data]
             [clojure.java.io :as io]
             [clojure.test :refer :all]
@@ -37,10 +37,21 @@
   (let [test-meta (-> m :var meta)]
     (str (-> test-meta :ns (.getName)) "/" (:name test-meta))))
 
+(defn- log-memory-info
+  "Logs memory usage information"
+  []
+  (let [runtime (Runtime/getRuntime)
+        free-mem (.freeMemory runtime)
+        total-mem (.totalMemory runtime)
+        used-mem (- total-mem free-mem)
+        max-mem (.maxMemory runtime)]
+    (log/debug "free memory:" free-mem "total memory:" total-mem "used memory:" used-mem "max memory:" max-mem)))
+
 (let [running-tests (atom {})]
   (defn- log-running-tests []
     (let [tests @running-tests]
-      (log/debug (count tests) "running test(s):" tests)))
+      (log/debug (count tests) "running test(s):" tests))
+    (log-memory-info))
 
   (defmethod clojure.test/report :begin-test-var [m]
     (let [test-name (full-test-name m)]
