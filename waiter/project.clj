@@ -114,7 +114,8 @@
                          "-XX:+PrintGCTimeStamps"
                          "-XX:+PrintReferenceGC"
                          "-XX:+PrintAdaptiveSizePolicy"
-                         "-Xmx512m"]}
+                         "-Xmx512m"
+                         "-Xloggc:log/gc.log"]}
              :test-repl {:jvm-opts
                          ["-Dlog4j.configuration=log4j-repl.properties"]}
              :test {:jvm-opts
