@@ -151,13 +151,18 @@
                         :kind :anonymous
                         :anonymous {;; Custom implementations should specify a :factory-fn
                                     ;; that returns an instance of waiter.auth.authentication.Authenticator:
-                                    :factory-fn waiter.auth.authentication/anonymous-authenticator}
+                                    :factory-fn waiter.auth.authentication/anonymous-authenticator
+                                    ;; the user account used to launch services
+                                    :launch-as-user "launch-username"}
 
                         ;; :kind :kerberos enables authentication using the Kerberos protocol
                         ;:kind :kerberos
                         :kerberos {:factory-fn waiter.auth.kerberos/kerberos-authenticator
+                                   ;; the minimum interval after which prestash kerberos tickets needs to refreshed
                                    :prestash-cache-min-refresh-ms 100
+                                   ;; the maximum interval after which prestash kerberos tickets are forcibly refreshed
                                    :prestash-cache-refresh-ms  1000
+                                   ;; The prestash query host
                                    :prestash-query-host "www.example.com"}}
 
  ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
