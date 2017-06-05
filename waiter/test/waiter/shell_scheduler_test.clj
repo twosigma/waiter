@@ -293,43 +293,43 @@
         fake-pid 1234
         started-at (t/now)
         instance-dir (str (work-dir) "/foo/foo." instance-id)
-        port 10000]
+        port 10000
+        expected-state {:service (scheduler/map->Service
+                                   {:id "foo"
+                                    :instances 1
+                                    :task-count 1
+                                    :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                                    :environment {"WAITER_USERNAME" "waiter"
+                                                  "WAITER_PASSWORD" "password"
+                                                  "HOME" (work-dir)
+                                                  "LOGNAME" nil
+                                                  "USER" nil}
+                                    :service-description {"cmd" "ls"}})
+                        :id->instance {"foo.bar"
+                                       (scheduler/map->ServiceInstance
+                                         {:id "foo.bar"
+                                          :service-id "foo"
+                                          :started-at (utils/date-to-str started-at (f/formatters :date-time))
+                                          :healthy? nil
+                                          :host "localhost"
+                                          :port port
+                                          :log-directory instance-dir
+                                          :message nil
+                                          :shell-scheduler/working-directory instance-dir
+                                          :shell-scheduler/last-health-check-time (t/epoch)
+                                          :shell-scheduler/pid fake-pid})}}
+        process-keys [:id->instance "foo.bar" :shell-scheduler/process]]
     (with-redefs [pid (constantly fake-pid)
                   utils/unique-identifier (constantly instance-id)
                   t/now (constantly started-at)
                   reserve-port! (constantly port)]
       (is (= {:success true, :result :created, :message "Created foo"}
              (create-test-service scheduler "foo"))))
-    (is (th/wait-for
-          (fn []
-            (let [result (scheduler/service-id->state scheduler "foo")]
-              (log/debug "service state:" result)
-              (= {:service (scheduler/map->Service
-                             {:id "foo"
-                              :instances 1
-                              :task-count 1
-                              :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
-                              :environment {"WAITER_USERNAME" "waiter"
-                                            "WAITER_PASSWORD" "password"
-                                            "HOME" (work-dir)
-                                            "LOGNAME" nil
-                                            "USER" nil}
-                              :service-description {"cmd" "ls"}})
-                  :id->instance {"foo.bar" (scheduler/map->ServiceInstance
-                                             {:id "foo.bar"
-                                              :service-id "foo"
-                                              :started-at (utils/date-to-str started-at (f/formatters :date-time))
-                                              :healthy? nil
-                                              :host "localhost"
-                                              :port port
-                                              :log-directory instance-dir
-                                              :message nil
-                                              :shell-scheduler/working-directory instance-dir
-                                              :shell-scheduler/last-health-check-time (t/epoch)
-                                              :shell-scheduler/pid fake-pid
-                                              :shell-scheduler/process
-                                              (get-in result [:id->instance "foo.bar" :shell-scheduler/process])})}}
-                 result)))))))
+    (is (th/wait-for (fn []
+                       (let [result (scheduler/service-id->state scheduler "foo")]
+                         (log/debug "service state:" result)
+                         (= (assoc-in expected-state process-keys (get-in result process-keys))
+                            result)))))))
 
 (deftest test-port-reserved?
   (let [port->reservation-atom (atom {})
