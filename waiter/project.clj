@@ -119,5 +119,5 @@
                           "-Xmx512m"
                           "-Xloggc:log/gc.log"]}
              :test {:jvm-opts
-                    [~(str "-Dwaiter.test.kitchen.cmd=" (System/getenv "WAITER_TEST_KITCHEN_CMD"))]}}
+                    [~(str "-Dwaiter.test.kitchen.cmd=" (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh")))]}}
   :uberjar-name ~(System/getenv "UBERJAR_NAME"))

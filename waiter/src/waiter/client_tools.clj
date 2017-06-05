@@ -61,9 +61,11 @@
   (execute-command "id" "-un"))
 
 (defn retrieve-hostname []
-  (let [username (retrieve-username)
-        machine-name (execute-command "hostname")]
-    (str username "." machine-name)))
+  (if use-spnego
+    (let [username (retrieve-username)
+          machine-name (execute-command "hostname")]
+      (str username "." machine-name))
+    "127.0.0.1"))
 
 (defn retrieve-waiter-url []
   {:post [%]}
