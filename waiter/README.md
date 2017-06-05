@@ -8,7 +8,7 @@ Prerequisites:
 * [Leiningen](http://leiningen.org/)
 * A running [Marathon](https://mesosphere.github.io/marathon/)
 
-The quickest way to get Mesos, Marathon, and waiter running locally is with [docker](https://www.docker.com/) and [minimesos](https://minimesos.org/). Check out the Quickstart section [in the top-level README](../README.md) for details.
+The quickest way to get Mesos, Marathon, and waiter running locally is with [docker](https://www.docker.com/) and [minimesos](https://minimesos.org/). Check out the [Quickstart](../README.md#quickstart) for details.
 
 Read the [config-minimal.edn](config-minimal.edn) or [config-full.edn](config-full.edn) files for descriptions of the waiter config structure. Waiter logs are in `/log`, and `waiter.log` should contain info on what went wrong if Waiter doesn't start.
 
