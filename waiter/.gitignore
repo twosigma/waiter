@@ -23,3 +23,6 @@ test2junit/
 
 # Shell scheduler directory
 scheduler/
+
+# Minimesos
+.minimesos
