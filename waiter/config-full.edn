@@ -151,7 +151,7 @@
                         :kind :anonymous
                         :anonymous {;; Custom implementations should specify a :factory-fn
                                     ;; that returns an instance of waiter.auth.authentication.Authenticator:
-                                    :factory-fn waiter.auth.authentication/anonymous-authenticator
+                                    :factory-fn waiter.auth.authentication/single-user-authenticator
                                     ;; the user account used to launch services
                                     :run-as-user "launch-username"}
 

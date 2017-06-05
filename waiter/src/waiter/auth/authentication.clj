@@ -32,7 +32,7 @@
 ;; The anonymous authenticator attaches the principal of run-as-user to the request.
 ;; In particular, this enables requests to launch processes as run-as-user.
 ;; Use of this authentication mechanism is strongly discouraged for production use.
-(defrecord AnonymousAuthenticator [run-as-user]
+(defrecord SingleUserAuthenticator [run-as-user]
 
   Authenticator
 
@@ -49,9 +49,9 @@
                        :authenticated-principal run-as-user)]
         (request-handler request')))))
 
-(defn anonymous-authenticator
-  "Factory function for creating AnonymousAuthenticator"
+(defn single-user-authenticator
+  "Factory function for creating SingleUserAuthenticator"
   [{:keys [run-as-user]}]
-  (log/warn "use of AnonymousAuthenticator is strongly discouraged for production use:"
+  (log/warn "use of SingleUserAuthenticator is strongly discouraged for production use:"
             "requests will use principal" run-as-user)
-  (->AnonymousAuthenticator run-as-user))
+  (->SingleUserAuthenticator run-as-user))
