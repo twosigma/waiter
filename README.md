@@ -24,6 +24,7 @@ The quickest way to get Mesos, Marathon, and waiter running locally is with [doc
 1. Install `docker`
 1. Install `minimesos`
 1. Clone down this repo
+1. Run `kitchen/bin/build-docker-image.sh` to build the minimesos agent image with kitchen baked in
 1. `cd waiter`
 1. Run `minimesos up` to start Mesos, ZooKeeper, and Marathon
 1. Run `bin/run-using-minimesos.sh` to start waiter
