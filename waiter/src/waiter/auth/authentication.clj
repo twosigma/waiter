@@ -37,7 +37,7 @@
   Authenticator
 
   (auth-type [_]
-    :anonymous)
+    :one-user)
 
   (check-user [_ _ _]
     (comment "do nothing"))
@@ -49,7 +49,7 @@
                        :authenticated-principal run-as-user)]
         (request-handler request')))))
 
-(defn single-user-authenticator
+(defn one-user-authenticator
   "Factory function for creating SingleUserAuthenticator"
   [{:keys [run-as-user]}]
   (log/warn "use of SingleUserAuthenticator is strongly discouraged for production use:"

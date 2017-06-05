@@ -12,9 +12,9 @@
   (:require [clojure.test :refer :all]
             [waiter.auth.authentication :refer :all]))
 
-(deftest test-single-user-authenticator
-  (let [authenticator (single-user-authenticator {})]
-    (is (= :anonymous (auth-type authenticator)))
+(deftest test-one-user-authenticator
+  (let [authenticator (one-user-authenticator {})]
+    (is (= :one-user (auth-type authenticator)))
     (let [request-handler (create-auth-handler authenticator identity)
           username (System/getProperty "user.name")
           request {}
