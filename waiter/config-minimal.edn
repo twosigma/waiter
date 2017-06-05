@@ -14,7 +14,7 @@
 
  :authenticator-config {:anonymous {
                                     ;; the user account used to launch services
-                                    :launch-as-user "launch-username"}}
+                                    :run-as-user "launch-username"}}
 
  ; ---------- Scheduling ----------
 

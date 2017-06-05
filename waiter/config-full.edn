@@ -153,7 +153,7 @@
                                     ;; that returns an instance of waiter.auth.authentication.Authenticator:
                                     :factory-fn waiter.auth.authentication/anonymous-authenticator
                                     ;; the user account used to launch services
-                                    :launch-as-user "launch-username"}
+                                    :run-as-user "launch-username"}
 
                         ;; :kind :kerberos enables authentication using the Kerberos protocol
                         ;:kind :kerberos
