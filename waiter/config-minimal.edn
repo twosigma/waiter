@@ -12,9 +12,9 @@
 
  ; ---------- Security ----------
 
- :authenticator-config {:anonymous {
-                                    ;; the user account used to launch services
-                                    :launch-as-user "launch-username"}}
+ :authenticator-config {:one-user {
+                                   ;; the user account used to launch services
+                                   :run-as-user "launch-username"}}
 
  ; ---------- Scheduling ----------
 

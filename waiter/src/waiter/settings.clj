@@ -153,8 +153,8 @@
   (utils/map->json-response (into (sorted-map) (sanitize-settings settings))))
 
 (def settings-defaults
-  {:authenticator-config {:kind :anonymous
-                          :anonymous {:factory-fn 'waiter.auth.authentication/anonymous-authenticator}}
+  {:authenticator-config {:kind :one-user
+                          :one-user {:factory-fn 'waiter.auth.authentication/one-user-authenticator}}
    :cors-config {:kind :patterns
                  :patterns {:factory-fn 'waiter.cors/pattern-based-validator
                             :allowed-origins []}

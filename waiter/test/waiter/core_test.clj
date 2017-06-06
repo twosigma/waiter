@@ -787,7 +787,7 @@
                         (is (= request (select-keys in-request (keys request))))
                         response-map)
                       :handle-secure-request-fn ((:handle-secure-request-fn request-handlers)
-                                                  {:state {:authenticator (auth/anonymous-authenticator {})
+                                                  {:state {:authenticator (auth/one-user-authenticator {})
                                                            :cors-validator []
                                                            :passwords []}})}]
         (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
@@ -805,7 +805,7 @@
                         (is (= request (select-keys in-request (keys request))))
                         response-map)
                       :handle-secure-request-fn ((:handle-secure-request-fn request-handlers)
-                                                  {:state {:authenticator (auth/anonymous-authenticator {})
+                                                  {:state {:authenticator (auth/one-user-authenticator {})
                                                            :cors-validator []
                                                            :passwords []}})}]
         (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
