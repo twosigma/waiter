@@ -1,4 +1,4 @@
-The kitchen app is an HTTP server designed specifically for exercising test scenarios in waiter. The [waiter integration tests](../waiter/integration) rely heavily on kitchen for verifying that waiter behaves as expected in various situations.
+The kitchen app is an HTTP server designed specifically for exercising test scenarios in Waiter. The [Waiter integration tests](../waiter/integration) rely heavily on kitchen for verifying that Waiter behaves as expected in various situations.
 
 # Build Uberjar
 

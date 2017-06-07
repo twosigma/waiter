@@ -1,6 +1,6 @@
 Waiter is a distributed autoscaler and load balancer for managing web services at scale. Waiter particularly excels at running services with unpredictable loads or multiple co-existing versions. Waiter uses [Marathon](https://mesosphere.github.io/marathon/) to schedule services on a [Mesos](http://mesos.apache.org/) cluster.
 
-## Running waiter
+## Running Waiter
 
 Prerequisites:
 
@@ -8,17 +8,17 @@ Prerequisites:
 * [Leiningen](http://leiningen.org/)
 * A running [Marathon](https://mesosphere.github.io/marathon/)
 
-The quickest way to get Mesos, Marathon, and waiter running locally is with [docker](https://www.docker.com/) and [minimesos](https://minimesos.org/). Check out the [Quickstart](../README.md#quickstart) for details.
+The quickest way to get Mesos, Marathon, and Waiter running locally is with [docker](https://www.docker.com/) and [minimesos](https://minimesos.org/). Check out the [Quickstart](../README.md#quickstart) for details.
 
-Read the [config-minimal.edn](config-minimal.edn) or [config-full.edn](config-full.edn) files for descriptions of the waiter config structure. Waiter logs are in `/log`, and `waiter.log` should contain info on what went wrong if Waiter doesn't start.
+Read the [config-minimal.edn](config-minimal.edn) or [config-full.edn](config-full.edn) files for descriptions of the Waiter config structure. Waiter logs are in `/log`, and `waiter.log` should contain info on what went wrong if Waiter doesn't start.
 
-## Running waiter tests
+## Running Waiter tests
 
-To run all unit tests, simply run `lein test`. The unit tests generally run very fast, and they do not require waiter to be up and running.
+To run all unit tests, simply run `lein test`. The unit tests generally run very fast, and they do not require Waiter to be up and running.
 
-The waiter integration tests generally require waiter to be up and running. The integration tests rely heavily on the [kitchen test app](../kitchen). They therefore need to know where kitchen is installed on your Mesos agent(s), so that they can send the appropriate command to waiter. You can customize this path by setting the `WAITER_TEST_KITCHEN_CMD` environment variable.
+The Waiter integration tests generally require Waiter to be up and running. The integration tests rely heavily on the [kitchen test app](../kitchen). They therefore need to know where kitchen is installed on your Mesos agent(s), so that they can send the appropriate command to Waiter. You can customize this path by setting the `WAITER_TEST_KITCHEN_CMD` environment variable.
 
-Once waiter has started:
+Once Waiter has started:
 
 ```bash
 # Assuming you're using the provided minimesos support: 
@@ -34,7 +34,7 @@ $ lein test :integration-fast
 $ lein test :integration-slow
 ```
 
-## What is waiter
+## What is Waiter
 
 Waiter is a web service platform that runs, manages and automatically scales services without human intervention. Waiter particularly excels at running services with unpredictable loads or requiring intensive computing resources.
 
@@ -42,7 +42,7 @@ Developers register services on Waiter by simply supplying their service startup
 
 Managing service lifecycle is the key differentiator of Waiter that empowers developers to build more and faster.
 
-## What can you do with waiter
+## What can you do with Waiter
 
 Waiter was designed with simplicity in mind - your existing web services can run on Waiter without any modification as long as they meet the following two conditions:
 
