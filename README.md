@@ -30,6 +30,15 @@ The quickest way to get Mesos, Marathon, and waiter running locally is with [doc
 1. Run `bin/run-using-minimesos.sh` to start waiter
 1. Waiter should now be listening locally on port 9091
 
+## Quickstart (local shell scheduling)
+
+Waiter can also be run without Mesos and Marathon, using the "shell scheduler". Note that this scheduler should only be used for testing purposes, not in production. 
+
+1. Clone down this repo
+1. `cd waiter`
+1. Run `bin/run-using-shell-scheduler.sh` to start waiter
+1. Waiter should now be listening locally on port 9091
+
 ## Contributing
 
 In order to accept your code contributions, please fill out the appropriate Contributor License Agreement in the [`cla`](cla) folder and submit it to tsos@twosigma.com.
