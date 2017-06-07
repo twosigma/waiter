@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Usage: run-using-minimesos.sh [PORT]
+#
+# Examples:
+#   run-using-minimesos.sh 9091
+#   run-using-minimesos.sh
+#
+# Runs Waiter, configured to use minimesos, which is assumed to be running already.
 
 export WAITER_PORT=${1:-9091}
 
