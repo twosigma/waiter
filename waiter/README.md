@@ -14,9 +14,9 @@ Read the [config-minimal.edn](config-minimal.edn) or [config-full.edn](config-fu
 
 ## Running Waiter tests
 
-To run all unit tests, simply run `lein test`. The unit tests generally run very fast, and they do not require Waiter to be up and running.
+To run all unit tests, simply run `lein test`. The unit tests run very fast, and they do not require Waiter to be up and running.
 
-The Waiter integration tests generally require Waiter to be up and running. The integration tests rely heavily on the [kitchen test app](../kitchen). They therefore need to know where kitchen is installed on your Mesos agent(s), so that they can send the appropriate command to Waiter. You can customize this path by setting the `WAITER_TEST_KITCHEN_CMD` environment variable.
+The Waiter integration tests require Waiter to be up and running. The integration tests rely heavily on the [kitchen test app](../kitchen). They therefore need to know where kitchen is installed on your Mesos agent(s), so that they can send the appropriate command to Waiter. You can customize this path by setting the `WAITER_TEST_KITCHEN_CMD` environment variable.
 
 Once Waiter has started:
 
