@@ -185,8 +185,8 @@
                           :factory-fn waiter.cors/pattern-based-validator
 
                           ;; List of regular expressions representing origins to allow:
-                          :allowed-origins [#regex "^http://[^\\.]+\\.example\\.org(:80)?$"
-                                            #regex "^https://anotherapp.example.org:12345$"]}
+                          :allowed-origins [#config/regex "^http://[^\\.]+\\.example\\.org(:80)?$"
+                                            #config/regex "^https://anotherapp.example.org:12345$"]}
 
                ;; The value to use for the Access-Control-Max-Age header:
                :max-age 3600}
@@ -430,9 +430,9 @@
  ;; description does not explicitly provide a metric group, and Waiter is not automatically
  ;; mapping it to one, then the service's metrics will show up as part of the "other" metric
  ;; group:
- :metric-group-mappings [[#regex "^foo.*" "foo"]
-                         [#regex "^bar.*" "bar"]
-                         [#regex ".*baz.*" "baz"]]
+ :metric-group-mappings [[#config/regex "^foo.*" "foo"]
+                         [#config/regex "^bar.*" "bar"]
+                         [#config/regex ".*baz.*" "baz"]]
 
  ; ---------- Metrics - Internal ----------
 

@@ -137,7 +137,7 @@
     (if (.exists config-file)
       (do
         (log/info "reading settings from file:" config-file-path)
-        (let [edn-readers {:readers {'regex (fn [expr] (re-pattern expr))
+        (let [edn-readers {:readers {'config/regex (fn [expr] (re-pattern expr))
                                      'config/env #(env %)
                                      'config/env-int #(Integer/parseInt (env %))}}
               settings (edn/read-string edn-readers (slurp config-file-path))]
