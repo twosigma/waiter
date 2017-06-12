@@ -333,7 +333,9 @@
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
   (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies)
-        state-json (json/read-str (:body state-result))]
+        state-body (:body state-result)
+        _ (log/debug "service" service-id "state:" state-body)
+        state-json (json/read-str state-body)]
     (walk/keywordize-keys state-json)))
 
 (defn router-state [waiter-url & {:keys [cookies] :or {cookies {}}}]
