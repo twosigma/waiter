@@ -1,0 +1,23 @@
+{
+ ; ---------- Cluster ----------
+
+ :zookeeper {
+             ;; Use an in-process ZK (not for production use):
+             :connect-string :in-process}
+
+ ; ---------- Network ----------
+
+ ;; Set the port:
+ :port #config/env-int "WAITER_PORT"
+
+ ; ---------- Security ----------
+
+ :authenticator-config {:anonymous {
+                                    ;; The user account used to launch services:
+                                    :launch-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {
+                    ;; :kind :shell simply schedules instances on your local machine (for testing purposes only):
+                    :kind :shell}}

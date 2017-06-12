@@ -33,7 +33,7 @@ Each collector will periodically query its data source and push the data onto th
 
 ### Service data aggregator
 
-The data aggregator combines the data from Marathon and the router list from ZK to produce the all important mapping from app-id to list of instances available to this particular waiter server.
+The data aggregator combines the data from Marathon and the router list from ZK to produce the all important mapping from app-id to list of instances available to this particular Waiter server.
 That mapping is called `service-id->my-instance->slots` in the code. The `service-id->my-instance->slots` map is pushed to the reservation system.
 
 ## Reservation system

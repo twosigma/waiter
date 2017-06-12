@@ -1,0 +1,26 @@
+{
+ ; ---------- Cluster ----------
+
+ :zookeeper {
+             ;; Use an in-process ZK (not for production use):
+             :connect-string :in-process}
+
+ ; ---------- Network ----------
+
+ ;; Set the port:
+ :port #config/env-int "WAITER_PORT"
+
+ ; ---------- Security ----------
+
+ :authenticator-config {:anonymous {
+                                    ;; The user account used to launch services:
+                                    :launch-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {
+                    ;; Use Marathon for scheduling instances:
+                    :kind :marathon
+                    :marathon {
+                               ;; The URL for your Marathon HTTP API:
+                               :url #config/env "WAITER_MARATHON"}}}

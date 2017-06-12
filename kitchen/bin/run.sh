@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Usage: run.sh [options]
+#
+# Examples:
+#   run.sh --port 8080
+#   run.sh
+#
+# Runs Kitchen, passing through any and all arguments provided.
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 JAR=${DIR}/../target/uberjar/kitchen-0.1.0-SNAPSHOT-standalone.jar

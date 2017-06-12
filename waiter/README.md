@@ -8,28 +8,31 @@ Prerequisites:
 * [Leiningen](http://leiningen.org/)
 * A running [Marathon](https://mesosphere.github.io/marathon/)
 
-To run all unit tests:
+The quickest way to get Mesos, Marathon, and Waiter running locally is with [docker](https://www.docker.com/) and [minimesos](https://minimesos.org/). Check out the [Quickstart](../README.md#quickstart) for details.
 
-`lein test`
+Read the [config-minimal.edn](config-minimal.edn) or [config-full.edn](config-full.edn) files for descriptions of the Waiter config structure. Waiter logs are in `/log`, and `waiter.log` should contain info on what went wrong if Waiter doesn't start.
 
-To start Waiter:
+## Running Waiter tests
 
-`lein run <path-to-config.edn>`
+To run all unit tests, simply run `lein test`. The unit tests run very fast, and they do not require Waiter to be up and running.
 
-Please check the [config-minimal.edn](config-minimal.edn) or [config-full.edn](config-full.edn) files for description of the config file.
-Logs are in `/log`, and `waiter.log` should contain info on what went wrong if Waiter doesn't start.
+The Waiter integration tests require Waiter to be up and running. The integration tests rely heavily on the [kitchen test app](../kitchen). They therefore need to know where kitchen is installed on your Mesos agent(s), so that they can send the appropriate command to Waiter. You can customize this path by setting the `WAITER_TEST_KITCHEN_CMD` environment variable.
 
-Once Waiter has started, to run a very basic integration test:
+Once Waiter has started:
 
-`lein test :only waiter.basic-test/test-basic-shell-command`
+```bash
+# Assuming you're using the provided minimesos support: 
+$ export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh
 
-To run all "fast" integration tests:
+# Run a very basic integration test:
+$ lein test :only waiter.basic-test/test-basic-shell-command
 
-`lein test :integration-fast`
+# Run all "fast" integration tests:
+$ lein test :integration-fast
 
-To run all "slow" integration tests:
-
-`lein test :integration-slow`
+# Run all "slow" integration tests:
+$ lein test :integration-slow
+```
 
 ## What is Waiter
 

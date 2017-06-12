@@ -79,6 +79,16 @@
   []
   (load-config-file "config-minimal.edn"))
 
+(defn- load-minimesos-settings
+  "Loads config-minimesos.edn"
+  []
+  (load-config-file "config-minimesos.edn"))
+
+(defn- load-shell-settings
+  "Loads config-shell.edn"
+  []
+  (load-config-file "config-shell.edn"))
+
 (deftest test-validate-minimal-settings
   (testing "Test validating minimal settings"
     (is (nil? (s/check settings-schema (load-min-settings))))))
@@ -203,3 +213,34 @@
                                    :qux {:one "a"
                                          :two "c"}}}
                (deep-merge-settings defaults configured)))))))
+
+(deftest test-validate-minimesos-settings
+  (testing "Test validating minimesos settings"
+    (let [port 12345
+          run-as-user "foo"
+          marathon "bar"]
+      (with-redefs [env (fn [name]
+                          (case name
+                            "WAITER_PORT" (str port)
+                            "WAITER_AUTH_RUN_AS_USER" run-as-user
+                            "WAITER_MARATHON" marathon
+                            (throw (ex-info "Unexpected environment variable" {:name name}))))]
+        (let [settings (load-minimesos-settings)]
+          (is (nil? (s/check settings-schema settings)))
+          (is (= port (:port settings)))
+          (is (= run-as-user (get-in settings [:authenticator-config :anonymous :launch-as-user])))
+          (is (= marathon (get-in settings [:scheduler-config :marathon :url]))))))))
+
+(deftest test-validate-shell-settings
+  (testing "Test validating shell scheduler settings"
+    (let [port 12345
+          run-as-user "foo"]
+      (with-redefs [env (fn [name]
+                          (case name
+                            "WAITER_PORT" (str port)
+                            "WAITER_AUTH_RUN_AS_USER" run-as-user
+                            (throw (ex-info "Unexpected environment variable" {:name name}))))]
+        (let [settings (load-shell-settings)]
+          (is (nil? (s/check settings-schema settings)))
+          (is (= port (:port settings)))
+          (is (= run-as-user (get-in settings [:authenticator-config :anonymous :launch-as-user]))))))))
