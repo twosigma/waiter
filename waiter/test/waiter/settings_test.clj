@@ -228,7 +228,7 @@
         (let [settings (load-minimesos-settings)]
           (is (nil? (s/check settings-schema settings)))
           (is (= port (:port settings)))
-          (is (= run-as-user (get-in settings [:authenticator-config :anonymous :launch-as-user])))
+          (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user])))
           (is (= marathon (get-in settings [:scheduler-config :marathon :url]))))))))
 
 (deftest test-validate-shell-settings
