@@ -1,14 +1,17 @@
 language: java
 jdk:
 - oraclejdk8
+services:
+  - docker
 branches:
   only:
   - master
-jobs:
-  include:
-    - stage: unit tests
-      script: cd waiter && lein with-profiles +test voom build-deps && ./bin/ci/run-unit-tests.sh
-    - stage: unit tests
-      script: cd kitchen && lein with-profiles +test do voom build-deps, test
-    - stage: integration tests
-      script: cd waiter && lein with-profiles +test voom build-deps && ./bin/ci/run-integration-tests.sh
+env:
+  global:
+    - DEPS_CMD='lein with-profiles +test voom build-deps'
+  matrix:
+    - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
+    - TEST_DIR=kitchen TEST_CMD='lein test'
+    - TEST_DIR=waiter TEST_CMD=./bin/ci/run-integration-tests.sh
+before_script: (cd $TEST_DIR && $DEPS_CMD)
+script: cd $TEST_DIR && $TEST_CMD
