@@ -28,9 +28,20 @@
      - either issue a 401 challenge asking the client to authenticate itself,
      - or upon successful authentication populate the request with :authorization/user and :authenticated-principal"))
 
-(defn add-cached-auth
-  [response password princ]
-  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [princ (System/currentTimeMillis)] 1))
+(defn- add-cached-auth
+  [response password principal]
+  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (System/currentTimeMillis)] 1))
+
+(defn handle-request-auth
+  "Invokes the given request-handler on the given request, adding the necessary
+  auth headers on the way in, and the x-waiter-auth cookie on the way out."
+  [request-handler request user principal password]
+  (-> request
+      (assoc :authorization/user user
+             :authenticated-principal principal)
+      request-handler
+      (add-cached-auth password principal)
+      cookie-support/cookies-async-response))
 
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.
@@ -49,12 +60,7 @@
 
   (create-auth-handler [_ request-handler]
     (fn anonymous-handler [request]
-      (-> request
-          (assoc :authorization/user run-as-user
-                 :authenticated-principal run-as-user)
-          request-handler
-          (add-cached-auth password run-as-user)
-          cookie-support/cookies-async-response))))
+      (handle-request-auth request-handler request run-as-user run-as-user password))))
 
 (defn one-user-authenticator
   "Factory function for creating SingleUserAuthenticator"
