@@ -9,9 +9,12 @@ branches:
 env:
   global:
     - DEPS_CMD='lein with-profiles +test voom build-deps'
+    - LEIN_GET='wget https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein'
+    - LEIN_CHMOD='chmod +x ./lein'
+    - LEIN_DOWN='lein downgrade 2.6.1'
   matrix:
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=kitchen TEST_CMD='lein test'
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-integration-tests.sh
-before_script: (yes | lein downgrade 2.6.1 && cd $TEST_DIR && $DEPS_CMD)
+before_script: ($LEIN_GET && $LEIN_CHMOD && export PATH=$(pwd):$PATH && yes | $LEIN_DOWN && cd $TEST_DIR && $DEPS_CMD)
 script: cd $TEST_DIR && $TEST_CMD
