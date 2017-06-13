@@ -22,8 +22,10 @@ KITCHEN_DIR=${WAITER_DIR}/../kitchen
 ${KITCHEN_DIR}/bin/build-docker-image.sh
 
 # Start minimesos
+export PATH=${DIR}:${PATH}
+which minimesos
 pushd ${WAITER_DIR}
-${DIR}/minimesos up
+minimesos up
 MINIMESOS_EXIT_CODE=$?
 popd
 if [ ${MINIMESOS_EXIT_CODE} -ne 0 ]; then
