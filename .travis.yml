@@ -1,5 +1,4 @@
-language: clojure
-lein: 2.6.1
+language: java
 jdk:
 - oraclejdk8
 services:
@@ -14,5 +13,5 @@ env:
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=kitchen TEST_CMD='lein test'
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-integration-tests.sh
-before_script: (cd $TEST_DIR && $DEPS_CMD)
+before_script: (lein downgrade 2.6.1 && cd $TEST_DIR && $DEPS_CMD)
 script: cd $TEST_DIR && $TEST_CMD
