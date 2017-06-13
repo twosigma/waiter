@@ -218,18 +218,21 @@
   (testing "Test validating minimesos settings"
     (let [port 12345
           run-as-user "foo"
-          marathon "bar"]
+          marathon "bar"
+          minimesos-network-gateway "baz"]
       (with-redefs [env (fn [name]
                           (case name
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             "WAITER_MARATHON" marathon
+                            "MINIMESOS_NETWORK_GATEWAY" minimesos-network-gateway
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-minimesos-settings)]
           (is (nil? (s/check settings-schema settings)))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user])))
-          (is (= marathon (get-in settings [:scheduler-config :marathon :url]))))))))
+          (is (= marathon (get-in settings [:scheduler-config :marathon :url])))
+          (is (= minimesos-network-gateway (:hostname settings))))))))
 
 (deftest test-validate-shell-settings
   (testing "Test validating shell scheduler settings"

@@ -10,6 +10,9 @@
  ;; Set the port:
  :port #config/env-int "WAITER_PORT"
 
+ ;; Set the DNS name for your Waiter cluster:
+ :hostname #config/env "MINIMESOS_NETWORK_GATEWAY"
+
  ; ---------- Security ----------
 
  :authenticator-config {:kind :one-user
