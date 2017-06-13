@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.auth.authentication
-  (:require [clojure.tools.logging :as log]))
+  (:require [clojure.tools.logging :as log]
+            [waiter.cookie-support :as cookie-support]))
 
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
@@ -27,12 +28,16 @@
      - either issue a 401 challenge asking the client to authenticate itself,
      - or upon successful authentication populate the request with :authorization/user and :authenticated-principal"))
 
+(defn add-cached-auth
+  [response password princ]
+  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [princ (System/currentTimeMillis)] 1))
+
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.
 ;; The anonymous authenticator attaches the principal of run-as-user to the request.
 ;; In particular, this enables requests to launch processes as run-as-user.
 ;; Use of this authentication mechanism is strongly discouraged for production use.
-(defrecord SingleUserAuthenticator [run-as-user]
+(defrecord SingleUserAuthenticator [run-as-user password]
 
   Authenticator
 
@@ -44,14 +49,16 @@
 
   (create-auth-handler [_ request-handler]
     (fn anonymous-handler [request]
-      (let [request' (assoc request
-                       :authorization/user run-as-user
-                       :authenticated-principal run-as-user)]
-        (request-handler request')))))
+      (-> request
+          (assoc :authorization/user run-as-user
+                 :authenticated-principal run-as-user)
+          request-handler
+          (add-cached-auth password run-as-user)
+          cookie-support/cookies-async-response))))
 
 (defn one-user-authenticator
   "Factory function for creating SingleUserAuthenticator"
-  [{:keys [run-as-user]}]
+  [{:keys [password run-as-user]}]
   (log/warn "use of SingleUserAuthenticator is strongly discouraged for production use:"
             "requests will use principal" run-as-user)
-  (->SingleUserAuthenticator run-as-user))
+  (->SingleUserAuthenticator run-as-user password))

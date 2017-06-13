@@ -72,10 +72,6 @@
   [^GSSContext gss]
   (str (.getSrcName gss)))
 
-(defn add-cached-auth
-  [response password princ]
-  (cookie-support/add-encoded-cookie response password auth/AUTH-COOKIE-NAME [princ (System/currentTimeMillis)] 1))
-
 (defn get-auth-cookie-value
   [cookie-string]
   (cookie-support/cookie-value cookie-string auth/AUTH-COOKIE-NAME))
@@ -123,7 +119,7 @@
                                :authenticated-principal princ
                                :authorization/user (first (str/split princ #"@" 2)))
                              (rh)
-                             (add-cached-auth password princ)
+                             (auth/add-cached-auth password princ)
                              (cookie-support/cookies-async-response))]
                 (log/debug "Added cookies to response")
                 (if token
