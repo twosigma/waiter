@@ -16,11 +16,20 @@ export -f wait_for_waiter
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
+KITCHEN_DIR=${WAITER_DIR}/../kitchen
+
+# Build mesos agent with kitchen backed in
+${KITCHEN_DIR}/bin/build-docker-image.sh
 
 # Start minimesos
 pushd ${WAITER_DIR}
 ${DIR}/minimesos up
+MINIMESOS_EXIT_CODE=$?
 popd
+if [ ${MINIMESOS_EXIT_CODE} -ne 0 ]; then
+    echo "minimesos failed to startup -- exiting"
+    exit ${MINIMESOS_EXIT_CODE}
+fi
 
 # Start waiter
 ${WAITER_DIR}/bin/run-using-minimesos.sh 9091 &
