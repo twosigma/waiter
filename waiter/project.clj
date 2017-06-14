@@ -86,13 +86,12 @@
                  [ring-basic-authentication "1.0.5"]
                  [slingshot "0.12.2"]]
 
-  :repositories [["local" "file:jars"]]
   :resource-paths ["resources"]
   :main waiter.main
   :plugins [[lein-voom "0.1.0-20150115_230705-gd96d771"
              :exclusions [org.clojure/clojure]]
             [test2junit "1.2.2"]
-            [com.holychao/parallel-test "0.3.0-20161006_181003-g216af22"]]
+            [com.holychao/parallel-test "0.3.1"]]
   :global-vars {*warn-on-reflection* true}
   ; In case of kerberos problems, export KRB5_KTNAME=/var/spool/keytabs/$(id -un)
   :jvm-opts ["-server"
