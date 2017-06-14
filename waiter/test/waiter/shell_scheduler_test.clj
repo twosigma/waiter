@@ -150,6 +150,7 @@
       ;; Create service, instances: 1
       (is (= {:success true, :result :created, :message "Created foo"}
              (create-test-service scheduler "foo")))
+      (is (ct/wait-for #(true? (scheduler/app-exists? scheduler "foo")) :interval 0.1))
       ;; Scale up, instances: 2
       (is (= {:success true, :result :scaled, :message "Scaled foo"}
              (scheduler/scale-app scheduler "foo" 2)))
