@@ -45,7 +45,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh lein with-profiles +test-repl parallel-test :integration-fast
+WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh lein with-profiles +test-repl parallel-test :integration
 TESTS_EXIT_CODE=$?
 
 # If there were failures, dump the logs
