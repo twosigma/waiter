@@ -22,7 +22,8 @@
             [waiter.security :as security]
             [waiter.utils :as utils]
             [slingshot.slingshot :as sling])
-  (:import [schema.utils ValidationError]))
+  (:import (org.joda.time DateTime)
+           (schema.utils ValidationError)))
 
 (def ^:const default-health-check-path "/status")
 
@@ -566,7 +567,7 @@
    The returned vector is in the format: mode timestamp service-id|token [token-owner]"
   [clock mode service-id token {:strs [owner]}]
   (when mode
-    (-> [mode (clock)]
+    (-> [mode (.getMillis ^DateTime (clock))]
         (concat (case mode
                   "service" (when service-id [service-id])
                   "token" (when (and owner token) [token owner])
@@ -586,4 +587,4 @@
       (or (and (= "service" consent-mode) (= consent-id service-id))
           (and (= "token" consent-mode) (= consent-id token) (= consent-owner owner)))
       (> (+ auth-timestamp (-> consent-expiry-days t/days t/in-millis))
-         (clock)))))
+         (.getMillis ^DateTime (clock))))))

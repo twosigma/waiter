@@ -554,7 +554,7 @@
 (defn acknowledge-consent-handler
   "Processes the acknowledgment to launch a service as the auth-user.
    It triggers storing of the x-waiter-consent cookie on the client."
-  [clock token->service-description-template service-description->service-id consent-cookie-value add-encoded-cookie
+  [token->service-description-template service-description->service-id consent-cookie-value add-encoded-cookie
    consent-expiry-days {:keys [request-method] :as request}]
   (try
     (when-not (= :post request-method)
@@ -588,7 +588,7 @@
               (log/error "computed" computed-service-id ", but user[" auth-user "] provided" service-id "for" token)
               (throw (ex-info "Invalid service-id for specified token" params)))))
         (let [cookie-name "x-waiter-consent"
-              cookie-value (consent-cookie-value clock mode service-id token service-description-template)]
+              cookie-value (consent-cookie-value mode service-id token service-description-template)]
           (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-success"))
           (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-success"))
           (-> {:body (str "Added cookie " cookie-name), :headers {}, :status 200}

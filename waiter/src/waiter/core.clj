@@ -399,6 +399,7 @@
    :authenticator (pc/fnk [[:settings authenticator-config]
                            passwords]
                     (utils/create-component authenticator-config :context {:password (first passwords)}))
+   :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
    :http-client (pc/fnk [[:settings instance-request-properties]]
@@ -496,10 +497,9 @@
                                       (sd/can-manage-service? kv-store service-id authorized?-fn auth-user)))
    :assoc-run-as-user-approved? (pc/fnk [[:curator kv-store]
                                          [:settings consent-expiry-days]
-                                         [:state passwords]]
+                                         [:state clock passwords]]
                                   (fn assoc-run-as-user-approved? [{:keys [headers]} service-id]
-                                    (let [clock (fn [] (System/currentTimeMillis))
-                                          {:strs [cookie host]} headers
+                                    (let [{:strs [cookie host]} headers
                                           token (when-not (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys)
                                                   (utils/authority->host host))
                                           service-description-template (when token
@@ -605,14 +605,13 @@
                                (pr/request->descriptor service-description-defaults service-id-prefix kv-store hostname can-run-as?-fn
                                                        metric-group-mappings service-description-builder assoc-run-as-user-approved? request)))
    :retrieve-stale-thread-stack-trace-data (pc/fnk [[:settings thread-stack-state-refresh-interval-ms]
-                                                    [:state thread-id->stack-state-atom]]
-                                             (let [clock t/now]
-                                               (monitoring/thread-stack-tracker
-                                                 thread-id->stack-state-atom thread-stack-state-refresh-interval-ms
-                                                 #(Thread/getAllStackTraces) clock)
-                                               (fn retrieve-stale-thread-stack-trace-data [excluded-methods stale-threshold-ms]
-                                                 (monitoring/retrieve-stale-thread-stack-trace-data
-                                                   thread-id->stack-state-atom clock excluded-methods stale-threshold-ms))))
+                                                    [:state clock thread-id->stack-state-atom]]
+                                             (monitoring/thread-stack-tracker
+                                               thread-id->stack-state-atom thread-stack-state-refresh-interval-ms
+                                               #(Thread/getAllStackTraces) clock)
+                                             (fn retrieve-stale-thread-stack-trace-data [excluded-methods stale-threshold-ms]
+                                               (monitoring/retrieve-stale-thread-stack-trace-data
+                                                 thread-id->stack-state-atom clock excluded-methods stale-threshold-ms)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]
                                {:decryptor (fn router-metrics-decryptor [data] (utils/compressed-bytes->map data password))
@@ -663,7 +662,7 @@
                                      (sd/store-core kv-store service-id service-description validate-service-description-fn)))
    :synchronize-fn (pc/fnk [[:curator curator]
                             [:settings [:zookeeper base-path mutex-timeout-ms]]]
-                     (fn synchronize-fn [path f] 
+                     (fn synchronize-fn [path f]
                        (let [lock-path (str base-path "/" path)]
                          (curator/synchronize curator lock-path mutex-timeout-ms f))))
    :token->service-description-template (pc/fnk [[:curator kv-store]]
@@ -700,12 +699,13 @@
                                     delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config))
                                 {}))
    :gc-for-transient-metrics (pc/fnk [[:routines router-metrics-helpers]
-                                      [:settings metrics-config]]
+                                      [:settings metrics-config]
+                                      [:state clock]]
                                (let [state-store-atom (atom {})
                                      read-state-fn (fn read-state [_] @state-store-atom)
                                      write-state-fn (fn write-state [_ state] (reset! state-store-atom state))
                                      leader?-fn (constantly true)
-                                     service-gc-go-routine (partial service-gc-go-routine read-state-fn write-state-fn leader?-fn t/now)
+                                     service-gc-go-routine (partial service-gc-go-routine read-state-fn write-state-fn leader?-fn clock)
                                      {:keys [service-id->metrics-chan] :as metrics-gc-chans} (metrics/transient-metrics-gc service-gc-go-routine metrics-config)
                                      {:keys [service-id->metrics-fn]} router-metrics-helpers]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
@@ -742,10 +742,10 @@
                                  :maintainer-chans maintainer-chan}))
    :scheduler-broken-services-gc (pc/fnk [[:curator leader?-fn read-gc-state-fn write-gc-state-fn]
                                           [:settings scheduler-gc-config]
-                                          [:state scheduler]
+                                          [:state clock scheduler]
                                           scheduler-maintainer]
                                    (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
-                                         service-gc-go-routine (partial service-gc-go-routine read-gc-state-fn write-gc-state-fn leader?-fn t/now)]
+                                         service-gc-go-routine (partial service-gc-go-routine read-gc-state-fn write-gc-state-fn leader?-fn clock)]
                                      (scheduler/scheduler-broken-services-gc scheduler scheduler-state-chan scheduler-gc-config service-gc-go-routine)))
    :scheduler-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                   [:settings health-check-timeout-ms scheduler-syncer-interval-secs]
@@ -761,11 +761,11 @@
    :scheduler-services-gc (pc/fnk [[:curator leader?-fn read-gc-state-fn write-gc-state-fn]
                                    [:routines router-metrics-helpers service-id->service-description-fn]
                                    [:settings scheduler-gc-config]
-                                   [:state scheduler]
+                                   [:state clock scheduler]
                                    scheduler-maintainer]
                             (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
                                   {:keys [service-id->metrics-fn]} router-metrics-helpers
-                                  service-gc-go-routine (partial service-gc-go-routine read-gc-state-fn write-gc-state-fn leader?-fn t/now)]
+                                  service-gc-go-routine (partial service-gc-go-routine read-gc-state-fn write-gc-state-fn leader?-fn clock)]
                               (scheduler/scheduler-services-gc
                                 scheduler scheduler-state-chan service-id->metrics-fn scheduler-gc-config service-gc-go-routine service-id->service-description-fn)))
    :service-chan-maintainer (pc/fnk [[:routines start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
@@ -1082,19 +1082,19 @@
                                  request)))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                    [:settings consent-expiry-days]
-                                                   [:state passwords]
+                                                   [:state clock passwords]
                                                    handle-secure-request-fn]
                                             (let [password (first passwords)]
                                               (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
                                                         (cookie-support/add-encoded-cookie response password cookie-name value expiry-days))
-                                                      (clock []
-                                                        (System/currentTimeMillis))]
+                                                      (consent-cookie-value [mode service-id token description]
+                                                        (sd/consent-cookie-value clock mode service-id token description))]
                                                 (fn waiter-acknowledge-consent-handler-fn [request]
                                                   (handle-secure-request-fn
                                                     (fn inner-waiter-acknowledge-consent-handler-fn [request]
                                                       (handler/acknowledge-consent-handler
-                                                        clock token->service-description-template service-description->service-id
-                                                        sd/consent-cookie-value add-encoded-cookie consent-expiry-days request))
+                                                        token->service-description-template service-description->service-id
+                                                        consent-cookie-value add-encoded-cookie consent-expiry-days request))
                                                     request)))))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]

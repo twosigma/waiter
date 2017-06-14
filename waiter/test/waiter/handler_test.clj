@@ -685,7 +685,7 @@
         add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
                              (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-days}))
         consent-expiry-days 1
-        consent-cookie-value (fn [clock mode service-id token {:strs [owner]}]
+        consent-cookie-value (fn [mode service-id token {:strs [owner]}]
                                (when mode
                                  (-> [mode (clock)]
                                      (concat (case mode
@@ -698,7 +698,7 @@
                                                             (update :authorization/user #(or %1 "test-user"))
                                                             (update :request-method #(or %1 :post))
                                                             (update :scheme #(or %1 :http)))]
-                                           (acknowledge-consent-handler clock token->service-description-template service-description->service-id
+                                           (acknowledge-consent-handler token->service-description-template service-description->service-id
                                                                         consent-cookie-value add-encoded-cookie consent-expiry-days request')))]
     (testing "unsupported request method"
       (let [request {:request-method :get}

@@ -16,7 +16,8 @@
             [schema.core :as s]
             [waiter.kv :as kv]
             [waiter.service-description :refer :all])
-  (:import (clojure.lang ExceptionInfo)))
+  (:import (clojure.lang ExceptionInfo)
+           (org.joda.time DateTime)))
 
 (deftest test-validate-service-description-schema
   (is (nil? (s/check service-description-schema {"cpus" 1
@@ -919,11 +920,7 @@
 
 (deftest test-service-id-and-token-storing
   (with-redefs [service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd service-description-keys))))]
-    (let [lock (Object.)
-          synchronize-fn (fn [_ f]
-                           (locking lock
-                             (f)))
-          kv-store (kv/->LocalKeyValueStore (atom {}))
+    (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           service-id-prefix "test#"
           token "test-token"
           service-description {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "token" token,
@@ -1126,8 +1123,9 @@
                             (validate (->DefaultServiceDescriptionBuilder nil) {"cmd-type" "invalid"} {}))))))
 
 (deftest test-consent-cookie-value
-  (let [current-time-ms (System/currentTimeMillis)
-        clock (constantly current-time-ms)]
+  (let [current-time (t/now)
+        current-time-ms (.getMillis ^DateTime current-time)
+        clock (constantly current-time)]
     (is (= nil (consent-cookie-value clock nil nil nil nil)))
     (is (= ["unsupported" current-time-ms] (consent-cookie-value clock "unsupported" nil nil nil)))
     (is (= ["service" current-time-ms] (consent-cookie-value clock "service" nil nil nil)))
@@ -1138,8 +1136,9 @@
     (is (= ["token" current-time-ms "token-id" "user"] (consent-cookie-value clock "token" nil "token-id" {"owner" "user"})))))
 
 (deftest test-assoc-run-as-user-approved?
-  (let [current-time-ms (System/currentTimeMillis)
-        clock (constantly current-time-ms)
+  (let [current-time (t/now)
+        current-time-ms (.getMillis ^DateTime current-time)
+        clock (constantly current-time)
         consent-expiry-days 10
         valid-timestamp-ms (->> (dec consent-expiry-days) (t/days) (t/in-millis) (- current-time-ms))
         invalid-timestamp-ms (->> (inc consent-expiry-days) (t/days) (t/in-millis) (- current-time-ms))
