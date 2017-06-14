@@ -1067,12 +1067,13 @@
                                      (token/handle-refresh-token-request kv-store src-router-id request))
                                    request)))
    :token-reindex-handler-fn (pc/fnk [[:curator kv-store]
-                                      [:routines list-tokens-fn synchronize-fn]
-                                      handle-inter-router-request-fn handle-secure-request-fn]
+                                      [:routines list-tokens-fn make-inter-router-requests-sync-fn synchronize-fn]
+                                      handle-secure-request-fn]
                                (fn token-reindex-handler-fn [request]
                                  (handle-secure-request-fn
                                     (fn inner-token-handler-fn [request]
-                                      (token/handle-reindex-tokens-request synchronize-fn handle-inter-router-request-fn kv-store list-tokens-fn request))
+                                      (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
+                                                                           kv-store list-tokens-fn request))
                                     request)))
    :waiter-auth-handler-fn (pc/fnk [handle-secure-request-fn]
                              (fn waiter-auth-handler-fn [request]

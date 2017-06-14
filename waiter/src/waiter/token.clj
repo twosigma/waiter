@@ -268,7 +268,7 @@
   but could be in theory used by end users.
   The response contains a map, owner -> internal KV key.  The value of the key
   stores the tokens for that particular owner."
-  [kv-store {:keys [request-method] :as req}]
+  [kv-store {:keys [request-method]}]
   (try 
     (case request-method
       :get (let [owner->owner-ref (token-owners-map kv-store)]
