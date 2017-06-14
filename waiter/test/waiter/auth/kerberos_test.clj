@@ -110,9 +110,10 @@
         (is (nil? (check-has-prestashed-tickets query-chan nil "service-id")))))))
 
 (deftest test-kerberos-authenticator
-  (let [config {:password "test-password"
-                :prestash-cache-refresh-ms 100
-                :prestash-cache-min-refresh-ms 10
-                :prestash-query-host "example.com"}
-        authenticator (kerberos-authenticator config)]
-    (is (= :kerberos (auth/auth-type authenticator)))))
+  (with-redefs [start-prestash-cache-maintainer (constantly nil)]
+    (let [config {:password "test-password"
+                  :prestash-cache-refresh-ms 100
+                  :prestash-cache-min-refresh-ms 10
+                  :prestash-query-host "example.com"}
+          authenticator (kerberos-authenticator config)]
+      (is (= :kerberos (auth/auth-type authenticator))))))
