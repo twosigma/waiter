@@ -64,8 +64,7 @@
   (defmethod clojure.test/report :end-test-var [m]
     (let [test-name (full-test-name m)]
       (with-test-out
-        (println \tab (blue "FINISH:") test-name)
-        (println \tab "COUNTS:" (assoc @*report-counters* :name test-name)))
+        (println \tab (blue "FINISH:") test-name @*report-counters*))
       (swap! running-tests #(dissoc % test-name))
       (log-running-tests))))
 
