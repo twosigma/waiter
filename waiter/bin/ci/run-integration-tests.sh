@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Usage: run-integration-tests.sh
+# Usage: run-integration-tests.sh [TEST_SELECTOR]
+#
+# Examples:
+#   run-integration-tests.sh integration
+#   run-integration-tests.sh integration-fast
+#   run-integration-tests.sh integration-slow
+#   run-integration-tests.sh
 #
 # Runs the Waiter integration tests, and dumps log files if the tests fail.
 
@@ -13,6 +19,8 @@ function wait_for_waiter {
     echo "$(date +%H:%M:%S) connected to waiter on ${WAITER_PORT}!"
 }
 export -f wait_for_waiter
+
+TEST_SELECTOR=${1:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
@@ -45,7 +53,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh lein with-profiles +test-repl parallel-test :integration-fast
+WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh lein with-profiles +test-repl parallel-test :${TEST_SELECTOR}
 TESTS_EXIT_CODE=$?
 
 # If there were failures, dump the logs
