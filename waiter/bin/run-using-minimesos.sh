@@ -16,7 +16,9 @@ EXIT_CODE=$?
 if [ ${EXIT_CODE} -eq 0 ]
 then
     export WAITER_MARATHON=${MINIMESOS_MARATHON%;}
+    export WAITER_ZOOKEEPER_CONNECT_STRING=$(echo ${MINIMESOS_ZOOKEEPER} | awk -F/ '{print $3}')
     echo "WAITER_MARATHON = ${WAITER_MARATHON}"
+    echo "WAITER_ZOOKEEPER_CONNECT_STRING = ${WAITER_ZOOKEEPER_CONNECT_STRING}"
 else
     echo "Could not get Marathon URI from minimesos; you may need to restart minimesos"
     exit ${EXIT_CODE}
