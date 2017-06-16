@@ -15,8 +15,8 @@ env:
   matrix:
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=kitchen TEST_CMD='lein test'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-fast'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-slow'
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-fast parallel-test'
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-slow test'
 cache:
   - apt
 addons:

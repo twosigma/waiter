@@ -120,6 +120,8 @@
                           "-XX:+PrintAdaptiveSizePolicy"
                           "-Xmx512m"
                           "-Xloggc:log/gc.log"]}
+             :test-console {:jvm-opts
+                            ["-Dlog4j.configuration=log4j-console.properties"]}
              :test {:jvm-opts
                     [~(str "-Dwaiter.test.kitchen.cmd=" (or
                                                           (System/getenv "WAITER_TEST_KITCHEN_CMD")

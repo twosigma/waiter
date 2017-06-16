@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Usage: run-integration-tests.sh [TEST_SELECTOR]
+# Usage: run-integration-tests.sh [TEST_SELECTOR] [TEST_COMMAND]
 #
 # Examples:
-#   run-integration-tests.sh integration
+#   run-integration-tests.sh integration parallel-test
 #   run-integration-tests.sh integration-fast
 #   run-integration-tests.sh integration-slow
 #   run-integration-tests.sh
@@ -23,6 +23,7 @@ function wait_for_waiter {
 export -f wait_for_waiter
 
 TEST_SELECTOR=${1:-integration}
+TEST_COMMAND=${2:-parallel-test}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
@@ -77,7 +78,7 @@ curl -s ${WAITER_URI}/settings | jq .port
 curl -s ${WAITER_URI}/settings | jq .port
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh lein with-profiles +test-repl parallel-test :${TEST_SELECTOR}
+WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh lein with-profiles +test-console ${TEST_COMMAND} :${TEST_SELECTOR}
 TESTS_EXIT_CODE=$?
 
 # If there were failures, dump the logs
