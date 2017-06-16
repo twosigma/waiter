@@ -9,6 +9,8 @@
 #
 # Runs the Waiter integration tests, and dumps log files if the tests fail.
 
+set -v
+
 function wait_for_waiter {
     WAITER_PORT=${1:-9091}
     while ! curl -s localhost:${WAITER_PORT} >/dev/null;
@@ -61,7 +63,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Start nginx
-WAITERS=${MINIMESOS_NETWORK_GATEWAY}:9091;${MINIMESOS_NETWORK_GATEWAY}:9092
+WAITERS="${MINIMESOS_NETWORK_GATEWAY}:9091;${MINIMESOS_NETWORK_GATEWAY}:9092"
 NGINX_PORT=9300
 NGINX_DAEMON=on
 ${WAITER_DIR}/bin/run-nginx.sh ${WAITERS} ${NGINX_PORT} ${NGINX_DAEMON}
