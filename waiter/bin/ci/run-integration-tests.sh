@@ -70,11 +70,10 @@ ${WAITER_DIR}/bin/run-nginx.sh ${WAITERS} ${NGINX_PORT} ${NGINX_DAEMON}
 
 # Set WAITER_URI, which is used by the integration tests
 export WAITER_URI=localhost:${NGINX_PORT}
+curl -s ${WAITER_URI}/state | jq .routers
 
 # Nginx should be round-robin load balancing, this should show different ports
-echo "getting port from /settings once..."
 curl -s ${WAITER_URI}/settings | jq .port
-echo "getting port from /settings again..."
 curl -s ${WAITER_URI}/settings | jq .port
 
 # Run the integration tests

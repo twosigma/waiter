@@ -24,7 +24,8 @@
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.utils :as utils])
-  (:import marathonclj.common.Connection))
+  (:import java.io.StringWriter
+           marathonclj.common.Connection))
 
 (defn- remove-slash-prefix
   "Returns the input string after stripping out any preceding slashes."
@@ -63,6 +64,16 @@
         service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance
         (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set)))))))
 
+(defmacro swallow-out
+  "Like with-out-str, except it swallows anything sent to *out* and returns
+  what the body returns. We wrap this around the calls made to marathonclj
+  that call pprint on the request to avoid the unwanted output on stdout"
+  [& body]
+  `(let [sw# (new StringWriter)
+         value# (binding [*out* sw#] ~@body)]
+     (.close sw#)
+     value#))
+
 (defn process-kill-instance-request
   "Processes a kill instance request"
   [service-id instance-id {:keys [force scale] :or {force false, scale true} :as kill-params}]
@@ -72,7 +83,7 @@
               {:instance-id instance-id, :killed? killed?, :message message, :service-id service-id, :status status})]
       (ss/try+
         (log/debug "killing instance" instance-id "from service" service-id)
-        (let [result (apps/kill-task service-id instance-id "scale" (str scale) "force" (str force))
+        (let [result (swallow-out (apps/kill-task service-id instance-id "scale" (str scale) "force" (str force)))
               kill-success? (and result (map? result) (contains? result :deploymentId))]
           (log/info "kill instance" instance-id "result" result)
           (let [message (if kill-success? "Successfully killed instance" "Unable to kill instance")
@@ -283,7 +294,7 @@
             (log/info "Starting new app for" service-id "with descriptor" (dissoc marathon-descriptor :env))
             (scheduler/retry-on-transient-server-exceptions
               (str "create-app-if-new[" service-id "]")
-              (apps/create-app marathon-descriptor))
+              (swallow-out (apps/create-app marathon-descriptor)))
             (catch [:status 409] e
               (log/warn (ex-info "Conflict status when trying to start app. Is app starting up?"
                                  {:descriptor marathon-descriptor
@@ -295,7 +306,7 @@
       (let [delete-result (scheduler/retry-on-transient-server-exceptions
                             (str "in delete-app[" service-id "]")
                             (log/info "deleting service" service-id)
-                            (apps/delete-app service-id))]
+                            (swallow-out (apps/delete-app service-id)))]
         (when delete-result
           (remove-failed-instances-for-service! service-id->failed-instances-transient-store service-id)
           (scheduler/remove-killed-instances-for-service! service-id)
@@ -324,7 +335,7 @@
                                (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
                                [:instances]
                                (fn [_] instances))]
-          (apps/update-app service-id new-descriptor "force" "true")))
+          (swallow-out (apps/update-app service-id new-descriptor "force" "true"))))
       (catch [:status 409] {}
         (log/warn "Marathon deployment conflict while scaling" service-id))
       (catch [:status 503] {}
