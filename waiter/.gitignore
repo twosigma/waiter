@@ -20,6 +20,7 @@ test2junit/
 
 # Configuration for your local environment
 *config-local.edn
+bin/generated-nginx.conf
 
 # Shell scheduler directory
 scheduler/

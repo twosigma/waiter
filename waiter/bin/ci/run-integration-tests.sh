@@ -40,17 +40,40 @@ if [ ${MINIMESOS_EXIT_CODE} -ne 0 ]; then
     echo "minimesos failed to startup -- exiting"
     exit ${MINIMESOS_EXIT_CODE}
 fi
+$(minimesos info | grep MINIMESOS)
 
-# Start waiter
+# Start two waiters
 ${WAITER_DIR}/bin/run-using-minimesos.sh 9091 &
+${WAITER_DIR}/bin/run-using-minimesos.sh 9092 &
 
-# Wait for waiter to be listening
+# Wait for waiters to be listening
 timeout 180s bash -c "wait_for_waiter 9091"
 if [ $? -ne 0 ]; then
   echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening, displaying waiter log"
   cat ${WAITER_DIR}/log/waiter.log
   exit 1
 fi
+timeout 180s bash -c "wait_for_waiter 9092"
+if [ $? -ne 0 ]; then
+  echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening, displaying waiter log"
+  cat ${WAITER_DIR}/log/waiter.log
+  exit 1
+fi
+
+# Start nginx
+WAITERS=${MINIMESOS_NETWORK_GATEWAY}:9091;${MINIMESOS_NETWORK_GATEWAY}:9092
+NGINX_PORT=9300
+NGINX_DAEMON=on
+${WAITER_DIR}/bin/run-nginx.sh ${WAITERS} ${NGINX_PORT} ${NGINX_DAEMON}
+
+# Set WAITER_URI, which is used by the integration tests
+export WAITER_URI=localhost:${NGINX_PORT}
+
+# Nginx should be round-robin load balancing, this should show different ports
+echo "getting port from /settings once..."
+curl -s ${WAITER_URI}/settings | jq .port
+echo "getting port from /settings again..."
+curl -s ${WAITER_URI}/settings | jq .port
 
 # Run the integration tests
 WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh lein with-profiles +test-repl parallel-test :${TEST_SELECTOR}

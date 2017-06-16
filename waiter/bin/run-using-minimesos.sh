@@ -26,4 +26,4 @@ fi
 
 echo "Starting waiter..."
 cd ${DIR}/..
-WAITER_AUTH_RUN_AS_USER=$(id -un) lein run config-minimesos.edn
+WAITER_AUTH_RUN_AS_USER=$(id -un) WAITER_LOG_FILE_PREFIX=${WAITER_PORT}- lein run config-minimesos.edn
