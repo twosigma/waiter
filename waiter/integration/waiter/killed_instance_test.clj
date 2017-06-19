@@ -54,7 +54,7 @@
           {:keys [request-headers]} (request-fn)
           service-id (retrieve-service-id waiter-url request-headers)]
       (time-it (str service-id ":" parallelism "x" requests-per-thread)
-               (parallelize-requests parallelism requests-per-thread #(request-fn)))
+               (parallelize-requests parallelism requests-per-thread #(request-fn) :verbose true))
       (is (< (* 2 (count (routers waiter-url))) (num-instances waiter-url service-id)))
       (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180))))
 
