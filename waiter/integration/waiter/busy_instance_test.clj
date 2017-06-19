@@ -27,7 +27,8 @@
 
       ;; Make requests to get instances started and avoid shuffling among routers later
       (parallelize-requests 8 10 #(http/get url {:headers (assoc req-headers :x-kitchen-delay-ms 4000)
-                                                 :spnego-auth true}))
+                                                 :spnego-auth true})
+                            :verbose true)
 
       ;; Make a request that returns a 503
       (let [start-millis (System/currentTimeMillis)
@@ -47,7 +48,8 @@
                         #(let [{:keys [headers]} (http/get url {:headers req-headers :spnego-auth true})]
                            (when (-> (System/currentTimeMillis) (- start-millis) (< (- blacklist-time-millis 1000)))
                              (and (= backend-id (get headers "X-Waiter-Backend-Id"))
-                                  (= router-id (get headers "X-Waiter-Router-Id"))))))]
+                                  (= router-id (get headers "X-Waiter-Router-Id")))))
+                        :verbose true)]
           (is (every? #(not %) results))))
 
       (delete-service waiter-url (retrieve-service-id waiter-url req-headers)))))
