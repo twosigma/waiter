@@ -47,12 +47,12 @@
             (str "response-size-histogram: " response-size-histogram)))
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-slow test-large-request
+(deftest ^:parallel ^:integration-fast test-large-request
   (testing-using-waiter-url
     (let [request-body (apply str (take 2000000 (repeat "hello")))
          headers {:x-waiter-name (rand-name "test-large-request"), :x-kitchen-echo true}
          {:keys [body status request-headers]} (make-kitchen-request waiter-url headers :body request-body)]
-      (is (= 200 status))
+      (is (= 200 status) body)
       (is (= (count request-body) (count body)))
       (delete-service waiter-url (retrieve-service-id waiter-url request-headers)))))
 
