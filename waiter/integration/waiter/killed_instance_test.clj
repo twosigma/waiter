@@ -49,6 +49,7 @@
                          :x-kitchen-delay-ms 5000
                          :x-waiter-name (rand-name "delegate-kill")}
           request-fn (fn []
+                       (log/info "making kitchen request")
                        (make-kitchen-request waiter-url extra-headers))
           _ (log/info "making canary request")
           {:keys [request-headers]} (request-fn)
