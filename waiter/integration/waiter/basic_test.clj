@@ -50,31 +50,24 @@
           request-headers {:x-waiter-name service-name}
           canary-response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/secrun"))
           all-chars (map char (range 33 127))
-          random-string (fn [n] (reduce str (take n (repeatedly #(rand-nth all-chars)))))]
-      (testing "header-length-2000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 2000)))
-          200))
-      (testing "header-length-4000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 4000)))
-          200))
-      (testing "header-length-8000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 8000)))
-          200))
-      (testing "header-length-16000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 16000)))
-          200))
-      (testing "header-length-20000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 20000)))
-          200))
-      (testing "header-length-24000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 24000)))
-          200))
+          random-string (fn [n] (reduce str (take n (repeatedly #(rand-nth all-chars)))))
+          make-request (fn [header-size]
+                         (log/info "making request with header size" header-size)
+                         (make-kitchen-request waiter-url
+                                               (assoc request-headers :x-kitchen-long-string
+                                                                      (random-string header-size))))]
+      (let [response (make-request 2000)]
+        (assert-response-status response 200))
+      (let [response (make-request 4000)]
+        (assert-response-status response 200))
+      (let [response (make-request 8000)]
+        (assert-response-status response 200))
+      (let [response (make-request 16000)]
+        (assert-response-status response 200))
+      (let [response (make-request 20000)]
+        (assert-response-status response 200))
+      (let [response (make-request 24000)]
+        (assert-response-status response 200))
       (delete-service waiter-url (:service-id canary-response)))))
 
 ; Marked explicit due to:
