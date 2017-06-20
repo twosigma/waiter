@@ -23,12 +23,14 @@
           req-headers (walk/stringify-keys
                         (merge (kitchen-request-headers)
                                {:x-waiter-name (rand-name "testbusyinstance")
-                                :x-waiter-debug true}))]
+                                :x-waiter-debug true}))
+          make-request (fn []
+                         (log/info "making kitchen request")
+                         (http/get url {:headers (assoc req-headers :x-kitchen-delay-ms 4000)
+                                        :spnego-auth true}))]
 
       ;; Make requests to get instances started and avoid shuffling among routers later
-      (parallelize-requests 8 10 #(http/get url {:headers (assoc req-headers :x-kitchen-delay-ms 4000)
-                                                 :spnego-auth true})
-                            :verbose true)
+      (parallelize-requests 8 10 make-request :verbose true)
 
       ;; Make a request that returns a 503
       (let [start-millis (System/currentTimeMillis)
