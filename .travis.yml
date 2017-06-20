@@ -17,11 +17,14 @@ env:
     - TEST_DIR=kitchen TEST_CMD='lein test'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-fast parallel-test'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-slow test'
-cache:
-  - apt
 addons:
   apt:
     packages:
       - nginx
+cache:
+  apt: true
+  directories:
+    - $HOME/.m2
+    - $HOME/.voom-repos
 before_script: ($LEIN_GET && $LEIN_CHMOD && export PATH=$(pwd):$PATH && yes | $LEIN_DOWN && cd $TEST_DIR && $DEPS_CMD)
 script: cd $TEST_DIR && $TEST_CMD
