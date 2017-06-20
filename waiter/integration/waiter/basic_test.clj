@@ -269,18 +269,25 @@
   (testing-using-waiter-url
     (let [waiter-headers {:x-waiter-name (rand-name "test-suspend-resume")}
           {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
-      (let [results (parallelize-requests 10 2 #(let [response (make-kitchen-request waiter-url waiter-headers)]
-                                                  (= 200 (:status response))))]
+      (let [results (parallelize-requests 10 2
+                                          #(let [response (make-kitchen-request waiter-url waiter-headers)]
+                                             (= 200 (:status response)))
+                                          :verbose true)]
         (is (every? true? results)))
       (log/info "Suspending service " service-id)
       (http/get (str HTTP-SCHEME waiter-url "/apps/" service-id "/suspend") {:headers {} :spnego-auth true})
-      (let [results (parallelize-requests 10 2 #(let [{:keys [body]} (make-kitchen-request waiter-url waiter-headers)]
-                                                  (str/includes? body "Service has been suspended!")))]
+      (let [results (parallelize-requests 10 2
+                                          #(let [{:keys [body]} (make-kitchen-request waiter-url waiter-headers)]
+                                             (str/includes? body "Service has been suspended!"))
+                                          :verbose true)]
         (is (every? true? results)))
       (log/info "Resuming service " service-id)
       (http/get (str HTTP-SCHEME waiter-url "/apps/" service-id "/resume") {:headers {} :spnego-auth true})
-      (let [results (parallelize-requests 10 2 #(let [response (make-kitchen-request waiter-url waiter-headers)]
-                                                  (= 200 (:status response))))]
+      (let [results (parallelize-requests 10 2
+                                          #(let [_ (log/info "making kitchen request")
+                                                 response (make-kitchen-request waiter-url waiter-headers)]
+                                             (= 200 (:status response)))
+                                          :verbose true)]
         (is (every? true? results)))
       (delete-service waiter-url service-id))))
 
@@ -380,6 +387,7 @@
                                      (let [request-headers (assoc headers
                                                              :x-kitchen-delay-ms delay-ms
                                                              :x-waiter-priority priority)]
+                                       (log/info "making kitchen request")
                                        (make-kitchen-request router-url request-headers :cookies cookies)))]
       (async/thread ; long request to make the following requests queue up
         (make-prioritized-request -1 5000))
@@ -389,7 +397,8 @@
                               (let [index (dec (swap! request-counter-atom inc))
                                     priority (nth request-priorities index)]
                                 (make-prioritized-request priority 1000)
-                                (swap! response-priorities-atom conj priority))))
+                                (swap! response-priorities-atom conj priority)))
+                            :verbose true)
       ;; first item may be processed out of order as it can arrive before at the server
       (is (= (-> num-threads range reverse) @response-priorities-atom))
       (delete-service waiter-url service-id))))

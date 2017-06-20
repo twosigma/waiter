@@ -45,36 +45,21 @@ if [ ${MINIMESOS_EXIT_CODE} -ne 0 ]; then
 fi
 $(minimesos info | grep MINIMESOS)
 
-# Start two waiters
-${WAITER_DIR}/bin/run-using-minimesos.sh 9091 &
-${WAITER_DIR}/bin/run-using-minimesos.sh 9092 &
+# Start waiter
+WAITER_PORT=9091
+${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
 
-# Wait for waiters to be listening
-timeout 180s bash -c "wait_for_waiter 9091"
+# Wait for waiter to be listening
+timeout 180s bash -c "wait_for_waiter ${WAITER_PORT}"
 if [ $? -ne 0 ]; then
   echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening, displaying waiter log"
   cat ${WAITER_DIR}/log/waiter.log
   exit 1
 fi
-timeout 180s bash -c "wait_for_waiter 9092"
-if [ $? -ne 0 ]; then
-  echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening, displaying waiter log"
-  cat ${WAITER_DIR}/log/waiter.log
-  exit 1
-fi
-
-# Start nginx
-WAITERS="${MINIMESOS_NETWORK_GATEWAY}:9091;${MINIMESOS_NETWORK_GATEWAY}:9092"
-NGINX_PORT=9300
-NGINX_DAEMON=on
-${WAITER_DIR}/bin/run-nginx.sh ${WAITERS} ${NGINX_PORT} ${NGINX_DAEMON}
 
 # Set WAITER_URI, which is used by the integration tests
-export WAITER_URI=localhost:${NGINX_PORT}
+export WAITER_URI=localhost:${WAITER_PORT}
 curl -s ${WAITER_URI}/state | jq .routers
-
-# Nginx should be round-robin load balancing, this should show different ports
-curl -s ${WAITER_URI}/settings | jq .port
 curl -s ${WAITER_URI}/settings | jq .port
 
 # Run the integration tests

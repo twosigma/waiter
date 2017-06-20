@@ -16,13 +16,8 @@ env:
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=kitchen TEST_CMD='lein test'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-fast parallel-test'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-slow test'
-addons:
-  apt:
-    packages:
-      - nginx
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-slow parallel-test'
 cache:
-  apt: true
   directories:
     - $HOME/.m2
     - $HOME/.voom-repos

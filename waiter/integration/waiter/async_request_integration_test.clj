@@ -190,6 +190,7 @@
           (parallelize-requests
             num-threads 1
             (fn []
+              (log/info "making kitchen request")
               (let [async-request-headers
                     (assoc request-headers :x-kitchen-delay-ms (int (* (max 0.5 (double (rand))) request-processing-time-ms))
                                            :x-kitchen-store-async-response-ms 600000)
@@ -198,7 +199,8 @@
                     status-location (get (pc/map-keys str/lower-case headers) "location")]
                 (assert-response-status response 202)
                 (is (not (str/blank? status-location)))
-                status-location)))]
+                status-location))
+            :verbose true)]
 
       (testing "validate-pending-request-counters"
         (Thread/sleep inter-router-metrics-interval-ms) ;; allow routers to sync metrics
