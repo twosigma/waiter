@@ -15,8 +15,8 @@ env:
   matrix:
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=kitchen TEST_CMD='lein test'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-fast parallel-test'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-slow parallel-test'
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-fast'
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-slow'
 cache:
   directories:
     - $HOME/.m2

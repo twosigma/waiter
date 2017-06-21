@@ -69,10 +69,11 @@
   what the body returns. We wrap this around the calls made to marathonclj
   that call pprint on the request to avoid the unwanted output on stdout"
   [& body]
-  `(let [sw# (new StringWriter)
-         value# (binding [*out* sw#] ~@body)]
-     (.close sw#)
-     value#))
+  `(let [sw# (new StringWriter)]
+     (try
+       (binding [*out* sw#] ~@body)
+       (finally
+         (.close sw#)))))
 
 (defn process-kill-instance-request
   "Processes a kill instance request"

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Usage: run-integration-tests.sh [TEST_SELECTOR] [TEST_COMMAND]
+# Usage: run-integration-tests.sh [TEST_COMMAND] [TEST_SELECTOR]
 #
 # Examples:
-#   run-integration-tests.sh integration parallel-test
-#   run-integration-tests.sh integration-fast
-#   run-integration-tests.sh integration-slow
+#   run-integration-tests.sh parallel-test integration-fast
+#   run-integration-tests.sh parallel-test integration-slow
+#   run-integration-tests.sh parallel-test
 #   run-integration-tests.sh
 #
 # Runs the Waiter integration tests, and dumps log files if the tests fail.
@@ -22,8 +22,8 @@ function wait_for_waiter {
 }
 export -f wait_for_waiter
 
-TEST_SELECTOR=${1:-integration}
-TEST_COMMAND=${2:-parallel-test}
+TEST_COMMAND=${1:-parallel-test}
+TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
@@ -43,7 +43,6 @@ if [ ${MINIMESOS_EXIT_CODE} -ne 0 ]; then
     echo "minimesos failed to startup -- exiting"
     exit ${MINIMESOS_EXIT_CODE}
 fi
-$(minimesos info | grep MINIMESOS)
 
 # Start waiter
 WAITER_PORT=9091
@@ -58,7 +57,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Set WAITER_URI, which is used by the integration tests
-export WAITER_URI=localhost:${WAITER_PORT}
+export WAITER_URI=127.0.0.1:${WAITER_PORT}
 curl -s ${WAITER_URI}/state | jq .routers
 curl -s ${WAITER_URI}/settings | jq .port
 
