@@ -16,6 +16,7 @@
 (deftest ^:parallel ^:integration-slow test-work-stealing-load-balancing
   (testing-using-waiter-url
     (let [request-fn (fn [router-url waiter-headers & {:keys [cookies] :or {cookies nil}}]
+                       (log/info "making kitchen request")
                        (make-request-with-debug-info
                          waiter-headers
                          #(make-request router-url "/endpoint" :headers % :cookies cookies)))
@@ -36,7 +37,9 @@
 
       ;; set up
       (log/info "service-id:" service-id)
-      (parallelize-requests (+ max-instances 2) 2 #(request-fn waiter-url (assoc extra-headers :x-kitchen-delay-ms 6000)))
+      (parallelize-requests (+ max-instances 2) 2
+                            #(request-fn waiter-url (assoc extra-headers :x-kitchen-delay-ms 6000))
+                            :verbose true)
       (log/info "num instances running" (num-instances waiter-url service-id))
       (print-metrics service-id)
       ;; actual test

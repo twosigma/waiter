@@ -16,6 +16,12 @@
  :authenticator-config {:kind :one-user
                         :one-user {;; The user account used to launch services:
                                    :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
+ :cors-config {
+               ;; :kind :patterns takes a simple list of regular expressions (see below):
+               :kind :patterns
+               :patterns {
+                          ;; List of regular expressions representing origins to allow:
+                          :allowed-origins [#config/regex "^http://[^\\.]+\\.localhost:\\d+$"]}}
 
  ; ---------- Scheduling ----------
 

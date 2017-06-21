@@ -217,6 +217,7 @@
                           :x-waiter-name (rand-name "test-minmax-instances")
                           :x-waiter-scale-up-factor 0.99}
           request-fn (fn [& {:keys [cookies] :or {cookies {}}}]
+                       (log/info "making kitchen request")
                        (make-request-with-debug-info
                          custom-headers
                          #(make-kitchen-request waiter-url % :cookies cookies)))

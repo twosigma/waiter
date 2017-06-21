@@ -15,7 +15,11 @@ env:
   matrix:
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=kitchen TEST_CMD='lein test'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-fast'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh integration-slow'
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-fast'
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-slow'
+cache:
+  directories:
+    - $HOME/.m2
+    - $HOME/.voom-repos
 before_script: ($LEIN_GET && $LEIN_CHMOD && export PATH=$(pwd):$PATH && yes | $LEIN_DOWN && cd $TEST_DIR && $DEPS_CMD)
 script: cd $TEST_DIR && $TEST_CMD

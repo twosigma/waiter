@@ -50,31 +50,24 @@
           request-headers {:x-waiter-name service-name}
           canary-response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/secrun"))
           all-chars (map char (range 33 127))
-          random-string (fn [n] (reduce str (take n (repeatedly #(rand-nth all-chars)))))]
-      (testing "header-length-2000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 2000)))
-          200))
-      (testing "header-length-4000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 4000)))
-          200))
-      (testing "header-length-8000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 8000)))
-          200))
-      (testing "header-length-16000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 16000)))
-          200))
-      (testing "header-length-20000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 20000)))
-          200))
-      (testing "header-length-24000"
-        (assert-response-status
-          (make-kitchen-request waiter-url (assoc request-headers :x-kitchen-long-string (random-string 24000)))
-          200))
+          random-string (fn [n] (reduce str (take n (repeatedly #(rand-nth all-chars)))))
+          make-request (fn [header-size]
+                         (log/info "making request with header size" header-size)
+                         (make-kitchen-request waiter-url
+                                               (assoc request-headers :x-kitchen-long-string
+                                                                      (random-string header-size))))]
+      (let [response (make-request 2000)]
+        (assert-response-status response 200))
+      (let [response (make-request 4000)]
+        (assert-response-status response 200))
+      (let [response (make-request 8000)]
+        (assert-response-status response 200))
+      (let [response (make-request 16000)]
+        (assert-response-status response 200))
+      (let [response (make-request 20000)]
+        (assert-response-status response 200))
+      (let [response (make-request 24000)]
+        (assert-response-status response 200))
       (delete-service waiter-url (:service-id canary-response)))))
 
 ; Marked explicit due to:
@@ -276,18 +269,25 @@
   (testing-using-waiter-url
     (let [waiter-headers {:x-waiter-name (rand-name "test-suspend-resume")}
           {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
-      (let [results (parallelize-requests 10 2 #(let [response (make-kitchen-request waiter-url waiter-headers)]
-                                                  (= 200 (:status response))))]
+      (let [results (parallelize-requests 10 2
+                                          #(let [response (make-kitchen-request waiter-url waiter-headers)]
+                                             (= 200 (:status response)))
+                                          :verbose true)]
         (is (every? true? results)))
       (log/info "Suspending service " service-id)
       (http/get (str HTTP-SCHEME waiter-url "/apps/" service-id "/suspend") {:headers {} :spnego-auth true})
-      (let [results (parallelize-requests 10 2 #(let [{:keys [body]} (make-kitchen-request waiter-url waiter-headers)]
-                                                  (str/includes? body "Service has been suspended!")))]
+      (let [results (parallelize-requests 10 2
+                                          #(let [{:keys [body]} (make-kitchen-request waiter-url waiter-headers)]
+                                             (str/includes? body "Service has been suspended!"))
+                                          :verbose true)]
         (is (every? true? results)))
       (log/info "Resuming service " service-id)
       (http/get (str HTTP-SCHEME waiter-url "/apps/" service-id "/resume") {:headers {} :spnego-auth true})
-      (let [results (parallelize-requests 10 2 #(let [response (make-kitchen-request waiter-url waiter-headers)]
-                                                  (= 200 (:status response))))]
+      (let [results (parallelize-requests 10 2
+                                          #(let [_ (log/info "making kitchen request")
+                                                 response (make-kitchen-request waiter-url waiter-headers)]
+                                             (= 200 (:status response)))
+                                          :verbose true)]
         (is (every? true? results)))
       (delete-service waiter-url service-id))))
 
@@ -387,6 +387,7 @@
                                      (let [request-headers (assoc headers
                                                              :x-kitchen-delay-ms delay-ms
                                                              :x-waiter-priority priority)]
+                                       (log/info "making kitchen request")
                                        (make-kitchen-request router-url request-headers :cookies cookies)))]
       (async/thread ; long request to make the following requests queue up
         (make-prioritized-request -1 5000))
@@ -396,7 +397,8 @@
                               (let [index (dec (swap! request-counter-atom inc))
                                     priority (nth request-priorities index)]
                                 (make-prioritized-request priority 1000)
-                                (swap! response-priorities-atom conj priority))))
+                                (swap! response-priorities-atom conj priority)))
+                            :verbose true)
       ;; first item may be processed out of order as it can arrive before at the server
       (is (= (-> num-threads range reverse) @response-priorities-atom))
       (delete-service waiter-url service-id))))

@@ -101,6 +101,7 @@
              "-Dsun.security.krb5.debug=true"
              "-Djavax.security.auth.useSubjectCredsOnly=false"
              "-Dclojure.core.async.pool-size=64"
+             ~(str "-Dwaiter.logFilePrefix=" (System/getenv "WAITER_LOG_FILE_PREFIX"))
              "-XX:+UseG1GC"
              "-XX:MaxGCPauseMillis=50"
              "-XX:PermSize=1g"]
@@ -119,6 +120,8 @@
                           "-XX:+PrintAdaptiveSizePolicy"
                           "-Xmx512m"
                           "-Xloggc:log/gc.log"]}
+             :test-console {:jvm-opts
+                            ["-Dlog4j.configuration=log4j-console.properties"]}
              :test {:jvm-opts
                     [~(str "-Dwaiter.test.kitchen.cmd=" (or
                                                           (System/getenv "WAITER_TEST_KITCHEN_CMD")

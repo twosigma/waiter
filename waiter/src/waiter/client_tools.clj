@@ -477,6 +477,7 @@
                      (> target-count 300) 6
                      (> target-count 200) 5
                      (> target-count 100) 4
+                     (> target-count 60) 3
                      :else 2)
         checkpoints (set (map #(int (/ (* % target-count) num-groups)) (range 1 num-groups)))
         tasks (map (fn [_]
