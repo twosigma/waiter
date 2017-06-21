@@ -69,7 +69,8 @@
 
 (deftest ^:perf test-request-latency-apache-bench
   (testing-using-waiter-url
-    (let [max-instances 50
+    (let [max-instances (Integer/parseInt (or (System/getenv "WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES") 50))
+          _ (log/info "using max-instances =" max-instances)
           client-concurrency-level 800
           waiter-concurrency-level 4
           total-requests 100000
@@ -91,7 +92,7 @@
           warm-up-run (run-apache-bench warm-up-requests)]
       (is (= 0 (:exit warm-up-run)) (:err warm-up-run))
       (is (= 0 (:failed-requests warm-up-run)))
-      (is (= 0 (:write-errors warm-up-run)))
+      (is (or (= 0 (:write-errors warm-up-run)) (nil? (:write-errors warm-up-run))))
       (is (= 0 (:non-2xx-responses warm-up-run)))
       (is (= warm-up-requests (:complete-requests warm-up-run)))
       (if (= warm-up-requests (:non-2xx-responses warm-up-run))
@@ -104,7 +105,7 @@
               (is (running-close-to-max-instances))
               (is (= 0 (:exit timing-run)) (:err timing-run))
               (is (> (/ 1 1000) (/ (:failed-requests timing-run) total-requests)))
-              (is (= 0 (:write-errors timing-run)))
+              (is (or (= 0 (:write-errors timing-run)) (nil? (:write-errors timing-run))))
               (is (= 0 (:non-2xx-responses warm-up-run)))
               (is (= total-requests (:complete-requests timing-run)))
               (log/info "Number of async-threads Waiter is using =" (:async-threads (waiter-settings waiter-url)))
