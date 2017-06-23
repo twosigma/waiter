@@ -99,7 +99,7 @@
 
 (defn prepare-request-properties
   [instance-request-properties waiter-headers]
-  (let [service-configured-timeout-lookup
+  (let [service-configured-integer-lookup
         (fn [old-value header-value display-name]
           (let [parsed-value (when header-value
                                (try
@@ -110,15 +110,17 @@
                                    nil)))]
             (if (and parsed-value (pos? parsed-value)) parsed-value old-value)))]
     (-> instance-request-properties
-        (update :async-check-interval-ms service-configured-timeout-lookup
+        (update :async-check-interval-ms service-configured-integer-lookup
                 (headers/get-waiter-header waiter-headers "async-check-interval") "async request check interval")
-        (update :async-request-timeout-ms service-configured-timeout-lookup
+        (update :async-request-timeout-ms service-configured-integer-lookup
                 (headers/get-waiter-header waiter-headers "async-request-timeout") "async request timeout")
-        (update :initial-socket-timeout-ms service-configured-timeout-lookup
+        (update :initial-socket-timeout-ms service-configured-integer-lookup
                 (headers/get-waiter-header waiter-headers "timeout") "socket timeout")
-        (update :queue-timeout-ms service-configured-timeout-lookup
+        (update :output-buffer-size service-configured-integer-lookup
+                (headers/get-waiter-header waiter-headers "output-buffer-size") "output buffer size")
+        (update :queue-timeout-ms service-configured-integer-lookup
                 (headers/get-waiter-header waiter-headers "queue-timeout") "instance timeout")
-        (update :streaming-timeout-ms service-configured-timeout-lookup
+        (update :streaming-timeout-ms service-configured-integer-lookup
                 (headers/get-waiter-header waiter-headers "streaming-timeout") "streaming timeout"))))
 
 (defn prepare-instance
@@ -288,19 +290,87 @@
    :stream (metrics/service-timer service-id "stream")
    :service-id service-id})
 
+(defn buffer-body-chan
+  "Makes best effort to buffer all the bytes received in body-chan into chunks of buffer-size.
+   When large chunks are received they are forwarded without splitting into smaller buffers."
+  [body-chan buffer-size throughput-meter]
+  (let [buffer-chan (async/chan 1)
+        pack-bytes (fn pack-bytes [buffer-data buffer-used]
+                     (when (and buffer-data (pos? buffer-used))
+                       (let [result-bytes (byte-array buffer-used)]
+                         (System/arraycopy buffer-data 0 result-bytes 0 buffer-used)
+                         result-bytes)))]
+    (async/go
+      (try
+        ;; lazily initialize buffer-data to avoid superfluous byte array allocation
+        (loop [buffer-data nil
+               buffer-used 0]
+          (let [body-data (async/<! body-chan)
+                bytes-read (if body-data (alength body-data) -1)
+                buffer-used' (+ buffer-used (Math/max bytes-read 0))]
+            (when (pos? bytes-read)
+              (meters/mark! throughput-meter bytes-read))
+            (cond
+              ;; read all bytes: flush packed buffer and close the buffer
+              (= -1 bytes-read)
+              (do
+                (when-let [result-bytes (pack-bytes buffer-data buffer-used)]
+                  (async/put! buffer-chan result-bytes))
+                (async/close! buffer-chan))
+
+              ;; body data is empty: do nothing and recur
+              (zero? bytes-read)
+              (recur buffer-data buffer-used)
+
+              ;; body data is bigger than buffer: flush packed buffer, flush body bytes, reuse buffer array
+              (> bytes-read buffer-size)
+              (do
+                (when-let [result-bytes (pack-bytes buffer-data buffer-used)]
+                  (async/put! buffer-chan result-bytes))
+                (async/put! buffer-chan body-data)
+                (recur buffer-data 0))
+
+              ;; body data does not fill buffer: copy into buffer
+              (< buffer-used' buffer-size)
+              (let [buffer-data' (or buffer-data (byte-array buffer-size))]
+                (System/arraycopy body-data 0 buffer-data' buffer-used bytes-read)
+                (recur buffer-data' buffer-used'))
+
+              :else ;; buffer is full: fill buffer and flush, buffer remaining bytes
+              (let [buffer-data' (or buffer-data (byte-array buffer-size))
+                    buffer-available (- buffer-size buffer-used)
+                    buffer-data'' (byte-array buffer-size)
+                    buffer-used'' (- buffer-used' buffer-size)]
+                (System/arraycopy body-data 0 buffer-data' buffer-used buffer-available)
+                (async/put! buffer-chan buffer-data')
+                (if (pos? buffer-used'')
+                  (do
+                    (System/arraycopy body-data buffer-available buffer-data'' 0 buffer-used'')
+                    (recur buffer-data'' buffer-used''))
+                  (recur nil 0))))))
+        (catch Exception e
+          (log/error e "error in buffering response body"))
+        (finally
+          (async/close! buffer-chan))))
+    buffer-chan))
+
 (defn stream-http-response
   "Writes byte data to the resp-chan. If the body is a string, just writes the string.
    Otherwise, it is assumed the body is a input stream, in which case, the function
    buffers bytes, and push byte input streams onto the channel until the body input
    stream is exhausted."
-  [{:keys [body error-chan]} confirm-live-connection request-abort-callback resp-chan {:keys [streaming-timeout-ms]}
+  [{:keys [body error-chan]} confirm-live-connection request-abort-callback resp-chan
+   {:keys [output-buffer-size streaming-timeout-ms]}
    reservation-status-promise request-state-chan metric-group waiter-debug-enabled
    {:keys [throughput-meter requests-streaming requests-waiting-to-stream
            stream-request-rate stream-complete-rate
            stream-exception-meter stream-back-pressure stream-read-body
            stream-onto-resp-chan stream service-id]}]
   (async/go
-    (let [output-stream-atom (atom nil)]
+    (let [output-stream-atom (atom nil)
+          body-chan (if (pos? output-buffer-size)
+                      (buffer-body-chan body output-buffer-size throughput-meter)
+                      body)]
       (try
         (counters/dec! requests-waiting-to-stream)
         ; configure the idle timeout to the value specified by streaming-timeout-ms
@@ -318,25 +388,21 @@
                 (let [[bytes-streamed' more-bytes-possibly-available?]
                       (try
                         (confirm-live-connection)
-                        (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
-                              bytes-read (if buffer
-                                           (alength buffer)
-                                           -1)]
+                        (let [buffer (timers/start-stop-time! stream-read-body (async/<! body-chan))
+                              bytes-read (if buffer (alength buffer) -1)]
                           (if-not (= -1 bytes-read)
-                            (do
-                              (meters/mark! throughput-meter bytes-read)
-                              (if (timers/start-stop-time!
-                                    stream-onto-resp-chan
-                                    (au/timed-offer! resp-chan buffer streaming-timeout-ms)) ; don't wait forever to write to server
-                                [(+ bytes-streamed bytes-read) true]
-                                (let [ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
-                                                  {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})]
-                                  (meters/mark! stream-back-pressure)
-                                  (deliver reservation-status-promise :client-error)
-                                  (request-abort-callback (IOException. ^Exception ex))
-                                  (when waiter-debug-enabled
-                                    (log/info "unable to stream, back pressure in resp-chan"))
-                                  (throw ex))))
+                            (if (timers/start-stop-time!
+                                  stream-onto-resp-chan
+                                  (au/timed-offer! resp-chan buffer streaming-timeout-ms)) ; don't wait forever to write to server
+                              [(+ bytes-streamed bytes-read) true]
+                              (let [ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
+                                                {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})]
+                                (meters/mark! stream-back-pressure)
+                                (deliver reservation-status-promise :client-error)
+                                (request-abort-callback (IOException. ^Exception ex))
+                                (when waiter-debug-enabled
+                                  (log/info "unable to stream, back pressure in resp-chan"))
+                                (throw ex)))
                             (do
                               (let [{:keys [error]} (async/alt!
                                                       error-chan ([error] error)

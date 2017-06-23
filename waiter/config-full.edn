@@ -376,6 +376,10 @@
                                ;; The HTTP idle timeout (milliseconds) for instance requests:
                                :initial-socket-timeout-ms 900000
 
+                               ;; Size in bytes of the output buffer used to aggregate HTTP responses from a backend.
+                               ;; A value of zero means that buffering the backend response is disabled.
+                               :output-buffer-size 0
+
                                ;; The default amount of time (milliseconds) each request will wait in
                                ;; the Waiter queue before an instance is available to process it. This
                                ;; can be overriden in the service description:
