@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Usage: test.sh [TEST_COMMAND] [TEST_SELECTOR]
+#
+# Examples:
+#   test.sh parallel-test integration-fast
+#   test.sh parallel-test integration-slow
+#   test.sh parallel-test
+#   test.sh
+#
+# Waits for waiter to be listening and then runs the given test selector.
+
+function wait_for_waiter {
+    URI=${1}
+    while ! curl -s ${URI} >/dev/null;
+    do
+        echo "$(date +%H:%M:%S) waiter is not listening on ${URI} yet"
+        sleep 2.0
+    done
+    echo "$(date +%H:%M:%S) connected to waiter on ${URI}!"
+}
+export -f wait_for_waiter
+
+TEST_COMMAND=${1:-parallel-test}
+TEST_SELECTOR=${2:-integration}
+
+if [ -z ${WAITER_URI+x} ]; then
+    export WAITER_URI=127.0.0.1:9091
+    echo "WAITER_URI is unset, defaulting to ${WAITER_URI}"
+else
+    echo "WAITER_URI is set to ${WAITER_URI}"
+fi
+
+if [ -z ${WAITER_TEST_KITCHEN_CMD+x} ]; then
+    export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh
+    echo "WAITER_TEST_KITCHEN_CMD is unset, defaulting to ${WAITER_TEST_KITCHEN_CMD}"
+else
+    echo "WAITER_TEST_KITCHEN_CMD is set to ${WAITER_TEST_KITCHEN_CMD}"
+fi
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+WAITER_DIR=${DIR}/../..
+
+# Wait for waiter to be listening
+timeout 180s bash -c "wait_for_waiter ${WAITER_URI}"
+if [ $? -ne 0 ]; then
+  echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening, displaying waiter log"
+  cat ${WAITER_DIR}/log/*waiter.log
+  exit 1
+fi
+curl -s ${WAITER_URI}/state | jq .routers
+curl -s ${WAITER_URI}/settings | jq .port
+
+# Run the integration tests
+lein with-profiles +test-console ${TEST_COMMAND} :${TEST_SELECTOR}
