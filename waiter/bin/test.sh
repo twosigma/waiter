@@ -7,7 +7,8 @@
 #   test.sh parallel-test
 #   test.sh
 #
-# Waits for waiter to be listening and then runs the given test selector.
+# Waits for waiter to be listening and then runs the given test selector. Checks if WAITER_URI and
+# WAITER_TEST_KITCHEN_CMD are set, and sets them to reasonable defaults if not.
 
 function wait_for_waiter {
     URI=${1}
