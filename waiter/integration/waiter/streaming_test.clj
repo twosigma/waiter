@@ -50,11 +50,13 @@
 (deftest ^:parallel ^:integration-fast test-large-request
   (testing-using-waiter-url
     (let [request-body (apply str (take 2000000 (repeat "hello")))
-         headers {:x-waiter-name (rand-name "test-large-request"), :x-kitchen-echo true}
-         {:keys [body request-headers] :as response} (make-kitchen-request waiter-url headers :body request-body)]
+          headers {:x-waiter-name (rand-name "test-large-request"), :x-kitchen-echo true}
+          {:keys [body request-headers] :as response} (make-kitchen-request waiter-url headers :body request-body)]
       (assert-response-status response 200)
       (is (= (count request-body) (count body)))
       (delete-service waiter-url (retrieve-service-id waiter-url request-headers)))))
+
+;; TODO(shams) add integration test for chunked data with varying buffer sizes
 
 (defn- perform-streaming-timeout-test
   [waiter-url data-size-in-bytes service-name streaming-timeout-fn streaming-timeout-limit-fn

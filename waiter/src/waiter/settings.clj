@@ -46,6 +46,7 @@
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
                                                   (s/required-key :connection-timeout-ms) schema/positive-int
                                                   (s/required-key :initial-socket-timeout-ms) schema/positive-int
+                                                  (s/required-key :output-buffer-size) schema/non-negative-int
                                                   (s/required-key :streaming-timeout-ms) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int}
    (s/required-key :kv-config) (s/constrained
@@ -181,6 +182,7 @@
                                  :async-request-timeout-ms 60000
                                  :connection-timeout-ms 5000 ; 5 seconds
                                  :initial-socket-timeout-ms 900000 ; 15 minutes
+                                 :output-buffer-size 0 ;; buffering disabled by default
                                  :queue-timeout-ms 300000
                                  :streaming-timeout-ms 20000}
    :kv-config {:kind :zk

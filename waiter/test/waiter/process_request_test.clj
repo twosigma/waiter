@@ -15,6 +15,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [metrics.counters :as counters]
+            [metrics.meters :as meters]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.core :refer :all]
@@ -26,6 +27,7 @@
             [waiter.statsd :as statsd]
             [waiter.token :as token])
   (:import clojure.lang.ExceptionInfo
+           java.util.Arrays
            org.eclipse.jetty.client.HttpClient))
 
 (defn request
@@ -104,73 +106,100 @@
   (let [test-cases (list
                      {:name "test-prepare-request-properties:nil-inputs"
                       :input {:request-properties nil :waiter-headers nil}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:empty-nil-inputs"
                       :input {:request-properties {} :waiter-headers nil}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:nil-empty-inputs"
                       :input {:request-properties nil :waiter-headers {}}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:empty-inputs"
                       :input {:request-properties {} :waiter-headers {}}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:missing-timeout-header-1"
                       :input {:request-properties {:fie "foe"} :waiter-headers {:foo "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:missing-timeout-header-2"
                       :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :streaming-timeout-ms 200}
                               :waiter-headers {:foo "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100, :queue-timeout-ms nil, :streaming-timeout-ms 200}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms 200}
                       }
                      {:name "test-prepare-request-properties:invalid-timeout-header"
                       :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :queue-timeout-ms 150, :streaming-timeout-ms nil}
                               :waiter-headers {"timeout" "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100,
+                                 :output-buffer-size nil, :queue-timeout-ms 150, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:negative-timeout-header"
                       :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100}
                               :waiter-headers {"timeout" -50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-timeout-header"
                       :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :streaming-timeout-ms 200}
                               :waiter-headers {"timeout" 50, "streaming-timeout" 250}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 50, :queue-timeout-ms nil, :streaming-timeout-ms 250}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 50,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms 250}
                       }
                      {:name "test-prepare-request-properties:invalid-queue-timeout-header"
                       :input {:request-properties {:fie "foe", :queue-timeout-ms 150}
                               :waiter-headers {"queue-timeout" "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms 150, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:negative-queue-timeout-header"
                       :input {:request-properties {:fie "foe", :queue-timeout-ms 150}
                               :waiter-headers {"queue-timeout" -50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms 150, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-queue-timeout-header"
                       :input {:request-properties {:fie "foe", :queue-timeout-ms 150, :streaming-timeout-ms nil}
                               :waiter-headers {"queue-timeout" 50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms 50, :streaming-timeout-ms nil}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms 50, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-both-timeout-headers"
                       :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :queue-timeout-ms 150}
                               :waiter-headers {"timeout" 75, "queue-timeout" 50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 75, :queue-timeout-ms 50, :streaming-timeout-ms nil}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 75,
+                                 :output-buffer-size nil, :queue-timeout-ms 50, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:invalid-async-headers"
                       :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
                               :waiter-headers {"async-check-interval" -50, "async-request-timeout" "foo"}}
-                      :expected {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-async-headers"
                       :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
                               :waiter-headers {"async-check-interval" 50, "async-request-timeout" 250}}
-                      :expected {:fie "foe", :async-check-interval-ms 50, :async-request-timeout-ms 250, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe", :async-check-interval-ms 50, :async-request-timeout-ms 250, :initial-socket-timeout-ms nil,
+                                 :output-buffer-size nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      }
+                     {:name "test-prepare-request-properties:valid-output-buffer-size-header"
+                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :streaming-timeout-ms 200}
+                              :waiter-headers {"output-buffer-size" 5000}}
+                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100,
+                                 :output-buffer-size 5000, :queue-timeout-ms nil, :streaming-timeout-ms 200}
+                      }
+                     {:name "test-prepare-request-properties:invalid-output-buffer-size-header"
+                      :input {:request-properties {:initial-socket-timeout-ms 100, :output-buffer-size 5000, :streaming-timeout-ms 200}
+                              :waiter-headers {"output-buffer-size" -100}}
+                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100,
+                                 :output-buffer-size 5000, :queue-timeout-ms nil, :streaming-timeout-ms 200}
                       })]
     (doseq [{:keys [name input expected]} test-cases]
       (testing (str "Test " name)
@@ -224,7 +253,7 @@
             confirm-live-connection (fn [] :nothing)
             request-abort-callback (fn [_] :nothing)
             resp-chan (async/chan)
-            instance-request-properties {:streaming-timeout-ms 100}
+            instance-request-properties {:output-buffer-size 0 :streaming-timeout-ms 100}
             reservation-status-promise (promise)
             request-state-chan (async/chan)
             metric-group nil
@@ -586,3 +615,100 @@
     (is (= [4 -103] (determine-priority position-generator-atom {"x-waiter-foo" "2", "x-waiter-priority" "4"})))
     (is (nil? (determine-priority position-generator-atom {"priority" 1})))
     (is (= 103 @position-generator-atom))))
+
+(deftest test-buffer-body-chan
+  (let [throughput-meter (meters/meter "test-buffer-body-chan")
+        buffer-size 20
+        arrays-equal? (fn [^bytes b1s ^bytes b2s] (Arrays/equals b1s b2s))]
+
+    (testing "invalid-data"
+      (let [body-chan (async/chan 10)
+            buffer-chan (buffer-body-chan body-chan buffer-size throughput-meter)]
+        (async/>!! body-chan "string-is-invalid-data")
+        (async/close! body-chan)
+        (is (nil? (async/<!! buffer-chan)))))
+
+    (testing "no-data"
+      (let [body-chan (async/chan 10)
+            buffer-chan (buffer-body-chan body-chan buffer-size throughput-meter)]
+        (async/close! body-chan)
+        (is (nil? (async/<!! buffer-chan)))))
+
+    (testing "empty-data"
+      (let [body-chan (async/chan 10)
+            buffer-chan (buffer-body-chan body-chan buffer-size throughput-meter)]
+        (async/>!! body-chan (byte-array (range 0 0)))
+        (async/close! body-chan)
+        (is (nil? (async/<!! buffer-chan)))))
+
+    (testing "unchunked data fits inside buffer"
+      (let [body-chan (async/chan 10)
+            buffer-chan (buffer-body-chan body-chan buffer-size throughput-meter)]
+        (async/>!! body-chan (byte-array (range 0 15)))
+        (async/close! body-chan)
+        (is (arrays-equal? (byte-array (range 0 15)) (async/<!! buffer-chan)))
+        (is (nil? (async/<!! buffer-chan)))))
+
+    (testing "unchunked data does not fit inside buffer"
+      (let [body-chan (async/chan 10)
+            buffer-chan (buffer-body-chan body-chan buffer-size throughput-meter)]
+        (async/>!! body-chan (byte-array (range 0 45)))
+        (async/close! body-chan)
+        (is (arrays-equal? (byte-array (range 0 45)) (async/<!! buffer-chan)))
+        (is (nil? (async/<!! buffer-chan)))))
+
+    (testing "chunked data fits inside buffer"
+      (let [body-chan (async/chan 10)
+            buffer-size 100
+            buffer-chan (buffer-body-chan body-chan buffer-size throughput-meter)]
+        (async/>!! body-chan (byte-array (range 0 15)))
+        (async/>!! body-chan (byte-array (range 15 25)))
+        (async/>!! body-chan (byte-array (range 25 40)))
+        (async/>!! body-chan (byte-array (range 40 80)))
+        (async/close! body-chan)
+        (is (arrays-equal? (byte-array (range 0 80)) (async/<!! buffer-chan)))
+        (is (nil? (async/<!! buffer-chan)))))
+
+    (testing "chunked data fits buffer"
+      (let [body-chan (async/chan 10)
+            buffer-size 50
+            buffer-chan (buffer-body-chan body-chan buffer-size throughput-meter)]
+        (async/>!! body-chan (byte-array (range 0 50)))
+        (async/>!! body-chan (byte-array (range 50 100)))
+        (async/>!! body-chan (byte-array (range 100 150)))
+        (async/close! body-chan)
+        (is (arrays-equal? (byte-array (range 0 50)) (async/<!! buffer-chan)))
+        (is (arrays-equal? (byte-array (range 50 100)) (async/<!! buffer-chan)))
+        (is (arrays-equal? (byte-array (range 100 150)) (async/<!! buffer-chan)))
+        (is (nil? (async/<!! buffer-chan)))))
+
+    (testing "chunked data aggregates fit buffer"
+      (let [body-chan (async/chan 10)
+            buffer-size 50
+            buffer-chan (buffer-body-chan body-chan buffer-size throughput-meter)]
+        (async/>!! body-chan (byte-array (range 0 25)))
+        (async/>!! body-chan (byte-array (range 25 50)))
+        (async/>!! body-chan (byte-array (range 50 75)))
+        (async/>!! body-chan (byte-array (range 75 100)))
+        (async/>!! body-chan (byte-array (range 100 125)))
+        (async/>!! body-chan (byte-array (range 125 150)))
+        (async/close! body-chan)
+        (is (arrays-equal? (byte-array (range 0 50)) (async/<!! buffer-chan)))
+        (is (arrays-equal? (byte-array (range 50 100)) (async/<!! buffer-chan)))
+        (is (arrays-equal? (byte-array (range 100 150)) (async/<!! buffer-chan)))
+        (is (nil? (async/<!! buffer-chan)))))
+
+    (testing "chunked data with large intermediate chunk"
+      (let [body-chan (async/chan 10)
+            buffer-size 50
+            buffer-chan (buffer-body-chan body-chan buffer-size throughput-meter)]
+        (async/>!! body-chan (byte-array (range 0 15)))
+        (async/>!! body-chan (byte-array (range 15 115)))
+        (async/>!! body-chan (byte-array (range 115 140)))
+        (async/>!! body-chan (byte-array (range 140 180)))
+        (async/close! body-chan)
+        (is (arrays-equal? (byte-array (range 0 15)) (async/<!! buffer-chan)))
+        (is (arrays-equal? (byte-array (range 15 115)) (async/<!! buffer-chan)))
+        (is (arrays-equal? (byte-array (range 115 165)) (async/<!! buffer-chan)))
+        (is (arrays-equal? (byte-array (range 165 180)) (async/<!! buffer-chan)))
+        (is (nil? (async/<!! buffer-chan)))))))
