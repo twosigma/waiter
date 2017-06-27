@@ -32,6 +32,11 @@ $ lein test :integration-fast
 
 # Run all "slow" integration tests:
 $ lein test :integration-slow
+
+# Run all "perf" integration tests:
+# - WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES sets the target number of instances
+# - APACHE_BENCH_DIR sets the directory where the ab tool is installed
+$ WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES=30 APACHE_BENCH_DIR=/usr/bin lein test :perf
 ```
 
 ## What is Waiter
