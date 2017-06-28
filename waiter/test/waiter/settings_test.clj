@@ -249,4 +249,4 @@
         (let [settings (load-shell-settings)]
           (is (nil? (s/check settings-schema settings)))
           (is (= port (:port settings)))
-          (is (= run-as-user (get-in settings [:authenticator-config :anonymous :launch-as-user]))))))))
+          (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
