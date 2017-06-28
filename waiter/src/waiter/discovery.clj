@@ -18,14 +18,16 @@
 
 (defn- ->service-instance
   [id svc-name {:keys [host port]}]
-  (.. ServiceInstance
-      builder
-      (id id)
-      (name svc-name)
-      (uriSpec (UriSpec. "{scheme}://{address}:{port}/{endpoint}"))
-      (address host)
-      (port port)
-      build))
+  (let [builder (.. ServiceInstance
+                    builder
+                    (id id)
+                    (name svc-name)
+                    (uriSpec (UriSpec. "{scheme}://{address}:{port}/{endpoint}"))
+                    (port port))
+        builder' (if (= host "0.0.0.0")
+                   builder
+                   (.address builder host))]
+    (.build builder')))
 
 (defn- ->service-discovery
   [^CuratorFramework curator base-path instance]
