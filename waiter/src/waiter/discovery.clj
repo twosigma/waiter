@@ -17,15 +17,17 @@
            (org.apache.curator.framework CuratorFramework)))
 
 (defn- ->service-instance
-  [id svc-name {:keys [port]}]
-  (.. ServiceInstance
-      builder
-      (id id)
-      (name svc-name)
-      (uriSpec (UriSpec. "{scheme}://{address}:{port}/{endpoint}"))
-      ;(address host)
-      (port port)
-      build))
+  [id svc-name {:keys [host port]}]
+  (let [builder (.. ServiceInstance
+                    builder
+                    (id id)
+                    (name svc-name)
+                    (uriSpec (UriSpec. "{scheme}://{address}:{port}/{endpoint}"))
+                    (port port))
+        builder' (if (= host "0.0.0.0")
+                   builder
+                   (.address builder host))]
+    (.build builder')))
 
 (defn- ->service-discovery
   [^CuratorFramework curator base-path instance]
@@ -93,8 +95,8 @@
   (count (routers discovery #{})))
 
 (defn register
-  [router-id curator service-name discovery-path {:keys [port]}]
-  (let [instance (->service-instance router-id service-name {:port port})
+  [router-id curator service-name discovery-path {:keys [host port]}]
+  (let [instance (->service-instance router-id service-name {:host host :port port})
         discovery (->service-discovery curator discovery-path instance)
         ^ServiceCache cache (->service-cache discovery service-name)]
     (log/info "Using service name:" service-name "for router id:" router-id)
