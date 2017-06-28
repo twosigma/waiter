@@ -658,7 +658,7 @@
         (is (= 10 (count actual-failed-instances)))
         (doseq [n (range 40 50)]
           (is (contains? actual-failed-instances
-                         (scheduler/map->ServiceInstance
+                         (scheduler/make-ServiceInstance
                            {:id (str "service-1." n)
                             :service-id "service-1"
                             :started-at current-time-str

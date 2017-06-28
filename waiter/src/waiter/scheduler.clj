@@ -46,11 +46,12 @@
    healthy?
    ^String host
    port
+   auxiliary-ports
    ^String log-directory
    ^String message])
 
 (defn make-ServiceInstance [value-map]
-  (map->ServiceInstance (merge {:log-directory nil, :message nil} value-map)))
+  (map->ServiceInstance (merge {:auxiliary-ports [], :log-directory nil, :message nil} value-map)))
 
 (defprotocol ServiceScheduler
 

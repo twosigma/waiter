@@ -130,7 +130,8 @@
                                   {:id instance-id
                                    :started-at (str (:startedAt %))
                                    :healthy? (healthy?-fn %)
-                                   :port (first (:ports %))})))
+                                   :port (-> % :ports first)
+                                   :auxiliary-ports (-> % :ports rest vec)})))
                            active-marathon-tasks)]
     (parse-and-store-failed-instance!
       service-id->failed-instances-transient-store

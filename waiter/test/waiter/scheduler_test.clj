@@ -43,6 +43,7 @@
                         true
                         "www.scheduler-test.example.com"
                         1234
+                        []
                         "log-dir"
                         "instance-message")]
     (testing (str "Test record ServiceInstance")
@@ -216,9 +217,9 @@
         scheduler-syncer-interval-secs 1
         service-id->service-description-fn (fn [id] {"health-check-url" (str "/" id)})
         started-at "2014-09-14T002446.965Z"
-        instance1 (->ServiceInstance "1.1" "1" started-at nil "host" 123 "/log" "test")
-        instance2 (->ServiceInstance "1.2" "1" started-at true "host" 123 "/log" "test")
-        instance3 (->ServiceInstance "1.3" "1" started-at nil "host" 123 "/log" "test")
+        instance1 (->ServiceInstance "1.1" "1" started-at nil "host" 123 [] "/log" "test")
+        instance2 (->ServiceInstance "1.2" "1" started-at true "host" 123 []  "/log" "test")
+        instance3 (->ServiceInstance "1.3" "1" started-at nil "host" 123 []  "/log" "test")
         scheduler (reify ServiceScheduler
                     (get-apps->instances [_]
                       {(->Service "1" {} {} {}) {:active-instances [instance1 instance2 instance3]

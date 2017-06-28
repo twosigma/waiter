@@ -307,7 +307,7 @@
                                                   "USER" nil}
                                     :service-description {"cmd" "ls"}})
                         :id->instance {"foo.bar"
-                                       (scheduler/map->ServiceInstance
+                                       (scheduler/make-ServiceInstance
                                          {:id "foo.bar"
                                           :service-id "foo"
                                           :started-at (utils/date-to-str started-at (f/formatters :date-time))
