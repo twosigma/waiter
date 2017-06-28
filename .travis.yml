@@ -22,7 +22,7 @@ env:
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-fast'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-slow'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test explicit'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh test perf' WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES=30 APACHE_BENCH_DIR=$(dirname $(which ab))
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh test perf' WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES=30
 matrix:
     fast_finish: true
     allow_failures:

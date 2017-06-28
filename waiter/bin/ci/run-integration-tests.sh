@@ -62,7 +62,7 @@ curl -s ${WAITER_URI}/state | jq .routers
 curl -s ${WAITER_URI}/settings | jq .port
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh lein with-profiles +test-console ${TEST_COMMAND} :${TEST_SELECTOR}
+WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh APACHE_BENCH_DIR=$(dirname $(which ab)) lein with-profiles +test-console ${TEST_COMMAND} :${TEST_SELECTOR}
 TESTS_EXIT_CODE=$?
 
 # If there were failures, dump the logs
