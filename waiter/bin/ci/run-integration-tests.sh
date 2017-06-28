@@ -11,17 +11,6 @@
 
 set -v
 
-function wait_for_waiter {
-    WAITER_PORT=${1:-9091}
-    while ! curl -s localhost:${WAITER_PORT} >/dev/null;
-    do
-        echo "$(date +%H:%M:%S) waiter is not listening on ${WAITER_PORT} yet"
-        sleep 2.0
-    done
-    echo "$(date +%H:%M:%S) connected to waiter on ${WAITER_PORT}!"
-}
-export -f wait_for_waiter
-
 TEST_COMMAND=${1:-parallel-test}
 TEST_SELECTOR=${2:-integration}
 
@@ -48,21 +37,8 @@ fi
 WAITER_PORT=9091
 ${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
 
-# Wait for waiter to be listening
-timeout 180s bash -c "wait_for_waiter ${WAITER_PORT}"
-if [ $? -ne 0 ]; then
-  echo "$(date +%H:%M:%S) timed out waiting for waiter to start listening, displaying waiter log"
-  cat ${WAITER_DIR}/log/waiter.log
-  exit 1
-fi
-
-# Set WAITER_URI, which is used by the integration tests
-export WAITER_URI=127.0.0.1:${WAITER_PORT}
-curl -s ${WAITER_URI}/state | jq .routers
-curl -s ${WAITER_URI}/settings | jq .port
-
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh APACHE_BENCH_DIR=$(dirname $(which ab)) lein with-profiles +test-console ${TEST_COMMAND} :${TEST_SELECTOR}
+WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} APACHE_BENCH_DIR=$(dirname $(which ab)) ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}
 TESTS_EXIT_CODE=$?
 
 # If there were failures, dump the logs
