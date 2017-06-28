@@ -86,7 +86,7 @@
                                                                                    :taskId "test-app-1234.C"}],
                                                              :host "10.141.141.13",
                                                              :id "test-app-1234.C",
-                                                             :ports [41234],
+                                                             :ports [41234 12321 90384 56463],
                                                              :stagedAt "2014-09-12T232822.587Z",
                                                              :startedAt "2014-09-14T002446.965Z",
                                                              :version "2014-09-12T232821.737Z"}],}}
@@ -102,7 +102,7 @@
                                                                      :started-at "2014-09-13T002456.965Z"}),
                                                                   (scheduler/make-ServiceInstance
                                                                     {:id "test-app-1234.C", :service-id "test-app-1234", :healthy? false,
-                                                                     :host "10.141.141.13", :port 41234,
+                                                                     :host "10.141.141.13", :port 41234, :auxiliary-ports [12321 90384 56463],
                                                                      :started-at "2014-09-14T002446.965Z"}))
                                               :failed-instances (list
                                                                   (scheduler/make-ServiceInstance
@@ -488,7 +488,7 @@
                                       :timeoutSeconds 20
                                       :maxConsecutiveFailures 20}]
                       :backoffFactor 2
-                      :ports [1234]
+                      :ports [0 0]
                       :user "test-user"}
             home-path-prefix "/home/path/"
             service-id "test-service-1"
@@ -496,7 +496,7 @@
                                  "cpus" 1
                                  "mem" 1536
                                  "run-as-user" "test-user"
-                                 "ports" [1234]
+                                 "ports" 2
                                  "restart-backoff-factor" 2
                                  "grace-period-secs" 111
                                  "env" {"FOO" "bar"

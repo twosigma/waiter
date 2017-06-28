@@ -14,6 +14,7 @@
   (:import (java.util.regex Pattern)))
 
 (def positive-int (s/both s/Int (s/pred pos? 'pos?)))
+(defn positive-int-less-than-n [n] (s/pred #(< 0 % n) 'positive-int-less-than-n))
 (def positive-num (s/both s/Num (s/pred pos? 'pos?)))
 (def non-negative-num (s/both s/Num (s/pred #(not (neg? %)) 'non-neg?)))
 (def positive-fraction-less-than-1 (s/pred #(< 0 % 1) 'positive-fraction-less-than-1))

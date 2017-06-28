@@ -190,7 +190,9 @@
      :cmd (get service-description "cmd")
      :disk (get service-description "disk")
      :mem (get service-description "mem")
-     :ports (get service-description "ports" [0])
+     :ports (-> (get service-description "ports" 1)
+                (repeat 0)
+                vec)
      :cpus (get service-description "cpus")
      :healthChecks [{:protocol "HTTP"
                      :path health-check-url

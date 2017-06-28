@@ -32,7 +32,7 @@
 (defn- create-test-service
   "Creates a new (test) service with command `ls` and the given service-id"
   [scheduler service-id]
-  (let [descriptor {:service-description {"cmd" "ls"}
+  (let [descriptor {:service-description {"cmd" "ls", "ports" 1}
                     :service-id service-id}]
     (scheduler/create-app-if-new scheduler (constantly "password") descriptor)))
 
@@ -49,10 +49,19 @@
   (testing "Launching an instance"
     (testing "should throw if cmd is nil"
       (is (thrown-with-msg? ExceptionInfo #"The command to run was not supplied"
-                            (launch-instance "foo" "." nil {} nil nil))))))
+                            (launch-instance "foo" "." nil {} 1 nil nil))))
+
+    (testing "should throw if enough ports aren't available"
+      (is (thrown-with-msg? ExceptionInfo #"All ports in the range are already in use"
+                            (launch-instance "foo" "." "echo 1" {} 4 (atom {}) [5100 5102]))))
+
+    (testing "with multiple ports"
+      (let [{:keys [auxiliary-ports port]} (launch-instance "foo" "." "echo 1" {} 4 (atom {}) [5100 5200])]
+        (is (= 5100 port))
+        (is (= [5101 5102 5103] auxiliary-ports))))))
 
 (deftest test-directory-content
-  (let [id->service (create-service {} "foo" {"cmd" "echo Hello, World!"} (constantly "password")
+  (let [id->service (create-service {} "foo" {"cmd" "echo Hello, World!", "ports" 1} (constantly "password")
                                     (work-dir) (atom {}) [0 0] (promise))
         service-entry (get id->service "foo")
         instance-id (-> service-entry :id->instance keys first)
@@ -195,7 +204,7 @@
 (deftest test-kill-process
   (testing "Killing a process"
     (testing "should handle exceptions"
-      (let [instance (launch-instance "foo" (work-dir) "ls" {} (atom {}) [0 0])]
+      (let [instance (launch-instance "foo" (work-dir) "ls" {} 1 (atom {}) [0 0])]
         (with-redefs [t/plus (fn [_ _] (throw (ex-info "ERROR!" {})))]
           (kill-process! instance (atom {}) 0))))))
 
@@ -261,7 +270,7 @@
                                 "HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil}
-                  :service-description {"cmd" "ls"}}
+                  :service-description {"cmd" "ls", "ports" 1}}
                  {:id "bar"
                   :instances 1
                   :task-count 1
@@ -271,7 +280,7 @@
                                 "HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil}
-                  :service-description {"cmd" "ls"}}
+                  :service-description {"cmd" "ls", "ports" 1}}
                  {:id "baz"
                   :instances 1
                   :task-count 1
@@ -281,7 +290,7 @@
                                 "HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil}
-                  :service-description {"cmd" "ls"}}])
+                  :service-description {"cmd" "ls", "ports" 1}}])
            (scheduler/get-apps scheduler)))))
 
 (deftest test-service-id->state
@@ -295,7 +304,7 @@
         started-at (t/now)
         instance-dir (str (work-dir) "/foo/foo." instance-id)
         port 10000
-        expected-state {:service (scheduler/map->Service
+        expected-state {:service (scheduler/make-Service
                                    {:id "foo"
                                     :instances 1
                                     :task-count 1
@@ -305,7 +314,7 @@
                                                   "HOME" (work-dir)
                                                   "LOGNAME" nil
                                                   "USER" nil}
-                                    :service-description {"cmd" "ls"}})
+                                    :service-description {"cmd" "ls", "ports" 1}})
                         :id->instance {"foo.bar"
                                        (scheduler/make-ServiceInstance
                                          {:id "foo.bar"

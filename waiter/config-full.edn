@@ -334,6 +334,7 @@
                                 "metadata" {}
                                 "min-instances" 1
                                 "permitted-user" "*"
+                                "ports" 1
                                 "restart-backoff-factor" 2
                                 "scale-down-factor" 0.001
                                 "scale-factor" 1
