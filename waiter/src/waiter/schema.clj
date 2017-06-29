@@ -45,7 +45,7 @@
                                 (instance? Pattern (first %))
                                 (string? (second %))))])
 
-(def valid-ports
+(def valid-number-of-ports
   "Validator for number of ports."
   (s/pred #(<= 1 % 10) 'between-1-and-10))
 

@@ -93,22 +93,46 @@
 
                           :expected-response {:active-instances (list
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:id "test-app-1234.A", :service-id "test-app-1234", :healthy? true,
-                                                                     :host "10.141.141.11", :port 31045,
+                                                                    {:auxiliary-ports [],
+                                                                     :healthy? true,
+                                                                     :host "10.141.141.11",
+                                                                     :id "test-app-1234.A",
+                                                                     :log-directory nil,
+                                                                     :message nil,
+                                                                     :port 31045,
+                                                                     :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.959Z"}),
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:id "test-app-1234.B", :service-id "test-app-1234", :healthy? true,
-                                                                     :host "10.141.141.12", :port 31234,
+                                                                    {:auxiliary-ports [],
+                                                                     :healthy? true,
+                                                                     :host "10.141.141.12",
+                                                                     :id "test-app-1234.B",
+                                                                     :log-directory nil,
+                                                                     :message nil,
+                                                                     :port 31234,
+                                                                     :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002456.965Z"}),
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:id "test-app-1234.C", :service-id "test-app-1234", :healthy? false,
-                                                                     :host "10.141.141.13", :port 41234, :auxiliary-ports [12321 90384 56463],
+                                                                    {:auxiliary-ports [12321 90384 56463],
+                                                                     :healthy? false,
+                                                                     :host "10.141.141.13",
+                                                                     :id "test-app-1234.C",
+                                                                     :log-directory nil,
+                                                                     :message nil,
+                                                                     :port 41234,
+                                                                     :service-id "test-app-1234",
                                                                      :started-at "2014-09-14T002446.965Z"}))
                                               :failed-instances (list
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:id "test-app-1234.D", :service-id "test-app-1234", :healthy? false,
-                                                                     :host "10.141.141.10", :port 0,
-                                                                     :started-at "2014-09-12T232341.711Z", :message "Abnormal executor termination"}))
+                                                                    {:auxiliary-ports [],
+                                                                     :healthy? false,
+                                                                     :host "10.141.141.10",
+                                                                     :id "test-app-1234.D",
+                                                                     :log-directory nil,
+                                                                     :message "Abnormal executor termination",
+                                                                     :port 0,
+                                                                     :service-id "test-app-1234",
+                                                                     :started-at "2014-09-12T232341.711Z"}))
                                               :killed-instances []}},
                          {
                           :name "response-data->service-instances valid response without task failure"
@@ -160,19 +184,35 @@
 
                           :expected-response {:active-instances (list
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:id "test-app-1234.A", :service-id "test-app-1234", :healthy? true,
-                                                                     :host "10.141.141.11", :port 31045,
-                                                                     :started-at "2014-09-13T002446.959Z",
-                                                                     :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest"}),
+                                                                    {:auxiliary-ports [],
+                                                                     :healthy? true,
+                                                                     :host "10.141.141.11",
+                                                                     :id "test-app-1234.A",
+                                                                     :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest",
+                                                                     :message nil,
+                                                                     :port 31045,
+                                                                     :service-id "test-app-1234",
+                                                                     :started-at "2014-09-13T002446.959Z"}),
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:id "test-app-1234.B", :service-id "test-app-1234", :healthy? true,
-                                                                     :host "10.141.141.12", :port 31234,
+                                                                    {:auxiliary-ports [],
+                                                                     :healthy? true,
+                                                                     :host "10.141.141.12",
+                                                                     :id "test-app-1234.B",
+                                                                     :log-directory nil,
+                                                                     :message nil,
+                                                                     :port 31234,
+                                                                     :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.965Z"}),
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:id "test-app-1234.C", :service-id "test-app-1234", :healthy? false,
-                                                                     :host "10.141.141.13", :port 41234,
-                                                                     :started-at "2014-09-13T002446.965Z",
-                                                                     :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest"}))
+                                                                    {:auxiliary-ports [],
+                                                                     :healthy? false,
+                                                                     :host "10.141.141.13",
+                                                                     :id "test-app-1234.C",
+                                                                     :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest",
+                                                                     :message nil,
+                                                                     :port 41234,
+                                                                     :service-id "test-app-1234",
+                                                                     :started-at "2014-09-13T002446.965Z"}))
                                               :failed-instances []
                                               :killed-instances []}})]
     (doseq [test-case test-cases]
@@ -756,7 +796,7 @@
                                      (is (= service-id in-service-id))
                                      (is (= instance-id in-instance-id))
                                      (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
-                                     (ss/throw+ {:body "Not Found",  :status 404}))]
+                                     (ss/throw+ {:body "Not Found", :status 404}))]
         (is (= {:instance-id instance-id :killed? false :message "Not Found" :service-id service-id, :status 404}
                (process-kill-instance-request service-id instance-id {})))))
 
