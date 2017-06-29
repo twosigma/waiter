@@ -328,6 +328,14 @@
                "Content-Length" (str response-size-bytes)}
      :body resp-chan}))
 
+(defn environment-handler [_]
+  {:status 200
+   :body (json/write-str
+           (->> (System/getenv)
+                seq
+                (remove (fn [[k _]] (str/includes? (str/lower-case k) "password")))
+                (into {})))})
+
 (defn state-handler [_]
   {:status 200
    :body (json/write-str
@@ -378,6 +386,7 @@
                      "/async/status" (async-status-handler request)
                      "/chunked" (chunked-handler request)
                      "/die" (die-handler request)
+                     "/environment" (environment-handler request)
                      "/gzip" (gzip-handler request)
                      "/pi" (pi-handler request)
                      "/request-info" (request-info-handler request)

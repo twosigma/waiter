@@ -149,16 +149,20 @@
   (when-not command
     (throw (ex-info "The command to run was not supplied" {:service-id service-id})))
   (let [reserved-ports (reserve-ports! num-ports port->reservation-atom port-range)
-        port (-> reserved-ports first)
+        process-environment (into environment
+                                  (map (fn build-port-environment [index port]
+                                         [(str "PORT" index) (str port)])
+                                       (range 0 (-> reserved-ports count inc))
+                                       reserved-ports))
         {:keys [instance-id process started-at working-directory]}
-        (launch-process service-id working-dir-base-path command (assoc environment "PORT0" (str port)))]
+        (launch-process service-id working-dir-base-path command process-environment)]
     (scheduler/make-ServiceInstance
       {:id instance-id
        :service-id service-id
        :started-at started-at
        :healthy? nil
        :host "localhost"
-       :port port
+       :port (-> reserved-ports first)
        :extra-ports (-> reserved-ports rest vec)
        :log-directory working-directory
        :shell-scheduler/process process

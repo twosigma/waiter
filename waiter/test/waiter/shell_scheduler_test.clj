@@ -56,9 +56,15 @@
                             (launch-instance "bar" (work-dir) "echo 1" {} 4 (atom {}) [5100 5102]))))
 
     (testing "with multiple ports"
-      (let [{:keys [extra-ports port]} (launch-instance "baz" (work-dir) "echo 1" {} 4 (atom {}) [5100 5200])]
-        (is (= 5100 port))
-        (is (= [5101 5102 5103] extra-ports))))))
+      (let [num-ports 8
+            port-range-start 5100
+            port-range [port-range-start (+ port-range-start 100)]]
+        (with-redefs [launch-process (fn [_ _ command environment]
+                                       (is (= "dummy-command" command))
+                                       (is (every? #(contains? environment (str "PORT" %)) (range num-ports))))]
+          (let [{:keys [extra-ports port]} (launch-instance "baz" (work-dir) "dummy-command" {} num-ports (atom {}) port-range)]
+            (is (= port-range-start port))
+            (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))))
 
 (deftest test-directory-content
   (let [id->service (create-service {} "foo" {"cmd" "echo Hello, World!", "ports" 1} (constantly "password")
