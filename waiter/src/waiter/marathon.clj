@@ -183,18 +183,16 @@
   "Returns the descriptor to be used by Marathon to create new apps."
   [home-path-prefix service-id->password-fn {:keys [service-id service-description]}]
   (let [health-check-url (sd/service-description->health-check-url service-description)
-        {:strs [grace-period-secs run-as-user]} service-description
+        {:strs [cmd cpus disk grace-period-secs mem ports restart-backoff-factor run-as-user]} service-description
         home-path (str home-path-prefix run-as-user)]
     {:id service-id
      :env (scheduler/environment service-id service-description service-id->password-fn home-path)
      :user run-as-user
-     :cmd (get service-description "cmd")
-     :disk (get service-description "disk")
-     :mem (get service-description "mem")
-     :ports (-> (get service-description "ports" 1)
-                (repeat 0)
-                vec)
-     :cpus (get service-description "cpus")
+     :cmd cmd
+     :disk disk
+     :mem mem
+     :ports (-> ports (repeat 0) vec)
+     :cpus cpus
      :healthChecks [{:protocol "HTTP"
                      :path health-check-url
                      :gracePeriodSeconds grace-period-secs
@@ -202,7 +200,7 @@
                      :portIndex 0
                      :timeoutSeconds 20
                      :maxConsecutiveFailures 20}]
-     :backoffFactor (get service-description "restart-backoff-factor")
+     :backoffFactor restart-backoff-factor
      :labels {:source "waiter"
               :user run-as-user}}))
 

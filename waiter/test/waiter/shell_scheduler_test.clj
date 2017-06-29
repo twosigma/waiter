@@ -49,14 +49,14 @@
   (testing "Launching an instance"
     (testing "should throw if cmd is nil"
       (is (thrown-with-msg? ExceptionInfo #"The command to run was not supplied"
-                            (launch-instance "foo" "." nil {} 1 nil nil))))
+                            (launch-instance "foo" (work-dir) nil {} 1 nil nil))))
 
     (testing "should throw if enough ports aren't available"
       (is (thrown-with-msg? ExceptionInfo #"All ports in the range are already in use"
-                            (launch-instance "foo" "." "echo 1" {} 4 (atom {}) [5100 5102]))))
+                            (launch-instance "bar" (work-dir) "echo 1" {} 4 (atom {}) [5100 5102]))))
 
     (testing "with multiple ports"
-      (let [{:keys [auxiliary-ports port]} (launch-instance "foo" "." "echo 1" {} 4 (atom {}) [5100 5200])]
+      (let [{:keys [auxiliary-ports port]} (launch-instance "baz" (work-dir) "echo 1" {} 4 (atom {}) [5100 5200])]
         (is (= 5100 port))
         (is (= [5101 5102 5103] auxiliary-ports))))))
 
@@ -206,7 +206,24 @@
     (testing "should handle exceptions"
       (let [instance (launch-instance "foo" (work-dir) "ls" {} 1 (atom {}) [0 0])]
         (with-redefs [t/plus (fn [_ _] (throw (ex-info "ERROR!" {})))]
-          (kill-process! instance (atom {}) 0))))))
+          (kill-process! instance (atom {}) 0))))
+
+    (testing "should release ports"
+      (let [port-reservation-atom (atom {})
+            num-ports 5
+            port-range-start 2000
+            instance (launch-instance "bar" (work-dir) "ls" {} num-ports port-reservation-atom [port-range-start 3000])]
+        (is (= num-ports (count @port-reservation-atom)))
+        (is (every? #(= {:state :in-use, :expiry-time nil}
+                        (get @port-reservation-atom %))
+                    (range port-range-start (+ port-range-start num-ports))))
+        (let [current-time (t/now)]
+          (with-redefs [t/now (fn [] current-time)]
+            (kill-process! instance port-reservation-atom 0)
+            (is (= num-ports (count @port-reservation-atom)))
+            (is (every? #(= {:state :in-grace-period-until-expiry, :expiry-time current-time}
+                            (get @port-reservation-atom %))
+                        (range port-range-start (+ port-range-start num-ports))))))))))
 
 (deftest test-should-not-health-check-killed-instances
   (let [scheduler (shell-scheduler {:health-check-interval-ms 1
