@@ -32,6 +32,7 @@ Additional (optional) parameters that can be set:
 |`X-Waiter-Metric-Group`|"other"|[A-Za-z0-9-_]+|Metric groups allow services to be grouped together for the purpose of metric collection.|If you have `:statsd` enabled in your [config file](../config-full.edn), then specify a metric group. If you have multiple services, choose the same metric group if you'd like combined metrics, otherwise choose independent metric groups.|
 |`X-Waiter-Min-Instances`|1|1 or 2|The minimum number of instances that Waiter should keep running at all times.|Go with the default.|
 |`X-Waiter-Permitted-User`|user who is making the request|any user|The user that is authorized to make requests to your service|Use as needed.|
+|`X-Waiter-Ports`|1|[1-10]|The number of ports needed by the service.|Use as needed, only restriction is that the first port must always be used for a web server.|
 |`X-Waiter-Queue-Timeout`|300000 (5 mins)|>0|The maximum time, in milliesconds, allowed spent by a request waiting for an available service backend.|Don't change it unless you have a good reason to do so.|
 |`X-Waiter-Restart-Backoff-Factor`|2|>=1|The factor by which to multiple the amount of time between consecutive start-up failures. The base is 1 second.|The default is reasonable for most cases.|
 |`X-Waiter-Scale-Down-Factor`|0.1|(0-1]|The percentage amount, per second, to decrease the current number of instances toward the target number of instances. See [How Waiter Autoscaling Works](autoscaling.md).|Don't change it unless you have a good reason to do so.|

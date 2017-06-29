@@ -59,7 +59,7 @@
                                                       "health-check-url" "http://www.example.com/test/status"
                                                       "permitted-user" "testuser2"
                                                       "disk" 1
-                                                      "ports" 10}))))
+                                                      "ports" 11}))))
   (is (not (nil? (s/check service-description-schema {"mem" 1
                                                       "cmd" "test command"
                                                       "version" "v123"

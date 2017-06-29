@@ -101,7 +101,7 @@
                                                    (s/required-key "metadata") {s/Str s/Str}
                                                    (s/required-key "min-instances") schema/positive-int
                                                    (s/required-key "permitted-user") schema/non-empty-string
-                                                   (s/required-key "ports") (schema/positive-int-less-than-n 6)
+                                                   (s/required-key "ports") schema/valid-ports
                                                    (s/required-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
                                                    (s/required-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "scale-up-factor") schema/positive-fraction-less-than-1

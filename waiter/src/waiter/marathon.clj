@@ -130,6 +130,7 @@
                                   {:id instance-id
                                    :started-at (str (:startedAt %))
                                    :healthy? (healthy?-fn %)
+                                   ;; first port must be used for the web server, auxiliary ports can be used freely.
                                    :port (-> % :ports first)
                                    :auxiliary-ports (-> % :ports rest vec)})))
                            active-marathon-tasks)]

@@ -60,7 +60,7 @@
                                          #(< (count %) 100))
    (s/optional-key "name") schema/non-empty-string
    (s/optional-key "permitted-user") schema/non-empty-string
-   (s/optional-key "ports") (schema/positive-int-less-than-n 6)
+   (s/optional-key "ports") schema/valid-ports
    (s/optional-key "metric-group") schema/valid-metric-group
    ; start-up related
    (s/optional-key "health-check-url") schema/non-empty-string
