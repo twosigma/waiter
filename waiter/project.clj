@@ -125,5 +125,6 @@
              :test {:jvm-opts
                     [~(str "-Dwaiter.test.kitchen.cmd=" (or
                                                           (System/getenv "WAITER_TEST_KITCHEN_CMD")
-                                                          (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]}}
+                                                          (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]}
+             :override-maven {:local-repo ~(System/getenv "WAITER_MAVEN_LOCAL_REPO")}}
   :uberjar-name ~(System/getenv "UBERJAR_NAME"))

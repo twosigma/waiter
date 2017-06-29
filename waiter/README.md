@@ -1,18 +1,37 @@
 Waiter is a distributed autoscaler and load balancer for managing web services at scale. Waiter particularly excels at running services with unpredictable loads or multiple co-existing versions. Waiter uses [Marathon](https://mesosphere.github.io/marathon/) to schedule services on a [Mesos](http://mesos.apache.org/) cluster.
 
-## Running Waiter
+## Building
 
 Prerequisites:
 
 * Java 8
 * [Leiningen](http://leiningen.org/)
-* A running [Marathon](https://mesosphere.github.io/marathon/)
+
+Waiter uses [voom](https://github.com/LonoCloud/lein-voom) to pull in dependencies that are not available in clojars:
+
+```bash
+$ lein voom build-deps
+```
+
+If you want to override the default directories for local maven and voom repos:
+
+```bash
+$ WAITER_MAVEN_LOCAL_REPO=... VOOM_REPOS=... lein with-profile +override-maven voom build-deps
+```
+
+Once you have fetched dependencies:
+
+```bash
+$ lein uberjar
+```
+
+## Running
 
 The quickest way to get Mesos, Marathon, and Waiter running locally is with [docker](https://www.docker.com/) and [minimesos](https://minimesos.org/). Check out the [Quickstart](../README.md#quickstart) for details.
 
 Read the [config-minimal.edn](config-minimal.edn) or [config-full.edn](config-full.edn) files for descriptions of the Waiter config structure. Waiter logs are in `/log`, and `waiter.log` should contain info on what went wrong if Waiter doesn't start.
 
-## Running Waiter tests
+## Tests
 
 To run all unit tests, simply run `lein test`. The unit tests run very fast, and they do not require Waiter to be up and running.
 

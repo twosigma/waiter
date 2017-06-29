@@ -27,6 +27,7 @@ The quickest way to get Mesos, Marathon, and Waiter running locally is with [doc
 1. Run `kitchen/bin/build-docker-image.sh` to build the minimesos agent image with kitchen baked in
 1. `cd waiter`
 1. Run `minimesos up` to start Mesos, ZooKeeper, and Marathon
+1. Run `lein voom build-deps` to fetch dependencies
 1. Run `bin/run-using-minimesos.sh` to start Waiter
 1. Waiter should now be listening locally on port 9091
 
@@ -36,6 +37,7 @@ Waiter can also be run without Mesos and Marathon, using the "shell scheduler". 
 
 1. Clone down this repo
 1. `cd waiter`
+1. Run `lein voom build-deps` to fetch dependencies
 1. Run `bin/run-using-shell-scheduler.sh` to start Waiter
 1. Waiter should now be listening locally on port 9091
 
