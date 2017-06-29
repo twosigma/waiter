@@ -52,13 +52,13 @@
                             (launch-instance "foo" (work-dir) nil {} 1 nil nil))))
 
     (testing "should throw if enough ports aren't available"
-      (is (thrown-with-msg? ExceptionInfo #"All ports in the range are already in use"
+      (is (thrown-with-msg? ExceptionInfo #"Unable to reserve 4 ports."
                             (launch-instance "bar" (work-dir) "echo 1" {} 4 (atom {}) [5100 5102]))))
 
     (testing "with multiple ports"
-      (let [{:keys [auxiliary-ports port]} (launch-instance "baz" (work-dir) "echo 1" {} 4 (atom {}) [5100 5200])]
+      (let [{:keys [extra-ports port]} (launch-instance "baz" (work-dir) "echo 1" {} 4 (atom {}) [5100 5200])]
         (is (= 5100 port))
-        (is (= [5101 5102 5103] auxiliary-ports))))))
+        (is (= [5101 5102 5103] extra-ports))))))
 
 (deftest test-directory-content
   (let [id->service (create-service {} "foo" {"cmd" "echo Hello, World!", "ports" 1} (constantly "password")
@@ -368,3 +368,22 @@
     (is (port-reserved? port->reservation-atom port))
     (release-port! port->reservation-atom port port-grace-period-ms)
     (is (false? (port-reserved? port->reservation-atom port)))))
+
+(deftest test-reserve-ports!
+
+  (testing "successfully reserve all ports"
+    (let [port->reservation-atom (atom {})
+          port-range [10000 11000]
+          reserved-ports (reserve-ports! 20 port->reservation-atom port-range)]
+      (is (= (range 10000 10020) reserved-ports))))
+
+  (testing "unable to reserve all ports"
+    (let [port->reservation-atom (atom {})
+          port-range [10000 10010]]
+      (try
+        (reserve-ports! 20 port->reservation-atom port-range)
+        (is false "reserve-ports! did not throw an exception!")
+        (catch Exception ex
+          (let [ex-data (ex-data ex)]
+            (is (= {:num-successfully-reserved-before-error 11} ex-data))
+            (is (= "Unable to reserve 20 ports." (.getMessage ex)))))))))

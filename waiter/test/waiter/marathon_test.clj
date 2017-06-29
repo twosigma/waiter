@@ -93,7 +93,7 @@
 
                           :expected-response {:active-instances (list
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:auxiliary-ports [],
+                                                                    {:extra-ports [],
                                                                      :healthy? true,
                                                                      :host "10.141.141.11",
                                                                      :id "test-app-1234.A",
@@ -103,7 +103,7 @@
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.959Z"}),
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:auxiliary-ports [],
+                                                                    {:extra-ports [],
                                                                      :healthy? true,
                                                                      :host "10.141.141.12",
                                                                      :id "test-app-1234.B",
@@ -113,7 +113,7 @@
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002456.965Z"}),
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:auxiliary-ports [12321 90384 56463],
+                                                                    {:extra-ports [12321 90384 56463],
                                                                      :healthy? false,
                                                                      :host "10.141.141.13",
                                                                      :id "test-app-1234.C",
@@ -124,7 +124,7 @@
                                                                      :started-at "2014-09-14T002446.965Z"}))
                                               :failed-instances (list
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:auxiliary-ports [],
+                                                                    {:extra-ports [],
                                                                      :healthy? false,
                                                                      :host "10.141.141.10",
                                                                      :id "test-app-1234.D",
@@ -184,7 +184,7 @@
 
                           :expected-response {:active-instances (list
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:auxiliary-ports [],
+                                                                    {:extra-ports [],
                                                                      :healthy? true,
                                                                      :host "10.141.141.11",
                                                                      :id "test-app-1234.A",
@@ -194,7 +194,7 @@
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.959Z"}),
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:auxiliary-ports [],
+                                                                    {:extra-ports [],
                                                                      :healthy? true,
                                                                      :host "10.141.141.12",
                                                                      :id "test-app-1234.B",
@@ -204,7 +204,7 @@
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.965Z"}),
                                                                   (scheduler/make-ServiceInstance
-                                                                    {:auxiliary-ports [],
+                                                                    {:extra-ports [],
                                                                      :healthy? false,
                                                                      :host "10.141.141.13",
                                                                      :id "test-app-1234.C",

@@ -130,9 +130,9 @@
                                   {:id instance-id
                                    :started-at (str (:startedAt %))
                                    :healthy? (healthy?-fn %)
-                                   ;; first port must be used for the web server, auxiliary ports can be used freely.
+                                   ;; first port must be used for the web server, extra ports can be used freely.
                                    :port (-> % :ports first)
-                                   :auxiliary-ports (-> % :ports rest vec)})))
+                                   :extra-ports (-> % :ports rest vec)})))
                            active-marathon-tasks)]
     (parse-and-store-failed-instance!
       service-id->failed-instances-transient-store

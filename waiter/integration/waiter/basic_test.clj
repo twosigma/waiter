@@ -409,10 +409,10 @@
           waiter-headers {:x-waiter-name (rand-name "test-multiple-ports")
                           :x-waiter-ports num-ports}
           {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))
-          {:keys [auxiliary-ports port] :as active-instance}
+          {:keys [extra-ports port] :as active-instance}
           (get-in (service-settings waiter-url service-id) [:instances :active-instances 0])]
       (log/info service-id "active-instance:" active-instance)
       (is (pos? port))
-      (is (= (dec num-ports) (count auxiliary-ports)) auxiliary-ports)
-      (is (every? pos? auxiliary-ports) auxiliary-ports)
+      (is (= (dec num-ports) (count extra-ports)) extra-ports)
+      (is (every? pos? extra-ports) extra-ports)
       (delete-service waiter-url service-id))))

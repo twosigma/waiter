@@ -89,14 +89,14 @@
 
 (defn kill-process!
   "Triggers killing of process and any children processes it spawned"
-  [{:keys [:shell-scheduler/process :shell-scheduler/pid auxiliary-ports port] :as instance}
+  [{:keys [:shell-scheduler/process :shell-scheduler/pid extra-ports port] :as instance}
    port->reservation-atom port-grace-period-ms]
   (try
     (log/info "killing process:" instance)
     (.destroyForcibly process)
     (sh/sh "pkill" "-9" "-s" (str pid))
     (release-port! port->reservation-atom port port-grace-period-ms)
-    (doseq [port auxiliary-ports]
+    (doseq [port extra-ports]
       (release-port! port->reservation-atom port port-grace-period-ms))
     (catch Throwable e
       (log/error e "error attempting to kill process:" instance))))
@@ -126,12 +126,29 @@
                                               :expiry-time nil})
     port))
 
+(defn reserve-ports!
+  "Reserves num-ports available ports on the host, from the (optionally) provided range"
+  [num-ports port->reservation-atom port-range]
+  (let [reserved-ports-atom (atom [])]
+    (try
+      (doall
+        (repeatedly num-ports
+                    (fn inner-reserve-port! []
+                      (let [reserved-port (reserve-port! port->reservation-atom port-range)]
+                        (swap! reserved-ports-atom conj reserved-port)))))
+      @reserved-ports-atom
+      (catch Exception ex
+        (repeatedly #(release-port! port->reservation-atom % 0) @reserved-ports-atom)
+        (throw (ex-info (str "Unable to reserve " num-ports " ports.")
+                        {:num-successfully-reserved-before-error (count @reserved-ports-atom)}
+                        ex))))))
+
 (defn launch-instance
   "Launches a new process for the given service-id"
   [service-id working-dir-base-path command environment num-ports port->reservation-atom port-range]
   (when-not command
     (throw (ex-info "The command to run was not supplied" {:service-id service-id})))
-  (let [reserved-ports (repeatedly num-ports #(reserve-port! port->reservation-atom port-range))
+  (let [reserved-ports (reserve-ports! num-ports port->reservation-atom port-range)
         port (-> reserved-ports first)
         {:keys [instance-id process started-at working-directory]}
         (launch-process service-id working-dir-base-path command (assoc environment "PORT0" (str port)))]
@@ -142,7 +159,7 @@
        :healthy? nil
        :host "localhost"
        :port port
-       :auxiliary-ports (-> reserved-ports rest vec)
+       :extra-ports (-> reserved-ports rest vec)
        :log-directory working-directory
        :shell-scheduler/process process
        :shell-scheduler/working-directory working-directory
