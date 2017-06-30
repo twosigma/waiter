@@ -402,3 +402,26 @@
       ;; first item may be processed out of order as it can arrive before at the server
       (is (= (-> num-threads range reverse) @response-priorities-atom))
       (delete-service waiter-url service-id))))
+
+(deftest ^:parallel ^:integration-fast test-multiple-ports
+  (testing-using-waiter-url
+    (let [num-ports 8
+          waiter-headers {:x-waiter-name (rand-name "test-multiple-ports")
+                          :x-waiter-ports num-ports}
+          {:keys [body service-id]}
+          (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :path "/environment"))
+          body-json (json/read-str (str body))]
+      (is (every? #(contains? body-json (str "PORT" %)) (range num-ports))
+          (str body-json))
+      (let [{:keys [extra-ports port] :as active-instance}
+            (get-in (service-settings waiter-url service-id) [:instances :active-instances 0])]
+        (log/info service-id "active-instance:" active-instance)
+        (is (pos? port))
+        (is (= (get body-json "PORT0") (str port)))
+        (is (= (dec num-ports) (count extra-ports)) extra-ports)
+        (is (every? pos? extra-ports) extra-ports)
+        (is (->> (map #(= (get body-json (str "PORT" %1)) (str %2))
+                      (range 1 (-> extra-ports count inc))
+                      extra-ports)
+                 (every? true?))))
+      (delete-service waiter-url service-id))))
