@@ -126,7 +126,8 @@
       port)))
 
 (defn reserve-ports!
-  "Reserves num-ports available ports on the host, from the (optionally) provided range"
+  "Reserves num-ports available ports on the host, from the provided range.
+   Throws an exception if num-ports ports are not available."
   [num-ports port->reservation-atom port-range]
   (let [reserved-ports (reduce (fn inner-reserve-ports! [ports _]
                                  (if-let [port (reserve-port! port->reservation-atom port-range)]
