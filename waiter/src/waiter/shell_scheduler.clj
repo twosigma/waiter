@@ -116,32 +116,30 @@
   (and (not (port-reserved? port->reservation-atom port)) (utils/port-available? port)))
 
 (defn reserve-port!
-  "Returns an available port on the host, from the (optionally) provided range"
+  "Returns an available port on the host, from the provided range.
+   If no port is available, returns nil."
   [port->reservation-atom port-range]
   (let [pool (range (first port-range) (inc (second port-range)))
         port (first (filter #(port-can-be-used? port->reservation-atom %) pool))]
-    (when-not port
-      (throw (ex-info "All ports in the range are already in use" {:port-range port-range})))
-    (swap! port->reservation-atom assoc port {:state :in-use
-                                              :expiry-time nil})
-    port))
+    (when port
+      (swap! port->reservation-atom assoc port {:state :in-use, :expiry-time nil})
+      port)))
 
 (defn reserve-ports!
   "Reserves num-ports available ports on the host, from the (optionally) provided range"
   [num-ports port->reservation-atom port-range]
-  (let [reserved-ports-atom (atom [])]
-    (try
-      (doall
-        (repeatedly num-ports
-                    (fn inner-reserve-port! []
-                      (let [reserved-port (reserve-port! port->reservation-atom port-range)]
-                        (swap! reserved-ports-atom conj reserved-port)))))
-      @reserved-ports-atom
-      (catch Exception ex
-        (repeatedly #(release-port! port->reservation-atom % 0) @reserved-ports-atom)
-        (throw (ex-info (str "Unable to reserve " num-ports " ports.")
-                        {:num-successfully-reserved-before-error (count @reserved-ports-atom)}
-                        ex))))))
+  (let [reserved-ports (reduce (fn inner-reserve-ports! [ports _]
+                                 (if-let [port (reserve-port! port->reservation-atom port-range)]
+                                   (conj ports port)
+                                   (reduced ports)))
+                               []
+                               (range num-ports))]
+    (if-not (= num-ports (count reserved-ports))
+      (do
+        (doall (map #(release-port! port->reservation-atom % 0) reserved-ports))
+        (throw (ex-info (str "Unable to reserve " num-ports " ports")
+                        {:num-reserved-ports (count reserved-ports)})))
+      reserved-ports)))
 
 (defn launch-instance
   "Launches a new process for the given service-id"

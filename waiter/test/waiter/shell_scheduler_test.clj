@@ -52,7 +52,7 @@
                             (launch-instance "foo" (work-dir) nil {} 1 nil nil))))
 
     (testing "should throw if enough ports aren't available"
-      (is (thrown-with-msg? ExceptionInfo #"Unable to reserve 4 ports."
+      (is (thrown-with-msg? ExceptionInfo #"Unable to reserve 4 ports"
                             (launch-instance "bar" (work-dir) "echo 1" {} 4 (atom {}) [5100 5102]))))
 
     (testing "with multiple ports"
@@ -391,5 +391,5 @@
         (is false "reserve-ports! did not throw an exception!")
         (catch Exception ex
           (let [ex-data (ex-data ex)]
-            (is (= {:num-successfully-reserved-before-error 11} ex-data))
-            (is (= "Unable to reserve 20 ports." (.getMessage ex)))))))))
+            (is (= {:num-reserved-ports 11} ex-data))
+            (is (= "Unable to reserve 20 ports" (.getMessage ex)))))))))
