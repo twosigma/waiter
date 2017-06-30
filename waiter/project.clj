@@ -126,5 +126,6 @@
                     [~(str "-Dwaiter.test.kitchen.cmd=" (or
                                                           (System/getenv "WAITER_TEST_KITCHEN_CMD")
                                                           (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]}
-             :override-maven {:local-repo ~(System/getenv "WAITER_MAVEN_LOCAL_REPO")}}
+             :override-maven {:local-repo ~(System/getenv "WAITER_MAVEN_LOCAL_REPO")
+                              :dependencies [[com.holychao/parallel-test "0.3.1"]]}}
   :uberjar-name ~(System/getenv "UBERJAR_NAME"))
