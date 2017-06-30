@@ -637,7 +637,7 @@
    :start-new-service-fn (pc/fnk [[:state authenticator scheduler start-app-cache-atom task-threadpool]
                                   service-id->password-fn store-service-description-fn]
                            (fn start-new-service [{:keys [service-id core-service-description] :as descriptor}]
-                             (let [run-as-user (get descriptor [:service-description "run-as-user"])]
+                             (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
                                (auth/check-user authenticator run-as-user service-id))
                              (service/start-new-service
                                scheduler service-id->password-fn descriptor start-app-cache-atom task-threadpool

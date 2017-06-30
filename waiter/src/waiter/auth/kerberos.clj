@@ -108,7 +108,7 @@
     :kerberos)
 
   (check-user [_ user service-id]
-    (check-has-prestashed-tickets query-chan service-id user))
+    (check-has-prestashed-tickets query-chan user service-id))
 
   (create-auth-handler [_ request-handler]
     (spnego/require-gss request-handler password)))
@@ -116,7 +116,7 @@
 (defn kerberos-authenticator
   "Factory function for creating KerberosAuthenticator"
   [{:keys [password prestash-cache-min-refresh-ms prestash-cache-refresh-ms prestash-query-host]}]
-  {:pre [(not (str/blank? password))
+  {:pre [(not-empty password)
          (utils/pos-int? prestash-cache-min-refresh-ms)
          (utils/pos-int? prestash-cache-refresh-ms)
          (not (str/blank? prestash-query-host))]}
