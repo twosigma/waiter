@@ -236,7 +236,12 @@
                 request.onreadystatechange = function() {
                     if(request.readyState == XMLHttpRequest.DONE) {
                         if (request.status == 200) {
-                            window.location = "<%= target-url %>";
+                            var targetUrl = "<%= target-url %>";
+                            if (window.location.hash) {
+                                window.location = targetUrl + window.location.hash;
+                            } else {
+                                window.location = targetUrl;
+                            }
                         } else {
                             setTimeout(function() {
                                 var dimmerContent = document.getElementById("dimmer-content");

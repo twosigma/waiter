@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -21,9 +21,12 @@
             [qbits.jet.client.http :as http]
             [schema.core :as s]
             [waiter.scheduler :as scheduler]
+            [waiter.schema :as schema]
+            [waiter.service-description :as sd]
             [waiter.utils :as utils])
   (:import java.io.File
            java.lang.UNIXProcess
+           java.net.ServerSocket
            java.util.ArrayList))
 
 (defn pid
@@ -144,7 +147,7 @@
 
 (defn launch-instance
   "Launches a new process for the given service-id"
-  [service-id working-dir-base-path command environment num-ports port->reservation-atom port-range]
+  [service-id working-dir-base-path command backend-protocol environment num-ports port->reservation-atom port-range]
   (when-not command
     (throw (ex-info "The command to run was not supplied" {:service-id service-id})))
   (let [reserved-ports (reserve-ports! num-ports port->reservation-atom port-range)
@@ -163,6 +166,7 @@
        :host "localhost"
        :port (-> reserved-ports first)
        :extra-ports (-> reserved-ports rest vec)
+       :protocol backend-protocol
        :log-directory working-directory
        :shell-scheduler/process process
        :shell-scheduler/working-directory working-directory
@@ -171,10 +175,10 @@
 
 (defn launch-service
   "Creates a new service and launches a single new instance for this service"
-  [service-id {:strs [cmd ports] :as service-description} service-id->password-fn
+  [service-id {:strs [backend-proto cmd ports] :as service-description} service-id->password-fn
    working-dir-base-path port->reservation-atom port-range]
   (let [environment (scheduler/environment service-id service-description service-id->password-fn working-dir-base-path)
-        instance (launch-instance service-id working-dir-base-path cmd environment ports port->reservation-atom port-range)
+        instance (launch-instance service-id working-dir-base-path cmd backend-proto environment ports port->reservation-atom port-range)
         service (scheduler/make-Service {:id service-id
                                          :instances 1
                                          :environment environment
@@ -305,11 +309,11 @@
       (let [{:keys [id->instance service] :as service-entry} (get id->service service-id)
             {:keys [environment service-description]} service
             work-directory (get environment "HOME")
-            {:strs [cmd ports]} service-description
+            {:strs [backend-proto cmd ports]} service-description
             current-instances (->> id->instance vals (filter active?) count)
             to-launch (- scale-to-instances current-instances)
             launch-new
-            #(let [instance (launch-instance service-id work-directory cmd environment ports port->reservation-atom port-range)]
+            #(let [instance (launch-instance service-id work-directory cmd backend-proto environment ports port->reservation-atom port-range)]
                [(:id instance) instance])]
         (if (pos? to-launch)
           (do

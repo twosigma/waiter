@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -25,6 +25,16 @@
                                                        'positive-fraction-less-than-or-equal-to-1))
 (def greater-than-or-equal-to-0-less-than-1 (s/pred #(and (<= 0 %) (< % 1))
                                                     'greater-than-or-equal-to-0-less-than-1))
+
+(def valid-authentication
+  "Validator for the authentication parameter.
+   Valid values are 'disabled' and 'standard'."
+  (s/constrained non-empty-string #{"disabled" "standard"} 'invalid-authentication))
+
+(def valid-backend-proto
+  "Validator for the backend-proto parameter.
+   Valid values are 'http' and 'https'."
+  (s/constrained non-empty-string #{"http" "https"} 'invalid-backend-proto))
 
 (def valid-metric-group
   "Validator for metric group names. Valid names must:

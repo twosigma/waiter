@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -17,15 +17,19 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.client-tools :refer :all]
-            [waiter.service-description :as sd]))
+            [waiter.service-description :as sd])
+  (:import java.io.ByteArrayInputStream))
 
 (deftest ^:parallel ^:integration-fast test-basic-secrun
   (testing-using-waiter-url
     (log/info (str "Basic test using endpoint: /secrun"))
-    (let [response (make-request-with-debug-info
-                     {:x-waiter-name (rand-name "testbasic")}
-                     #(make-kitchen-request waiter-url % :path "/secrun"))]
-      (delete-service waiter-url (:service-id response)))))
+    (let [{:keys [body service-id] :as response}
+          (make-request-with-debug-info
+            {:x-waiter-name (rand-name "testbasic")}
+            #(make-kitchen-request waiter-url % :path "/secrun"))]
+      (assert-response-status response 200)
+      (is (= "Hello World" body))
+      (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-basic-no-content
   (testing-using-waiter-url
@@ -41,6 +45,54 @@
       (is (nil? (get-in body-json ["headers" "content-type"])) (str body))
       (is (= "0" (get-in body-json ["headers" "content-length"])) (str body))
       (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body))
+      (delete-service waiter-url service-id))))
+
+(deftest ^:parallel ^:integration-fast test-basic-http-methods-support
+  (testing-using-waiter-url
+    (log/info "Basic test for empty body in request")
+    (let [{:keys [request-headers service-id]} (make-request-with-debug-info
+                                                 {:x-waiter-name (rand-name "test-basic-http-methods-support")
+                                                  :accept "text/plain"}
+                                                 #(make-kitchen-request waiter-url % :path "/hello"))
+          http-method-helper (fn http-method-helper [http-method]
+                               (fn inner-http-method-helper [url & [req]]
+                                 (http/request (merge req {:method http-method :url url}))))]
+      (testing "verifying whether request method HEAD works"
+        (let [response (make-kitchen-request waiter-url request-headers
+                                             :http-method-fn (http-method-helper :head)
+                                             :path "/request-info")]
+          (assert-response-status response 200)
+          (is (nil? (:body response)))))
+      (doseq [request-method [:delete :copy :get :move :patch :post :put]]
+        (testing (str "verifying whether request method " (-> request-method name str/upper-case) " works")
+          (let [{:keys [body] :as response} (make-kitchen-request waiter-url request-headers
+                                                                  :http-method-fn (http-method-helper request-method)
+                                                                  :path "/request-info")
+                body-json (json/read-str (str body))]
+            (assert-response-status response 200)
+            (is (= (name request-method) (get body-json "request-method"))))))
+      (delete-service waiter-url service-id))))
+
+(deftest ^:parallel ^:integration-fast test-request-content-headers
+  (testing-using-waiter-url
+    (let [request-length 100000
+          long-request (apply str (repeat request-length "a"))
+          headers {:x-waiter-name (rand-name "testcontentheaders")}
+          {:keys [service-id cookies] :as plain-resp} (make-request-with-debug-info
+                                                        headers
+                                                        #(make-kitchen-request waiter-url % :path "/request-info" :body long-request))
+          chunked-resp (make-request-with-debug-info
+                         headers
+                         #(make-kitchen-request waiter-url % :path "/request-info"
+                                                ; force clj-http to make a chunked request
+                                                :body (ByteArrayInputStream. (.getBytes long-request))
+                                                :cookies cookies))
+          plain-body-json (json/read-str (str (:body plain-resp)))
+          chunked-body-json (json/read-str (str (:body chunked-resp)))]
+      (is (= (str request-length) (get-in plain-body-json ["headers" "content-length"])))
+      (is (nil? (get-in plain-body-json ["headers" "transfer-encoding"])))
+      (is (= "chunked" (get-in chunked-body-json ["headers" "transfer-encoding"])))
+      (is (nil? (get-in chunked-body-json ["headers" "content-length"])))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-large-header

@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -15,7 +15,7 @@
 (deftest test-one-user-authenticator
   (let [authenticator (one-user-authenticator {})]
     (is (= :one-user (auth-type authenticator)))
-    (let [request-handler (create-auth-handler authenticator identity)
+    (let [request-handler (wrap-auth-handler authenticator identity)
           username (System/getProperty "user.name")
           request {}
           expected-request (assoc request :authorization/user username :authenticated-principal username)]

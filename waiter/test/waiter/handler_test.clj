@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -85,12 +85,15 @@
                              :port "port"
                              :request-id (when (not= code "missing-request-id") "req-1234")
                              :router-id (when (not= code "missing-router-id") my-router-id)
-                             :service-id service-id})]
+                             :service-id service-id})
+        service-id->service-description-fn (fn [in-service-id]
+                                             (is (= service-id in-service-id))
+                                             {"backend-proto" "http"})]
     (testing "missing-location"
       (let [request {:route-params (make-route-params "missing-location")}
             {:keys [body headers status]}
             (async/<!!
-              (async-result-handler nil nil request))]
+              (async-result-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
@@ -99,7 +102,7 @@
       (let [request {:route-params (make-route-params "missing-request-id")}
             {:keys [body headers status]}
             (async/<!!
-              (async-result-handler nil nil request))]
+              (async-result-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
@@ -108,7 +111,7 @@
       (let [request {:route-params (make-route-params "missing-router-id")}
             {:keys [body headers status]}
             (async/<!!
-              (async-result-handler nil nil request))]
+              (async-result-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
@@ -131,7 +134,7 @@
                      :route-params (make-route-params "local")}
             {:keys [body headers status]}
             (async/<!!
-              (async-result-handler async-trigger-terminate-fn make-http-request-fn request))]
+              (async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
         (is (every? #(str/includes? body %) ["backend-status-error"]))))))
@@ -147,6 +150,9 @@
                              :request-id (if (= code "local") "req-1234" "req-6789")
                              :router-id (if (= code "local") my-router-id remote-router-id)
                              :service-id service-id})
+        service-id->service-description-fn (fn [in-service-id]
+                                             (is (= service-id in-service-id))
+                                             {"backend-proto" "http"})
         request-id-fn (fn [router-type] (if (= router-type "local") "req-1234" "req-6789"))]
     (letfn [(execute-async-result-check
               [{:keys [request-method return-status router-type]}]
@@ -171,7 +177,7 @@
                              :route-params (make-route-params router-type)}
                     {:keys [status headers]}
                     (async/<!!
-                      (async-result-handler async-trigger-terminate-fn make-http-request-fn request))]
+                      (async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
                 {:terminated @terminate-call-atom, :return-status status, :return-headers headers}))]
       (is (= {:terminated true, :return-status 200, :return-headers {}}
              (execute-async-result-check {:request-method :get, :return-status 200, :router-type "local"})))
@@ -225,31 +231,34 @@
                              :port "port"
                              :request-id (when (not= code "missing-request-id") "req-1234")
                              :router-id (when (not= code "missing-router-id") my-router-id)
-                             :service-id service-id})]
+                             :service-id service-id})
+        service-id->service-description-fn (fn [in-service-id]
+                                             (is (= service-id in-service-id))
+                                             {"backend-proto" "http"})]
     (testing "missing-code"
       (let [request {:query-string ""}
-            {:keys [body headers status]} (async/<!! (async-status-handler nil nil request))]
+            {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
 
     (testing "missing-location"
       (let [request {:route-params (make-route-params "missing-location")}
-            {:keys [body headers status]} (async/<!! (async-status-handler nil nil request))]
+            {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
 
     (testing "missing-request-id"
       (let [request {:route-params (make-route-params "missing-request-id")}
-            {:keys [body headers status]} (async/<!! (async-status-handler nil nil request))]
+            {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
 
     (testing "missing-router-id"
       (let [request {:route-params (make-route-params "missing-router-id")}
-            {:keys [body headers status]} (async/<!! (async-status-handler nil nil request))]
+            {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
@@ -265,7 +274,7 @@
             async-trigger-terminate-fn nil
             request {:authorization/user "test-user", :authenticated-principal "test-user@DOMAIN"
                      :route-params (make-route-params "local"), :request-method :http-method}
-            {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn request))]
+            {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
         (is (every? #(str/includes? body %) ["backend-status-error"]))))))
@@ -281,6 +290,9 @@
                              :request-id (if (= code "local") "req-1234" "req-6789")
                              :router-id (if (= code "local") my-router-id remote-router-id)
                              :service-id service-id})
+        service-id->service-description-fn (fn [in-service-id]
+                                             (is (= service-id in-service-id))
+                                             {"backend-proto" "http"})
         request-id-fn (fn [router-type] (if (= router-type "local") "req-1234" "req-6789"))
         result-location-fn (fn [router-type & {:keys [include-host-port] :or {include-host-port false}}]
                              (str (when include-host-port "http://www.example.com:8521")
@@ -316,7 +328,7 @@
                              :route-params (make-route-params router-type)}
                     {:keys [status headers]}
                     (async/<!!
-                      (async-status-handler async-trigger-terminate-fn make-http-request-fn request))]
+                      (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
                 {:terminated @terminate-call-atom, :return-status status, :return-headers headers}))]
       (is (= {:terminated false, :return-status 200, :return-headers {}}
              (execute-async-status-check {:request-method :get, :return-status 200, :router-type "local"})))
@@ -863,7 +875,20 @@
                                                         (update :authorization/user #(or %1 "test-user"))
                                                         (update :request-method #(or %1 :get)))]
                                        (request-consent-handler token->service-description-template service-description->service-id
-                                                                consent-expiry-days request')))]
+                                                                consent-expiry-days request')))
+        io-resource-fn (fn [file-path]
+                         (is (= "web/consent.html" file-path))
+                         (StringReader. "some-content"))
+        template-eval-factory (fn [scheme]
+                                (fn [content data]
+                                  (is (= {:auth-user "test-user"
+                                          :consent-expiry-days 1
+                                          :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
+                                          :service-id "service-5.97"
+                                          :target-url (str scheme "://www.example.com:6789/some-path")
+                                          :token "www.example.com"}
+                                         data))
+                                  (str "template:" content))) ]
     (testing "unsupported request method"
       (let [request {:authorization/user "test-user"
                      :request-method :post
@@ -884,22 +909,35 @@
         (is (= {"Content-Type" "text/plain"} headers))
         (is (str/includes? body "Unable to load description for token!"))))
 
-    (with-redefs [io/resource (fn [file-path]
-                                (is (= "web/consent.html" file-path))
-                                (StringReader. "some-content"))
-                  template/eval (fn [content data]
-                                  (is (= {:auth-user "test-user"
-                                          :consent-expiry-days 1
-                                          :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
-                                          :service-id "service-5.97"
-                                          :target-url "http://www.example.com:6789/some-path"
-                                          :token "www.example.com"}
-                                         data))
-                                  (str "template:" content))]
-      (testing "token without service description"
+    (with-redefs [io/resource io-resource-fn
+                  template/eval (template-eval-factory "http")]
+      (testing "token without service description - http scheme"
         (let [request {:authorization/user "test-user"
                        :headers {"host" "www.example.com:6789"}
-                       :request-method :get
+                       :route-params {:path "some-path"}
+                       :scheme :http}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {} headers))
+          (is (= body "template:some-content")))))
+
+    (with-redefs [io/resource io-resource-fn
+                  template/eval (template-eval-factory "https")]
+      (testing "token without service description - http scheme"
+        (let [request {:authorization/user "test-user"
+                       :headers {"host" "www.example.com:6789"}
+                       :route-params {:path "some-path"}
+                       :scheme :https}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {} headers))
+          (is (= body "template:some-content")))))
+
+    (with-redefs [io/resource io-resource-fn
+                  template/eval (template-eval-factory "https")]
+      (testing "token without service description - https x-forwarded-proto"
+        (let [request {:authorization/user "test-user"
+                       :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
                        :route-params {:path "some-path"}
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]

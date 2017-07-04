@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -22,7 +22,7 @@
     "Checks if the user is setup correctly to successfully launch a service using the authentication scheme.
      Throws an exception if not.")
 
-  (create-auth-handler [this request-handler]
+  (wrap-auth-handler [this request-handler]
     "Attaches middleware that enables the application to perform authentication.
      The middleware should
      - either issue a 401 challenge asking the client to authenticate itself,
@@ -58,7 +58,7 @@
   (check-user [_ _ _]
     (comment "do nothing"))
 
-  (create-auth-handler [_ request-handler]
+  (wrap-auth-handler [_ request-handler]
     (fn anonymous-handler [request]
       (handle-request-auth request-handler request run-as-user run-as-user password))))
 

@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -402,3 +402,19 @@
          elapsed# (metrics.timers/stop start#)]
      (~handle-elapsed-nanos-fn elapsed#)
      out#))
+
+(defn stream-metric-map
+  "Returns a map containing metrics used for reporting streaming metrics for a given service."
+  [service-id]
+  {:requests-streaming (service-counter service-id "request-counts" "streaming")
+   :requests-waiting-to-stream (service-counter service-id "request-counts" "waiting-to-stream")
+   :percentile-of-buffer-filled (service-histogram service-id "percent-buffer-filled")
+   :service-id service-id
+   :stream (service-timer service-id "stream")
+   :stream-back-pressure (service-meter service-id "stream-backpressure")
+   :stream-complete-rate (service-meter service-id "stream-complete-rate")
+   :stream-exception-meter (service-meter service-id "stream-error")
+   :stream-onto-resp-chan (service-timer service-id "stream-onto-resp-chan")
+   :stream-read-body (service-timer service-id "stream-read-body")
+   :stream-request-rate (service-meter service-id "stream-request-rate")
+   :throughput-meter (service-meter service-id "stream-throughput")})

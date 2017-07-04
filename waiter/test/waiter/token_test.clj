@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -104,7 +104,7 @@
       (testing "test:list-tokens"
         (let [{:keys [status body]}
               (handle-list-tokens-request
-                kv-store 
+                kv-store
                 {:request-method :get, :authorization/user "tu1"})]
           (is (= 200 status))
           (is (= [{"token" token "owner" "tu1"}] (json/read-str body)))))
@@ -245,6 +245,7 @@
                              (f)))
           can-run-as? (fn [auth-user run-as-user] (= auth-user run-as-user))
           make-peer-requests-fn (fn [endpoint _ _] (and (str/starts-with? endpoint "token/") (str/ends-with? endpoint "/refresh")) {})
+          validate-service-description-fn (fn validate-service-description-fn [service-description] (sd/validate-schema service-description nil))
           token "test-token"
           waiter-hostname "waiter-hostname.app.example.com"]
       (testing "test:post-new-service-description:missing-token"
@@ -280,7 +281,7 @@
                                      :permitted-user "tu2", :token token})
               {:keys [status body]}
               (handle-token-request
-                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn #(sd/validate-schema % nil)
+                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1", :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -335,7 +336,7 @@
                                      :min-instances 2, :max-instances 1})
               {:keys [status body]}
               (handle-token-request
-                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn #(sd/validate-schema % nil)
+                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1", :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -376,7 +377,7 @@
                                      :token "abcdefgh", :metadata {"a" 12}})
               {:keys [status body]}
               (handle-token-request
-                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn #(sd/validate-schema % nil)
+                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
               {:strs [exception]} (json/read-str body)]
@@ -392,13 +393,69 @@
                                      :token "abcdefgh", :env {"HOME" "12"}})
               {:keys [status body]}
               (handle-token-request
-                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn #(sd/validate-schema % nil)
+                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
               {:strs [exception]} (json/read-str body)]
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
-          (is (str/includes? exception "environment variable keys are reserved: HOME") body))))))
+          (is (str/includes? exception "environment variable keys are reserved: HOME") body)))
+
+      (testing "test:post-new-service-description:invalid-authentication"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (clojure.walk/stringify-keys
+                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1", :authentication "unsupported"
+                                     :token "abcdefgh"})
+              {:keys [status body]}
+              (handle-token-request
+                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                {:request-method :post, :authorization/user "tu1",
+                 :body (StringBufferInputStream. (json/write-str service-description))})
+              {:strs [exception]} (json/read-str body)]
+          (is (= 400 status))
+          (is (str/includes? exception "invalid-authentication") body)))
+
+      (testing "test:post-new-service-description:missing-permitted-user-with-authentication-disabled"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (clojure.walk/stringify-keys
+                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1", :authentication "disabled"
+                                     :token "abcdefgh"})
+              {:keys [status body]}
+              (handle-token-request
+                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                {:request-method :post, :authorization/user "tu1",
+                 :body (StringBufferInputStream. (json/write-str service-description))})
+              {:strs [exception]} (json/read-str body)]
+          (is (= 400 status))
+          (is (str/includes? exception "Tokens with authentication disabled must specify permitted-user as *, instead provided") body)))
+
+      (testing "test:post-new-service-description:non-star-permitted-user-with-authentication-disabled"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (clojure.walk/stringify-keys
+                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1", :authentication "disabled", :permitted-user "pu1"
+                                     :token "abcdefgh"})
+              {:keys [status body]}
+              (handle-token-request
+                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                {:request-method :post, :authorization/user "tu1",
+                 :body (StringBufferInputStream. (json/write-str service-description))})
+              {:strs [exception]} (json/read-str body)]
+          (is (= 400 status))
+          (is (str/includes? exception "Tokens with authentication disabled must specify permitted-user as *, instead provided") body)))
+
+      (testing "test:post-new-service-description:partial-description-with-authentication-disabled"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (clojure.walk/stringify-keys
+                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :authentication "disabled", :permitted-user "*"
+                                     :token "abcdefgh"})
+              {:keys [status body]}
+              (handle-token-request
+                synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                {:request-method :post, :authorization/user "tu1",
+                 :body (StringBufferInputStream. (json/write-str service-description))})
+              {:strs [exception]} (json/read-str body)]
+          (is (= 400 status))
+          (is (str/includes? exception "Tokens with authentication disabled must specify all required parameters") body))))))
 
 (deftest test-store-service-description
   (let [lock (Object.)
@@ -406,7 +463,6 @@
                          (locking lock
                            (f)))
         kv-store (kv/->LocalKeyValueStore (atom {}))
-        service-id-prefix "test#"
         token "test-token"
         service-description (clojure.walk/stringify-keys
                               {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
@@ -438,7 +494,7 @@
         kv-store (kv/->LocalKeyValueStore (atom {}))
         list-tokens-fn (fn [] ["token1" "token2" "token3"])]
     (let [inter-router-request-fn-called (atom nil)
-          inter-router-request-fn (fn [path & {:keys [method body]}] 
+          inter-router-request-fn (fn [path & {:keys [body]}]
                                     (let [{:strs [index]} (json/read-str body)]
                                       (is (= "tokens/refresh" path))
                                       (is index)
@@ -448,7 +504,7 @@
       (is (= 200 status))
       (is (= {:message "Successfully re-indexed." :tokens 3} (-> json-response clojure.walk/keywordize-keys)))
       (is @inter-router-request-fn-called))
-    
+
     (let [inter-router-request-fn-called (atom nil)
           inter-router-request-fn (fn [] (reset! inter-router-request-fn-called true))
           {:keys [status body]} (handle-reindex-tokens-request synchronize-fn inter-router-request-fn kv-store list-tokens-fn {:request-method :get})

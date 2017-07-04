@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -47,11 +47,12 @@
    ^String host
    port
    extra-ports
+   ^String protocol
    ^String log-directory
    ^String message])
 
 (defn make-ServiceInstance [value-map]
-  (map->ServiceInstance (merge {:extra-ports [], :log-directory nil, :message nil} value-map)))
+  (map->ServiceInstance (merge {:extra-ports [] :log-directory nil :message nil :protocol nil} value-map)))
 
 (defprotocol ServiceScheduler
 
@@ -160,25 +161,19 @@
 
 (defn base-url
   "Returns the url at which the service definition resides."
-  ([service-instance]
-   (base-url service-instance default-protocol))
-  ([service-instance protocol]
-   (str protocol "://" (:host service-instance) ":" (:port service-instance))))
+  [{:keys [host port protocol]}]
+  (str protocol "://" host ":" port))
 
 (defn end-point-url
   "Returns the endpoint url which can be queried on the service instance."
-  ([service-instance ^String end-point]
-   (end-point-url service-instance default-protocol end-point))
-  ([service-instance protocol ^String end-point]
-   (str (base-url service-instance protocol)
-        (if (and end-point (str/starts-with? end-point "/")) end-point (str "/" end-point)))))
+  [service-instance ^String end-point]
+  (str (base-url service-instance)
+       (if (and end-point (str/starts-with? end-point "/")) end-point (str "/" end-point))))
 
 (defn health-check-url
   "Returns the health check url which can be queried on the service instance."
-  ([service-instance health-check-path]
-   (health-check-url service-instance health-check-path default-protocol))
-  ([service-instance health-check-path protocol]
-   (end-point-url service-instance protocol health-check-path)))
+  [service-instance health-check-path]
+  (end-point-url service-instance health-check-path))
 
 (defn log-health-check-issues
   "Logs messages based on the type of error (if any) encountered by a health check"

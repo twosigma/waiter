@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -32,7 +32,9 @@
 (defn- create-test-service
   "Creates a new (test) service with command `ls` and the given service-id"
   [scheduler service-id]
-  (let [descriptor {:service-description {"cmd" "ls", "ports" 1}
+  (let [descriptor {:service-description {"backend-proto" "http"
+                                          "cmd" "ls"
+                                          "ports" 1}
                     :service-id service-id}]
     (scheduler/create-app-if-new scheduler (constantly "password") descriptor)))
 
@@ -49,11 +51,15 @@
   (testing "Launching an instance"
     (testing "should throw if cmd is nil"
       (is (thrown-with-msg? ExceptionInfo #"The command to run was not supplied"
-                            (launch-instance "foo" (work-dir) nil {} 1 nil nil))))
+                            (launch-instance "foo" (work-dir) nil "http" {} 1 nil nil))))
+
+    (testing "with https backend proto"
+      (let [{:keys [protocol]} (launch-instance "foo" "scheduler" "ls" "https" {} 1 (atom {}) [2000 3000])]
+        (is (= "https" protocol))))
 
     (testing "should throw if enough ports aren't available"
       (is (thrown-with-msg? ExceptionInfo #"Unable to reserve 4 ports"
-                            (launch-instance "bar" (work-dir) "echo 1" {} 4 (atom {}) [5100 5102]))))
+                            (launch-instance "bar" (work-dir) "echo 1" "http" {} 4 (atom {}) [5100 5102]))))
 
     (testing "with multiple ports"
       (let [num-ports 8
@@ -62,12 +68,15 @@
         (with-redefs [launch-process (fn [_ _ command environment]
                                        (is (= "dummy-command" command))
                                        (is (every? #(contains? environment (str "PORT" %)) (range num-ports))))]
-          (let [{:keys [extra-ports port]} (launch-instance "baz" (work-dir) "dummy-command" {} num-ports (atom {}) port-range)]
+          (let [{:keys [extra-ports port]} (launch-instance "baz" (work-dir) "dummy-command" "http" {} num-ports (atom {}) port-range)]
             (is (= port-range-start port))
             (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))))
 
 (deftest test-directory-content
-  (let [id->service (create-service {} "foo" {"cmd" "echo Hello, World!", "ports" 1} (constantly "password")
+  (let [service-description {"backend-proto" "http"
+                             "cmd" "echo Hello, World!"
+                             "ports" 1}
+        id->service (create-service {} "foo" service-description (constantly "password")
                                     (work-dir) (atom {}) [0 0] (promise))
         service-entry (get id->service "foo")
         instance-id (-> service-entry :id->instance keys first)
@@ -210,7 +219,7 @@
 (deftest test-kill-process
   (testing "Killing a process"
     (testing "should handle exceptions"
-      (let [instance (launch-instance "foo" (work-dir) "ls" {} 1 (atom {}) [0 0])]
+      (let [instance (launch-instance "foo" (work-dir) "ls" "http" {} 1 (atom {}) [0 0])]
         (with-redefs [t/plus (fn [_ _] (throw (ex-info "ERROR!" {})))]
           (kill-process! instance (atom {}) 0))))
 
@@ -218,7 +227,7 @@
       (let [port-reservation-atom (atom {})
             num-ports 5
             port-range-start 2000
-            instance (launch-instance "bar" (work-dir) "ls" {} num-ports port-reservation-atom [port-range-start 3000])]
+            instance (launch-instance "bar" (work-dir) "ls" "http" {} num-ports port-reservation-atom [port-range-start 3000])]
         (is (= num-ports (count @port-reservation-atom)))
         (is (every? #(= {:state :in-use, :expiry-time nil}
                         (get @port-reservation-atom %))
@@ -293,7 +302,9 @@
                                 "HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil}
-                  :service-description {"cmd" "ls", "ports" 1}}
+                  :service-description {"backend-proto" "http"
+                                        "cmd" "ls"
+                                        "ports" 1}}
                  {:id "bar"
                   :instances 1
                   :task-count 1
@@ -303,7 +314,9 @@
                                 "HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil}
-                  :service-description {"cmd" "ls", "ports" 1}}
+                  :service-description {"backend-proto" "http"
+                                        "cmd" "ls"
+                                        "ports" 1}}
                  {:id "baz"
                   :instances 1
                   :task-count 1
@@ -313,7 +326,9 @@
                                 "HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil}
-                  :service-description {"cmd" "ls", "ports" 1}}])
+                  :service-description {"backend-proto" "http"
+                                        "cmd" "ls"
+                                        "ports" 1}}])
            (scheduler/get-apps scheduler)))))
 
 (deftest test-service-id->state
@@ -337,7 +352,9 @@
                                                   "HOME" (work-dir)
                                                   "LOGNAME" nil
                                                   "USER" nil}
-                                    :service-description {"cmd" "ls", "ports" 1}})
+                                    :service-description {"backend-proto" "http"
+                                                          "cmd" "ls"
+                                                          "ports" 1}})
                         :id->instance {"foo.bar"
                                        (scheduler/make-ServiceInstance
                                          {:id "foo.bar"
@@ -346,6 +363,7 @@
                                           :healthy? nil
                                           :host "localhost"
                                           :port port
+                                          :protocol "http"
                                           :log-directory instance-dir
                                           :message nil
                                           :shell-scheduler/working-directory instance-dir

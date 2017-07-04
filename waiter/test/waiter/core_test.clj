@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -18,6 +18,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as auth]
+            [waiter.auth.spnego :as spnego]
             [waiter.core :refer :all]
             [waiter.cors :as cors]
             [waiter.curator :as curator]
@@ -30,7 +31,8 @@
             [waiter.service-description :as sd]
             [waiter.test-helpers :refer :all]
             [waiter.utils :as utils])
-  (:import java.io.StringBufferInputStream))
+  (:import clojure.lang.ExceptionInfo
+           java.io.StringBufferInputStream))
 
 (defn request
   [resource request-method & params]
@@ -622,69 +624,71 @@
       (is (= "ok" (str body))))))
 
 (deftest test-thread-dump-handler
-  (testing "thread-dump-handler:success-no-params"
-    (let [request {:request-method :get, :uri "/waiter-thread-dump"}
-          retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
-                                                   (is (= [] excluded-methods))
-                                                   (is (zero? stale-threshold-ms))
-                                                   {"thread-1-key" ["thread-1-content"]})
-          waiter-request?-fn (fn [_] true)
-          configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-          handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-          {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-      (is (= 200 status))
-      (is (= {"Content-Type" "application/json"} headers))
-      (is (= {"thread-1-key" ["thread-1-content"]} (json/read-str (str body))))))
-  (testing "thread-dump-handler:success-excluded-params"
-    (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "excluded-methods=foo,bar,baz"}
-          retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
-                                                   (is (= ["foo" "bar" "baz"] excluded-methods))
-                                                   (is (zero? stale-threshold-ms))
-                                                   {"thread-2-key" ["thread-2-content"]})
-          waiter-request?-fn (fn [_] true)
-          configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-          handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-          {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-      (is (= 200 status))
-      (is (= {"Content-Type" "application/json"} headers))
-      (is (= {"thread-2-key" ["thread-2-content"]} (json/read-str (str body))))))
-  (testing "thread-dump-handler:success-threshold-params"
-    (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "stale-threshold-ms=10"}
-          retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
-                                                   (is (= [] excluded-methods))
-                                                   (is (= 10 stale-threshold-ms))
-                                                   {"thread-3-key" ["thread-3-content"]})
-          waiter-request?-fn (fn [_] true)
-          configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-          handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-          {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-      (is (= 200 status))
-      (is (= {"Content-Type" "application/json"} headers))
-      (is (= {"thread-3-key" ["thread-3-content"]} (json/read-str (str body))))))
-  (testing "thread-dump-handler:failure-threshold-params"
-    (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "stale-threshold-ms=foo"}
-          retrieve-stale-thread-stack-trace-data (fn [_ _]
-                                                   (is false "Unexpected call!"))
-          waiter-request?-fn (fn [_] true)
-          configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-          handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-          {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-      (is (= 500 status))
-      (is (= {"Content-Type" "application/json"} headers))
-      (is (str/includes? (str body) "java.lang.NumberFormatException"))))
-  (testing "thread-dump-handler:success-both-params"
-    (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "excluded-methods=foo,bar,baz&stale-threshold-ms=10"}
-          retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
-                                                   (is (= ["foo" "bar" "baz"] excluded-methods))
-                                                   (is (= 10 stale-threshold-ms))
-                                                   {"thread-4-key" ["thread-4-content"]})
-          waiter-request?-fn (fn [_] true)
-          configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-          handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-          {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-      (is (= 200 status))
-      (is (= {"Content-Type" "application/json"} headers))
-      (is (= {"thread-4-key" ["thread-4-content"]} (json/read-str (str body)))))))
+  (let [process-request (fn [waiter-request?-fn handlers request]
+                          ((ring-handler-factory waiter-request?-fn handlers) request))]
+    (testing "thread-dump-handler:success-no-params"
+      (let [request {:request-method :get, :uri "/waiter-thread-dump"}
+            retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
+                                                     (is (= [] excluded-methods))
+                                                     (is (zero? stale-threshold-ms))
+                                                     {"thread-1-key" ["thread-1-content"]})
+            waiter-request?-fn (fn [_] true)
+            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
+            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
+            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
+        (is (= 200 status))
+        (is (= {"Content-Type" "application/json"} headers))
+        (is (= {"thread-1-key" ["thread-1-content"]} (json/read-str (str body))))))
+    (testing "thread-dump-handler:success-excluded-params"
+      (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "excluded-methods=foo,bar,baz"}
+            retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
+                                                     (is (= ["foo" "bar" "baz"] excluded-methods))
+                                                     (is (zero? stale-threshold-ms))
+                                                     {"thread-2-key" ["thread-2-content"]})
+            waiter-request?-fn (fn [_] true)
+            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
+            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
+            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
+        (is (= 200 status))
+        (is (= {"Content-Type" "application/json"} headers))
+        (is (= {"thread-2-key" ["thread-2-content"]} (json/read-str (str body))))))
+    (testing "thread-dump-handler:success-threshold-params"
+      (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "stale-threshold-ms=10"}
+            retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
+                                                     (is (= [] excluded-methods))
+                                                     (is (= 10 stale-threshold-ms))
+                                                     {"thread-3-key" ["thread-3-content"]})
+            waiter-request?-fn (fn [_] true)
+            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
+            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
+            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
+        (is (= 200 status))
+        (is (= {"Content-Type" "application/json"} headers))
+        (is (= {"thread-3-key" ["thread-3-content"]} (json/read-str (str body))))))
+    (testing "thread-dump-handler:failure-threshold-params"
+      (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "stale-threshold-ms=foo"}
+            retrieve-stale-thread-stack-trace-data (fn [_ _]
+                                                     (is false "Unexpected call!"))
+            waiter-request?-fn (fn [_] true)
+            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
+            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
+            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
+        (is (= 500 status))
+        (is (= {"Content-Type" "application/json"} headers))
+        (is (str/includes? (str body) "java.lang.NumberFormatException"))))
+    (testing "thread-dump-handler:success-both-params"
+      (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "excluded-methods=foo,bar,baz&stale-threshold-ms=10"}
+            retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
+                                                     (is (= ["foo" "bar" "baz"] excluded-methods))
+                                                     (is (= 10 stale-threshold-ms))
+                                                     {"thread-4-key" ["thread-4-content"]})
+            waiter-request?-fn (fn [_] true)
+            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
+            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
+            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
+        (is (= 200 status))
+        (is (= {"Content-Type" "application/json"} headers))
+        (is (= {"thread-4-key" ["thread-4-content"]} (json/read-str (str body))))))))
 
 (deftest test-leader-fn-factory
   (with-redefs [discovery/cluster-size (fn [discovery] (int discovery))]
@@ -787,7 +791,8 @@
                         (is (= request (select-keys in-request (keys request))))
                         response-map)
                       :handle-secure-request-fn ((:handle-secure-request-fn request-handlers)
-                                                  {:state {:authenticator (auth/one-user-authenticator {})
+                                                  {:routines {:authentication-method-wrapper-fn identity}
+                                                   :state {:authenticator (auth/one-user-authenticator {})
                                                            :cors-validator []
                                                            :passwords []}})}]
         (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
@@ -805,7 +810,8 @@
                         (is (= request (select-keys in-request (keys request))))
                         response-map)
                       :handle-secure-request-fn ((:handle-secure-request-fn request-handlers)
-                                                  {:state {:authenticator (auth/one-user-authenticator {})
+                                                  {:routines {:authentication-method-wrapper-fn identity}
+                                                   :state {:authenticator (auth/one-user-authenticator {})
                                                            :cors-validator []
                                                            :passwords []}})}]
         (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
@@ -1002,3 +1008,129 @@
                                                false)]
       (delegate-instance-kill-request-fn service-id)
       (is (= router-ids @make-kill-instance-peer-ids-atom)))))
+
+(deftest test-handle-authentication-wrapper-fn
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        configuration {:curator {:kv-store kv-store}
+                       :settings {:hostname "www.waiter-router.com"}}
+        handle-authentication-wrapper-fn ((:handle-authentication-wrapper-fn request-handlers) configuration)
+        handler-response (Object.)
+        execute-request (fn execute-request-fn [test-request]
+                          (let [request-handler-argument-atom (atom nil)
+                                test-request-handler (fn request-handler-fn [request]
+                                                       (reset! request-handler-argument-atom request)
+                                                       handler-response)
+                                test-response (handle-authentication-wrapper-fn test-request-handler test-request)]
+                            {:handled-request @request-handler-argument-atom
+                             :response test-response}))]
+
+    (kv/store kv-store "www.token-1.com" {"cpu" 1, "mem" 2048})
+    (kv/store kv-store "www.token-2.com" {"authentication" "standard", "cpu" 1, "mem" 2048})
+    (kv/store kv-store "www.token-3.com" {"authentication" "disabled", "cpu" 1, "mem" 2048})
+    (kv/store kv-store "a-named-token-A" {"cpu" 1, "mem" 2048})
+    (kv/store kv-store "a-named-token-B" {"authentication" "disabled", "cpu" 1, "mem" 2048})
+    (kv/store kv-store "a-named-token-C" {"authentication" "standard", "cpu" 1, "mem" 2048})
+
+    (testing "request-without-non-existing-hostname-token"
+      (let [test-request {:headers {"host" "www.host.com"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= test-request handled-request))
+        (is (= handler-response response))))
+
+    (testing "request-without-non-existing-hostname-token-with-on-the-fly-headers"
+      (let [test-request {:headers {"host" "www.host.com", "x-waiter-run-as-user" "test-user"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= test-request handled-request))
+        (is (= handler-response response))))
+
+    (testing "request-without-existing-non-auth-hostname-token"
+      (let [test-request {:headers {"host" "www.token-1.com"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= test-request handled-request))
+        (is (= handler-response response))))
+
+    (testing "request-without-existing-auth-disabled-hostname-token"
+      (let [test-request {:headers {"host" "www.token-3.com"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= (assoc test-request :skip-authentication true) handled-request))
+        (is (= handler-response response))))
+
+    (testing "request-without-existing-auth-disabled-hostname-token-with-on-the-fly-headers"
+      (let [test-request {:headers {"host" "www.token-3.com", "x-waiter-run-as-user" "test-user"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (nil? handled-request))
+        (is (= (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+                                         :status 400)
+               response))))
+
+    (testing "request-without-existing-non-auth-named-token"
+      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-A"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= test-request handled-request))
+        (is (= handler-response response))))
+
+    (testing "request-without-existing-non-auth-named-token-with-authentication-header"
+      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-A", "x-waiter-authentication" "disabled"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (nil? handled-request))
+        (is (= (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+                                         :status 400)
+               response))))
+
+    (testing "request-without-existing-auth-disabled-named-token"
+      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-B"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= (assoc test-request :skip-authentication true) handled-request))
+        (is (= handler-response response))))
+
+    (testing "request-without-existing-auth-disabled-named-token-with-authentication-header"
+      (let [test-request {:headers {"host" "www.service.com", "x-waiter-authentication" "disabled", "x-waiter-token" "a-named-token-B"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (nil? handled-request))
+        (is (= (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+                                         :status 400)
+               response))))
+
+    (testing "request-without-existing-auth-disabled-named-token-with-on-the-fly-headers"
+      (let [test-request {:headers {"host" "www.service.com", "x-waiter-run-as-user" "test-user", "x-waiter-token" "a-named-token-B"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (nil? handled-request))
+        (is (= (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+                                         :status 400)
+               response))))
+
+    (testing "request-without-existing-auth-default-named-token"
+      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-C"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= test-request handled-request))
+        (is (= handler-response response))))
+
+    (testing "request-without-existing-auth-default-named-token-with-authentication-header"
+      (let [test-request {:headers {"host" "www.service.com", "x-waiter-authentication" "disabled", "x-waiter-token" "a-named-token-C"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (nil? handled-request))
+        (is (= (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+                                         :status 400)
+               response))))
+
+    (testing "request-without-existing-auth-default-named-token-with-on-the-fly-headers"
+      (let [test-request {:headers {"host" "www.service.com", "x-waiter-run-as-user" "test-user", "x-waiter-token" "a-named-token-C"}}
+            {:keys [handled-request response]} (execute-request test-request)]
+        (is (= test-request handled-request))
+        (is (= handler-response response))))))
+
+(deftest test-authentication-method-wrapper-fn
+  (let [standard-handler (fn [_] {:source :standard-handler})]
+    (let [authenticator (reify auth/Authenticator
+                          (wrap-auth-handler [_ request-handler]
+                            (is (= standard-handler request-handler))
+                            (fn [_]
+                              {:source :spnego-handler})))
+          authenticate-request-handler ((:authentication-method-wrapper-fn routines) {:state {:authenticator authenticator}})
+          request-handler (authenticate-request-handler standard-handler)]
+
+      (testing "skip-authentication"
+        (is (= {:source :standard-handler} (request-handler {:skip-authentication true, :headers {}}))))
+
+      (testing "require-authentication"
+        (is (= {:source :spnego-handler} (request-handler {:headers {}})))))))

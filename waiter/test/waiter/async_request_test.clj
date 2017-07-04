@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -278,7 +278,7 @@
       (is (= "remote" @terminate-call-atom)))))
 
 (deftest test-post-process-async-request-response
-  (let [{:keys [host port] :as instance} {:host "www.example.com", :port 1234}
+  (let [{:keys [host port] :as instance} {:host "www.example.com", :port 1234, :protocol "proto"}
         router-id "my-router-id"
         service-id "test-service-id"
         metric-group "test-metric-group"
@@ -290,7 +290,7 @@
         location (str "/location/" request-id)
         response-headers (atom {})
         make-http-request-fn (fn [in-service-id status-endpoint in-auth-user request-method passthrough-headers body]
-                               (is (= "http://www.example.com:1234/location/request-2394613984619" status-endpoint))
+                               (is (= "proto://www.example.com:1234/location/request-2394613984619" status-endpoint))
                                (is (= service-id in-service-id))
                                (is (= auth-user in-auth-user))
                                (is (= :get request-method))

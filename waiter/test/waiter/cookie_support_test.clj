@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -13,7 +13,8 @@
             [clojure.data.codec.base64 :as b64]
             [clojure.test :refer :all]
             [taoensso.nippy :as nippy]
-            [waiter.cookie-support :refer :all]))
+            [waiter.cookie-support :refer :all])
+  (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-url-decode
   (is (= "testtest" (url-decode "testtest")))
@@ -51,17 +52,34 @@
 (deftest test-add-encoded-cookie
   (with-redefs [b64/encode (fn [^String data-string] (.getBytes data-string))
                 nippy/freeze (fn [input _] (str "data:" input))]
-    (is (= {:cookies {"user" {:value "data:john", :max-age 864000}}}
+    (is (= {:cookies {"user" {:value "data:john", :max-age 864000 :path "/"}}}
            (add-encoded-cookie {} [:cached "password"] "user" "john" 10)))
     (let [response-chan (async/promise-chan)]
       (async/>!! response-chan {})
-      (is (= {:cookies {"user" {:value "data:john", :max-age 864000}}}
+      (is (= {:cookies {"user" {:value "data:john", :max-age 864000 :path "/"}}}
              (async/<!! (add-encoded-cookie response-chan [:cached "password"] "user" "john" 10)))))))
 
 (deftest test-decode-cookie
   (with-redefs [b64/decode (fn [value-bytes] (String. ^bytes value-bytes "utf-8"))
                 nippy/thaw (fn [input _] (str "data:" input))]
     (is (= "data:john" (decode-cookie "john" [:cached "password"])))))
+
+(deftest test-decode-cookie-exception
+
+  (try
+    (nippy/thaw (.getBytes "some-string") {:password [:cached "password"] :v1-compatibility? false :compressor nil})
+    (is false "Exception not thrown")
+    (catch Exception e
+      (is (instance? ExceptionInfo e))
+      (is (get-in (ex-data e) [:opts :password]))))
+
+  (with-redefs [b64/decode (fn [value-bytes] value-bytes)]
+    (try
+      (decode-cookie "john" [:cached "password"])
+      (is false "Exception not thrown")
+      (catch Exception e
+        (is (instance? ExceptionInfo e))
+        (is (= "***" (get-in (ex-data e) [:opts :password])))))))
 
 (deftest test-decode-cookie-cached
   (let [first-key (str "user1-" (rand-int 100000))

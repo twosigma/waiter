@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -18,7 +18,8 @@
             [ring.middleware.cookies :as cookies]
             [taoensso.nippy :as nippy]
             [waiter.utils :as utils])
-  (:import java.nio.charset.StandardCharsets
+  (:import clojure.lang.ExceptionInfo
+           java.nio.charset.StandardCharsets
            org.eclipse.jetty.util.UrlEncoded))
 
 (defn url-decode
@@ -59,12 +60,17 @@
           correct-cookies-as-vector
           cookies/cookies-response))))
 
+(defn encode-cookie
+  "Encodes the cookie value."
+  [value password]
+  (let [value-bytes (b64/encode (nippy/freeze value {:password password :compressor nil}))]
+    (String. ^bytes value-bytes "utf-8")))
+
 (defn add-encoded-cookie
   "Inserts the provided name-value pair as a Cookie in the :cookies map of the response."
   [response password name value age-in-days]
   (letfn [(add-cookie-into-response [response]
-            (let [value-bytes (b64/encode (nippy/freeze value {:password password :compressor nil}))
-                  cookie-value {:value (String. ^bytes value-bytes "utf-8"), :max-age (-> age-in-days t/days t/in-seconds)}]
+            (let [cookie-value {:value (encode-cookie value password), :max-age (-> age-in-days t/days t/in-seconds), :path "/"}]
               (assoc-in response [:cookies name] cookie-value)))]
     (if (map? response)
       (add-cookie-into-response response)
@@ -73,10 +79,17 @@
 (defn decode-cookie
   "Decode Waiter encoded cookie."
   [^String waiter-cookie password]
-  (-> waiter-cookie
-      (.getBytes)
-      (b64/decode)
-      (nippy/thaw {:password password :v1-compatibility? false :compressor nil})))
+  (try
+    (-> waiter-cookie
+        (.getBytes)
+        (b64/decode)
+        (nippy/thaw {:password password :v1-compatibility? false :compressor nil}))
+    (catch ExceptionInfo e
+      (log/error "Error in decoding cookie" (.getMessage e))
+      ;; remove password from exception throw by nippy
+      (throw (ex-info (.getMessage e)
+                      (-> (ex-data e)
+                          (update-in [:opts :password] (fn [password] (when password "***")))))))))
 
 (let [cookie-cache (-> {}
                        (cache/ttl-cache-factory :ttl (-> 300 t/seconds t/in-millis))
