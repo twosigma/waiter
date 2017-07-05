@@ -22,9 +22,7 @@ KITCHEN_DIR=${WAITER_DIR}/../kitchen
 JAR=${KITCHEN_DIR}/target/uberjar/kitchen-0.1.0-SNAPSHOT-standalone.jar
 if [ ! -f ${JAR} ]; then
     echo "The kitchen jar file was not found! Attempting to build it now."
-    pushd ${KITCHEN_DIR}
-    lein uberjar
-    popd
+    ${KITCHEN_DIR}/bin/build-uberjar.sh
 fi
 
 # Start waiter
