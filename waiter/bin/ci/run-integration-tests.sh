@@ -34,7 +34,7 @@ WAITER_PORT=9091
 ${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
+WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} APACHE_BENCH_DIR=$(dirname $(which ab)) ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
 
 # If there were failures, dump the logs
 if [ "$test_failures" = true ]; then

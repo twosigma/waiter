@@ -3,6 +3,10 @@ jdk:
 - oraclejdk8
 services:
   - docker
+addons:
+  apt:
+    packages:
+    - apache2-utils
 branches:
   only:
   - master
@@ -18,6 +22,7 @@ env:
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-fast'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-slow'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test explicit'
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh test perf' WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES=30
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-fast'
 matrix:
     fast_finish: true
