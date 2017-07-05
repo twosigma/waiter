@@ -290,7 +290,9 @@
 
 (defn- request-info-handler
   "Returns the info received in the request."
-  [{:keys [headers] :as request}]
+  [{:keys [body headers] :as request}]
+  (if (and (not (nil? body)) (instance? InputStream body))
+    (slurp body))
   {:status 200
    :headers {"Content-Type" "application/json"}
    :body (json/write-str {:headers headers})})
