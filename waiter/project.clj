@@ -26,7 +26,7 @@
   :dependencies [[bidi "2.0.16"
                   :exclusions [prismatic/schema ring/ring-core]]
                  ^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
-                 [cc.qbits/jet "0.7.10-20170524_203939-gd23596c"]
+                 [cc.qbits/jet "0.7.10-20170705_021440-g5a6aaab"]
                  ^{:voom {:repo "https://github.com/twosigma/clj-http.git" :branch "waiter-patch"}}
                  [clj-http "1.0.2-20170524_085846-g161c42f"
                   :exclusions [commons-io org.clojure/tools.reader potemkin slingshot]]
