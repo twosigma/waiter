@@ -1,3 +1,13 @@
+;;
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
+;;       All Rights Reserved
+;;
+;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+;;       Two Sigma Investments, LP.
+;;
+;;       The copyright notice above does not evidence any
+;;       actual or intended publication of such source code.
+;;
 (ns kitchen.core
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
@@ -10,6 +20,7 @@
             [kitchen.utils :as utils]
             [plumbing.core :as pc]
             [qbits.jet.server :as server]
+            [ring.middleware.basic-authentication :as basic-authentication]
             [ring.middleware.cookies :as cookies]
             [ring.middleware.params :as params])
   (:gen-class)
@@ -290,12 +301,13 @@
 
 (defn- request-info-handler
   "Returns the info received in the request."
-  [{:keys [body headers] :as request}]
+  [{:keys [body headers request-method] :as request}]
   (when (instance? InputStream body)
     (slurp body))
   {:status 200
    :headers {"Content-Type" "application/json"}
-   :body (json/write-str {:headers headers})})
+   :body (json/write-str {:headers headers
+                          :request-method request-method})})
 
 (defn- unchunked-handler
   "Handles requests that may potentially fail, uses unchunked response."
@@ -452,28 +464,70 @@
                 (async/>! out in-data))
               (recur))))))))
 
+(defn basic-auth-middleware [username password handler]
+  (fn [{:keys [uri] :as req}]
+    (cond
+      (not (and username password)) (handler req)
+      (= "/status" uri) (handler req)
+      :else ((basic-authentication/wrap-basic-authentication
+               handler
+               (fn [u p]
+                 (and (= username u)
+                      (= password p))))
+              req))))
+
 (defn -main
   [& args]
-  (let [cli-options [["-p" "--port PORT" "Port number"
+  (log/info "command line arguments:" (vec args))
+  (let [cli-options [["-h" "--help"]
+                     ["-p" "--port PORT" "Port number"
                       :parse-fn #(Integer/parseInt %)
-                      :default 8080
                       :validate [#(< 0 % 0x10000) "Must be between 0 and 65536"]]
+                     [nil "--ssl" "Launch server in SSL mode"]
                      [nil "--start-up-sleep-ms MS" "Milliseconds to sleep before starting Jetty"
                       :parse-fn #(Integer/parseInt %)
-                      :default 0]
-                     ["-h" "--help"]]
+                      :default 0]]
         {:keys [options summary]} (cli/parse-opts args cli-options)
-        {:keys [port start-up-sleep-ms help]} options]
+        {:keys [help port ssl start-up-sleep-ms]} (cond-> options
+                                                          (-> options :port nil?) (assoc :port (if (:ssl options) 8443 8080)))
+        username (System/getenv "WAITER_USERNAME")
+        password (System/getenv "WAITER_PASSWORD")
+        keystore (System/getenv "KEYSTORE")
+        keystore-password (System/getenv "KEYSTORE_PASSWORD")
+        keystore-type (System/getenv "KEYSTORE_TYPE")]
     (try
       (if help
         (println summary)
         (do
-          (log/info "kitchen running on port" port)
-          (Thread/sleep start-up-sleep-ms)
-          (server/run-jetty {:ring-handler (params/wrap-params http-handler)
-                             :websocket-handler websocket-handler
-                             :port port
-                             :request-header-size 32768})))
+          (when ssl
+            (when (str/blank? keystore)
+              (throw (IllegalStateException. "Keystore (in environment variable KEYSTORE) is required when SSL is enabled")))
+            (when (str/blank? keystore-password)
+              (throw (IllegalStateException. "Keystore password (in environment variable KEYSTORE_PASSWORD) is required when SSL is enabled")))
+            (when (str/blank? keystore-type)
+              (throw (IllegalStateException. "Keystore type (in environment variable KEYSTORE_TYPE) is required when SSL is enabled")))
+            (log/info "SSL config:" {:keystore keystore, :keystore-password "***", :keystore-type keystore-type}))
+          (log/info "kitchen running on port" port (str (when ssl "in SSL mode")))
+          (when (pos? start-up-sleep-ms)
+            (log/info "sleeping for" start-up-sleep-ms "ms before starting server")
+            (Thread/sleep start-up-sleep-ms))
+          (let [partial-server-options {:ring-handler (basic-auth-middleware username password (params/wrap-params http-handler))
+                                        :request-header-size 32768
+                                        :websocket-handler websocket-handler}
+                server-options (if ssl
+                                 (assoc partial-server-options
+                                   :key-password keystore-password
+                                   :keystore keystore
+                                   :keystore-type keystore-type
+                                   :ssl? true
+                                   :ssl-port port
+                                   ;; duplicate key store values for the trust store
+                                   :trust-password keystore-password
+                                   :truststore keystore
+                                   :truststore-type keystore-type)
+                                 (assoc partial-server-options
+                                   :port port))]
+            (server/run-jetty server-options))))
       (shutdown-agents)
       (catch Exception e
         (log/fatal e "Encountered error starting kitchen with" options)
