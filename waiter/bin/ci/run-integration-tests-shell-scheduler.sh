@@ -9,7 +9,7 @@
 #
 # Runs the Waiter integration tests using the (local) shell scheduler, and dumps log files if the tests fail.
 
-set -v
+set -ev
 
 TEST_COMMAND=${1:-parallel-test}
 TEST_SELECTOR=${2:-integration}
@@ -32,13 +32,11 @@ WAITER_PORT=9091
 ${WAITER_DIR}/bin/run-using-shell-scheduler.sh ${WAITER_PORT} &
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}
-TESTS_EXIT_CODE=$?
+WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
 
 # If there were failures, dump the logs
-if [ ${TESTS_EXIT_CODE} -ne 0 ]; then
+if [ "$test_failures" = true ]; then
     echo "integration tests failed -- dumping logs"
     tail -n +1 -- log/*.log
+    exit 1
 fi
-
-exit ${TESTS_EXIT_CODE}
