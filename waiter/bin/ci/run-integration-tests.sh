@@ -19,6 +19,7 @@ WAITER_DIR=${DIR}/../..
 KITCHEN_DIR=${WAITER_DIR}/../kitchen
 
 # Build mesos agent with kitchen backed in
+export PATH=${KITCHEN_DIR}/..:$PATH
 ${KITCHEN_DIR}/bin/build-docker-image.sh
 
 # Start minimesos
