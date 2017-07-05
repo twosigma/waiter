@@ -263,7 +263,10 @@
       (is (= (encrypt {:message "Missing source router!", :data {}}) (async/<!! (:out ws-request))))
       (is (nil? (async/<!! (:out ws-request)))))))
 
-(deftest test-incoming-router-metrics-handler-valid-handshake
+; Marked explicit due to:
+; - https://github.com/twosigma/waiter/issues/45
+; - https://travis-ci.org/twosigma/waiter/jobs/250454964#L8663-L8698
+(deftest ^:explicit test-incoming-router-metrics-handler-valid-handshake
   (testing "incoming-router-metrics-handler:valid-handshake"
     (let [decrypt-call-counter (atom 0)
           encrypt (fn [data] {:data data})
