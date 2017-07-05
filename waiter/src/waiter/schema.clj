@@ -45,6 +45,10 @@
                                 (instance? Pattern (first %))
                                 (string? (second %))))])
 
+(def valid-number-of-ports
+  "Validator for number of ports."
+  (s/pred #(<= 1 % 10) 'between-1-and-10))
+
 (def valid-zookeeper-connect-config
   "Validator for the Zookeeper connection configuration. We allow either
   a non-empty string (representing a connection string), or the keyword

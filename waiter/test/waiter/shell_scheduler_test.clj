@@ -32,7 +32,7 @@
 (defn- create-test-service
   "Creates a new (test) service with command `ls` and the given service-id"
   [scheduler service-id]
-  (let [descriptor {:service-description {"cmd" "ls"}
+  (let [descriptor {:service-description {"cmd" "ls", "ports" 1}
                     :service-id service-id}]
     (scheduler/create-app-if-new scheduler (constantly "password") descriptor)))
 
@@ -49,10 +49,25 @@
   (testing "Launching an instance"
     (testing "should throw if cmd is nil"
       (is (thrown-with-msg? ExceptionInfo #"The command to run was not supplied"
-                            (launch-instance "foo" "." nil {} nil nil))))))
+                            (launch-instance "foo" (work-dir) nil {} 1 nil nil))))
+
+    (testing "should throw if enough ports aren't available"
+      (is (thrown-with-msg? ExceptionInfo #"Unable to reserve 4 ports"
+                            (launch-instance "bar" (work-dir) "echo 1" {} 4 (atom {}) [5100 5102]))))
+
+    (testing "with multiple ports"
+      (let [num-ports 8
+            port-range-start 5100
+            port-range [port-range-start (+ port-range-start 100)]]
+        (with-redefs [launch-process (fn [_ _ command environment]
+                                       (is (= "dummy-command" command))
+                                       (is (every? #(contains? environment (str "PORT" %)) (range num-ports))))]
+          (let [{:keys [extra-ports port]} (launch-instance "baz" (work-dir) "dummy-command" {} num-ports (atom {}) port-range)]
+            (is (= port-range-start port))
+            (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))))
 
 (deftest test-directory-content
-  (let [id->service (create-service {} "foo" {"cmd" "echo Hello, World!"} (constantly "password")
+  (let [id->service (create-service {} "foo" {"cmd" "echo Hello, World!", "ports" 1} (constantly "password")
                                     (work-dir) (atom {}) [0 0] (promise))
         service-entry (get id->service "foo")
         instance-id (-> service-entry :id->instance keys first)
@@ -195,9 +210,26 @@
 (deftest test-kill-process
   (testing "Killing a process"
     (testing "should handle exceptions"
-      (let [instance (launch-instance "foo" (work-dir) "ls" {} (atom {}) [0 0])]
+      (let [instance (launch-instance "foo" (work-dir) "ls" {} 1 (atom {}) [0 0])]
         (with-redefs [t/plus (fn [_ _] (throw (ex-info "ERROR!" {})))]
-          (kill-process! instance (atom {}) 0))))))
+          (kill-process! instance (atom {}) 0))))
+
+    (testing "should release ports"
+      (let [port-reservation-atom (atom {})
+            num-ports 5
+            port-range-start 2000
+            instance (launch-instance "bar" (work-dir) "ls" {} num-ports port-reservation-atom [port-range-start 3000])]
+        (is (= num-ports (count @port-reservation-atom)))
+        (is (every? #(= {:state :in-use, :expiry-time nil}
+                        (get @port-reservation-atom %))
+                    (range port-range-start (+ port-range-start num-ports))))
+        (let [current-time (t/now)]
+          (with-redefs [t/now (fn [] current-time)]
+            (kill-process! instance port-reservation-atom 0)
+            (is (= num-ports (count @port-reservation-atom)))
+            (is (every? #(= {:state :in-grace-period-until-expiry, :expiry-time current-time}
+                            (get @port-reservation-atom %))
+                        (range port-range-start (+ port-range-start num-ports))))))))))
 
 (deftest test-should-not-health-check-killed-instances
   (let [scheduler (shell-scheduler {:health-check-interval-ms 1
@@ -261,7 +293,7 @@
                                 "HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil}
-                  :service-description {"cmd" "ls"}}
+                  :service-description {"cmd" "ls", "ports" 1}}
                  {:id "bar"
                   :instances 1
                   :task-count 1
@@ -271,7 +303,7 @@
                                 "HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil}
-                  :service-description {"cmd" "ls"}}
+                  :service-description {"cmd" "ls", "ports" 1}}
                  {:id "baz"
                   :instances 1
                   :task-count 1
@@ -281,7 +313,7 @@
                                 "HOME" (work-dir)
                                 "LOGNAME" nil
                                 "USER" nil}
-                  :service-description {"cmd" "ls"}}])
+                  :service-description {"cmd" "ls", "ports" 1}}])
            (scheduler/get-apps scheduler)))))
 
 (deftest test-service-id->state
@@ -295,7 +327,7 @@
         started-at (t/now)
         instance-dir (str (work-dir) "/foo/foo." instance-id)
         port 10000
-        expected-state {:service (scheduler/map->Service
+        expected-state {:service (scheduler/make-Service
                                    {:id "foo"
                                     :instances 1
                                     :task-count 1
@@ -305,9 +337,9 @@
                                                   "HOME" (work-dir)
                                                   "LOGNAME" nil
                                                   "USER" nil}
-                                    :service-description {"cmd" "ls"}})
+                                    :service-description {"cmd" "ls", "ports" 1}})
                         :id->instance {"foo.bar"
-                                       (scheduler/map->ServiceInstance
+                                       (scheduler/make-ServiceInstance
                                          {:id "foo.bar"
                                           :service-id "foo"
                                           :started-at (utils/date-to-str started-at (f/formatters :date-time))
@@ -342,3 +374,22 @@
     (is (port-reserved? port->reservation-atom port))
     (release-port! port->reservation-atom port port-grace-period-ms)
     (is (false? (port-reserved? port->reservation-atom port)))))
+
+(deftest test-reserve-ports!
+
+  (testing "successfully reserve all ports"
+    (let [port->reservation-atom (atom {})
+          port-range [10000 11000]
+          reserved-ports (reserve-ports! 20 port->reservation-atom port-range)]
+      (is (= (range 10000 10020) reserved-ports))))
+
+  (testing "unable to reserve all ports"
+    (let [port->reservation-atom (atom {})
+          port-range [10000 10010]]
+      (try
+        (reserve-ports! 20 port->reservation-atom port-range)
+        (is false "reserve-ports! did not throw an exception!")
+        (catch Exception ex
+          (let [ex-data (ex-data ex)]
+            (is (= {:num-reserved-ports 11} ex-data))
+            (is (= "Unable to reserve 20 ports" (.getMessage ex)))))))))

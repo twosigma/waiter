@@ -40,10 +40,6 @@
         map-assoc-health-check-func (fn [x] (map #(assoc % :health-check-url health-check-url) x))]
     (update-in app-info [:app :tasks] map-assoc-health-check-func)))
 
-(defn- task->service
-  [task]
-  (str "http://" (:host task) ":" (first (:ports task))))
-
 ;;; Service instance blacklisting, work-stealing, access and creation
 
 ;; Attempt to blacklist instances

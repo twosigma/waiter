@@ -460,10 +460,10 @@
                 curator))
    :curator-base-init (pc/fnk [curator [:settings [:zookeeper base-path]]]
                         (curator/create-path curator base-path :create-parent-zknodes? true))
-   :discovery (pc/fnk [[:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] port]
+   :discovery (pc/fnk [[:settings [:cluster-config name] [:zookeeper base-path discovery-relative-path] host port]
                        [:state router-id]
                        curator]
-                (discovery/register router-id curator name (str base-path "/" discovery-relative-path) {:port port}))
+                (discovery/register router-id curator name (str base-path "/" discovery-relative-path) {:host host :port port}))
    :gc-base-path (pc/fnk [[:settings [:zookeeper base-path gc-relative-path]]]
                    (str base-path "/" gc-relative-path))
    :kv-store (pc/fnk [[:settings [:zookeeper base-path] kv-config]

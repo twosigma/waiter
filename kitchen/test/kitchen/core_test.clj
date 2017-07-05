@@ -1,3 +1,13 @@
+;;
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
+;;       All Rights Reserved
+;;
+;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+;;       Two Sigma Investments, LP.
+;;
+;;       The copyright notice above does not evidence any
+;;       actual or intended publication of such source code.
+;;
 (ns kitchen.core-test
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
@@ -5,7 +15,8 @@
             [kitchen.core :refer :all])
   (:import (clojure.lang ExceptionInfo)
            (java.nio ByteBuffer)
-           (java.util Arrays)))
+           (java.util Arrays)
+           (org.apache.commons.codec.binary Base64)))
 
 (deftest default-handler-test
   (testing "Default handler"
@@ -193,3 +204,23 @@
 
     (async/close! in)
     (async/close! out)))
+
+(deftest basic-auth-test
+  (testing "no username and password"
+    (let [handler (basic-auth-middleware nil nil (constantly {:status 200}))]
+      (is (= {:status 200} (handler {:uri "/handler"})))))
+  (let [handler (basic-auth-middleware "waiter" "test" (constantly {:status 200}))
+        auth (str "Basic " (String. (Base64/encodeBase64 (.getBytes "waiter:test"))))
+        bad-auth (str "Basic " (String. (Base64/encodeBase64 (.getBytes "waiter:badtest"))))]
+
+    (testing "Do not authenticate /status"
+      (is (= {:status 200} (handler {:uri "/status"}))))
+
+    (testing "Return 401 on missing auth"
+      (is (= 401 (:status (handler {:uri "/handler", :headers {}})))))
+
+    (testing "Return 401 on bad authentication"
+      (is (= 401 (:status (handler {:uri "/handler", :headers {"authorization" bad-auth}})))))
+
+    (testing "Successful authentication"
+      (is (= {:status 200} (handler {:uri "/handler", :headers {"authorization" auth}}))))))

@@ -21,12 +21,9 @@
             [qbits.jet.client.http :as http]
             [schema.core :as s]
             [waiter.scheduler :as scheduler]
-            [waiter.schema :as schema]
-            [waiter.service-description :as sd]
             [waiter.utils :as utils])
   (:import java.io.File
            java.lang.UNIXProcess
-           java.net.ServerSocket
            java.util.ArrayList))
 
 (defn pid
@@ -92,12 +89,15 @@
 
 (defn kill-process!
   "Triggers killing of process and any children processes it spawned"
-  [{:keys [:shell-scheduler/process :shell-scheduler/pid port] :as instance} port->reservation-atom port-grace-period-ms]
+  [{:keys [:shell-scheduler/process :shell-scheduler/pid extra-ports port] :as instance}
+   port->reservation-atom port-grace-period-ms]
   (try
     (log/info "killing process:" instance)
     (.destroyForcibly process)
     (sh/sh "pkill" "-9" "-s" (str pid))
     (release-port! port->reservation-atom port port-grace-period-ms)
+    (doseq [port extra-ports]
+      (release-port! port->reservation-atom port port-grace-period-ms))
     (catch Throwable e
       (log/error e "error attempting to kill process:" instance))))
 
@@ -116,31 +116,53 @@
   (and (not (port-reserved? port->reservation-atom port)) (utils/port-available? port)))
 
 (defn reserve-port!
-  "Returns an available port on the host, from the (optionally) provided range"
+  "Returns an available port on the host, from the provided range.
+   If no port is available, returns nil."
   [port->reservation-atom port-range]
   (let [pool (range (first port-range) (inc (second port-range)))
         port (first (filter #(port-can-be-used? port->reservation-atom %) pool))]
-    (when-not port
-      (throw (ex-info "All ports in the range are already in use" {:port-range port-range})))
-    (swap! port->reservation-atom assoc port {:state :in-use
-                                              :expiry-time nil})
-    port))
+    (when port
+      (swap! port->reservation-atom assoc port {:state :in-use, :expiry-time nil})
+      port)))
+
+(defn reserve-ports!
+  "Reserves num-ports available ports on the host, from the provided range.
+   Throws an exception if num-ports ports are not available."
+  [num-ports port->reservation-atom port-range]
+  (let [reserved-ports (reduce (fn inner-reserve-ports! [ports _]
+                                 (if-let [port (reserve-port! port->reservation-atom port-range)]
+                                   (conj ports port)
+                                   (reduced ports)))
+                               []
+                               (range num-ports))]
+    (if-not (= num-ports (count reserved-ports))
+      (do
+        (doall (map #(release-port! port->reservation-atom % 0) reserved-ports))
+        (throw (ex-info (str "Unable to reserve " num-ports " ports")
+                        {:num-reserved-ports (count reserved-ports)})))
+      reserved-ports)))
 
 (defn launch-instance
   "Launches a new process for the given service-id"
-  [service-id working-dir-base-path command environment port->reservation-atom port-range]
+  [service-id working-dir-base-path command environment num-ports port->reservation-atom port-range]
   (when-not command
     (throw (ex-info "The command to run was not supplied" {:service-id service-id})))
-  (let [port (reserve-port! port->reservation-atom port-range)
+  (let [reserved-ports (reserve-ports! num-ports port->reservation-atom port-range)
+        process-environment (into environment
+                                  (map (fn build-port-environment [index port]
+                                         [(str "PORT" index) (str port)])
+                                       (range 0 (-> reserved-ports count inc))
+                                       reserved-ports))
         {:keys [instance-id process started-at working-directory]}
-        (launch-process service-id working-dir-base-path command (assoc environment "PORT0" (str port)))]
+        (launch-process service-id working-dir-base-path command process-environment)]
     (scheduler/make-ServiceInstance
       {:id instance-id
        :service-id service-id
        :started-at started-at
        :healthy? nil
        :host "localhost"
-       :port port
+       :port (-> reserved-ports first)
+       :extra-ports (-> reserved-ports rest vec)
        :log-directory working-directory
        :shell-scheduler/process process
        :shell-scheduler/working-directory working-directory
@@ -149,10 +171,10 @@
 
 (defn launch-service
   "Creates a new service and launches a single new instance for this service"
-  [service-id {:strs [cmd] :as service-description} service-id->password-fn
+  [service-id {:strs [cmd ports] :as service-description} service-id->password-fn
    working-dir-base-path port->reservation-atom port-range]
   (let [environment (scheduler/environment service-id service-description service-id->password-fn working-dir-base-path)
-        instance (launch-instance service-id working-dir-base-path cmd environment port->reservation-atom port-range)
+        instance (launch-instance service-id working-dir-base-path cmd environment ports port->reservation-atom port-range)
         service (scheduler/make-Service {:id service-id
                                          :instances 1
                                          :environment environment
@@ -283,11 +305,11 @@
       (let [{:keys [id->instance service] :as service-entry} (get id->service service-id)
             {:keys [environment service-description]} service
             work-directory (get environment "HOME")
-            cmd (get service-description "cmd")
+            {:strs [cmd ports]} service-description
             current-instances (->> id->instance vals (filter active?) count)
             to-launch (- scale-to-instances current-instances)
             launch-new
-            #(let [instance (launch-instance service-id work-directory cmd environment port->reservation-atom port-range)]
+            #(let [instance (launch-instance service-id work-directory cmd environment ports port->reservation-atom port-range)]
                [(:id instance) instance])]
         (if (pos? to-launch)
           (do

@@ -14,6 +14,7 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [clojure.tools.logging :as log]
             [qbits.jet.client.websocket :as ws]
             [waiter.async-utils :as au]
             [waiter.metrics :as metrics]
@@ -262,7 +263,10 @@
       (is (= (encrypt {:message "Missing source router!", :data {}}) (async/<!! (:out ws-request))))
       (is (nil? (async/<!! (:out ws-request)))))))
 
-(deftest test-incoming-router-metrics-handler-valid-handshake
+; Marked explicit due to:
+; - https://github.com/twosigma/waiter/issues/45
+; - https://travis-ci.org/twosigma/waiter/jobs/250454964#L8663-L8698
+(deftest ^:explicit test-incoming-router-metrics-handler-valid-handshake
   (testing "incoming-router-metrics-handler:valid-handshake"
     (let [decrypt-call-counter (atom 0)
           encrypt (fn [data] {:data data})
@@ -280,6 +284,7 @@
       (incoming-router-metrics-handler router-metrics-agent 10 encrypt decrypt ws-request)
       (let [release-chan (async/chan 1)]
         (async/go-loop [iteration 0]
+          (log/debug "processing iteration" iteration)
           (let [raw-data (cond-> {:router-metrics {"s1" {:iteration iteration}, "s2" {:iteration iteration}},
                                   :source-router-id source-router-id,
                                   :time (str "time-" iteration)}
@@ -288,10 +293,11 @@
           (when (< iteration iteration-limit)
             (recur (inc iteration))))
         (async/<!! release-chan))
-      (test-helpers/wait-for
-        #(let [out-router-metrics-state @router-metrics-agent]
-           (= (str "time-" iteration-limit) (get-in out-router-metrics-state [:last-update-times source-router-id])))
-        :interval 1000, :unit-multiplier 1)
+      (is (test-helpers/wait-for
+            #(let [out-router-metrics-state @router-metrics-agent]
+               (log/debug "router-metrics-state:" out-router-metrics-state)
+               (= (str "time-" iteration-limit) (get-in out-router-metrics-state [:last-update-times source-router-id])))
+            :interval 1000, :unit-multiplier 1))
       (let [query-agent-state (fn [agent-state response-chan] (async/>!! response-chan agent-state) agent-state)
             response-chan (async/promise-chan)
             _ (send router-metrics-agent query-agent-state response-chan)

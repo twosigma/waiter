@@ -60,6 +60,7 @@
                                          #(< (count %) 100))
    (s/optional-key "name") schema/non-empty-string
    (s/optional-key "permitted-user") schema/non-empty-string
+   (s/optional-key "ports") schema/valid-number-of-ports
    (s/optional-key "metric-group") schema/valid-metric-group
    ; start-up related
    (s/optional-key "health-check-url") schema/non-empty-string
@@ -91,7 +92,7 @@
 (def ^:const service-description-keys
   (set/union service-override-keys
              #{"cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata" "metric-group" "name"
-               "permitted-user" "run-as-user" "version"}))
+               "permitted-user" "ports" "run-as-user" "version"}))
 
 ; keys allowed in a service description for on-the-fly requests
 (def ^:const on-the-fly-service-description-keys (set/union service-description-keys #{"token"}))

@@ -7,14 +7,17 @@
 
  ; ---------- Network ----------
 
+ ;; Set the bind address to a specific IP:
+ :host "127.0.0.1"
+
  ;; Set the port:
  :port #config/env-int "WAITER_PORT"
 
  ; ---------- Security ----------
 
- :authenticator-config {:anonymous {
-                                    ;; The user account used to launch services:
-                                    :launch-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
+ :authenticator-config {:kind :one-user
+                        :one-user {;; The user account used to launch services:
+                                   :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
 
  ; ---------- Scheduling ----------
 

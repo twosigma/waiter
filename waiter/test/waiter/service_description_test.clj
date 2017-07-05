@@ -39,7 +39,27 @@
                                                  "health-check-url" "http://www.example.com/test/status"
                                                  "permitted-user" "testuser2"
                                                  "disk" 1
-                                                 "ports" [8080]})))
+                                                 "ports" 1})))
+  (is (nil? (s/check service-description-schema {"cpus" 1
+                                                 "mem" 1
+                                                 "cmd" "test command"
+                                                 "version" "v123"
+                                                 "run-as-user" "test-user"
+                                                 "name" "testname123"
+                                                 "health-check-url" "http://www.example.com/test/status"
+                                                 "permitted-user" "testuser2"
+                                                 "disk" 1
+                                                 "ports" 5})))
+  (is (not (nil? (s/check service-description-schema {"cpus" 1
+                                                      "mem" 1
+                                                      "cmd" "test command"
+                                                      "version" "v123"
+                                                      "run-as-user" "test-user"
+                                                      "name" "testname123"
+                                                      "health-check-url" "http://www.example.com/test/status"
+                                                      "permitted-user" "testuser2"
+                                                      "disk" 1
+                                                      "ports" 11}))))
   (is (not (nil? (s/check service-description-schema {"mem" 1
                                                       "cmd" "test command"
                                                       "version" "v123"

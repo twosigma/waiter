@@ -5,6 +5,9 @@
 
  ; ---------- Network ----------
 
+ ;; Set the bind address to a specific IP:
+ :host "127.0.0.1"
+
  ;; Set the port:
  :port #config/env-int "WAITER_PORT"
 

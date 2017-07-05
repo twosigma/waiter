@@ -339,7 +339,9 @@
     (walk/keywordize-keys state-json)))
 
 (defn router-state [waiter-url & {:keys [cookies] :or {cookies {}}}]
-  (json/read-str (:body (make-request waiter-url "/state" :verbose true :cookies cookies))))
+  (let [state-body (:body (make-request waiter-url "/state" :verbose true :cookies cookies))]
+    (log/debug "router state:" state-body)
+    (json/read-str state-body)))
 
 (defn routers
   [waiter-url]
