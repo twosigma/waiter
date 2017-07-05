@@ -301,7 +301,9 @@
 
 (defn- request-info-handler
   "Returns the info received in the request."
-  [{:keys [headers request-method]}]
+  [{:keys [body headers request-method] :as request}]
+  (when (instance? InputStream body)
+    (slurp body))
   {:status 200
    :headers {"Content-Type" "application/json"}
    :body (json/write-str {:headers headers
