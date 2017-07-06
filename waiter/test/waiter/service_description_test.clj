@@ -641,7 +641,7 @@
              (service-description {:defaults {"health-check-url" "/ping"}
                                    :tokens {"cmd" "token-cmd"}}))))
 
-    (testing "only token from header"
+    (testing "only token from header without permitted-user"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
               "permitted-user" "current-request-user"
@@ -649,6 +649,30 @@
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
                                    :tokens {"cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
+
+    (testing "only token from header with permitted-user"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "token-user"
+              "run-as-user" "token-user"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :tokens {"cmd" "token-cmd"
+                                            "permitted-user" "token-user"
+                                            "run-as-user" "token-user"}}
+                                  :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
+
+    (testing "token and run-as-user from header with permitted-user"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "current-request-user"
+              "run-as-user" "on-the-fly-ru"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :headers {"run-as-user" "on-the-fly-ru"}
+                                   :tokens {"cmd" "token-cmd"
+                                            "permitted-user" "token-user"
+                                            "run-as-user" "token-user"}}
+                                  :waiter-headers {"x-waiter-token" "value-does-not-matter"
+                                                   "x-waiter-run-as-user" "on-the-fly-ru"}))))
 
     (testing "only token from host with defaults missing permitted user"
       (is (= {"cmd" "token-cmd"
@@ -787,19 +811,21 @@
     (testing "run as user from on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
-              "permitted-user" "bob"
+              "permitted-user" "current-request-user"
               "run-as-user" "on-the-fly-ru"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
-                                   :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}))))
+                                   :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}
+                                  :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd", "x-waiter-run-as-user" "on-the-fly-ru"}))))
 
     (testing "run as user intersecting"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
-              "permitted-user" "bob"
+              "permitted-user" "current-request-user"
               "run-as-user" "on-the-fly-ru"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
                                    :tokens {"run-as-user" "token-ru"},
-                                   :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}))))
+                                   :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}
+                                  :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd", "x-waiter-run-as-user" "on-the-fly-ru"}))))
 
     (testing "run as user provided from on-the-fly header with hostname token"
       (is (= {"cmd" "token-cmd"
@@ -853,7 +879,7 @@
     (testing "run as user star from on-the-fly headers with permitted-user"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
-              "permitted-user" "current-request-user"
+              "permitted-user" "alice"
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
                                    :tokens {"run-as-user" "token-ru"},
@@ -861,6 +887,18 @@
                                   :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd"
                                                    "x-waiter-permitted-user" "alice"
                                                    "x-waiter-run-as-user" "*"}))))
+
+    (testing "run as user in headers with permitted-user * in tokens"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "current-request-user"
+              "run-as-user" "header-user"}
+             (service-description {:defaults {"health-check-url" "/ping"}
+                                   :tokens {"run-as-user" "*"
+                                            "permitted-user" "*"
+                                            "cmd" "token-cmd"}
+                                   :headers {"run-as-user" "header-user"}}
+                                  :waiter-headers {"x-waiter-run-as-user" "header-user"}))))
 
     (testing "active overrides"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]

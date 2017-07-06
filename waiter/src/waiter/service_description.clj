@@ -524,13 +524,14 @@
           ; run-as-user will not be set if description-from-headers or the token description contains it.
           ; else rely on presence of x-waiter headers to set the run-as-user
           contains-waiter-header? (headers/contains-waiter-header waiter-headers on-the-fly-service-description-keys)
+          contains-service-parameter-header? (headers/contains-waiter-header waiter-headers service-description-keys)
           user-service-description (cond-> sanitized-metadata-description
                                            (and (not (contains? sanitized-metadata-description "run-as-user")) contains-waiter-header?)
                                            ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided
                                            (assoc-run-as-requester-fields username)
-                                           (and (not (contains? sanitized-metadata-description "permitted-user")) contains-waiter-header?)
-                                           ; can only set the permitted-user if some on-the-fly-service-description-keys waiter header was provided
-                                           (assoc "permitted-user" username))
+                                           contains-service-parameter-header?
+                                           ; can only set the permitted-user if some service-description-keys waiter header was provided
+                                           (assoc "permitted-user" (or (get headers "permitted-user") username)))
           defaults (:defaults sources)]
       (when (empty? user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
