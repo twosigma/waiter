@@ -525,15 +525,10 @@
           ; else rely on presence of x-waiter headers to set the run-as-user
           contains-waiter-header? (headers/contains-waiter-header waiter-headers on-the-fly-service-description-keys)
           user-service-description (cond-> sanitized-metadata-description
-                                           (and (contains? headers "run-as-user")
-                                                (not (contains? headers "permitted-user")))
-                                           ; if the user specified a run-as-user via headers and did not specify a permitted-user,
-                                           ; override the permitted-user with run-as-user
-                                           (assoc "permitted-user" (get headers "run-as-user"))
                                            (and (not (contains? sanitized-metadata-description "run-as-user")) contains-waiter-header?)
                                            ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided
                                            (assoc-run-as-requester-fields username)
-                                           (and (not (contains? sanitized-metadata-description "permitted-user")) contains-waiter-header?)
+                                           contains-waiter-header?
                                            ; can only set the permitted-user if some on-the-fly-service-description-keys waiter header was provided
                                            (assoc "permitted-user" username))
           defaults (:defaults sources)]

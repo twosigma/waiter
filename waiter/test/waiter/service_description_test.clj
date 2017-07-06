@@ -787,19 +787,21 @@
     (testing "run as user from on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
-              "permitted-user" "on-the-fly-ru"
+              "permitted-user" "current-request-user"
               "run-as-user" "on-the-fly-ru"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
-                                   :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}))))
+                                   :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}
+                                  :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd", "x-waiter-run-as-user" "on-the-fly-ru"}))))
 
     (testing "run as user intersecting"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
-              "permitted-user" "on-the-fly-ru"
+              "permitted-user" "current-request-user"
               "run-as-user" "on-the-fly-ru"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
                                    :tokens {"run-as-user" "token-ru"},
-                                   :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}))))
+                                   :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}
+                                  :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd", "x-waiter-run-as-user" "on-the-fly-ru"}))))
 
     (testing "run as user provided from on-the-fly header with hostname token"
       (is (= {"cmd" "token-cmd"
@@ -865,7 +867,7 @@
     (testing "run as user in headers with permitted-user * in tokens"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
-              "permitted-user" "header-user"
+              "permitted-user" "current-request-user"
               "run-as-user" "header-user"}
              (service-description {:defaults {"health-check-url" "/ping"}
                                    :tokens {"run-as-user" "*"
@@ -878,12 +880,12 @@
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
         (store-service-description-overrides
           kv-store
-          "test-service-activeoverride-bdb866e150603ea410dac7fca69316ad"
+          "test-service-activeoverride-00de822338af921fbefacd263d092c8a"
           "current-request-user"
           {"scale-factor" 0.3})
         (is (= {"cmd" "on-the-fly-cmd"
                 "health-check-url" "/ping"
-                "permitted-user" "on-the-fly-ru"
+                "permitted-user" "bob"
                 "run-as-user" "on-the-fly-ru"
                 "name" "active-override"
                 "scale-factor" 0.3}
@@ -897,16 +899,16 @@
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
         (store-service-description-overrides
           kv-store
-          "test-service-inactiveoverride-05d04403ebdcced9622d9712700048fc"
+          "test-service-inactiveoverride-b72d04dd1527e9730d1e8f5bc6bcf341"
           "current-request-user"
           {"scale-factor" 0.3})
         (clear-service-description-overrides
           kv-store
-          "test-service-inactiveoverride-05d04403ebdcced9622d9712700048fc"
+          "test-service-inactiveoverride-b72d04dd1527e9730d1e8f5bc6bcf341"
           "current-request-user")
         (is (= {"cmd" "on-the-fly-cmd"
                 "health-check-url" "/ping"
-                "permitted-user" "on-the-fly-ru"
+                "permitted-user" "bob"
                 "run-as-user" "on-the-fly-ru"
                 "name" "inactive-override"
                 "scale-factor" 1}
