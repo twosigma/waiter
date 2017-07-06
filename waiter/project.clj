@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -26,7 +26,7 @@
   :dependencies [[bidi "2.0.16"
                   :exclusions [prismatic/schema ring/ring-core]]
                  ^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
-                 [cc.qbits/jet "0.7.10-20170524_203939-gd23596c"]
+                 [cc.qbits/jet "0.7.10-20170705_021440-g5a6aaab"]
                  ^{:voom {:repo "https://github.com/twosigma/clj-http.git" :branch "waiter-patch"}}
                  [clj-http "1.0.2-20170524_085846-g161c42f"
                   :exclusions [commons-io org.clojure/tools.reader potemkin slingshot]]
@@ -92,7 +92,6 @@
              :exclusions [org.clojure/clojure]]
             [test2junit "1.2.2"]
             [com.holychao/parallel-test "0.3.1"]]
-  :global-vars {*warn-on-reflection* true}
   ; In case of kerberos problems, export KRB5_KTNAME=/var/spool/keytabs/$(id -un)
   :jvm-opts ["-server"
              "-Dsun.security.jgss.lib=/opt/mitkrb5/lib/libgssapi_krb5.so"
@@ -110,7 +109,16 @@
                      {:type :bytes :path "git-log"
                       :bytes (.trim (:out (clojure.java.shell/sh
                                             "git" "rev-parse" "HEAD")))})}]
-  :profiles {:test-log {:jvm-opts
+  :profiles {:debug {:jvm-opts
+                     ;; enable remote debugger to connect on port 5005
+                     ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]}
+             :test {:jvm-opts
+                    [~(str "-Dwaiter.test.kitchen.cmd=" (or
+                                                          (System/getenv "WAITER_TEST_KITCHEN_CMD")
+                                                          (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]}
+             :test-console {:jvm-opts
+                            ["-Dlog4j.configuration=log4j-console.properties"]}
+             :test-log {:jvm-opts
                         ["-Dlog4j.configuration=log4j-test.properties"]}
              :test-repl {:jvm-opts
                          ["-Dlog4j.configuration=log4j-repl.properties"
@@ -120,11 +128,5 @@
                           "-XX:+PrintAdaptiveSizePolicy"
                           "-Xmx512m"
                           "-Xloggc:log/gc.log"]}
-             :test-console {:jvm-opts
-                            ["-Dlog4j.configuration=log4j-console.properties"]}
-             :test {:jvm-opts
-                    [~(str "-Dwaiter.test.kitchen.cmd=" (or
-                                                          (System/getenv "WAITER_TEST_KITCHEN_CMD")
-                                                          (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]}
              :override-maven {:local-repo ~(System/getenv "WAITER_MAVEN_LOCAL_REPO")}}
   :uberjar-name ~(System/getenv "UBERJAR_NAME"))

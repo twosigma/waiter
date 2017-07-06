@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -202,7 +202,7 @@
    Will initiate websocket connections with new routers.
    Cleanup requests with obsolete routers."
   [{:keys [router-id->incoming-ws router-id->outgoing-ws] :as router-metrics-state}
-   router-id->http-endpoint encrypt connect-options router-metrics-agent]
+   websocket-client router-id->http-endpoint encrypt connect-options router-metrics-agent]
   (with-catch
     router-metrics-state
     (let [my-router-id (:router-id router-metrics-state)
@@ -217,10 +217,10 @@
           (doseq [router-id new-outgoing-router-ids]
             (let [ws-endpoint (-> (get router-id->http-endpoint router-id)
                                   (str/replace "http://" "ws://")
-                                  (str "router-metrics"))
+                                  (str "waiter-router-metrics"))
                   request-id (str "inter-router-metrics-" (utils/unique-identifier))]
               (cid/cinfo request-id "connecting to" router-id "at" ws-endpoint)
-              (ws/connect! ws-endpoint
+              (ws/connect! websocket-client ws-endpoint
                            (fn register-outgoing-request [{:keys [out] :as ws-request}]
                              (let [ws-request (assoc ws-request :request-id request-id)]
                                (async/>!! out (encrypt {:dest-router-id router-id
@@ -238,8 +238,8 @@
 (defn setup-router-syncer
   "Go-block that listens along the router channel for router state and propagates it to the router-metrics agent.
    The rate of listening for router state updates is throttle at `router-update-interval-ms`."
-  [router-state-chan router-metrics-agent router-update-interval-ms
-   inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms encrypt]
+  [router-state-chan router-metrics-agent router-update-interval-ms inter-router-metrics-idle-timeout-ms
+   metrics-sync-interval-ms websocket-client encrypt attach-auth-cookie!]
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 10)]
     (async/go-loop [iteration 0
@@ -262,8 +262,9 @@
               (let [connect-options {:async-write-timeout metrics-sync-interval-ms
                                      :in au/latest-chan
                                      :max-idle-timeout inter-router-metrics-idle-timeout-ms
+                                     :middleware (fn router-syncer-middleware [_ request] (attach-auth-cookie! request))
                                      :out au/latest-chan}]
-                (send router-metrics-agent update-metrics-router-state router-id->http-endpoint
+                (send router-metrics-agent update-metrics-router-state websocket-client router-id->http-endpoint
                       encrypt connect-options router-metrics-agent)))
             (recur (inc iteration) timeouts (async/timeout router-update-interval-ms)))
 

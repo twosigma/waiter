@@ -10,6 +10,8 @@
 # Waits for waiter to be listening and then runs the given test selector. Checks if WAITER_URI and
 # WAITER_TEST_KITCHEN_CMD are set, and sets them to reasonable defaults if not.
 
+set -v
+
 function wait_for_waiter {
     URI=${1}
     while ! curl -s ${URI} >/dev/null;
@@ -39,7 +41,7 @@ else
 fi
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-WAITER_DIR=${DIR}/../..
+WAITER_DIR=${DIR}/..
 
 # Wait for waiter to be listening
 timeout 180s bash -c "wait_for_waiter ${WAITER_URI}"
@@ -52,4 +54,5 @@ curl -s ${WAITER_URI}/state | jq .routers
 curl -s ${WAITER_URI}/settings | jq .port
 
 # Run the integration tests
+cd ${WAITER_DIR}
 lein with-profiles +test-console ${TEST_COMMAND} :${TEST_SELECTOR}

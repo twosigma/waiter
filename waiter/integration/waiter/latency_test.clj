@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -69,7 +69,7 @@
 
 (deftest ^:perf test-request-latency-apache-bench
   (testing-using-waiter-url
-    (let [max-instances (Integer/parseInt (or (System/getenv "WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES") 50))
+    (let [max-instances (Integer/parseInt (or (System/getenv "WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES") "50"))
           _ (log/info "using max-instances =" max-instances)
           client-concurrency-level 800
           waiter-concurrency-level 4

@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -26,6 +26,16 @@
 (def greater-than-or-equal-to-0-less-than-1 (s/pred #(and (<= 0 %) (< % 1))
                                                     'greater-than-or-equal-to-0-less-than-1))
 
+(def valid-authentication
+  "Validator for the authentication parameter.
+   Valid values are 'disabled' and 'standard'."
+  (s/constrained non-empty-string #{"disabled" "standard"} 'invalid-authentication))
+
+(def valid-backend-proto
+  "Validator for the backend-proto parameter.
+   Valid values are 'http' and 'https'."
+  (s/constrained non-empty-string #{"http" "https"} 'invalid-backend-proto))
+
 (def valid-metric-group
   "Validator for metric group names. Valid names must:
    - be between 2 and 32 characters long (inclusive)
@@ -44,6 +54,10 @@
   [(s/constrained [s/Any] #(and (= 2 (count %))
                                 (instance? Pattern (first %))
                                 (string? (second %))))])
+
+(def valid-number-of-ports
+  "Validator for number of ports."
+  (s/pred #(<= 1 % 10) 'between-1-and-10))
 
 (def valid-zookeeper-connect-config
   "Validator for the Zookeeper connection configuration. We allow either

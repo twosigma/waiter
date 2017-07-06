@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -588,7 +588,7 @@
   [correlation-id instance-id blacklist-period-ms unblacklist-instance-chan]
   (async/go
     (async/<! (async/timeout blacklist-period-ms))
-    (cid/cinfo correlation-id "requesting instance instance" instance-id "to be unblacklisted")
+    (cid/cinfo correlation-id "requesting instance" instance-id "to be unblacklisted")
     (async/>! unblacklist-instance-chan {:instance-id instance-id})))
 
 (defn prepare-and-start-service-chan-responder

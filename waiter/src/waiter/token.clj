@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -35,7 +35,7 @@
       new-owner-key (fn [] (str "^TOKEN_OWNERS_" (utils/unique-identifier)))
       ensure-owner-key (fn ensure-owner-key [kv-store owner->owner-key owner]
                          (when-not owner
-                           (throw (ex-info "nil owner passed to ensure-owner-key" 
+                           (throw (ex-info "nil owner passed to ensure-owner-key"
                                            {:owner->owner-key owner->owner-key})))
                          (or (get owner->owner-key owner)
                              (let [new-owner-key (new-owner-key)]
@@ -45,9 +45,9 @@
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
     [synchronize-fn kv-store ^String token service-description-template]
-    (synchronize-fn 
+    (synchronize-fn
       token-lock
-      (fn inner-store-service-description-for-token [] 
+      (fn inner-store-service-description-for-token []
         (log/info "Storing service description for token:" token)
         (let [{:strs [owner] :as filtered-service-desc} (sd/sanitize-service-description service-description-template sd/token-service-description-template-keys)
               previous-owner (get (kv/fetch kv-store token :refresh true) "owner")
@@ -67,13 +67,13 @@
   (defn delete-service-description-for-token
     "Delete a token from the KV"
     [synchronize-fn kv-store token owner]
-    (synchronize-fn 
+    (synchronize-fn
       token-lock
       (fn inner-delete-service-description-for-token []
         (log/info "Deleting service description for token:" token)
         (kv/delete kv-store token)
         ; Remove token from owner
-        (when owner 
+        (when owner
           (let [owner->owner-key (kv/fetch kv-store token-owners-key)
                 owner-key (ensure-owner-key kv-store owner->owner-key owner)]
             (update-kv kv-store owner-key (fn [v] (disj v token)))))
@@ -84,7 +84,7 @@
     "Refresh the KV cache for a given token"
     [kv-store token owner]
     (let [refreshed-token (kv/fetch kv-store token :refresh true)]
-      (when owner 
+      (when owner
         ; NOTE: The token may still show up temporarily in the old owners list
         (let [owner->owner-key (kv/fetch kv-store token-owners-key)
               owner-key (ensure-owner-key kv-store owner->owner-key owner)]
@@ -121,8 +121,8 @@
     "Reindex all tokens. `tokens` is a sequence of token maps.  Remove existing index entries."
     [synchronize-fn kv-store tokens]
     (synchronize-fn
-      token-lock 
-      (fn inner-reindex-tokens [] 
+      token-lock
+      (fn inner-reindex-tokens []
         (let [owner->owner-key (kv/fetch kv-store token-owners-key)]
           (when (map? owner->owner-key)
             ; Delete each owner node
@@ -130,7 +130,7 @@
               (kv/delete kv-store owner-key)))
           ; Delete owner map
           (kv/delete kv-store token-owners-key))
-        (let [owner->tokens (->> tokens 
+        (let [owner->tokens (->> tokens
                                  (map (fn [token] (let [{:strs [owner]} (kv/fetch kv-store token)]
                                                     {:owner owner
                                                      :token token})))
@@ -145,7 +145,7 @@
           ; Write each owner node
           (doseq [[owner tokens] owner->tokens]
             (let [owner-key (get owner->owner-key owner)
-                  token-set (->> tokens (map :token) set)] 
+                  token-set (->> tokens (map :token) set)]
               (kv/store kv-store owner-key token-set))))))))
 
 (defn handle-token-request
@@ -178,8 +178,8 @@
                                            :status 403})))
                         (delete-service-description-for-token synchronize-fn kv-store token token-owner)
                         ; notify peers of token delete and ask them to refresh their caches
-                        (make-peer-requests-fn "tokens/refresh" 
-                                               :method :post 
+                        (make-peer-requests-fn "tokens/refresh"
+                                               :method :post
                                                :body (json/write-str {:token token
                                                                       :owner token-owner}))
                         (utils/map->json-response {:delete token, :success true}))
@@ -210,7 +210,7 @@
                   owner (or (get service-description-template "owner")
                             (get existing-service-description-template "owner")
                             authenticated-user)
-                  service-description-template (dissoc service-description-template "token")]
+                  {:strs [authentication permitted-user] :as service-description-template} (dissoc service-description-template "token")]
               (when (str/blank? token)
                 (throw (ex-info "Must provide the token" {})))
               (when (= waiter-hostname token)
@@ -221,6 +221,14 @@
               (let [unknown-keys (set/difference (set (keys service-description-template)) (set sd/token-service-description-template-keys))]
                 (when (not-empty unknown-keys)
                   (throw (ex-info (str "Unsupported key(s) in token: " (str (vec unknown-keys))) {:token token}))))
+              (when (= authentication "disabled")
+                (when (not= permitted-user "*")
+                  (throw (ex-info (str "Tokens with authentication disabled must specify permitted-user as *, instead provided " permitted-user) {:token token})))
+                ;; partial tokens not supported when authentication is disabled
+                (when-not (sd/required-keys-present? service-description-template)
+                  (throw (ex-info "Tokens with authentication disabled must specify all required parameters"
+                                  {:missing-parameters (->> sd/service-required-keys (remove #(contains? service-description-template %1)) seq)
+                                   :service-description service-description-template}))))
               (when (and run-as-user (not= "*" run-as-user))
                 (when-not (can-run-as? authenticated-user run-as-user)
                   (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user :run-as-user run-as-user}))))
@@ -235,8 +243,8 @@
               ; Store the token
               (store-service-description-for-token synchronize-fn kv-store token (assoc service-description-template "owner" owner))
               ; notify peers of token update
-              (make-peer-requests-fn "tokens/refresh" 
-                                     :method :post 
+              (make-peer-requests-fn "tokens/refresh"
+                                     :method :post
                                      :body (json/write-str {:token token
                                                             :owner owner}))
               (utils/map->json-response {:message (str "Successfully created " token)
@@ -247,7 +255,7 @@
 
 (defn handle-list-tokens-request
   [kv-store {:keys [request-method] :as req}]
-  (try 
+  (try
     (case request-method
       :get (let [request-params (:params (ring-params/params-request req))
                  owner (get request-params "owner")
@@ -269,7 +277,7 @@
   The response contains a map, owner -> internal KV key.  The value of the key
   stores the tokens for that particular owner."
   [kv-store {:keys [request-method]}]
-  (try 
+  (try
     (case request-method
       :get (let [owner->owner-ref (token-owners-map kv-store)]
              (utils/map->json-response owner->owner-ref))
@@ -287,7 +295,7 @@
       (when index
         (log/info src-router-id "is force refreshing the token index")
         (refresh-token-index kv-store))
-      (when token 
+      (when token
         (log/info src-router-id "is force refreshing token" token)
         (refresh-token kv-store token owner))
       (utils/map->json-response {:success true}))
@@ -298,12 +306,12 @@
   "Load all tokens and re-index them."
   [synchronize-fn make-peer-requests-fn kv-store list-tokens-fn {:keys [request-method]}]
   (try
-    (case request-method 
+    (case request-method
       :post (let [tokens (list-tokens-fn)] (reindex-tokens synchronize-fn kv-store tokens)
-              (make-peer-requests-fn "tokens/refresh" 
-                                     :method :post 
-                                     :body (json/write-str {:index true}))
-              (utils/map->json-response {:message "Successfully re-indexed." :tokens (count tokens)})) 
+                                           (make-peer-requests-fn "tokens/refresh"
+                                                                  :method :post
+                                                                  :body (json/write-str {:index true}))
+                                           (utils/map->json-response {:message "Successfully re-indexed." :tokens (count tokens)}))
       (utils/map->json-response {:message "Only POST supported!" :request-method request-method} :status 405))
     (catch Exception e
       (utils/exception->json-response e))))

@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -39,7 +39,27 @@
                                                  "health-check-url" "http://www.example.com/test/status"
                                                  "permitted-user" "testuser2"
                                                  "disk" 1
-                                                 "ports" [8080]})))
+                                                 "ports" 1})))
+  (is (nil? (s/check service-description-schema {"cpus" 1
+                                                 "mem" 1
+                                                 "cmd" "test command"
+                                                 "version" "v123"
+                                                 "run-as-user" "test-user"
+                                                 "name" "testname123"
+                                                 "health-check-url" "http://www.example.com/test/status"
+                                                 "permitted-user" "testuser2"
+                                                 "disk" 1
+                                                 "ports" 5})))
+  (is (not (nil? (s/check service-description-schema {"cpus" 1
+                                                      "mem" 1
+                                                      "cmd" "test command"
+                                                      "version" "v123"
+                                                      "run-as-user" "test-user"
+                                                      "name" "testname123"
+                                                      "health-check-url" "http://www.example.com/test/status"
+                                                      "permitted-user" "testuser2"
+                                                      "disk" 1
+                                                      "ports" 11}))))
   (is (not (nil? (s/check service-description-schema {"mem" 1
                                                       "cmd" "test command"
                                                       "version" "v123"
@@ -359,8 +379,8 @@
                                                           (cond-> {"name" token, "cmd" token-user, "version" "token", "owner" "token-owner"}
                                                                   (str/includes? token "cpus") (assoc "cpus" "1")
                                                                   (str/includes? token "mem") (assoc "mem" "2")
-                                                                  (str/includes? token "run") (assoc "run-as-user" "ruser")
-                                                                  (str/includes? token "per") (assoc "permitted-user" "puser"))
+                                                                  (str/includes? token "per") (assoc "permitted-user" "puser")
+                                                                  (str/includes? token "run") (assoc "run-as-user" "ruser"))
                                                           {}))]
       (let [service-description-defaults {"name" "default-name" "health-check-url" "/ping"}
             test-cases (list
@@ -372,13 +392,14 @@
                                            "x-waiter-run-as-user" test-user}
                           :passthrough-headers {"host" "test-host", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"},
                                      :headers {"cpus" 1,
                                                "mem" 1024,
                                                "cmd" "test-cmd",
                                                "version" "test-version",
-                                               "run-as-user" "test-header-user"}
-                                     :token-preauthorized false}
+                                               "run-as-user" "test-header-user"},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"}}
                           }
                          {:name "prepare-service-description-sources:WITH Waiter Hostname"
                           :waiter-headers {"x-waiter-foo" "bar", "x-waiter-source" "serv-desc",
@@ -388,13 +409,14 @@
                                            "x-waiter-run-as-user" test-user}
                           :passthrough-headers {"host" waiter-hostname, "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {},
                                      :headers {"cpus" 1,
                                                "mem" 1024,
                                                "cmd" "test-cmd",
                                                "version" "test-version",
-                                               "run-as-user" "test-header-user"}
-                                     :token-preauthorized false}
+                                               "run-as-user" "test-header-user"},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {}}
                           }
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar", "x-waiter-source" "serv-desc",
@@ -404,13 +426,14 @@
                                            "x-waiter-run-as-user" test-user}
                           :passthrough-headers {"host" "test-host", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"},
                                      :headers {"cpus" 1,
                                                "mem" 1024,
                                                "cmd" "test-cmd",
                                                "version" "test-version",
-                                               "run-as-user" "test-header-user"}
-                                     :token-preauthorized false}
+                                               "run-as-user" "test-header-user"},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"}}
                           }
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar", "x-waiter-source" "serv-desc",
@@ -420,101 +443,113 @@
                                            "x-waiter-run-as-user" test-user}
                           :passthrough-headers {"host" "test-host-no-token", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {},
                                      :headers {"cpus" 1,
                                                "mem" 1024,
                                                "cmd" "test-cmd",
                                                "version" "test-version",
-                                               "run-as-user" "test-header-user"}
-                                     :token-preauthorized false}
+                                               "run-as-user" "test-header-user"},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {}}
                           }
                          {:name "prepare-service-description-sources:WITHOUT Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar", "x-waiter-source" "serv-desc"}
                           :passthrough-headers {"host" "test-host", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"},
-                                     :headers {}
-                                     :token-preauthorized false}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"}}
                           }
                          {:name "prepare-service-description-sources:Token in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar", "x-waiter-source" "serv-desc", "x-waiter-token" "test-token"}
                           :passthrough-headers {"host" "test-host", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-token", "cmd" "token-user", "version" "token"},
-                                     :headers {}
-                                     :token-preauthorized false}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-token", "cmd" "token-user", "version" "token"}}
                           }
                          {:name "prepare-service-description-sources:Two tokens in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar", "x-waiter-source" "serv-desc", "x-waiter-token" "test-token,test-token2"}
                           :passthrough-headers {"host" "test-host", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-token2", "cmd" "token-user", "version" "token"},
-                                     :headers {}
-                                     :token-preauthorized false}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-token2", "cmd" "token-user", "version" "token"}}
                           }
                          {:name "prepare-service-description-sources:Multiple tokens in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar", "x-waiter-source" "serv-desc", "x-waiter-token" "test-token,test-token2,test-cpus-token,test-mem-token"}
                           :passthrough-headers {"host" "test-host", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-mem-token", "cmd" "token-user", "cpus" "1", "mem" "2", "version" "token"},
-                                     :headers {}
-                                     :token-preauthorized false}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-mem-token", "cmd" "token-user", "cpus" "1", "mem" "2", "version" "token"}}
                           }
                          {:name "prepare-service-description-sources:Using Host with missing values"
                           :waiter-headers {}
                           :passthrough-headers {"host" "test-host", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"},
-                                     :headers {}
-                                     :token-preauthorized false}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"}}
                           }
                          {:name "prepare-service-description-sources:Using Host without port with missing values"
                           :waiter-headers {}
                           :passthrough-headers {"host" "test-host:1234", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"},
-                                     :headers {}
-                                     :token-preauthorized false}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-host", "cmd" "token-user", "version" "token"}}
                           }
                          {:name "prepare-service-description-sources:Using Token with run-as-user"
                           :waiter-headers {"x-waiter-token" "test-token-run"}
                           :passthrough-headers {"host" "test-host:1234", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-token-run", "cmd" "token-user", "version" "token", "run-as-user" "ruser"},
-                                     :headers {}
-                                     :token-preauthorized false}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-token-run", "cmd" "token-user", "version" "token", "run-as-user" "ruser"}}
                           }
                          {:name "prepare-service-description-sources:Using Token with permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-per"}
                           :passthrough-headers {"host" "test-host:1234", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-token-per", "cmd" "token-user", "version" "token", "permitted-user" "puser"},
-                                     :headers {}
-                                     :token-preauthorized false}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-token-per", "cmd" "token-user", "version" "token", "permitted-user" "puser"}}
                           }
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user and another token"
                           :waiter-headers {"x-waiter-token" "test-token-per-run"}
                           :passthrough-headers {"host" "test-host:1234", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-token-per-run", "cmd" "token-user", "version" "token", "run-as-user" "ruser", "permitted-user" "puser"},
-                                     :headers {}
-                                     :token-preauthorized true}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized true,
+                                     :tokens {"name" "test-token-per-run", "cmd" "token-user", "version" "token", "run-as-user" "ruser", "permitted-user" "puser"}}
                           }
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-per-run,test-cpus-token"}
                           :passthrough-headers {"host" "test-host:1234", "fee" "foe"}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {"name" "test-cpus-token", "cmd" "token-user", "version" "token", "cpus" "1", "run-as-user" "ruser", "permitted-user" "puser"},
-                                     :headers {}
-                                     :token-preauthorized false}
+                                     :headers {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {"name" "test-cpus-token", "cmd" "token-user", "version" "token", "cpus" "1", "run-as-user" "ruser", "permitted-user" "puser"}}
                           }
                          {:name "prepare-service-description-sources:Parse metadata headers"
                           :waiter-headers {"x-waiter-metadata-foo" "bar", "x-waiter-metadata-baz" "quux", "x-waiter-cpus" "1"}
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
-                                     :tokens {},
-                                     :headers {"metadata" {"foo" "bar", "baz" "quux"}, "cpus" "1"}
-                                     :token-preauthorized false}
+                                     :headers {"metadata" {"foo" "bar", "baz" "quux"}, "cpus" "1"},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {}}
                           }
                          )]
         (doseq [{:keys [name waiter-headers passthrough-headers expected]} test-cases]
@@ -529,16 +564,66 @@
                 (log/info "Actual:   " (into (sorted-map) actual)))
               (is (= expected actual)))))))))
 
-(defn- service-description
-  ([sources & {:keys [waiter-headers kv-store assoc-run-as-user-approved?]
-               :or {waiter-headers {}
-                    kv-store (kv/->LocalKeyValueStore (atom {}))
-                    assoc-run-as-user-approved? (constantly false)}}]
+(deftest test-prepare-service-description-sources-with-authentication-disabled
+  (let [kv-store (Object.)
+        waiter-hostname "waiter-hostname.app.example.com"
+        test-token "test-token-name"]
+    (testing "authentication-disabled token"
+      (let [token-description {"authentication" "disabled", "cmd" "a-command", "cpus" "1", "mem" "2", "name" test-token
+                               "owner" "token-owner", "permitted-user" "*", "run-as-user" "ruser", "version" "token"}]
+        (with-redefs [token->service-description-template (fn [_ token & _]
+                                                            (is (= test-token token))
+                                                            token-description)]
+          (let [waiter-headers {"x-waiter-token" test-token}
+                passthrough-headers {"host" "test-host:1234", "fee" "foe"}
+                actual (prepare-service-description-sources
+                         {:waiter-headers waiter-headers
+                          :passthrough-headers passthrough-headers}
+                         kv-store waiter-hostname {"name" "default-name" "health-check-url" "/ping"})
+                expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
+                          :headers {},
+                          :token-authentication-disabled true,
+                          :token-preauthorized true,
+                          :tokens (dissoc token-description "owner")}]
+            (is (= expected actual))))))
+
+    (testing "limited-access token"
+      (let [token-description {"authentication" "standard", "cmd" "a-command", "cpus" "1", "mem" "2", "name" test-token
+                               "owner" "token-owner", "permitted-user" "*", "run-as-user" "ruser", "version" "token"}]
+        (with-redefs [token->service-description-template (fn [_ token & _]
+                                                            (is (= test-token token))
+                                                            token-description)]
+          (let [waiter-headers {"x-waiter-token" test-token}
+                passthrough-headers {"host" "test-host:1234", "fee" "foe"}
+                actual (prepare-service-description-sources
+                         {:waiter-headers waiter-headers
+                          :passthrough-headers passthrough-headers}
+                         kv-store waiter-hostname {"name" "default-name" "health-check-url" "/ping"})
+                expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
+                          :headers {},
+                          :token-authentication-disabled false,
+                          :token-preauthorized true,
+                          :tokens (dissoc token-description "owner")}]
+            (is (= expected actual))))))))
+
+(defn- compute-service-description-helper
+  ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
    (with-redefs [metric-group-filter (fn [sd _] sd)
                  service-description-schema {s/Str s/Any}]
-     (:service-description
+     (let [assoc-run-as-user-approved? (or assoc-run-as-user-approved? (constantly false))
+           kv-store (or kv-store (kv/->LocalKeyValueStore (atom {})))
+           waiter-headers (or waiter-headers {})]
        (compute-service-description sources waiter-headers {} kv-store "test-service-" "current-request-user"
                                     [] (->DefaultServiceDescriptionBuilder nil) assoc-run-as-user-approved?)))))
+
+(defn- service-description
+  ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
+   (let [{:keys [service-description]} (compute-service-description-helper
+                                         sources
+                                         :assoc-run-as-user-approved? assoc-run-as-user-approved?
+                                         :kv-store kv-store
+                                         :waiter-headers waiter-headers)]
+     service-description)))
 
 (deftest test-compute-service-description
   (testing "Service description computation"
@@ -918,6 +1003,50 @@
                                               (->DefaultServiceDescriptionBuilder nil)
                                               (constantly false))))))
 
+(deftest test-compute-service-description-service-preauthorized-and-authentication-disabled
+  (letfn [(execute-test [token-description header-parameters]
+            (let [{:keys [service-authentication-disabled service-preauthorized]}
+                  (compute-service-description-helper {:headers header-parameters
+                                                       :token-authentication-disabled (token-authentication-disabled? token-description)
+                                                       :token-preauthorized (token-preauthorized? token-description)
+                                                       :tokens token-description})]
+              {:service-authentication-disabled service-authentication-disabled, :service-preauthorized service-preauthorized}))]
+
+    (testing "not-preauthorized-service-1"
+      (is (= {:service-authentication-disabled false, :service-preauthorized false}
+             (execute-test {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "*", "version" "a1b2c3"}
+                           {}))))
+
+    (testing "not-preauthorized-service-2"
+      (is (= {:service-authentication-disabled false, :service-preauthorized false}
+             (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "*", "version" "a1b2c3"}
+                           {}))))
+
+    (testing "preauthorized-service"
+      (is (= {:service-authentication-disabled false, :service-preauthorized true}
+             (execute-test {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1", "version" "a1b2c3"}
+                           {}))))
+
+    (testing "not-preauthorized-service-due-to-headers"
+      (is (= {:service-authentication-disabled false, :service-preauthorized false}
+             (execute-test {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1", "version" "a1b2c3"}
+                           {"cpus" 10}))))
+
+    (testing "partial-preauthorized-service"
+      (is (= {:service-authentication-disabled false, :service-preauthorized true}
+             (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "permitted-user" "*", "run-as-user" "tu1", "version" "a1b2c3"}
+                           {}))))
+
+  (testing "authentication-disabled-service"
+    (is (= {:service-authentication-disabled true, :service-preauthorized true}
+           (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "*", "run-as-user" "tu1", "version" "a1b2c3"}
+                         {}))))
+
+    (testing "not-authentication-disabled-service-due-to-headers"
+      (is (= {:service-authentication-disabled false, :service-preauthorized false}
+             (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "*", "run-as-user" "tu1", "version" "a1b2c3"}
+                           {"cmd" "tc2"}))))))
+
 (deftest test-service-id-and-token-storing
   (with-redefs [service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd service-description-keys))))]
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -941,7 +1070,7 @@
         service-id-1 "test-service-1"
         service-id-2 "test-service-2"
         username "test-user"
-        service-description {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
+        service-description {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1", "version" "a1b2c3"}
         service-description-1 (assoc service-description "run-as-user" username)
         service-description-2 (assoc service-description "run-as-user" (str username "2"))
         authorized? (fn [subject _ {:keys [user]}] (= subject user))
@@ -968,7 +1097,7 @@
         username-1 "tu1"
         username-2 "tu2"
         admin-username "admin"
-        service-description-1 {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1a", "permitted-user" "tu2"}
+        service-description-1 {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1a", "version" "a1b2c3"}
         service-description-2 (assoc service-description-1 "run-as-user" username-1)
         service-description-3 (assoc service-description-1 "run-as-user" "tu2")
         authorized? (fn [subject verb {:keys [user]}]
@@ -1156,3 +1285,36 @@
     (is (not (test-fn "service-id" "token-id" service-description ["token" valid-timestamp-ms "token-id"])))
     (is (not (test-fn "service-id" "token-id" service-description ["token" valid-timestamp-ms])))
     (is (not (test-fn "service-id" "token-id-2" service-description ["token" valid-timestamp-ms "token-id" "user"])))))
+
+(deftest test-required-keys-present?
+  (is (not (required-keys-present? {})))
+  (is (not (required-keys-present? {"mem" 1, "cmd" "default-cmd", "version" "default-version", "run-as-user" "default-run-as-user"})))
+  (is (not (required-keys-present? {"cpus" 1, "cmd" "default-cmd", "version" "default-version", "run-as-user" "default-run-as-user"})))
+  (is (not (required-keys-present? {"cpus" 1, "mem" 1, "version" "default-version", "run-as-user" "default-run-as-user"})))
+  (is (not (required-keys-present? {"cpus" 1, "mem" 1, "cmd" "default-cmd", "run-as-user" "default-run-as-user"})))
+  (is (not (required-keys-present? {"cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", })))
+  (is (required-keys-present? {"cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "run-as-user" "default-run-as-user"})))
+
+(deftest test-token-preauthorized?
+  (is (not (token-preauthorized? {})))
+  (is (not (token-preauthorized? {"permitted-user" "*", "run-as-user" "*"})))
+  (is (token-preauthorized? {"permitted-user" "*", "run-as-user" "ru"}))
+  (is (token-preauthorized? {"cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "pu", "run-as-user" "ru"}))
+  (is (token-preauthorized? {"authentication" "standard", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "pu", "run-as-user" "ru"}))
+  (is (token-preauthorized? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "pu", "run-as-user" "ru"}))
+  (is (not (token-preauthorized? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "pu", "run-as-user" "*"})))
+  (is (not (token-preauthorized? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "*"})))
+  (is (token-preauthorized? {"authentication" "disabled", "cpus" 1, "mem" 1, "version" "default-version", "permitted-user" "*", "run-as-user" "ru"}))
+  (is (token-preauthorized? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
+
+(deftest test-token-authentication-disabled?
+  (is (not (token-authentication-disabled? {})))
+  (is (not (token-authentication-disabled? {"permitted-user" "*", "run-as-user" "*"})))
+  (is (not (token-authentication-disabled? {"permitted-user" "*", "run-as-user" "ru"})))
+  (is (not (token-authentication-disabled? {"cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "pu", "run-as-user" "ru"})))
+  (is (not (token-authentication-disabled? {"authentication" "standard", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "pu", "run-as-user" "ru"})))
+  (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "pu", "run-as-user" "ru"})))
+  (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "pu", "run-as-user" "*"})))
+  (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "*"})))
+  (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
+  (is (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))

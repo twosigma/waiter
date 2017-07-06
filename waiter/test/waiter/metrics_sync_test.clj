@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -14,12 +14,14 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [clojure.tools.logging :as log]
             [qbits.jet.client.websocket :as ws]
             [waiter.async-utils :as au]
             [waiter.metrics :as metrics]
             [waiter.metrics-sync :refer :all]
             [waiter.test-helpers :as test-helpers]
-            [waiter.utils :as utils]))
+            [waiter.utils :as utils])
+  (:import (org.eclipse.jetty.websocket.client WebSocketClient)))
 
 (deftest test-deregister-router-ws
   (testing "deregister-router-ws:matching-request-id"
@@ -173,7 +175,7 @@
 
 (deftest test-update-metrics-router-state
   (testing "update-metrics-router-state:no-new-nor-missing-router-ids"
-    (with-redefs [ws/connect! (fn ws-connect! [_ _ _] (throw (Exception. "Unexpected call")))]
+    (with-redefs [ws/connect! (fn ws-connect! [_ _ _ _] (throw (Exception. "Unexpected call")))]
       (let [in-router-metrics-state {:router-id "router-0"
                                      :router-id->incoming-ws {"router-1" {:out :dummy-1}
                                                               "router-2" {:out :dummy-2}
@@ -181,6 +183,7 @@
                                      :router-id->outgoing-ws {"router-1" {:out :dummy-4}
                                                               "router-2" {:out :dummy-5}
                                                               "router-3" {:out :dummy-6}}}
+            websocket-client nil
             router-id->http-endpoint {"router-1" "http://www.router-1.com:1234/"
                                       "router-2" "http://www.router-2.com:1234/"
                                       "router-3" "http://www.router-3.com:1234/"}
@@ -188,7 +191,7 @@
                              :out async/chan}
             router-metrics-agent (agent in-router-metrics-state)
             encrypt identity
-            out-router-metrics-state (update-metrics-router-state in-router-metrics-state router-id->http-endpoint encrypt connect-options router-metrics-agent)
+            out-router-metrics-state (update-metrics-router-state in-router-metrics-state websocket-client router-id->http-endpoint encrypt connect-options router-metrics-agent)
             query-agent-state (fn [agent-state response-chan] (async/>!! response-chan agent-state) agent-state)
             response-chan (async/promise-chan)]
         (is (= in-router-metrics-state out-router-metrics-state))
@@ -196,9 +199,9 @@
         (is (= in-router-metrics-state (async/<!! response-chan))))))
 
   (testing "update-metrics-router-state:new-and-missing-router-ids"
-    (with-redefs [ws/connect! (fn ws-connect! [ws-endpoint callback _]
+    (with-redefs [ws/connect! (fn ws-connect! [_ ws-endpoint callback _]
                                 (is (str/starts-with? ws-endpoint "ws://"))
-                                (is (str/ends-with? ws-endpoint "/router-metrics"))
+                                (is (str/ends-with? ws-endpoint "/waiter-router-metrics"))
                                 (let [in-chan (async/chan 10)
                                       out-chan (async/chan 10)
                                       ws-request {:in in-chan, :out out-chan, :tag ws-endpoint}]
@@ -219,6 +222,7 @@
             router-metrics-agent (agent in-router-metrics-state)
             query-agent-state (fn [agent-state response-chan] (async/>!! response-chan agent-state) agent-state)
             response-chan (async/promise-chan)
+            websocket-client nil
             router-id->http-endpoint {"router-0" "http://www.router-0.com:1234/"
                                       "router-1" "http://www.router-1.com:1234/"
                                       "router-2" "http://www.router-2.com:1234/"
@@ -226,7 +230,7 @@
             encrypt identity
             connect-options {:async-write-timeout 10000
                              :out async/chan}]
-        (send router-metrics-agent update-metrics-router-state router-id->http-endpoint encrypt connect-options router-metrics-agent)
+        (send router-metrics-agent update-metrics-router-state websocket-client router-id->http-endpoint encrypt connect-options router-metrics-agent)
         (await router-metrics-agent)
         (send router-metrics-agent query-agent-state response-chan)
         (let [out-router-metrics-state (async/<!! response-chan)
@@ -245,7 +249,7 @@
               (if (contains? new-outgoing-router-ids router-id)
                 (do
                   (is (:request-id ws-request))
-                  (is (= (str "ws://www." router-id ".com:1234/router-metrics") (:tag ws-request))))
+                  (is (= (str "ws://www." router-id ".com:1234/waiter-router-metrics") (:tag ws-request))))
                 (let [old-ws-request (get-in in-router-metrics-state [:router-id->outgoing-ws router-id])]
                   (is (and old-ws-request (= old-ws-request ws-request))))))))))))
 
@@ -262,7 +266,10 @@
       (is (= (encrypt {:message "Missing source router!", :data {}}) (async/<!! (:out ws-request))))
       (is (nil? (async/<!! (:out ws-request)))))))
 
-(deftest test-incoming-router-metrics-handler-valid-handshake
+; Marked explicit due to:
+; - https://github.com/twosigma/waiter/issues/45
+; - https://travis-ci.org/twosigma/waiter/jobs/250454964#L8663-L8698
+(deftest ^:explicit test-incoming-router-metrics-handler-valid-handshake
   (testing "incoming-router-metrics-handler:valid-handshake"
     (let [decrypt-call-counter (atom 0)
           encrypt (fn [data] {:data data})
@@ -280,6 +287,7 @@
       (incoming-router-metrics-handler router-metrics-agent 10 encrypt decrypt ws-request)
       (let [release-chan (async/chan 1)]
         (async/go-loop [iteration 0]
+          (log/debug "processing iteration" iteration)
           (let [raw-data (cond-> {:router-metrics {"s1" {:iteration iteration}, "s2" {:iteration iteration}},
                                   :source-router-id source-router-id,
                                   :time (str "time-" iteration)}
@@ -288,10 +296,11 @@
           (when (< iteration iteration-limit)
             (recur (inc iteration))))
         (async/<!! release-chan))
-      (test-helpers/wait-for
-        #(let [out-router-metrics-state @router-metrics-agent]
-           (= (str "time-" iteration-limit) (get-in out-router-metrics-state [:last-update-times source-router-id])))
-        :interval 1000, :unit-multiplier 1)
+      (is (test-helpers/wait-for
+            #(let [out-router-metrics-state @router-metrics-agent]
+               (log/debug "router-metrics-state:" out-router-metrics-state)
+               (= (str "time-" iteration-limit) (get-in out-router-metrics-state [:last-update-times source-router-id])))
+            :interval 1000, :unit-multiplier 1))
       (let [query-agent-state (fn [agent-state response-chan] (async/>!! response-chan agent-state) agent-state)
             response-chan (async/promise-chan)
             _ (send router-metrics-agent query-agent-state response-chan)
@@ -306,7 +315,7 @@
           (is (= ws-request (select-keys actual-ws-request (keys ws-request)))))))))
 
 (deftest test-setup-router-syncer
-  (with-redefs [update-metrics-router-state (fn [router-metrics-state {:keys [response-chan] :as router-state} _ _ _]
+  (with-redefs [update-metrics-router-state (fn update-metrics-router-state-fn [router-metrics-state _ {:keys [response-chan] :as router-state} _ _ _]
                                               (when response-chan
                                                 (async/go (async/>! response-chan :response)))
                                               (assoc router-metrics-state
@@ -316,12 +325,14 @@
       (let [router-state-chan (async/chan 1)
             router-metrics-agent (agent {:router-id "router-0"})
             encrypt identity
-            {:keys [exit-chan query-chan]} (setup-router-syncer router-state-chan router-metrics-agent 10 10000 10000 encrypt)
-            query-agent-state (fn []
+            attach-auth-cookie! identity
+            websocket-client (WebSocketClient.)
+            {:keys [exit-chan query-chan]} (setup-router-syncer router-state-chan router-metrics-agent 10 10000 10000 websocket-client encrypt attach-auth-cookie!)
+            query-agent-state (fn query-agent-state-fn []
                                 (let [response-chan (async/promise-chan)]
                                   (send router-metrics-agent #(do (async/>!! response-chan %1) %1))
                                   (async/<!! response-chan)))
-            query-go-block-state (fn []
+            query-go-block-state (fn query-go-block-state-fn []
                                    (let [response-chan (async/promise-chan)]
                                      (async/>!! query-chan {:response-chan response-chan})
                                      (async/<!! response-chan)))

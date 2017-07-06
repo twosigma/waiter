@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -39,10 +39,6 @@
   (let [health-check-url (extract-health-check-url app-info status-check-path)
         map-assoc-health-check-func (fn [x] (map #(assoc % :health-check-url health-check-url) x))]
     (update-in app-info [:app :tasks] map-assoc-health-check-func)))
-
-(defn- task->service
-  [task]
-  (str "http://" (:host task) ":" (first (:ports task))))
 
 ;;; Service instance blacklisting, work-stealing, access and creation
 
@@ -204,7 +200,7 @@
   "Starts a `clojure.core.async/go` block to query the router state to get an
    available instance to send a request. It will continue to query the state until
    an instance is available."
-  [instance-rpc-chan service-id reason-map app-not-found-fn queue-timeout-ms metric-group add-debug-header-into-response]
+  [instance-rpc-chan service-id reason-map app-not-found-fn queue-timeout-ms metric-group add-debug-header-into-response!]
   (async/go
     (cid/with-correlation-id
       (:cid reason-map)
@@ -212,7 +208,7 @@
         (metrics/with-timer!
           (metrics/service-timer service-id "get-available-instance")
           (fn [nanos]
-            (add-debug-header-into-response "X-Waiter-Get-Available-Instance-ns" nanos)
+            (add-debug-header-into-response! "X-Waiter-Get-Available-Instance-ns" nanos)
             (statsd/histo! metric-group "get_instance" nanos))
           (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
           (statsd/gauge-delta! metric-group "request_waiting_for_instance" +1)

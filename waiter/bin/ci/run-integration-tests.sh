@@ -9,7 +9,7 @@
 #
 # Runs the Waiter integration tests, and dumps log files if the tests fail.
 
-set -v
+set -ev
 
 TEST_COMMAND=${1:-parallel-test}
 TEST_SELECTOR=${2:-integration}
@@ -19,6 +19,7 @@ WAITER_DIR=${DIR}/../..
 KITCHEN_DIR=${WAITER_DIR}/../kitchen
 
 # Build mesos agent with kitchen backed in
+export PATH=${KITCHEN_DIR}/..:$PATH
 ${KITCHEN_DIR}/bin/build-docker-image.sh
 
 # Start minimesos
@@ -26,25 +27,18 @@ export PATH=${DIR}:${PATH}
 which minimesos
 pushd ${WAITER_DIR}
 minimesos up
-MINIMESOS_EXIT_CODE=$?
 popd
-if [ ${MINIMESOS_EXIT_CODE} -ne 0 ]; then
-    echo "minimesos failed to startup -- exiting"
-    exit ${MINIMESOS_EXIT_CODE}
-fi
 
 # Start waiter
 WAITER_PORT=9091
 ${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}
-TESTS_EXIT_CODE=$?
+WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
 
 # If there were failures, dump the logs
-if [ ${TESTS_EXIT_CODE} -ne 0 ]; then
+if [ "$test_failures" = true ]; then
     echo "integration tests failed -- dumping logs"
     tail -n +1 -- log/*.log
+    exit 1
 fi
-
-exit ${TESTS_EXIT_CODE}

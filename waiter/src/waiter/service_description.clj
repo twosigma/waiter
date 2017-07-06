@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -23,6 +23,7 @@
             [waiter.utils :as utils]
             [slingshot.slingshot :as sling])
   (:import (org.joda.time DateTime)
+           (schema.core RequiredKey)
            (schema.utils ValidationError)))
 
 (def ^:const default-health-check-path "/status")
@@ -47,6 +48,8 @@
    (s/required-key "version") schema/non-empty-string
    (s/required-key "run-as-user") schema/non-empty-string
    ;; Optional
+   (s/optional-key "authentication") schema/valid-authentication
+   (s/optional-key "backend-proto") schema/valid-backend-proto
    (s/optional-key "cmd-type") schema/non-empty-string
    (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
                                                schema/valid-string-length}
@@ -60,6 +63,7 @@
                                          #(< (count %) 100))
    (s/optional-key "name") schema/non-empty-string
    (s/optional-key "permitted-user") schema/non-empty-string
+   (s/optional-key "ports") schema/valid-number-of-ports
    (s/optional-key "metric-group") schema/valid-metric-group
    ; start-up related
    (s/optional-key "health-check-url") schema/non-empty-string
@@ -81,17 +85,22 @@
    (s/optional-key "max-queue-length") schema/positive-int
    s/Str s/Any})
 
+(def ^:const service-required-keys (->> (keys service-description-schema)
+                                        (filter #(instance? RequiredKey %1))
+                                        (map :k)
+                                        (set)))
+
 ; keys used in computing the service-id from the service description
 (def ^:const service-override-keys
-  #{"blacklist-on-503" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate" "grace-period-secs"
-    "idle-timeout-mins" "instance-expiry-mins" "jitter-threshold" "max-queue-length" "min-instances" "max-instances"
-    "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
+  #{"authentication" "blacklist-on-503" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate"
+    "grace-period-secs" "idle-timeout-mins" "instance-expiry-mins" "jitter-threshold" "max-queue-length" "min-instances"
+    "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 ; keys stored in the service description
 (def ^:const service-description-keys
   (set/union service-override-keys
-             #{"cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata" "metric-group" "name"
-               "permitted-user" "run-as-user" "version"}))
+             #{"backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata" "metric-group" "name"
+               "permitted-user" "ports" "run-as-user" "version"}))
 
 ; keys allowed in a service description for on-the-fly requests
 (def ^:const on-the-fly-service-description-keys (set/union service-description-keys #{"token"}))
@@ -244,6 +253,12 @@
     (log/debug "Got ID for app" service-description sorted-service-desc service-id)
     service-id))
 
+(defn required-keys-present?
+  "Returns true if every required parameter is available in the service description.
+   Note: It does not perform any validation on the values stored against the parameters."
+  [service-description]
+  (every? #(contains? service-description %) service-required-keys))
+
 (defn validate-schema
   "Validates the provided service description template.
    When requested to do so, it populates required fields to ensure validation does not fail for missing required fields."
@@ -353,16 +368,32 @@
       (and (not= waiter-hostname hostname) (not (str/blank? hostname))) {:token hostname, :source :host-header}
       :else nil)))
 
+(defn token-preauthorized?
+  "Returns true if the token is pre-authorized and will not need authorization before being launched."
+  [{:strs [permitted-user run-as-user]}]
+  (and (-> permitted-user str/blank? not)
+       (not= "*" run-as-user)
+       (-> run-as-user str/blank? not)))
+
+(defn token-authentication-disabled?
+  "Returns true if the token is authentication-disabled and will not need authorization before being launched."
+  [{:strs [authentication permitted-user run-as-user] :as description}]
+  (and (= "disabled" authentication)
+       (= "*" permitted-user)
+       (not= "*" run-as-user)
+       (-> run-as-user str/blank? not)
+       (required-keys-present? description)))
+
 (defn- prepare-service-description-template-from-tokens
   "Prepares the service description using the token(s)."
   [waiter-headers request-headers kv-store waiter-hostname]
-  (let [{:keys [token source]} (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostname)
-        token-preauthorized? (fn [description] (every? #(contains? description %) ["run-as-user" "permitted-user"]))]
+  (let [{:keys [token source]} (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostname)]
     (cond
       (= source :host-header)
       (let [service-description-template (sanitize-service-description
                                            (token->service-description-template kv-store token :error-on-missing false))]
         {:service-description-template service-description-template
+         :token-authentication-disabled (token-authentication-disabled? service-description-template)
          :token-preauthorized (token-preauthorized? service-description-template)})
 
       (= source :waiter-header)
@@ -374,11 +405,14 @@
             (if remaining-token-names
               (recur service-description-template' remaining-token-names)
               {:service-description-template (sanitize-service-description service-description-template')
+               :token-authentication-disabled (and (= 1 (count token-names))
+                                                   (token-authentication-disabled? service-description-template'))
                :token-preauthorized (and (= 1 (count token-names))
                                          (token-preauthorized? service-description-template'))}))))
 
       :else
       {:service-description-template {}
+       :token-authentication-disabled false
        :token-preauthorized false})))
 
 (let [service-id->key #(str "^SERVICE-ID#" %)]
@@ -443,12 +477,13 @@
         (sanitize-service-description (-> waiter-headers
                                           headers/drop-waiter-header-prefix
                                           parse-metadata-headers))
-        {:keys [service-description-template token-preauthorized]}
+        {:keys [service-description-template token-authentication-disabled token-preauthorized]}
         (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostname)]
     {:defaults service-description-defaults
-     :tokens service-description-template
      :headers service-description-template-from-headers
-     :token-preauthorized token-preauthorized}))
+     :token-authentication-disabled token-authentication-disabled
+     :token-preauthorized token-preauthorized
+     :tokens service-description-template}))
 
 (defn- merge-service-description-sources
   [descriptor kv-store waiter-hostname service-description-defaults]
@@ -474,12 +509,13 @@
       - configured defaults.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user."
-    [{:keys [token-preauthorized] :as sources} waiter-headers passthrough-headers kv-store service-id-prefix username
-     metric-group-mappings service-description-builder assoc-run-as-user-approved?]
-    (let [service-description-based-on-headers (cond->> (:headers sources)
+    [{:keys [headers token-authentication-disabled token-preauthorized tokens] :as sources}
+     waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
+     service-description-builder assoc-run-as-user-approved?]
+    (let [service-description-based-on-headers (cond->> headers
                                                         ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
-                                                        (seq (:headers sources)) (merge {"run-as-user" username}))
-          service-description-from-headers-and-token-sources (merge (:tokens sources) service-description-based-on-headers)
+                                                        (seq headers) (merge {"run-as-user" username}))
+          service-description-from-headers-and-token-sources (merge tokens service-description-based-on-headers)
           sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
                                                              ;; * run-as-user is the same as a missing run-as-user
                                                              (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))
@@ -508,6 +544,7 @@
                                                                            :assoc-run-as-user-approved? assoc-run-as-user-approved?
                                                                            :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
+              service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))
               stored-service-description? (fetch-core kv-store service-id)]
           ; Validating is expensive, so avoid validating if we've validated before, relying on the fact
           ; that we'll only store validated service descriptions
@@ -515,6 +552,7 @@
             (validate service-description-builder core-service-description {:allow-missing-required-fields? false})
             (validate service-description-builder service-description {:allow-missing-required-fields? false}))
           {:core-service-description core-service-description
+           :service-authentication-disabled service-authentication-disabled
            :service-description service-description
            :service-id service-id
            :service-preauthorized service-preauthorized})

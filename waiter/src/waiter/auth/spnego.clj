@@ -1,16 +1,15 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.auth.spnego
-  (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
+  (:require [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -24,15 +23,14 @@
             [waiter.metrics :as metrics])
   (:import [org.ietf.jgss GSSManager GSSCredential GSSContext]))
 
-;; Decode the input token from the negotiate line
-;; expects the authorization token to exist
-;;
-(defn decode-input-token ^bytes
+(defn decode-input-token
+  "Decode the input token from the negotiate line, expects the authorization token to exist"
+  ^bytes
   [req]
   (let [enc_tok (get-in req [:headers "authorization"])
-        tfields (str/split enc_tok #" ")]
-    (when (= "negotiate" (str/lower-case (first tfields)))
-      (b64/decode (.getBytes ^String (last tfields))))))
+        token-fields (str/split enc_tok #" ")]
+    (when (= "negotiate" (str/lower-case (first token-fields)))
+      (b64/decode (.getBytes ^String (last token-fields))))))
 
 (defn encode-output-token
   "Take a token from a gss accept context call and encode it for use in a -authenticate header"
@@ -48,7 +46,7 @@
 (defn response-401-negotiate
   "Tell the client you'd like them to use kerberos"
   []
-  (log/info "Triggering 401 negotiate for spnego authentication")
+  (log/info "triggering 401 negotiate for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "401"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
   (-> (rr/response "Unauthorized")
@@ -72,57 +70,38 @@
   [^GSSContext gss]
   (str (.getSrcName gss)))
 
-(defn get-auth-cookie-value
-  [cookie-string]
-  (cookie-support/cookie-value cookie-string auth/AUTH-COOKIE-NAME))
-
 (defn require-gss
   "This middleware enables the application to require a SPNEGO
-   authentication. If SPNEGO is successful then the handler `rh`
+   authentication. If SPNEGO is successful then the handler `request-handler`
    will be run, otherwise the handler will not be run and 401
    returned instead.  This middleware doesn't handle cookies for
    authentication, but that should be stacked before this handler."
-  [rh password]
+  [request-handler password]
   (fn require-gss-handler [{:keys [headers] :as req}]
-    (let [waiter-cookie (get-auth-cookie-value (get headers "cookie"))
-          [auth-princ auth-time :as decoded-auth-cookie]
-          (try
-            (log/debug "Decoding cookie:" waiter-cookie)
-            (when waiter-cookie
-              (let [decoded-cookie (cookie-support/decode-cookie-cached waiter-cookie password)]
-                (if (seq decoded-cookie)
-                  decoded-cookie
-                  (do (log/warn "Invalid decoded cookie:" decoded-cookie)
-                      nil))))
-            (catch Exception e (do
-                                 (log/warn e "Failed to decode cookie:" waiter-cookie)
-                                 nil)))
-          well-formed? (and decoded-auth-cookie (integer? auth-time) (string? auth-princ) (= 2 (count decoded-auth-cookie)))]
-      (log/debug "Well-formed?" decoded-auth-cookie (integer? auth-time) (string? auth-princ) (= 2 (count decoded-auth-cookie)))
+    (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
+          [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
       (cond
         ;; Use the cookie, if not expired
-        (and well-formed? (> (+ auth-time (-> 1 t/days t/in-millis)) (System/currentTimeMillis)))
-        (do (log/debug "Using sane cookies")
-            (-> req
-                (assoc
-                  :authenticated-principal auth-princ
-                  :authorization/user (first (str/split auth-princ #"@" 2)))
-                (rh)
-                (cookie-support/cookies-async-response)))
+        (auth/decoded-auth-valid? decoded-auth-cookie)
+        (-> (auth/assoc-auth-in-request req auth-principal)
+            (request-handler)
+            (cookie-support/cookies-async-response))
+        ;; Try and authenticate using kerberos and add cookie in response when valid
         (get-in req [:headers "authorization"])
-        (let [^GSSContext gss_context (gss-context-init)]
-          (let [token (do-gss-auth-check gss_context req)]
-            (if (.isEstablished gss_context)
-              (let [principal (gss-get-princ gss_context)
-                    user (first (str/split principal #"@" 2))
-                    resp (auth/handle-request-auth rh req user principal password)]
-                (log/debug "Added cookies to response")
-                (if token
-                  (if (map? resp)
-                    (rr/header resp "WWW-Authenticate" token)
-                    (async/go
-                      (rr/header (async/<! resp) "WWW-Authenticate" token)))
-                  resp))
-              (response-401-negotiate))))
+        (let [^GSSContext gss_context (gss-context-init)
+              token (do-gss-auth-check gss_context req)]
+          (if (.isEstablished gss_context)
+            (let [principal (gss-get-princ gss_context)
+                  user (first (str/split principal #"@" 2))
+                  resp (auth/handle-request-auth request-handler req user principal password)]
+              (log/debug "added cookies to response")
+              (if token
+                (if (map? resp)
+                  (rr/header resp "WWW-Authenticate" token)
+                  (async/go
+                    (rr/header (async/<! resp) "WWW-Authenticate" token)))
+                resp))
+            (response-401-negotiate)))
+        ;; Default to unauthorized
         :else
         (response-401-negotiate)))))

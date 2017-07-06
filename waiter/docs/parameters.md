@@ -16,6 +16,8 @@ Additional (optional) parameters that can be set:
 
 |Parameter|Default Value|Valid Values|Description|Guidance|
 |---------|-------------|------------|-----------|--------|
+|`X-Waiter-Authentication`|standard|disabled or standard|The authentication mechanism to use for incoming requests.|By default, Waiter authenticates incoming requests using the standard protocol (e.g. Kerberos). If you would prefer that Waiter not authenticate incoming requests, set this flag to disabled.|
+|`X-Waiter-Backend-Proto`|http|http or https|The backend connection protocol to use.|By default, Waiter connects to backend instances using the HTTP protocol. If you would prefer that Waiter use HTTPS, feel free to set this parameter to https.|
 |`X-Waiter-Blacklist-On-503`|true|true or false|If an instance returns 503, whether or not the instance will be blacklisted.|By default, Waiter avoids instances that are returning a 503 error code in responses, which typically indicates the server is too busy. If you would prefer that Waiter not do this, feel free to disable this feature.|
 |`X-Waiter-Cmd-Type`|"shell"|"shell"|Provides an extension point for supporting different types of commands in the future.|Feel free to add new command types to suit your needs.|
 |`X-Waiter-Concurrency-Level`|1|1-10000|The number of simultaneous requests to an individual backend instance.|Increasing this value will likely lead to better performance and better resource utilization. Avoid queuing your requests on your backend instances by not increasing concurrency level above what an individual instance can handle. The shorter your requests, the more benefit you will get out of a higher concurrency level.|
@@ -32,6 +34,7 @@ Additional (optional) parameters that can be set:
 |`X-Waiter-Metric-Group`|"other"|[A-Za-z0-9-_]+|Metric groups allow services to be grouped together for the purpose of metric collection.|If you have `:statsd` enabled in your [config file](../config-full.edn), then specify a metric group. If you have multiple services, choose the same metric group if you'd like combined metrics, otherwise choose independent metric groups.|
 |`X-Waiter-Min-Instances`|1|1 or 2|The minimum number of instances that Waiter should keep running at all times.|Go with the default.|
 |`X-Waiter-Permitted-User`|user who is making the request|any user|The user that is authorized to make requests to your service|Use as needed.|
+|`X-Waiter-Ports`|1|[1-10]|The number of ports needed by the service.|Use as needed, only restriction is that the first port must always be used for a web server responding to healthchecks and incoming web requests.|
 |`X-Waiter-Queue-Timeout`|300000 (5 mins)|>0|The maximum time, in milliesconds, allowed spent by a request waiting for an available service backend.|Don't change it unless you have a good reason to do so.|
 |`X-Waiter-Restart-Backoff-Factor`|2|>=1|The factor by which to multiple the amount of time between consecutive start-up failures. The base is 1 second.|The default is reasonable for most cases.|
 |`X-Waiter-Scale-Down-Factor`|0.1|(0-1]|The percentage amount, per second, to decrease the current number of instances toward the target number of instances. See [How Waiter Autoscaling Works](autoscaling.md).|Don't change it unless you have a good reason to do so.|
