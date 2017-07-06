@@ -530,7 +530,7 @@
                                            ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided
                                            (assoc-run-as-requester-fields username)
                                            contains-service-parameter-header?
-                                           ; can only set the permitted-user if some on-the-fly-service-description-keys waiter header was provided
+                                           ; can only set the permitted-user if some service-description-keys waiter header was provided
                                            (assoc "permitted-user" username))
           defaults (:defaults sources)]
       (when (empty? user-service-description)
