@@ -127,5 +127,6 @@
                           "-XX:+PrintReferenceGC"
                           "-XX:+PrintAdaptiveSizePolicy"
                           "-Xmx512m"
-                          "-Xloggc:log/gc.log"]}}
+                          "-Xloggc:log/gc.log"]}
+             :override-maven {:local-repo ~(System/getenv "WAITER_MAVEN_LOCAL_REPO")}}
   :uberjar-name ~(System/getenv "UBERJAR_NAME"))
