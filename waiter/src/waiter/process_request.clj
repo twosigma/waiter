@@ -39,7 +39,6 @@
            java.io.IOException
            org.eclipse.jetty.io.EofException
            org.eclipse.jetty.server.HttpChannel
-           org.eclipse.jetty.server.HttpInput
            org.eclipse.jetty.server.HttpOutput))
 
 (defn check-control [control-chan]
@@ -247,14 +246,17 @@
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
-  [http-client make-basic-auth-fn instance {:keys [request-method] :as request} request-properties passthrough-headers
-   end-route app-password metric-group]
+  [http-client make-basic-auth-fn instance {:keys [body request-method] :as request}
+   {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route app-password metric-group]
   (let [instance-endpoint (scheduler/end-point-url instance end-route)
         service-id (scheduler/instance->service-id instance)
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
         ; Also remove hop-by-hop headers https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
         headers (-> (dissoc passthrough-headers "expect" "authorization")
-                    (headers/dissoc-hop-by-hop-headers))
+                    (headers/dissoc-hop-by-hop-headers)
+                    ;; ensure a value (potentially nil) is available for content-type to prevent Jetty from generating a default content-type
+                    ;; please see org.eclipse.jetty.client.HttpConnection#normalizeRequest(request) for the control-flow for content-type header
+                    (assoc "content-type" (get passthrough-headers "content-type")))
         waiter-debug-enabled? (utils/request->debug-enabled? request)]
     (try
       (let [content-length-str (get passthrough-headers "content-length")
@@ -267,14 +269,8 @@
         (log/error e "Unable to track content-length on request")))
     (when waiter-debug-enabled?
       (log/info "connecting to" instance-endpoint))
-    (let [request-body (:body request)
-          content-available (if (instance? HttpInput request-body)
-                              (pos? (.available ^HttpInput request-body))
-                              true)
-          body-to-send (when content-available request-body)
-          {:keys [initial-socket-timeout-ms output-buffer-size]} request-properties]
-      (make-http-request http-client make-basic-auth-fn request-method instance-endpoint headers body-to-send app-password
-                         (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size))))
+    (make-http-request http-client make-basic-auth-fn request-method instance-endpoint headers body app-password
+                       (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size)))
 
 (defn inspect-for-202-async-request-response
   "Helper function that inspects the response and triggers async-request post processing."
