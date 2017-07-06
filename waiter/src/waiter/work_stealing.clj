@@ -209,24 +209,29 @@
                                          (throw error)
                                          body))]
                 (try
-                  (deliver response-result-promise
-                           (-> (make-inter-router-requests-fn
-                                 "work-stealing"
-                                 :acceptable-router? #(= target-router-id %)
-                                 :body (-> reservation-parameters
-                                           (assoc :router-id router-id
-                                                  :service-id service-id)
-                                           (utils/map->json-response)
-                                           :body)
-                                 :method :post)
-                               (get target-router-id)
-                               async/<!
-                               response->body
-                               async/<! ;; rely on http client library to close the body
-                               str
-                               json/read-str
-                               walk/keywordize-keys
-                               (get :response-status "work-stealing-error")))
+                  (let [inter-router-response (-> (make-inter-router-requests-fn
+                                                    "work-stealing"
+                                                    :acceptable-router? #(= target-router-id %)
+                                                    :body (-> reservation-parameters
+                                                              (assoc :router-id router-id
+                                                                     :service-id service-id)
+                                                              (utils/map->json-response)
+                                                              :body)
+                                                    :method :post)
+                                                  (get target-router-id))
+                        response-result (if inter-router-response
+                                          (-> inter-router-response
+                                              async/<!
+                                              response->body
+                                              async/<! ;; rely on http client library to close the body
+                                              str
+                                              json/read-str
+                                              walk/keywordize-keys
+                                              (get :response-status "work-stealing-error"))
+                                          (do
+                                            (log/info "no inter-router response from" target-router-id)
+                                            "work-stealing-error"))]
+                    (deliver response-result-promise response-result))
                   (catch Exception e
                     (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" target-router-id "errors"))
                     (deliver response-result-promise "work-stealing-error")

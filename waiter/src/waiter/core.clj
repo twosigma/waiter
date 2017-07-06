@@ -323,10 +323,12 @@
          config {}
          method :get
          error-handler utils/exception->strs}}]
-  (let [router-id->endpoint-url (discovery/router-id->endpoint-url
-                                  discovery "http" endpoint :exclude-set #{my-router-id})]
-    (loop [[[dest-router-id endpoint-url] & remaining-items]
-           (filter (fn [[router-id _]] (acceptable-router? router-id)) router-id->endpoint-url)
+  (let [router-id->endpoint-url (discovery/router-id->endpoint-url discovery "http" endpoint :exclude-set #{my-router-id})
+        router-id->endpoint-url' (filter (fn [[router-id _]] (acceptable-router? router-id)) router-id->endpoint-url)]
+    (when (and (empty? router-id->endpoint-url')
+               (not-empty router-id->endpoint-url))
+      (log/info "no acceptable routers found to make request!"))
+    (loop [[[dest-router-id endpoint-url] & remaining-items] router-id->endpoint-url'
            router-id->response {}]
       (if dest-router-id
         (let [secret-word (utils/generate-secret-word my-router-id dest-router-id passwords)
