@@ -879,7 +879,7 @@
     (testing "run as user star from on-the-fly headers with permitted-user"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
-              "permitted-user" "current-request-user"
+              "permitted-user" "alice"
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
                                    :tokens {"run-as-user" "token-ru"},

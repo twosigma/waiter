@@ -531,7 +531,7 @@
                                            (assoc-run-as-requester-fields username)
                                            contains-service-parameter-header?
                                            ; can only set the permitted-user if some service-description-keys waiter header was provided
-                                           (assoc "permitted-user" username))
+                                           (assoc "permitted-user" (or (get headers "permitted-user") username)))
           defaults (:defaults sources)]
       (when (empty? user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
