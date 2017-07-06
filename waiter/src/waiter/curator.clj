@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -11,7 +11,9 @@
 (ns waiter.curator
   (:require [clojure.tools.logging :as log]
             [taoensso.nippy :as nippy])
-  (:import java.net.ServerSocket
+  (:import clojure.lang.ExceptionInfo
+           java.io.Closeable
+           java.net.ServerSocket
            java.util.concurrent.TimeUnit
            org.apache.curator.framework.CuratorFramework
            org.apache.curator.framework.recipes.locks.InterProcessMutex
@@ -22,7 +24,7 @@
            org.apache.zookeeper.data.Stat))
 
 (defn close
-  [^java.io.Closeable c]
+  [^Closeable c]
   (.close c))
 
 (def create-modes
@@ -45,7 +47,14 @@
 (defn deserialize
   [serializer data]
   (condp = serializer
-    :nippy (nippy/thaw data)
+    :nippy (try
+             (nippy/thaw data)
+             (catch ExceptionInfo e
+               (log/error "Error in deserializing data" (.getMessage e))
+               ;; remove password from exception thrown by nippy
+               (throw (ex-info (.getMessage e)
+                               (-> (ex-data e)
+                                   (update-in [:opts :password] (fn [password] (when password "***"))))))))
     :none data
     :else (throw (ex-info "Unknown serializer" {:serializer serializer}))))
 

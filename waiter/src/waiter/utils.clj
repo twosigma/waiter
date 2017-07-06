@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -142,10 +142,15 @@
       (symbol? v) (str/join "/" ((juxt namespace name) v))
       :else v)))
 
+(defn map->json
+  "Convert the input data into a json string."
+  [data-map]
+  (json/write-str data-map :value-fn stringify-elements))
+
 (defn map->json-response
   "Convert the input data into a json response."
   [data-map & {:keys [status] :or {status 200}}]
-  {:body (json/write-str data-map :value-fn stringify-elements)
+  {:body (map->json data-map)
    :status status
    :headers {"Content-Type" "application/json"}})
 
@@ -372,11 +377,17 @@
   (let [port-index (str/index-of (str authority) ":")]
     (if port-index (subs authority (inc port-index)) (str default))))
 
+(defn request->scheme
+  "Extracts the scheme from the request."
+  [{:keys [headers scheme]}]
+  (let [{:strs [x-forwarded-proto]} headers]
+    (or x-forwarded-proto scheme)))
+
 (defn same-origin
   "Returns true if the host and origin are non-nil and are equivalent."
-  [{:keys [headers scheme]}]
-  (let [{:strs [host origin x-forwarded-proto]} headers
-        scheme (or x-forwarded-proto scheme)]
+  [{:keys [headers] :as request}]
+  (let [{:strs [host origin]} headers
+        scheme (request->scheme request)]
     (when (and host origin scheme)
       (= origin (str (name scheme) "://" host)))))
 
@@ -410,3 +421,8 @@
       true)
     (catch Exception _
       false)))
+
+(defn request->debug-enabled?
+  "Parses the request header to determine if debug mode has been enabled."
+  [request]
+  (boolean (get-in request [:headers "x-waiter-debug"])))

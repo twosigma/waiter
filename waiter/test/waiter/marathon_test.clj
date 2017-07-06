@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -45,6 +45,7 @@
                                               :app {
                                                     :id "test-app-1234",
                                                     :instances 3,
+                                                    :healthChecks [{:path "/health", :portIndex 0, :protocol "HTTPS", :timeoutSeconds 10}],
                                                     :lastTaskFailure {
                                                                       :appId "test-app-1234",
                                                                       :host "10.141.141.10",
@@ -100,6 +101,7 @@
                                                                      :log-directory nil,
                                                                      :message nil,
                                                                      :port 31045,
+                                                                     :protocol "https",
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.959Z"}),
                                                                   (scheduler/make-ServiceInstance
@@ -110,6 +112,7 @@
                                                                      :log-directory nil,
                                                                      :message nil,
                                                                      :port 31234,
+                                                                     :protocol "https",
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002456.965Z"}),
                                                                   (scheduler/make-ServiceInstance
@@ -120,6 +123,7 @@
                                                                      :log-directory nil,
                                                                      :message nil,
                                                                      :port 41234,
+                                                                     :protocol "https",
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-14T002446.965Z"}))
                                               :failed-instances (list
@@ -191,6 +195,7 @@
                                                                      :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest",
                                                                      :message nil,
                                                                      :port 31045,
+                                                                     :protocol "http",
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.959Z"}),
                                                                   (scheduler/make-ServiceInstance
@@ -201,6 +206,7 @@
                                                                      :log-directory nil,
                                                                      :message nil,
                                                                      :port 31234,
+                                                                     :protocol "http",
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.965Z"}),
                                                                   (scheduler/make-ServiceInstance
@@ -211,23 +217,21 @@
                                                                      :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest",
                                                                      :message nil,
                                                                      :port 41234,
+                                                                     :protocol "http",
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.965Z"}))
                                               :failed-instances []
                                               :killed-instances []}})]
-    (doseq [test-case test-cases]
-      (let [name (:name test-case)
-            marathon-response (:marathon-response test-case)
-            expected-response (:expected-response test-case)
-            framework-id (:framework-id marathon-response)
-            service-id->failed-instances-transient-store (atom {})
-            actual-response (response-data->service-instances
-                              marathon-response
-                              [:app]
-                              (fn [] framework-id)
-                              "/slave-dir"
-                              service-id->failed-instances-transient-store)]
-        (testing (str "Test " name)
+    (doseq [{:keys [expected-response marathon-response name]} test-cases]
+      (testing (str "Test " name)
+        (let [framework-id (:framework-id marathon-response)
+              service-id->failed-instances-transient-store (atom {})
+              actual-response (response-data->service-instances
+                                marathon-response
+                                [:app]
+                                (fn [] framework-id)
+                                "/slave-dir"
+                                service-id->failed-instances-transient-store)]
           (is (= expected-response actual-response) (str name))
           (scheduler/preserve-only-killed-instances-for-services! [])
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
@@ -235,7 +239,7 @@
 (deftest test-response-data->service->service-instances
   (let [input [{:id "test-app-1234"
                 :instances 2
-                :healthChecks [{:path "/ping", :portIndex 0, :protocol "HTTP", :timeoutSeconds 10}]
+                :healthChecks [{:path "/ping", :portIndex 0, :protocol "HTTPS", :timeoutSeconds 10}]
                 :tasks [{:appId "/test-app-1234"
                          :healthCheckResults [{:alive true
                                                :consecutiveFailures 0
@@ -322,6 +326,7 @@
                          :healthy? true
                          :host "10.141.141.11"
                          :port 31045
+                         :protocol "https"
                          :started-at "2014-09-13T002446.959Z"})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-1234.B"
@@ -329,6 +334,7 @@
                          :healthy? true
                          :host "10.141.141.12"
                          :port 31234
+                         :protocol "https"
                          :started-at "2014-09-13T002446.965Z"}))
                     :failed-instances []
                     :killed-instances []}
@@ -341,6 +347,7 @@
                          :healthy? true
                          :host "10.141.141.11"
                          :port 31045
+                         :protocol "http"
                          :started-at "2014-09-13T002446.959Z"})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.B"
@@ -348,6 +355,7 @@
                          :healthy? nil
                          :host "10.141.141.12"
                          :port 36789
+                         :protocol "http"
                          :started-at "2014-09-13T002456.965Z"})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.C"
@@ -355,6 +363,7 @@
                          :healthy? false
                          :host "10.141.141.13"
                          :port 46789
+                         :protocol "http"
                          :started-at "2014-09-14T002446.965Z"}))
                     :failed-instances
                     (list
@@ -532,7 +541,8 @@
                       :user "test-user"}
             home-path-prefix "/home/path/"
             service-id "test-service-1"
-            service-description {"cmd" "test-command"
+            service-description {"backend-proto" "http"
+                                 "cmd" "test-command"
                                  "cpus" 1
                                  "mem" 1536
                                  "run-as-user" "test-user"

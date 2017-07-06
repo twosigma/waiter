@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -64,10 +64,11 @@
    :daemons core/daemons
    :handlers core/request-handlers
    :state core/state
-   :http-server (pc/fnk [[:routines waiter-request?-fn]
+   :http-server (pc/fnk [[:routines waiter-request?-fn websocket-request-authenticator]
                          [:settings host port]
                          handlers] ; Insist that all systems are running before we start server
                   (server/run-jetty {:ring-handler (consume-request-stream (core/ring-handler-factory waiter-request?-fn handlers))
+                                     :websocket-acceptor websocket-request-authenticator
                                      :websocket-handler (core/websocket-handler-factory handlers)
                                      :host host
                                      :join? false

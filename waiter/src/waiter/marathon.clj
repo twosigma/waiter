@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -121,6 +121,10 @@
                          (every?
                            (fn [hc]
                              (zero? (:consecutiveFailures hc))) health-checks)))
+        protocol (-> marathon-response
+                     (get-in (conj service-keys :healthChecks 0 :protocol))
+                     str
+                     str/lower-case)
         active-marathon-tasks (get-in marathon-response (conj service-keys :tasks))
         active-instances (map
                            #(scheduler/make-ServiceInstance
@@ -132,7 +136,8 @@
                                    :healthy? (healthy?-fn %)
                                    ;; first port must be used for the web server, extra ports can be used freely.
                                    :port (-> % :ports first)
-                                   :extra-ports (-> % :ports rest vec)})))
+                                   :extra-ports (-> % :ports rest vec)
+                                   :protocol protocol})))
                            active-marathon-tasks)]
     (parse-and-store-failed-instance!
       service-id->failed-instances-transient-store
@@ -183,7 +188,7 @@
   "Returns the descriptor to be used by Marathon to create new apps."
   [home-path-prefix service-id->password-fn {:keys [service-id service-description]}]
   (let [health-check-url (sd/service-description->health-check-url service-description)
-        {:strs [cmd cpus disk grace-period-secs mem ports restart-backoff-factor run-as-user]} service-description
+        {:strs [backend-proto cmd cpus disk grace-period-secs mem ports restart-backoff-factor run-as-user]} service-description
         home-path (str home-path-prefix run-as-user)]
     {:id service-id
      :env (scheduler/environment service-id service-description service-id->password-fn home-path)
@@ -193,7 +198,7 @@
      :mem mem
      :ports (-> ports (repeat 0) vec)
      :cpus cpus
-     :healthChecks [{:protocol "HTTP"
+     :healthChecks [{:protocol (str/upper-case backend-proto)
                      :path health-check-url
                      :gracePeriodSeconds grace-period-secs
                      :intervalSeconds 10
