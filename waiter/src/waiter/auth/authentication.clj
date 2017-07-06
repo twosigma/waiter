@@ -9,7 +9,9 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.auth.authentication
-  (:require [clojure.tools.logging :as log]
+  (:require [clj-time.core :as t]
+            [clojure.string :as str]
+            [clojure.tools.logging :as log]
             [waiter.cookie-support :as cookie-support]))
 
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
@@ -42,6 +44,45 @@
       request-handler
       (add-cached-auth password principal)
       cookie-support/cookies-async-response))
+
+(defn decode-auth-cookie
+  "Decodes the provided cookie using the provided password.
+   Returns a sequence containing [auth-principal auth-time]."
+  [waiter-cookie password]
+  (try
+    (log/debug "decoding cookie:" waiter-cookie)
+    (when waiter-cookie
+      (let [decoded-cookie (cookie-support/decode-cookie-cached waiter-cookie password)]
+        (if (seq decoded-cookie)
+          decoded-cookie
+          (log/warn "invalid decoded cookie:" decoded-cookie))))
+    (catch Exception e
+      (log/warn e "failed to decode cookie:" waiter-cookie))))
+
+(defn decoded-auth-valid?
+  "Verifies whether the decoded authenticated cookie is valid as per the following rules:
+   The decoded value must be a sequence in the format: [auth-principal auth-time].
+   In addition, the auth-principal must be a string and the auth-time must be less than a day old."
+  [[auth-principal auth-time :as decoded-auth-cookie]]
+  (log/debug "well-formed?" decoded-auth-cookie (integer? auth-time) (string? auth-principal) (= 2 (count decoded-auth-cookie)))
+  (let [well-formed? (and decoded-auth-cookie
+                          (integer? auth-time)
+                          (string? auth-principal)
+                          (= 2 (count decoded-auth-cookie)))
+        one-day-in-millis (-> 1 t/days t/in-millis)]
+    (and well-formed? (> (+ auth-time one-day-in-millis) (System/currentTimeMillis)))))
+
+(defn get-auth-cookie-value
+  "Retrieves the auth cookie."
+  [cookie-string]
+  (cookie-support/cookie-value cookie-string AUTH-COOKIE-NAME))
+
+(defn assoc-auth-in-request
+  "Associate values for authenticated user in the request."
+  [request auth-principal]
+  (assoc request
+    :authenticated-principal auth-principal
+    :authorization/user (first (str/split auth-principal #"@" 2))))
 
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.
