@@ -185,7 +185,9 @@
                     response (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
                 (assert-response-status response 200)
-                (is (= (name-from-service-description waiter-url service-id) service-id-prefix)))
+                (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+                ;; the above request hashes to a different service-id than the rest of the test, so we need to cleanup
+                (delete-service waiter-url service-id))
 
               (log/info "Request with hostname token" token "along with x-waiter headers except run-as-user")
               (let [request-headers (merge (dissoc service-description :x-waiter-run-as-user) {"host" token})
