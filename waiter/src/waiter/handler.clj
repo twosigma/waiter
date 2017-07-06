@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -44,13 +44,15 @@
 
 (defn- async-make-http-request
   "Helper function for async status/result handlers."
-  [counter-name make-http-request-fn {:keys [body headers query-string request-method route-params uri] :as request}]
+  [counter-name make-http-request-fn service-id->service-description-fn
+   {:keys [body headers query-string request-method route-params uri] :as request}]
   (let [{:keys [host location port request-id router-id service-id]} route-params]
     (when-not (and host location port request-id router-id service-id)
       (throw (ex-info "Missing host, location, port, request-id, router-id or service-id in uri!"
                       {:route-params route-params, :uri uri, :status 400})))
     (counters/inc! (metrics/service-counter service-id "request-counts" counter-name))
-    (let [target-location (scheduler/end-point-url {:host host, :port port}
+    (let [{:strs [backend-proto]} (service-id->service-description-fn service-id)
+          target-location (scheduler/end-point-url {:host host :port port :protocol backend-proto}
                                                    (cond-> location (not (str/blank? query-string)) (str "?" query-string)))
           _ (log/info request-id counter-name "location is" target-location)
           {:keys [passthrough-headers]} (headers/split-headers headers)]
@@ -74,12 +76,13 @@
 (defn async-result-handler
   "Result handler for async requests. Supports any http method.
    The router delegates the call to the backend and it notifies the 'host' router to treat the async request as complete."
-  [async-trigger-terminate-fn make-http-request-fn {:keys [request-method route-params] :as request}]
+  [async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn
+   {:keys [request-method route-params] :as request}]
   (async/go
     (try
       (let [{:keys [request-id router-id service-id]} route-params
             {:keys [error status] :as backend-response}
-            (async/<! (async-make-http-request "async-result" make-http-request-fn request))]
+            (async/<! (async-make-http-request "async-result" make-http-request-fn service-id->service-description-fn request))]
         (log/info "http" request-method "returned status" status)
         (async-trigger-terminate-fn router-id service-id request-id)
         (when error (throw error))
@@ -93,15 +96,17 @@
    The status checks are 'host' router, i.e. the router that processed the original async request, independent.
    The router delegates the call to the backend and intercepts the response to know when the async request has completed.
    If the router determines that the request has completed, it notifies the 'host' router to treat the async request as complete."
-  [async-trigger-terminate-fn make-http-request-fn {:keys [request-method route-params] :as request}]
+  [async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn
+   {:keys [request-method route-params] :as request}]
   (async/go
     (try
       (let [{:keys [host location port request-id router-id service-id]} route-params
             {:keys [error status] :as backend-response}
-            (async/<! (async-make-http-request "async-status" make-http-request-fn request))]
+            (async/<! (async-make-http-request "async-status" make-http-request-fn service-id->service-description-fn request))]
         (when error (throw error))
-        (log/info "http" (name request-method) "returned status code" status)
-        (let [endpoint (scheduler/end-point-url {:host host, :port port} location)
+        (log/info (name request-method) "returned status code" status)
+        (let [{:strs [backend-proto]} (service-id->service-description-fn service-id)
+              endpoint (scheduler/end-point-url {:host host :port port :protocol backend-proto} location)
               location-header (get-in backend-response [:headers "location"])
               location-url (async-req/normalize-location-header endpoint location-header)
               relative-location? (str/starts-with? (str location-url) "/")]
@@ -603,7 +608,7 @@
   "Displays the consent form and requests approval from user. The content is rendered from consent.html.
    Approval form is submitted using AJAX and the user is then redirected to the target url that triggered a redirect to this form."
   [token->service-description-template service-description->service-id consent-expiry-days
-   {:keys [headers query-string request-method route-params scheme] :as request}]
+   {:keys [headers query-string request-method route-params] :as request}]
   (try
     (when-not (= :get request-method)
       (throw (ex-info "Only GET supported!" {:request-method request-method, :status 405})))
@@ -624,7 +629,7 @@
                                :consent-expiry-days consent-expiry-days
                                :service-description-template service-description-template
                                :service-id service-id
-                               :target-url (str (name scheme) "://" host-header "/" path
+                               :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
                                                 (when (not (str/blank? query-string)) (str "?" query-string)))
                                :token token})
          :headers {}

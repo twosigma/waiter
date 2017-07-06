@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -46,6 +46,7 @@
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
                                                   (s/required-key :connection-timeout-ms) schema/positive-int
                                                   (s/required-key :initial-socket-timeout-ms) schema/positive-int
+                                                  (s/required-key :output-buffer-size) schema/positive-int
                                                   (s/required-key :streaming-timeout-ms) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int}
    (s/required-key :kv-config) (s/constrained
@@ -86,7 +87,9 @@
                                                            s/Keyword schema/require-symbol-factory-fn}
                                                           schema/contains-kind-sub-map?)
    ; service-description-defaults should never contain default values for required fields, e.g. version, cmd, run-as-user, etc.
-   (s/required-key :service-description-defaults) {(s/required-key "blacklist-on-503") s/Bool
+   (s/required-key :service-description-defaults) {(s/required-key "authentication") schema/valid-authentication
+                                                   (s/required-key "backend-proto") schema/valid-backend-proto
+                                                   (s/required-key "blacklist-on-503") s/Bool
                                                    (s/required-key "concurrency-level") schema/positive-int
                                                    (s/required-key "distribution-scheme") (s/enum "balanced" "simple")
                                                    (s/required-key "env") {s/Str s/Str}
@@ -182,6 +185,7 @@
                                  :async-request-timeout-ms 60000
                                  :connection-timeout-ms 5000 ; 5 seconds
                                  :initial-socket-timeout-ms 900000 ; 15 minutes
+                                 :output-buffer-size 4096
                                  :queue-timeout-ms 300000
                                  :streaming-timeout-ms 20000}
    :kv-config {:kind :zk
@@ -192,7 +196,8 @@
                :encrypt true
                :relative-path "tokens"}
    :messages {:cannot-identify-service "Unable to identify service using waiter headers/token"
-              :invalid-service-description "Service description using waiter headers/token improperly configured"}
+              :invalid-service-description "Service description using waiter headers/token improperly configured"
+              :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}
    :metric-group-mappings []
    :metrics-config {:inter-router-metrics-idle-timeout-ms 2000
                     :metrics-gc-interval-ms 60000
@@ -231,7 +236,9 @@
    :service-description-builder-config {:kind :default
                                         :default {:factory-fn
                                                   'waiter.service-description/->DefaultServiceDescriptionBuilder}}
-   :service-description-defaults {"blacklist-on-503" true
+   :service-description-defaults {"authentication" "standard"
+                                  "backend-proto" "http"
+                                  "blacklist-on-503" true
                                   "concurrency-level" 1
                                   "distribution-scheme" "balanced"
                                   "env" {}
@@ -290,4 +297,3 @@
     (assoc
       (load-settings-file config-file)
       :git-version git-version)))
-

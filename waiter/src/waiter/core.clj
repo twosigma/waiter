@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -38,7 +38,6 @@
             [waiter.handler :as handler]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
-            [waiter.marathon :as marathon]
             [waiter.metrics :as metrics]
             [waiter.metrics-sync :as metrics-sync]
             [waiter.monitoring :as monitoring]
@@ -50,23 +49,24 @@
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.settings :as settings]
-            [waiter.shell-scheduler :as ss]
             [waiter.simulator :as simulator]
             [waiter.state :as state]
             [waiter.statsd :as statsd]
             [waiter.token :as token]
             [waiter.utils :as utils]
+            [waiter.websocket :as ws]
             [waiter.work-stealing :as work-stealing])
-  (:import java.net.InetAddress
-           java.net.URI
+  (:import (java.net InetAddress URI)
            java.util.concurrent.Executors
            org.apache.curator.framework.CuratorFrameworkFactory
            org.apache.curator.framework.api.CuratorEventType
            org.apache.curator.framework.api.CuratorListener
            org.apache.curator.framework.recipes.leader.LeaderLatch
            org.apache.curator.retry.BoundedExponentialBackoffRetry
+           org.eclipse.jetty.client.HttpClient
            org.eclipse.jetty.client.util.BasicAuthentication$BasicResult
-           org.eclipse.jetty.util.HttpCookieStore$Empty))
+           org.eclipse.jetty.util.HttpCookieStore$Empty
+           org.eclipse.jetty.websocket.client.WebSocketClient))
 
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
@@ -151,7 +151,7 @@
         (cid/request->correlation-id request)
         (log/info "received websocket request at" uri "with headers:" headers)
         (case uri
-          "/router-metrics" (router-metrics-handler-fn request)
+          "/waiter-router-metrics" (router-metrics-handler-fn request)
           (default-websocket-handler-fn request))))))
 
 (defn- make-blacklist-request
@@ -393,6 +393,15 @@
             (log/info router-id "relinquishing leadership as there are too few routers in cluster:" num-routers))
           (>= num-routers min-cluster-routers))))
 
+(defn- ^HttpClient http-client-factory
+  "Creates an instance of HttpClient with the specified timeout."
+  [connection-timeout-ms]
+  (let [client (http/client {:connect-timeout connection-timeout-ms
+                             :follow-redirects? false})
+        _ (.clear (.getContentDecoderFactories client))
+        _ (.setCookieStore client (HttpCookieStore$Empty.))]
+    client))
+
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
@@ -402,12 +411,8 @@
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
-   :http-client (pc/fnk [[:settings instance-request-properties]]
-                  (let [client (http/client {:connect-timeout (:connection-timeout-ms instance-request-properties)
-                                             :follow-redirects? false})
-                        _ (.clear (.getContentDecoderFactories client))
-                        _ (.setCookieStore client (HttpCookieStore$Empty.))]
-                    client))
+   :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
+                  (http-client-factory connection-timeout-ms))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
@@ -438,7 +443,9 @@
                                (cache/ttl-cache-factory :ttl (-> 1 t/minutes t/in-millis))
                                atom))
    :task-threadpool (pc/fnk [] (Executors/newFixedThreadPool 20))
-   :thread-id->stack-state-atom (pc/fnk [] (atom {}))})
+   :thread-id->stack-state-atom (pc/fnk [] (atom {}))
+   :websocket-client (pc/fnk [http-client]
+                       (WebSocketClient. ^HttpClient http-client))})
 
 (def curator
   {:curator (pc/fnk [[:settings [:zookeeper [:curator-retry-policy base-sleep-time-ms max-retries max-sleep-time-ms] connect-string]]]
@@ -518,6 +525,15 @@
                                  (fn async-trigger-terminate-fn [target-router-id service-id request-id]
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
+   :authentication-method-wrapper-fn (pc/fnk [[:state authenticator]]
+                                       (fn authentication-method-wrapper [request-handler]
+                                         (let [auth-handler (auth/wrap-auth-handler authenticator request-handler)]
+                                           (fn authenticate-request [request]
+                                             (if (:skip-authentication request)
+                                               (do
+                                                 (log/info "skipping authentication for request")
+                                                 (request-handler request))
+                                               (auth-handler request))))))
    :authorized?-fn (pc/fnk [[:settings entitlement-config]]
                      (let [entitlement-manager (utils/create-component entitlement-config)]
                        (fn authorized? [auth-user action resource]
@@ -551,13 +567,13 @@
    :make-basic-auth-fn (pc/fnk []
                          (fn make-basic-auth-fn [endpoint username password]
                            (BasicAuthentication$BasicResult. (URI. endpoint) username password)))
-   :make-http-request-fn (pc/fnk [[:settings [:instance-request-properties initial-socket-timeout-ms]]
+   :make-http-request-fn (pc/fnk [[:settings [:instance-request-properties initial-socket-timeout-ms output-buffer-size]]
                                   [:state http-client]
                                   make-basic-auth-fn service-id->password-fn]
-                           (fn make-http-request-fn [service-id location auth-user request-method headers body]
+                           (fn make-http-request-fn [service-id location auth-user-map request-method headers body]
                              (let [service-password (service-id->password-fn service-id)]
                                (pr/make-http-request http-client make-basic-auth-fn request-method location headers body
-                                                     service-password auth-user initial-socket-timeout-ms))))
+                                                     service-password auth-user-map initial-socket-timeout-ms output-buffer-size))))
    :make-inter-router-requests-async-fn (pc/fnk [[:curator discovery]
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state http-client passwords router-id]
@@ -637,7 +653,7 @@
    :start-new-service-fn (pc/fnk [[:state authenticator scheduler start-app-cache-atom task-threadpool]
                                   service-id->password-fn store-service-description-fn]
                            (fn start-new-service [{:keys [service-id core-service-description] :as descriptor}]
-                             (let [run-as-user (get descriptor [:service-description "run-as-user"])]
+                             (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
                                (auth/check-user authenticator run-as-user service-id))
                              (service/start-new-service
                                scheduler service-id->password-fn descriptor start-app-cache-atom task-threadpool
@@ -675,7 +691,13 @@
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
                                waiter-router-ip (.getHostAddress local-router)]
-                           (waiter-request?-factory (set [hostname waiter-router-hostname waiter-router-ip]))))})
+                           (waiter-request?-factory (set [hostname waiter-router-hostname waiter-router-ip]))))
+   :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
+                                             (fn websocket-request-auth-cookie-attacher [request]
+                                               (ws/inter-router-request-middleware router-id (first passwords) request)))
+   :websocket-request-authenticator (pc/fnk [[:state passwords]]
+                                      (fn websocket-request-authenticator [request response]
+                                        (ws/request-authenticator (first passwords) request response)))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]
@@ -720,16 +742,16 @@
                                    router-mult-chan (async/mult router-chan)]
                                (state/start-router-syncer discovery router-chan interval-ms delay-ms)
                                {:router-mult-chan router-mult-chan}))
-   :router-metrics-syncer (pc/fnk [[:routines crypt-helpers]
+   :router-metrics-syncer (pc/fnk [[:routines crypt-helpers websocket-request-auth-cookie-attacher]
                                    [:settings [:metrics-config inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms router-update-interval-ms]]
-                                   [:state router-metrics-agent]
+                                   [:state router-metrics-agent websocket-client]
                                    router-list-maintainer]
                             (let [{:keys [bytes-encryptor]} crypt-helpers
                                   router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))]
                               {:metrics-syncer (metrics-sync/setup-metrics-syncer router-metrics-agent metrics-sync-interval-ms bytes-encryptor)
                                :router-syncer (metrics-sync/setup-router-syncer router-chan router-metrics-agent router-update-interval-ms
                                                                                 inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms
-                                                                                bytes-encryptor)}))
+                                                                                websocket-client bytes-encryptor websocket-request-auth-cookie-attacher)}))
    :router-state-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                      [:state router-id]
                                      router-list-maintainer scheduler-maintainer]
@@ -832,12 +854,12 @@
                                     (fn inner-async-complete-handler-fn [src-router-id request]
                                       (handler/complete-async-handler async-request-terminate-fn src-router-id request))
                                     request)))
-   :async-result-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn]]
+   :async-result-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]]
                               (fn async-result-handler-fn [request]
-                                (handler/async-result-handler async-trigger-terminate-fn make-http-request-fn request)))
-   :async-status-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn]]
+                                (handler/async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request)))
+   :async-status-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]]
                               (fn async-status-handler-fn [request]
-                                (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn request)))
+                                (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request)))
    :blacklist-instance-handler-fn (pc/fnk [[:state instance-rpc-chan]
                                            handle-inter-router-request-fn]
                                     (fn blacklist-instance-handler-fn [request]
@@ -856,12 +878,22 @@
                                       (cors/preflight-handler cors-validator max-age request)
                                       (catch Exception e
                                         (utils/exception->response "Error in CORS pre-flight handler" e))))))
-   :default-websocket-handler-fn (pc/fnk [[:state router-id]]
-                                   (fn default-websocket-handler-fn [{:keys [out uri]}]
-                                     (log/info "unsupported websocket endpoint:" uri)
-                                     (async/go
-                                       (async/>! out (str "Bye from" router-id))
-                                       (async/close! out))))
+   :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
+                                          [:settings instance-request-properties]
+                                          [:state instance-rpc-chan passwords router-id websocket-client]]
+                                   (fn default-websocket-handler-fn [request]
+                                     (let [password (first passwords)
+                                           process-handlers []
+                                           make-request-fn (fn make-ws-request
+                                                             [instance request request-properties passthrough-headers end-route password metric-group]
+                                                             (ws/make-request websocket-client instance request request-properties passthrough-headers
+                                                                              end-route password metric-group))]
+                                       (letfn [(process-request-fn [request]
+                                                 (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
+                                                             service-id->password-fn instance-request-properties process-handlers prepend-waiter-url
+                                                             determine-priority-fn ws/process-response! ws/process-exception-in-request
+                                                             ws/abort-request-callback-factory request))]
+                                         (ws/request-handler password process-request-fn request)))))
    :display-settings-handler-fn (pc/fnk [handle-secure-request-fn settings]
                                   (fn display-settings-handler-fn [request]
                                     (handle-secure-request-fn
@@ -884,6 +916,36 @@
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
                             :content-type "image/png"}))
+   :handle-authentication-wrapper-fn (pc/fnk [[:curator kv-store]
+                                              [:settings hostname]]
+                                       (fn handle-authentication-wrapper-fn [request-handler {:keys [headers] :as request}]
+                                         (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
+                                               {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers hostname)
+                                               {:strs [authentication] :as service-description} (and token (sd/token->service-description-template kv-store token :error-on-missing false))
+                                               authentication-disabled? (= authentication "disabled")]
+                                           (cond
+                                             (contains? waiter-headers "x-waiter-authentication")
+                                             (do
+                                               (log/info "x-waiter-authentication is not supported as an on-the-fly header"
+                                                         {:service-description service-description, :token token})
+                                               (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+                                                                         :status 400))
+
+                                             ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
+                                             (and authentication-disabled? (some sd/service-description-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
+                                             (do
+                                               (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
+                                                         {:service-description service-description, :token token})
+                                               (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+                                                                         :status 400))
+
+                                             authentication-disabled?
+                                             (do
+                                               (log/info "request configured to skip authentication")
+                                               (request-handler (assoc request :skip-authentication true)))
+
+                                             :else
+                                             (request-handler request)))))
    :handle-inter-router-request-fn (pc/fnk [[:state passwords router-id]]
                                      (fn handle-inter-router-request [on-succesful-auth-handler-fn request]
                                        (let [src-router-id (promise)
@@ -903,12 +965,13 @@
                                                                     (on-succesful-auth-handler-fn @src-router-id request))
                                                                   (partial router-comm-authenticated? router-id passwords))]
                                          (basic-auth-handler request))))
-   :handle-secure-request-fn (pc/fnk [[:state authenticator cors-validator]]
+   :handle-secure-request-fn (pc/fnk [[:routines authentication-method-wrapper-fn]
+                                      [:state cors-validator]]
                                (fn handle-secure-request-fn [request-handler {:keys [uri] :as request}]
                                  (log/debug "secure request received at" uri)
-                                 (let [handler (auth/create-auth-handler
-                                                 authenticator
-                                                 (cors/handler request-handler cors-validator))]
+                                 (let [handler (-> request-handler
+                                                   (cors/handler cors-validator)
+                                                   authentication-method-wrapper-fn)]
                                    (handler request))))
    :kill-instance-handler-fn (pc/fnk [[:routines peers-acknowledged-blacklist-requests-fn]
                                       [:settings [:scaling inter-kill-request-wait-time-ms] blacklist-config]
@@ -927,18 +990,23 @@
                                  prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
                                 [:state http-client instance-rpc-chan router-id]
-                                handle-secure-request-fn]
+                                handle-authentication-wrapper-fn handle-secure-request-fn]
                          (let [process-handlers [pr/handle-suspended-service pr/handle-too-many-requests]
                                make-request-fn (fn [instance request request-properties passthrough-headers end-route
                                                     password metric-group]
                                                  (pr/make-request http-client make-basic-auth-fn instance request request-properties
-                                                                  passthrough-headers end-route password metric-group))]
+                                                                  passthrough-headers end-route password metric-group))
+                               process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
                            (fn process-request [request]
-                             (handle-secure-request-fn
-                               (fn inner-process-request [request]
-                                 (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn
-                                             start-new-service-fn service-id->password-fn instance-request-properties process-handlers
-                                             prepend-waiter-url post-process-async-request-response-fn determine-priority-fn request))
+                             (handle-authentication-wrapper-fn
+                               (fn handle-auth-process-request [request]
+                                 (handle-secure-request-fn
+                                   (fn inner-process-request [request]
+                                     (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
+                                                 service-id->password-fn instance-request-properties process-handlers prepend-waiter-url
+                                                 determine-priority-fn process-response-fn pr/process-exception-in-http-request
+                                                 pr/abort-http-request-callback-factory request))
+                                   request))
                                request))))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]

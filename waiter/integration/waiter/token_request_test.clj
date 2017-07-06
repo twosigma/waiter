@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -125,7 +125,7 @@
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
-            (is (some (fn [token-entry] (= token (get token-entry "token"))) tokens))))) 
+            (is (some (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
       (log/info "deleting the tokens")
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token))
@@ -196,6 +196,14 @@
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
                 (assert-response-status response 200)
                 (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+
+                (testing "backend request headers"
+                  (let [{:keys [body] :as response} (make-request waiter-url "/request-info" :headers request-headers)
+                        {:strs [headers]} (json/read-str (str body))]
+                    (assert-response-status response 200)
+                    (is (contains? headers "x-waiter-auth-principal"))
+                    (is (contains? headers "x-waiter-authenticated-principal"))))
+
                 ;; the above request hashes to a different service-id only when running as someone other than current-user
                 ;; when the service-id is different, we need to cleanup
                 (when (not= (System/getProperty "user.name") current-user)
@@ -565,6 +573,41 @@
                     (finally
                       (when @service-id-atom
                         (delete-service waiter-url @service-id-atom)))))))))
+
+        (finally
+          (delete-token-and-assert waiter-url token))))))
+
+(deftest ^:parallel ^:integration-fast test-authentication-disabled-support
+  (testing-using-waiter-url
+    (let [service-name (rand-name "test-authentication-disabled-support")
+          token (create-token-name waiter-url service-name)
+          current-user (retrieve-username)
+          service-description (-> (kitchen-request-headers :prefix "")
+                                  (assoc :authentication "disabled" :name service-name :permitted-user "*" :run-as-user current-user))
+          request-headers {:x-waiter-token token}]
+      (try
+        (testing "token creation"
+          (let [token-description (assoc service-description :token token)
+                response (post-token waiter-url token-description)]
+            (assert-response-status response 200)))
+
+        (testing "token retrieval"
+          (let [token-response (get-token waiter-url token)
+                response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
+            (is (= (assoc service-description :authentication "disabled" :owner current-user) response-body))))
+
+        (testing "successful request"
+          (let [{:keys [body] :as response} (make-request waiter-url "/hello-world" :headers request-headers :spnego-auth false)]
+            (assert-response-status response 200)
+            (is (= "Hello World" body))))
+
+        (testing "backend request headers"
+          (let [{:keys [body] :as response} (make-request waiter-url "/request-info" :headers request-headers :spnego-auth false)
+                {:strs [headers]} (json/read-str (str body))]
+            (assert-response-status response 200)
+            (is (not (contains? headers "x-waiter-auth-principal")))
+            (is (not (contains? headers "x-waiter-authenticated-principal")))
+            (is (contains? headers "x-cid"))))
 
         (finally
           (delete-token-and-assert waiter-url token))))))

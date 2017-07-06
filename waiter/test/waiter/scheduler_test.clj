@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -44,6 +44,7 @@
                         "www.scheduler-test.example.com"
                         1234
                         []
+                        "proto"
                         "log-dir"
                         "instance-message")]
     (testing (str "Test record ServiceInstance")
@@ -53,10 +54,11 @@
       (is (= true (:healthy? test-instance)))
       (is (= "www.scheduler-test.example.com" (:host test-instance)))
       (is (= 1234 (:port test-instance)))
+      (is (= "proto" (:protocol test-instance)))
       (is (= "log-dir" (:log-directory test-instance)))
       (is (= "instance-message" (:message test-instance)))
-      (is (= "http://www.scheduler-test.example.com:1234" (base-url test-instance)))
-      (is (= "http://www.scheduler-test.example.com:1234/test-end-point" (end-point-url test-instance "test-end-point"))))))
+      (is (= "proto://www.scheduler-test.example.com:1234" (base-url test-instance)))
+      (is (= "proto://www.scheduler-test.example.com:1234/test-end-point" (end-point-url test-instance "test-end-point"))))))
 
 (deftest test-instance->service-id
   (let [test-cases [
@@ -217,9 +219,9 @@
         scheduler-syncer-interval-secs 1
         service-id->service-description-fn (fn [id] {"health-check-url" (str "/" id)})
         started-at "2014-09-14T002446.965Z"
-        instance1 (->ServiceInstance "1.1" "1" started-at nil "host" 123 [] "/log" "test")
-        instance2 (->ServiceInstance "1.2" "1" started-at true "host" 123 []  "/log" "test")
-        instance3 (->ServiceInstance "1.3" "1" started-at nil "host" 123 []  "/log" "test")
+        instance1 (->ServiceInstance "1.1" "1" started-at nil "host" 123 [] "proto" "/log" "test")
+        instance2 (->ServiceInstance "1.2" "1" started-at true "host" 123 [] "proto" "/log" "test")
+        instance3 (->ServiceInstance "1.3" "1" started-at nil "host" 123 [] "proto" "/log" "test")
         scheduler (reify ServiceScheduler
                     (get-apps->instances [_]
                       {(->Service "1" {} {} {}) {:active-instances [instance1 instance2 instance3]

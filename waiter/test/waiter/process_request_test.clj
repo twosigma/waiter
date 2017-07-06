@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -24,7 +24,8 @@
             [waiter.process-request :refer :all]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
-            [waiter.token :as token])
+            [waiter.token :as token]
+            [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
            org.eclipse.jetty.client.HttpClient))
 
@@ -224,11 +225,11 @@
             confirm-live-connection (fn [] :nothing)
             request-abort-callback (fn [_] :nothing)
             resp-chan (async/chan)
-            instance-request-properties {:streaming-timeout-ms 100}
+            instance-request-properties {:output-buffer-size 1000000 :streaming-timeout-ms 100}
             reservation-status-promise (promise)
             request-state-chan (async/chan)
             metric-group nil
-            waiter-debug-enabled nil
+            waiter-debug-enabled? nil
             service-id "service-id"
             abort-request-chan (async/chan)
             error-chan (async/chan)
@@ -243,7 +244,7 @@
               (recur (+ bytes-streamed bytes-to-stream)))))
         (stream-http-response response confirm-live-connection request-abort-callback resp-chan instance-request-properties
                               reservation-status-promise request-state-chan metric-group
-                              waiter-debug-enabled (stream-metric-map service-id))
+                              waiter-debug-enabled? (metrics/stream-metric-map service-id))
         (loop []
           (let [message (async/<!! resp-chan)]
             (when message
@@ -263,7 +264,12 @@
 
       (let [bytes-reported (stream-response (-> 1024 (* 977) (inc)))]
         (is (= 2 (count bytes-reported)))
-        (is (= [1000448 1] bytes-reported))))))
+        (is (= [1000448 1] bytes-reported)))
+
+      (let [bytes-reported (stream-response 10000000)]
+        (is (= 10 (count bytes-reported)))
+        (is (= 10000000 (reduce + bytes-reported)))
+        (is (= [1000448 1000448 1000448 1000448 1000448 1000448 1000448 1000448 1000448 995968] bytes-reported))))))
 
 (deftest test-inspect-for-202-async-request-response
   (letfn [(execute-inspect-for-202-async-request-response
@@ -346,7 +352,7 @@
                {:status 202, :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}))))))
 
 (deftest test-make-request
-  (let [instance {:service-id "test-service-id", :host "example.com", :port 8080}
+  (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "proto"}
         request {:authorization/user "test-user"
                  :authenticated-principal "test-user@test.com"
                  :body "body"}
@@ -387,7 +393,7 @@
         end-route "/end-route"
         app-password "test-password"]
     (testing "make-request:headers"
-      (let [expected-endpoint "http://example.com:8080/end-route"
+      (let [expected-endpoint "proto://example.com:8080/end-route"
             make-basic-auth-fn (fn make-basic-auth-fn [endpoint username password]
                                  (is (= expected-endpoint endpoint))
                                  (is (= username "waiter"))
@@ -396,20 +402,20 @@
             http-client (http/client)
             request-method-fn-call-counter (atom 0)]
         (with-redefs [http-method-fn
-                    (fn [_]
-                      (fn [^HttpClient _ endpoint request-config]
-                        (swap! request-method-fn-call-counter inc)
-                        (is (= expected-endpoint endpoint))
-                        (is (= :bytes (:as request-config)))
-                        (is (:auth request-config))
-                        (is (= "body" (:body request-config)))
-                        (is (= 654321 (:idle-timeout request-config)))
-                        (is (= (-> (dissoc passthrough-headers "content-length" "expect" "authorization"
-                                           "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                                           "te" "trailers" "transfer-encoding" "upgrade")
-                                   (merge {"x-waiter-auth-principal" "test-user"
-                                           "x-waiter-authenticated-principal" "test-user@test.com"}))
-                               (:headers request-config)))))]
+                      (fn [_]
+                        (fn [^HttpClient _ endpoint request-config]
+                          (swap! request-method-fn-call-counter inc)
+                          (is (= expected-endpoint endpoint))
+                          (is (= :bytes (:as request-config)))
+                          (is (:auth request-config))
+                          (is (= "body" (:body request-config)))
+                          (is (= 654321 (:idle-timeout request-config)))
+                          (is (= (-> (dissoc passthrough-headers "expect" "authorization"
+                                             "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
+                                             "te" "trailers" "transfer-encoding" "upgrade")
+                                     (merge {"x-waiter-auth-principal" "test-user"
+                                             "x-waiter-authenticated-principal" "test-user@test.com"}))
+                                 (:headers request-config)))))]
           (make-request http-client make-basic-auth-fn instance request request-properties passthrough-headers end-route app-password nil)
           (is (= 1 @request-method-fn-call-counter)))))))
 
@@ -425,7 +431,7 @@
         (let [service-description-defaults {}
               service-id-prefix "service-prefix-"
               request {}]
-          (is (thrown-with-msg? ExceptionInfo #"kerberos auth failed"
+          (is (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service"
                                 (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
                                                      can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
     (testing "not preauthorized service and different user"
@@ -455,7 +461,7 @@
           (is (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service"
                                 (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
                                                      can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
-    (testing "preauthorized service, permitted to run service"
+    (testing "preauthorized service, permitted to run service-specific-user"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "tuser"}
                                                       :service-preauthorized true})]
         (let [service-description-defaults {}
@@ -463,6 +469,26 @@
               request {:authorization/user "tuser"}]
           (is (not (nil? (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
                                               can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))
+    (testing "authentication-disabled service, allow anonymous"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-authentication-disabled true
+                                                      :service-description {"run-as-user" "ruser", "permitted-user" "*"}})]
+        (let [service-description-defaults {}
+              service-id-prefix "service-prefix-"
+              request {}]
+          (is (not (nil? (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
+                                              can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))
+
+    (testing "not authentication-disabled service, no anonymous access"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-authentication-disabled false
+                                                      :service-description {"run-as-user" "ruser", "permitted-user" "*"}
+                                                      :service-preauthorized false})]
+        (let [service-description-defaults {}
+              service-id-prefix "service-prefix-"
+              request {}]
+          (is (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service"
+                                (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
+                                                     can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+
     (testing "not preauthorized service, permitted to run service"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "tuser", "permitted-user" "tuser"}
                                                       :service-preauthorized false})]
@@ -537,10 +563,12 @@
                                  (throw
                                    (ex-info "Test exception" {:type :service-description-error
                                                               :issue {"run-as-user" "missing-required-key"}
-                                                              :x-waiter-headers {"queue-length" 100}})))]
+                                                              :x-waiter-headers {"queue-length" 100}})))
+        request-abort-callback-factory (fn [_] (constantly nil))]
     (testing "with-query-params"
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
-            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil request)
+            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil
+                                   process-exception-in-http-request request-abort-callback-factory request)
             {:keys [body headers status]} (async/<!! response-chan)]
         (is (= 303 status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "Location")))
@@ -549,7 +577,8 @@
 
     (testing "with-query-params-and-default-port"
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
-            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil request)
+            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil
+                                   process-exception-in-http-request request-abort-callback-factory request)
             {:keys [body headers status]} (async/<!! response-chan)]
         (is (= 303 status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "Location")))
@@ -558,7 +587,8 @@
 
     (testing "without-query-params"
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :uri "/path"}
-            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil request)
+            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil
+                                   process-exception-in-http-request request-abort-callback-factory request)
             {:keys [body headers status]} (async/<!! response-chan)]
         (is (= 303 status))
         (is (= "/waiter-consent/path" (get headers "Location")))
@@ -569,7 +599,11 @@
   (let [ctrl-chan (async/promise-chan)
         request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
         request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
-        response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] nil nil nil request)
+        process-exception-fn (fn process-exception-fn [_ _ response-headers _ e]
+                               (utils/exception->response "Error in process" e :headers response-headers))
+        request-abort-callback-factory (fn [_] (constantly nil))
+        response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] nil nil nil
+                               process-exception-fn request-abort-callback-factory request)
         {:keys [body headers status]} (async/<!! response-chan)]
     (is (= 400 status))
     (is (nil? (get headers "Location")))

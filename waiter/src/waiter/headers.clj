@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -17,10 +17,11 @@
 
 (def ^:const waiter-header-prefix "x-waiter-")
 
+;; authentication is intentionally missing from this list as we do not support it as an on-the-fly header
 (def ^:const waiter-headers-with-str-value
   (set (map #(str waiter-header-prefix %)
-            #{"name" "cmd" "version" "endpoint-path" "health-check-url" "permitted-user" "run-as-user" "token"
-              "cmd-type" "metric-group" "distribution-scheme"})))
+            #{"backend-proto" "cmd" "cmd-type" "distribution-scheme" "endpoint-path" "health-check-url" "metric-group"
+              "name" "permitted-user" "run-as-user" "token" "version"})))
 
 (defn get-waiter-header
   "Retrieves the waiter header value."
@@ -35,7 +36,7 @@
     header-value
     (try
       (json/parse-string header-value)
-      (catch Exception _                                    ; rely on schema validate to flag this as an error if interpreting as string is incorrect
+      (catch Exception _ ; rely on schema validate to flag this as an error if interpreting as string is incorrect
         (log/warn "unable to parse header:" header-name " defaulting to string:" header-value)
         header-value))))
 
@@ -77,3 +78,17 @@
     (if token
       (assoc truncated-headers "x-waiter-token" token)
       truncated-headers)))
+
+(defn dissoc-hop-by-hop-headers
+  "Remove the hop-by-hop headers as specified in
+   https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1"
+  [headers]
+  (dissoc headers "connection" "keep-alive" "proxy-authenticate" "proxy-authorization" "te" "trailers"
+          "transfer-encoding" "upgrade"))
+
+(defn assoc-auth-headers
+  "Assocs the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the username and prinicpal are non-nil, respectively."
+  [headers username principal]
+  (cond-> headers
+          username (assoc "x-waiter-auth-principal" username)
+          principal (assoc "x-waiter-authenticated-principal" principal)))

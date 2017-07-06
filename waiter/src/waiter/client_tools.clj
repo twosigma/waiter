@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LLC.
+;;       Copyright (c) 2017 Two Sigma Investments, LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LLC.
+;;       Two Sigma Investments, LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -24,8 +24,7 @@
             [waiter.correlation-id :as cid]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
-  (:import (java.net ServerSocket)
-           (java.util.concurrent Callable Future Executors)
+  (:import (java.util.concurrent Callable Future Executors)
            (marathonclj.common Connection)
            (org.apache.http.client CookieStore)
            (org.joda.time.format PeriodFormatterBuilder)
@@ -690,8 +689,8 @@
   (let [settings (waiter-settings waiter-url)
         mesos-slave-port (get-in settings [:scheduler-config :mesos-slave-port])
         slave-directory (get-in settings [:scheduler-config :slave-directory])]
-    (cond-> ["X-Waiter-Backend-Id" "X-Waiter-Backend-Host" "X-Waiter-Backend-Port" "X-Waiter-Backend-Response-ns"
-             "X-Waiter-Get-Available-Instance-ns" "X-Waiter-Router-Id"]
+    (cond-> ["X-Waiter-Backend-Id" "X-Waiter-Backend-Host" "X-Waiter-Backend-Port" "X-Waiter-Backend-Proto"
+             "X-Waiter-Backend-Response-ns" "X-Waiter-Get-Available-Instance-ns" "X-Waiter-Router-Id"]
             (and mesos-slave-port slave-directory)
             (concat ["X-Waiter-Backend-Directory" "X-Waiter-Backend-Log-Url"]))))
 
