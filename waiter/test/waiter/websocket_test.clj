@@ -13,7 +13,6 @@
             [clojure.test :refer :all]
             [qbits.jet.client.websocket :as ws-client]
             [waiter.auth.authentication :as auth]
-            [waiter.auth.spnego :as spnego]
             [waiter.cookie-support :as cs]
             [waiter.test-helpers]
             [waiter.websocket :refer :all])
@@ -40,11 +39,11 @@
       (let [response-code-atom (atom nil)
             request (reified-upgrade-request {"x-waiter-auth" cookie-value})
             response (Object.)]
-        (with-redefs [spnego/get-auth-cookie-value identity
-                      spnego/decode-auth-cookie (fn [in-cookie in-password]
-                                                  (is (= cookie-value in-cookie))
-                                                  (is (= password in-password))
-                                                  [auth-principal auth-time])]
+        (with-redefs [auth/get-auth-cookie-value identity
+                      auth/decode-auth-cookie (fn [in-cookie in-password]
+                                                (is (= cookie-value in-cookie))
+                                                (is (= password in-password))
+                                                [auth-principal auth-time])]
           (is (request-authenticator password request response))
           (is (nil? @response-code-atom)))))
 
@@ -52,11 +51,11 @@
       (let [response-code-atom (atom nil)
             request (reified-upgrade-request {"fee" "fie", "foo" "bar", "x-waiter-auth" cookie-value})
             response (Object.)]
-        (with-redefs [spnego/get-auth-cookie-value identity
-                      spnego/decode-auth-cookie (fn [in-cookie in-password]
-                                                  (is (= cookie-value in-cookie))
-                                                  (is (= password in-password))
-                                                  [auth-principal auth-time])]
+        (with-redefs [auth/get-auth-cookie-value identity
+                      auth/decode-auth-cookie (fn [in-cookie in-password]
+                                                (is (= cookie-value in-cookie))
+                                                (is (= password in-password))
+                                                [auth-principal auth-time])]
           (is (request-authenticator password request response))
           (is (nil? @response-code-atom)))))
 
@@ -65,11 +64,11 @@
             request (reified-upgrade-request {"fee" "fie", "foo" "bar"})
             response (proxy [ServletUpgradeResponse] [nil]
                        (sendForbidden [code] (reset! response-code-atom code)))]
-        (with-redefs [spnego/get-auth-cookie-value identity
-                      spnego/decode-auth-cookie (fn [in-cookie in-password]
-                                                  (is (= cookie-value in-cookie))
-                                                  (is (= password in-password))
-                                                  nil)]
+        (with-redefs [auth/get-auth-cookie-value identity
+                      auth/decode-auth-cookie (fn [in-cookie in-password]
+                                                (is (= cookie-value in-cookie))
+                                                (is (= password in-password))
+                                                nil)]
           (is (not (request-authenticator password request response)))
           (is (= "Unauthorized" @response-code-atom)))))
 
@@ -78,11 +77,11 @@
             request (reified-upgrade-request {"x-waiter-auth" cookie-value})
             response (proxy [ServletUpgradeResponse] [nil]
                        (sendForbidden [code] (reset! response-code-atom code)))]
-        (with-redefs [spnego/get-auth-cookie-value identity
-                      spnego/decode-auth-cookie (fn [in-cookie in-password]
-                                                  (is (= cookie-value in-cookie))
-                                                  (is (= password in-password))
-                                                  nil)]
+        (with-redefs [auth/get-auth-cookie-value identity
+                      auth/decode-auth-cookie (fn [in-cookie in-password]
+                                                (is (= cookie-value in-cookie))
+                                                (is (= password in-password))
+                                                nil)]
           (is (not (request-authenticator password request response)))
           (is (= "Unauthorized" @response-code-atom)))))
 
@@ -91,11 +90,11 @@
             request (reified-upgrade-request {"x-waiter-auth" cookie-value})
             response (proxy [ServletUpgradeResponse] [nil]
                        (sendError [status code] (reset! response-code-atom (str status ":" code))))]
-        (with-redefs [spnego/get-auth-cookie-value identity
-                      spnego/decode-auth-cookie (fn [in-cookie in-password]
-                                                  (is (= cookie-value in-cookie))
-                                                  (is (= password in-password))
-                                                  (throw (Exception. "Test-Exception")))]
+        (with-redefs [auth/get-auth-cookie-value identity
+                      auth/decode-auth-cookie (fn [in-cookie in-password]
+                                                (is (= cookie-value in-cookie))
+                                                (is (= password in-password))
+                                                (throw (Exception. "Test-Exception")))]
           (is (not (request-authenticator password request response)))
           (is (= "500:Test-Exception" @response-code-atom)))))))
 
@@ -135,11 +134,11 @@
                                                        :authorization/user auth-user
                                                        :authenticated-principal auth-principal)))
                                  (reset! process-request-atom true))]
-        (with-redefs [spnego/get-auth-cookie-value identity
-                      spnego/decode-auth-cookie (fn [in-cookie in-password]
-                                                  (is (= cookie-value in-cookie))
-                                                  (is (= password in-password))
-                                                  [auth-principal auth-time])]
+        (with-redefs [auth/get-auth-cookie-value identity
+                      auth/decode-auth-cookie (fn [in-cookie in-password]
+                                                (is (= cookie-value in-cookie))
+                                                (is (= password in-password))
+                                                [auth-principal auth-time])]
           (request-handler password process-request-fn request))
         (is @process-request-atom)))))
 

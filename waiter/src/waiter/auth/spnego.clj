@@ -9,8 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.auth.spnego
-  (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
+  (:require [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -29,9 +28,9 @@
   ^bytes
   [req]
   (let [enc_tok (get-in req [:headers "authorization"])
-        tfields (str/split enc_tok #" ")]
-    (when (= "negotiate" (str/lower-case (first tfields)))
-      (b64/decode (.getBytes ^String (last tfields))))))
+        token-fields (str/split enc_tok #" ")]
+    (when (= "negotiate" (str/lower-case (first token-fields)))
+      (b64/decode (.getBytes ^String (last token-fields))))))
 
 (defn encode-output-token
   "Take a token from a gss accept context call and encode it for use in a -authenticate header"
@@ -71,41 +70,6 @@
   [^GSSContext gss]
   (str (.getSrcName gss)))
 
-(defn get-auth-cookie-value
-  [cookie-string]
-  (cookie-support/cookie-value cookie-string auth/AUTH-COOKIE-NAME))
-
-(defn decode-auth-cookie
-  "Decodes the provided cookie using the provided password.
-   Returns a sequence containing [auth-principal auth-time]."
-  [waiter-cookie password]
-  (try
-    (log/debug "decoding cookie:" waiter-cookie)
-    (when waiter-cookie
-      (let [decoded-cookie (cookie-support/decode-cookie-cached waiter-cookie password)]
-        (if (seq decoded-cookie)
-          decoded-cookie
-          (log/warn "invalid decoded cookie:" decoded-cookie))))
-    (catch Exception e
-      (log/warn e "failed to decode cookie:" waiter-cookie))))
-
-(defn decoded-auth-valid?
-  "Verifies whether the decoded authenticated cookie is valid as per the following rules:
-   The decoded value must be a sequence in the format: [auth-principal auth-time].
-   In addition, the auth-principal must be a string and the auth-time must be less than a day old."
-  [[auth-principal auth-time :as decoded-auth-cookie]]
-  (log/debug "well-formed?" decoded-auth-cookie (integer? auth-time) (string? auth-principal) (= 2 (count decoded-auth-cookie)))
-  (let [well-formed? (and decoded-auth-cookie (integer? auth-time) (string? auth-principal) (= 2 (count decoded-auth-cookie)))
-        one-day-in-millis (-> 1 t/days t/in-millis)]
-    (and well-formed? (> (+ auth-time one-day-in-millis) (System/currentTimeMillis)))))
-
-(defn assoc-auth-in-request
-  "Associate values for authenticated user in the request."
-  [request auth-principal]
-  (assoc request
-    :authenticated-principal auth-principal
-    :authorization/user (first (str/split auth-principal #"@" 2))))
-
 (defn require-gss
   "This middleware enables the application to require a SPNEGO
    authentication. If SPNEGO is successful then the handler `request-handler`
@@ -114,15 +78,15 @@
    authentication, but that should be stacked before this handler."
   [request-handler password]
   (fn require-gss-handler [{:keys [headers] :as req}]
-    (let [waiter-cookie (get-auth-cookie-value (get headers "cookie"))
-          [auth-principal _ :as decoded-auth-cookie] (decode-auth-cookie waiter-cookie password)]
+    (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
+          [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
       (cond
         ;; Use the cookie, if not expired
-        (decoded-auth-valid? decoded-auth-cookie)
-        (-> (assoc-auth-in-request req auth-principal)
+        (auth/decoded-auth-valid? decoded-auth-cookie)
+        (-> (auth/assoc-auth-in-request req auth-principal)
             (request-handler)
             (cookie-support/cookies-async-response))
-        ;; Try and autheticate using kerberos and add cookie in response when valid
+        ;; Try and authenticate using kerberos and add cookie in response when valid
         (get-in req [:headers "authorization"])
         (let [^GSSContext gss_context (gss-context-init)
               token (do-gss-auth-check gss_context req)]

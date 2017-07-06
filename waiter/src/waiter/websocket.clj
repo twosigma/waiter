@@ -21,7 +21,6 @@
             [slingshot.slingshot :refer [try+]]
             [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
-            [waiter.auth.spnego :as spnego]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
@@ -48,8 +47,8 @@
           auth-cookie-valid? (and auth-cookie
                                   (-> auth-cookie
                                       (URLDecoder/decode "UTF-8")
-                                      (spnego/decode-auth-cookie password)
-                                      spnego/decoded-auth-valid?))]
+                                      (auth/decode-auth-cookie password)
+                                      auth/decoded-auth-valid?))]
       (when-not auth-cookie-valid?
         (log/info "failed to authenticate" {:auth-cookie auth-cookie})
         (.sendForbidden response "Unauthorized"))
@@ -74,10 +73,10 @@
   "Handler for websocket requests.
    It populates the kerberos credentials and invokes process-request-fn."
   [password process-request-fn {:keys [headers] :as request}]
-  (let [auth-cookie (-> headers (get "cookie") str spnego/get-auth-cookie-value) ;; auth-cookie is assumed to be valid
-        [auth-principal auth-time] (spnego/decode-auth-cookie auth-cookie password)]
+  (let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value) ;; auth-cookie is assumed to be valid
+        [auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)]
     (log/info "processing websocket request" {:user auth-principal})
-    (-> (spnego/assoc-auth-in-request request auth-principal)
+    (-> (auth/assoc-auth-in-request request auth-principal)
         (assoc :authorization/time auth-time)
         process-request-fn)))
 
