@@ -787,7 +787,7 @@
     (testing "run as user from on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
-              "permitted-user" "bob"
+              "permitted-user" "on-the-fly-ru"
               "run-as-user" "on-the-fly-ru"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
                                    :headers {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"}}))))
@@ -795,7 +795,7 @@
     (testing "run as user intersecting"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
-              "permitted-user" "bob"
+              "permitted-user" "on-the-fly-ru"
               "run-as-user" "on-the-fly-ru"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
                                    :tokens {"run-as-user" "token-ru"},
@@ -862,16 +862,28 @@
                                                    "x-waiter-permitted-user" "alice"
                                                    "x-waiter-run-as-user" "*"}))))
 
+    (testing "run as user in headers with permitted-user * in tokens"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "header-user"
+              "run-as-user" "header-user"}
+             (service-description {:defaults {"health-check-url" "/ping"}
+                                   :tokens {"run-as-user" "*"
+                                            "permitted-user" "*"
+                                            "cmd" "token-cmd"}
+                                   :headers {"run-as-user" "header-user"}}
+                                  :waiter-headers {"x-waiter-run-as-user" "header-user"}))))
+
     (testing "active overrides"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
         (store-service-description-overrides
           kv-store
-          "test-service-activeoverride-00de822338af921fbefacd263d092c8a"
+          "test-service-activeoverride-bdb866e150603ea410dac7fca69316ad"
           "current-request-user"
           {"scale-factor" 0.3})
         (is (= {"cmd" "on-the-fly-cmd"
                 "health-check-url" "/ping"
-                "permitted-user" "bob"
+                "permitted-user" "on-the-fly-ru"
                 "run-as-user" "on-the-fly-ru"
                 "name" "active-override"
                 "scale-factor" 0.3}
@@ -885,16 +897,16 @@
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
         (store-service-description-overrides
           kv-store
-          "test-service-inactiveoverride-b72d04dd1527e9730d1e8f5bc6bcf341"
+          "test-service-inactiveoverride-05d04403ebdcced9622d9712700048fc"
           "current-request-user"
           {"scale-factor" 0.3})
         (clear-service-description-overrides
           kv-store
-          "test-service-inactiveoverride-b72d04dd1527e9730d1e8f5bc6bcf341"
+          "test-service-inactiveoverride-05d04403ebdcced9622d9712700048fc"
           "current-request-user")
         (is (= {"cmd" "on-the-fly-cmd"
                 "health-check-url" "/ping"
-                "permitted-user" "bob"
+                "permitted-user" "on-the-fly-ru"
                 "run-as-user" "on-the-fly-ru"
                 "name" "inactive-override"
                 "scale-factor" 1}
