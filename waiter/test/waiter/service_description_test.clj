@@ -641,7 +641,7 @@
              (service-description {:defaults {"health-check-url" "/ping"}
                                    :tokens {"cmd" "token-cmd"}}))))
 
-    (testing "only token from header"
+    (testing "only token from header without permitted-user"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
               "permitted-user" "current-request-user"
@@ -649,6 +649,30 @@
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
                                    :tokens {"cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
+
+    (testing "only token from header with permitted-user"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "token-user"
+              "run-as-user" "token-user"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :tokens {"cmd" "token-cmd"
+                                            "permitted-user" "token-user"
+                                            "run-as-user" "token-user"}}
+                                  :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
+
+    (testing "token and run-as-user from header with permitted-user"
+      (is (= {"cmd" "token-cmd"
+              "health-check-url" "/ping"
+              "permitted-user" "current-request-user"
+              "run-as-user" "on-the-fly-ru"}
+             (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+                                   :headers {"run-as-user" "on-the-fly-ru"}
+                                   :tokens {"cmd" "token-cmd"
+                                            "permitted-user" "token-user"
+                                            "run-as-user" "token-user"}}
+                                  :waiter-headers {"x-waiter-token" "value-does-not-matter"
+                                                   "x-waiter-run-as-user" "on-the-fly-ru"}))))
 
     (testing "only token from host with defaults missing permitted user"
       (is (= {"cmd" "token-cmd"
