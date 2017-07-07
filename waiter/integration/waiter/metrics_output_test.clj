@@ -29,7 +29,13 @@
   {(s/required-key "count") schema/non-negative-num
    (s/required-key "value") schema/non-negative-num})
 
-(def metrics-schema
+(def gauge-metric-schema
+  {(s/required-key "value") schema/non-negative-num})
+
+(def counted-gauge-metric-schema
+  {(s/required-key "count") gauge-metric-schema})
+
+(def service-metrics-schema
   {
    (s/required-key "counters") {(s/required-key "request-counts") {(s/required-key "outstanding") schema/non-negative-num
                                                                    (s/required-key "successful") schema/positive-num
@@ -58,9 +64,37 @@
                               s/Str s/Any}
    s/Str s/Any})
 
+(def jvm-metrics-schema
+  {
+   (s/required-key "attribute") s/Any
+   (s/required-key "file") s/Any
+   (s/required-key "gc") s/Any
+   (s/required-key "memory") s/Any
+   (s/required-key "thread") {(s/required-key "blocked") counted-gauge-metric-schema
+                              (s/required-key "count") gauge-metric-schema
+                              (s/required-key "daemon") counted-gauge-metric-schema
+                              (s/required-key "deadlock") counted-gauge-metric-schema
+                              (s/required-key "deadlocks") s/Any
+                              (s/required-key "new") counted-gauge-metric-schema
+                              (s/required-key "runnable") counted-gauge-metric-schema
+                              (s/required-key "terminated") counted-gauge-metric-schema
+                              (s/required-key "timed_waiting") counted-gauge-metric-schema
+                              (s/required-key "waiting") counted-gauge-metric-schema
+                              s/Str s/Any}
+   s/Str s/Any})
+
+(def waiter-metrics-schema
+  {
+   (s/required-key "autoscaler") s/Any
+   (s/required-key "core") s/Any
+   (s/required-key "gc") s/Any
+   (s/required-key "requests") s/Any
+   (s/required-key "state") s/Any
+   s/Str s/Any})
+
 (defmacro assert-metrics-output
-  [metrics-data]
-  `(is (nil? (s/check metrics-schema ~metrics-data))
+  [metrics-data metrics-schema]
+  `(is (nil? (s/check ~metrics-schema ~metrics-data))
        (str ~metrics-data)))
 
 (deftest ^:parallel ^:integration-fast test-metrics-output
@@ -83,11 +117,15 @@
 
       (doall (map (fn [router-id]
                     (let [router-url (str (get router->endpoint router-id))
-                          stats-json-response (make-request router-url "/metrics")
-                          stats-response (json/read-str (:body stats-json-response))
-                          app-metrics (get-in stats-response ["services" service-id])]
-                      (log/info "Asserting /metrics output for" router-url)
-                      (assert-metrics-output app-metrics)))
+                          metrics-json-response (make-request router-url "/metrics")
+                          metrics-response (json/read-str (:body metrics-json-response))
+                          service-metrics (get-in metrics-response ["services" service-id])]
+                      (log/info "Asserting jvm metrics output for" router-url)
+                      (assert-metrics-output (get metrics-response "jvm") jvm-metrics-schema)
+                      (log/info "Asserting service metrics output for" router-url)
+                      (assert-metrics-output service-metrics service-metrics-schema)
+                      (log/info "Asserting waiter metrics output for" router-url)
+                      (assert-metrics-output (get metrics-response "waiter") waiter-metrics-schema)))
                   (keys router->endpoint)))
 
       (let [apps-response (service-settings waiter-url service-id :keywordize-keys false)
@@ -98,9 +136,9 @@
         (is (pos? (count routers->metrics)))
         (doseq [[router-id metrics] routers->metrics]
           (log/info "Asserting /apps output for" router-id)
-          (assert-metrics-output metrics))
+          (assert-metrics-output metrics service-metrics-schema))
         (log/info "Asserting aggregate /apps output")
-        (assert-metrics-output aggregate-metrics)
+        (assert-metrics-output aggregate-metrics service-metrics-schema)
         (is (number? (get aggregate-metrics "routers-sent-requests-to")))
         (is (>= (get-in aggregate-metrics ["counters" "request-counts" "total"]) num-requests)))
 
