@@ -714,14 +714,16 @@
                                 {}))
    :gc-for-transient-metrics (pc/fnk [[:routines router-metrics-helpers]
                                       [:settings metrics-config]
-                                      [:state clock]]
+                                      [:state clock]
+                                      scheduler-maintainer]
                                (let [state-store-atom (atom {})
                                      read-state-fn (fn read-state [_] @state-store-atom)
                                      write-state-fn (fn write-state [_ state] (reset! state-store-atom state))
                                      leader?-fn (constantly true)
                                      service-gc-go-routine (partial service-gc-go-routine read-state-fn write-state-fn leader?-fn clock)
-                                     {:keys [service-id->metrics-chan] :as metrics-gc-chans} (metrics/transient-metrics-gc service-gc-go-routine metrics-config)
-                                     {:keys [service-id->metrics-fn]} router-metrics-helpers]
+                                     scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
+                                     {:keys [service-id->metrics-fn]} router-metrics-helpers
+                                     {:keys [service-id->metrics-chan] :as metrics-gc-chans} (metrics/transient-metrics-gc scheduler-state-chan service-gc-go-routine metrics-config)]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
                                  metrics-gc-chans))
    :messages (pc/fnk [[:settings {messages nil}]]

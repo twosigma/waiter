@@ -361,18 +361,43 @@
     {:exit-chan exit-chan
      :query-chan query-chan}))
 
+(defn- transient-metrics-state-producer
+  "Retrieves the service-id->metrics from service-id->metrics-chan and scheduler state from scheduler-state-chan.
+   It then creates the service-id->state map and propagates it into the service-id->state-chan."
+  [service-id->metrics-chan scheduler-state-chan service-id->state-chan]
+  (async/go-loop []
+    (let [service-id->metrics (async/<! service-id->metrics-chan)
+          scheduler-messages (async/<! scheduler-state-chan)
+          available-service-ids (->> scheduler-messages
+                                     (filter (fn [[message-type _]] (= message-type :update-available-apps)))
+                                     first
+                                     second
+                                     :available-apps
+                                     set)
+          service-id->state (pc/map-from-keys (fn service-id->state-fn [service-id]
+                                                (-> (get service-id->metrics service-id)
+                                                    (select-keys ["outstanding" "total"])
+                                                    (assoc "alive?" (contains? available-service-ids service-id))))
+                                              (keys service-id->metrics))]
+      (if (or service-id->metrics scheduler-messages)
+        (do
+          (async/>! service-id->state-chan service-id->state)
+          (recur))
+        (log/info "[transient-metrics-gc] stopping populating service-id->state-chan")))))
+
 (defn transient-metrics-gc
-  "Launches go-blocks that keep running for the lifetime of the router watching for idle services known to the router.
+  "Launches go-blocks that keep running for the lifetime of the router watching for idle services (services that no
+   longer exist in the scheduler, i.e. not alive?, and have not received any new requests) known to the router.
    When such an idle service is found (based on the timestamp it was last updated), the metrics (except the one for
    outstanding requests) are deleted locally."
-  [service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
+  [scheduler-state-chan service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
   (let [sanitize-state-fn (fn sanitize-state [prev-service->state _] prev-service->state)
-        service-id->state-fn (fn service->state [_ _ data]
-                               (or (select-keys data ["outstanding" "total"]) {}))
+        service-id->state-fn (fn service->state [_ _ data] data)
         gc-service?-fn (fn [_ {:keys [state last-modified-time]} current-time]
-                         (let [{:strs [outstanding]} state]
+                         (let [{:strs [alive? outstanding]} state]
                            (and (or (nil? outstanding)
                                     (zero? outstanding))
+                                (not alive?)
                                 (let [threshold (t/millis transient-metrics-timeout-ms)
                                       mod-threshold-time (t/plus last-modified-time threshold)]
                                   (t/after? current-time mod-threshold-time)))))
@@ -380,17 +405,14 @@
                         (remove-metrics-except-outstanding mc/default-registry service-id)
                         ; truthy value to represent successful delete
                         true)
-        service-id->metrics-chan (au/latest-chan)]
+        service-id->metrics-chan (au/latest-chan)
+        service-id->state-chan (au/latest-chan)]
+    ;; launch go-block to populate the service-id->state-chan
+    (transient-metrics-state-producer service-id->metrics-chan scheduler-state-chan service-id->state-chan)
     ;; launch go-block to perform transient metrics GC
-    (merge (service-gc-go-routine
-             "transient-metrics-gc"
-             service-id->metrics-chan
-             metrics-gc-interval-ms
-             sanitize-state-fn
-             service-id->state-fn
-             gc-service?-fn
-             perform-gc-fn)
-           {:service-id->metrics-chan service-id->metrics-chan})))
+    (assoc (service-gc-go-routine "transient-metrics-gc" service-id->state-chan metrics-gc-interval-ms
+                                  sanitize-state-fn service-id->state-fn gc-service?-fn perform-gc-fn)
+      :service-id->metrics-chan service-id->metrics-chan)))
 
 (defmacro with-timer!
   "Times the operation specified by body using the provided
