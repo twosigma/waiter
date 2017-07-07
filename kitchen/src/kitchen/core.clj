@@ -13,22 +13,26 @@
             [clojure.core.async :as async]
             [clojure.core.async.impl.protocols :refer (closed?)]
             [clojure.data.json :as json]
+            [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [clojure.tools.logging :as log]
             [kitchen.pi :as pi]
             [kitchen.utils :as utils]
             [plumbing.core :as pc]
+            [qbits.jet.client.http :as http]
             [qbits.jet.server :as server]
             [ring.middleware.basic-authentication :as basic-authentication]
             [ring.middleware.cookies :as cookies]
-            [ring.middleware.params :as params])
+            [ring.middleware.params :as params]
+            [clojure.walk :as walk])
   (:gen-class)
   (:import (java.io InputStream ByteArrayOutputStream)
            (java.nio ByteBuffer)
            (java.util UUID)
            (java.util.zip GZIPOutputStream)
-           (org.eclipse.jetty.server HttpOutput)))
+           (org.eclipse.jetty.server HttpOutput)
+           (java.net CookieStore)))
 
 
 (def async-requests (atom {}))
@@ -384,6 +388,112 @@
                                            (utils/parse-positive-int threads 1)))
      :headers {"content-type" "application/json"}}))
 
+(defn make-request
+  "TODO(DPO)"
+  ([waiter-url path &
+    {:keys [body decompress-body headers http-method-fn multipart query-params use-spnego verbose]
+     :or {body "", decompress-body false, headers {}, http-method-fn http/get, query-params {}, use-spnego false, verbose false}}]
+   (let [request-url (str "http://" waiter-url path)
+         request-headers (walk/stringify-keys headers)]
+     (try
+       (when verbose
+         (log/info "request url:" request-url)
+         (log/info "request headers:" (into (sorted-map) request-headers)))
+       (let [{:keys [body headers status]}
+             (http-method-fn (http/client)
+                             request-url
+                             (cond-> {:spnego-auth use-spnego
+                                      :throw-exceptions false
+                                      :decompress-body decompress-body
+                                      :follow-redirects false
+                                      :headers request-headers
+                                      :query-params query-params
+                                      :body body}
+                                     multipart (assoc :multipart multipart)))]
+         (when verbose
+           (log/info (get request-headers "x-cid") "response size:" (count (str body))))
+         {:request-headers request-headers
+          :status status
+          :headers headers
+          :body body})
+       (catch Exception e
+         (when verbose
+           (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
+         (throw e))))))
+
+(defn all-cookies
+  "Retrieves all cookies from the /waiter-auth endpoint"
+  [waiter-url]
+  (:cookies (make-request waiter-url "/waiter-auth")))
+
+(defn auth-cookie
+  "Retrieves and returns the value of the x-waiter-auth cookie"
+  [waiter-url]
+  (get-in (all-cookies waiter-url) ["x-waiter-auth" :value]))
+
+(defn- headers->options
+  "TODO(DPO)"
+  [headers]
+  (flatten (map (fn [[key val]] ["-H" (str (name key) ": " val)]) headers)))
+
+(defn- parse-int
+  "TODO(DPO)"
+  [re s]
+  (let [match (re-find re s)]
+    (when match (read-string (second match)))))
+
+(defn apache-bench
+  "TODO(DPO)"
+  [url endpoint headers concurrency-level total-requests apache-bench-dir]
+  (let [header-options (headers->options headers)
+        auth-cookie (auth-cookie url)
+        _ (log/debug "auth cookie:" auth-cookie)
+        base-command (into [(str apache-bench-dir "/ab")
+                         "-c" (str concurrency-level)
+                         "-n" (str total-requests)]
+                        header-options)
+        command-with-auth (if auth-cookie
+                            (concat base-command ["-H" (str "Cookie: x-waiter-auth=" auth-cookie ";")])
+                            base-command)
+        command (conj command-with-auth (str "http://" url endpoint))
+        _ (log/info command)
+        result (apply shell/sh command)
+        out (:out result)
+        complete-requests (parse-int #"Complete requests:\s+(\d+)" out)
+        failed-requests (parse-int #"Failed requests:\s+(\d+)" out)
+        write-errors (parse-int #"Write errors:\s+(\d+)" out)
+        latency-50% (parse-int #"50%\s+(\d+)" out)
+        latency-66% (parse-int #"66%\s+(\d+)" out)
+        latency-75% (parse-int #"75%\s+(\d+)" out)
+        latency-80% (parse-int #"80%\s+(\d+)" out)
+        latency-90% (parse-int #"90%\s+(\d+)" out)
+        non-2xx-responses (parse-int #"Non-2xx responses:\s+(\d+)" out)]
+    (log/info out)
+    (assoc result :complete-requests complete-requests
+                  :failed-requests failed-requests
+                  :write-errors write-errors
+                  :latency-50% latency-50%
+                  :latency-66% latency-66%
+                  :latency-75% latency-75%
+                  :latency-80% latency-80%
+                  :latency-90% latency-90%
+                  :non-2xx-responses (or non-2xx-responses 0))))
+
+(defn load-test-handler
+  "TODO(DPO)"
+  [{:keys [headers]}]
+  (let [url (get headers "x-kitchen-load-test-url")
+        endpoint (get headers "x-kitchen-load-test-endpoint" "/status")
+        concurrency-level (get headers "x-kitchen-load-test-concurrency" 1)
+        total-requests (get headers "x-kitchen-load-test-requests" 1)
+        apache-bench-dir (get headers "x-kitchen-load-test-apache-bench-dir" "/usr/bin")]
+    (if url
+      (let [result (apache-bench url endpoint {} concurrency-level total-requests apache-bench-dir)]
+        {:status (if (= 0 (:exit result)) 200 500)
+         :body (json/write-str result)})
+      {:status 400
+       :body "Missing header x-kitchen-load-test-url"})))
+
 (defn http-handler
   [request]
   (try
@@ -406,6 +516,7 @@
                      "/request-info" (request-info-handler request)
                      "/unchunked" (unchunked-handler request)
                      "/kitchen-state" (state-handler request)
+                     "/load-test" (load-test-handler request)
                      (default-handler request))]
       (update-in response [:headers "x-cid"] (fn [cid] (or cid (request->cid request)))))
     (catch Exception e
