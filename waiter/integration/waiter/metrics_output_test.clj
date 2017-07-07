@@ -67,7 +67,7 @@
   (testing-using-waiter-url
     (let [router->endpoint (routers waiter-url)
           router-urls (vec (vals router->endpoint))
-          service-id (rand-name "testmetrics")
+          service-id (rand-name)
           headers {:x-waiter-name service-id}
           {:keys [service-id cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           num-requests 100]

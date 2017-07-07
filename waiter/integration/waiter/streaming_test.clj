@@ -19,7 +19,7 @@
   (testing-using-waiter-url
     (let [file-size-double 690606.0
           file-path "test-files/big.txt"
-          service-name (rand-name "test-streaming")
+          service-name (rand-name)
           post-body (slurp file-path)
           headers {:x-waiter-name service-name, :x-kitchen-echo "true"}
           make-request #(make-kitchen-request waiter-url headers :body post-body)
@@ -50,7 +50,7 @@
 (deftest ^:parallel ^:integration-fast test-large-request
   (testing-using-waiter-url
     (let [request-body (apply str (take 2000000 (repeat "hello")))
-         headers {:x-waiter-name (rand-name "test-large-request"), :x-kitchen-echo true}
+         headers {:x-waiter-name (rand-name), :x-kitchen-echo true}
          {:keys [body request-headers] :as response} (make-kitchen-request waiter-url headers :body request-body)]
       (assert-response-status response 200)
       (is (= (count request-body) (count body)))
@@ -61,7 +61,7 @@
    chunk-delay-fn chunk-size-fn assertion-fn]
   (let [path "/chunked"
         request-url (str HTTP-SCHEME waiter-url path)
-        correlation-id (rand-name "perform-streaming-timeout-test-")
+        correlation-id (rand-name)
         _ (log/info "request-url =" request-url ", correlation-id =" correlation-id)
         ^HttpURLConnection url-connection (-> request-url (URL.) (.openConnection))
         streaming-timeout-ms (get-in (waiter-settings waiter-url) [:instance-request-properties :streaming-timeout-ms])
@@ -113,7 +113,7 @@
 (deftest ^:parallel ^:integration-slow test-streaming-timeout-on-default-settings
   (testing-using-waiter-url
     (log/info "Streaming test timeout with default settings")
-    (let [service-name (rand-name "teststreamtimeout")]
+    (let [service-name (rand-name)]
       (is (thrown-with-msg? IOException #"Premature EOF"
                             (perform-streaming-timeout-test
                               waiter-url
@@ -130,7 +130,7 @@
 (deftest ^:parallel ^:integration-fast test-successful-streaming-with-custom-settings
   (testing-using-waiter-url
     (log/info "Streaming test success with default settings")
-    (let [service-name (rand-name "testcustomstreamsuccess")]
+    (let [service-name (rand-name)]
       (perform-streaming-timeout-test
         waiter-url
         (* 40 1000 1000)
@@ -147,7 +147,7 @@
 (deftest ^:parallel ^:integration-slow test-streaming-timeout-with-custom-settings
   (testing-using-waiter-url
     (log/info "Streaming test timeout with default settings")
-    (let [service-name (rand-name "testcustomstreamtimeout")]
+    (let [service-name (rand-name)]
       (is (thrown-with-msg? IOException #"Premature EOF"
                             (perform-streaming-timeout-test
                               waiter-url

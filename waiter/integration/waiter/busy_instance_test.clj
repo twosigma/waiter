@@ -22,7 +22,7 @@
     (let [url (str "http://" waiter-url "/endpoint")
           req-headers (walk/stringify-keys
                         (merge (kitchen-request-headers)
-                               {:x-waiter-name (rand-name "testbusyinstance")
+                               {:x-waiter-name (rand-name)
                                 :x-waiter-debug true}))
           make-request (fn []
                          (log/info "making kitchen request")
@@ -60,7 +60,7 @@
   (testing-using-waiter-url
     (let [max-queue-length 1
           stagger-ms 100
-          headers {:x-waiter-name (rand-name "test-max-queue-length")
+          headers {:x-waiter-name (rand-name)
                    :x-waiter-max-instances 1
                    :x-waiter-max-queue-length max-queue-length
                    ;; disallow work-stealing interference from balanced

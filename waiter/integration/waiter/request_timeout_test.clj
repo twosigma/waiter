@@ -68,7 +68,7 @@
   (testing-using-waiter-url
     (log/info (str "request-client-timeout-test: if we can't get an instance quickly inside client timeout"))
     (let [timeout-period 2000
-          extra-headers {:x-waiter-name (rand-name "testrequestclienttimeout")
+          extra-headers {:x-waiter-name (rand-name)
                          :x-waiter-timeout timeout-period
                          :x-waiter-debug "true"
                          :x-kitchen-delay-ms (+ 2000 timeout-period)}
@@ -97,7 +97,7 @@
           start-up-sleep-ms (* 2 timeout-period-ms)
           request-headers (walk/stringify-keys
                             (merge (kitchen-request-headers)
-                                   {:x-waiter-name (rand-name "test-request-queue-timeout-slow-start-app")
+                                   {:x-waiter-name (rand-name)
                                     :x-waiter-cmd (kitchen-cmd (str "-p $PORT0 --start-up-sleep-ms " start-up-sleep-ms))
                                     :x-waiter-queue-timeout timeout-period-ms}))]
       (make-request-and-assert-timeout waiter-url request-headers start-time-ms timeout-period-sec true)
@@ -109,7 +109,7 @@
     (let [timeout-period-sec 60
           start-time-ms (System/currentTimeMillis)
           request-headers (walk/stringify-keys
-                            {:x-waiter-name (rand-name "test-request-queue-timeout-faulty-app")
+                            {:x-waiter-name (rand-name)
                              :x-waiter-cpus 1
                              :x-waiter-mem 100
                              :x-waiter-version "a-version"
@@ -141,7 +141,7 @@
   (testing-using-waiter-url
     (let [timeout-period-sec 15
           long-request-period-ms 30000
-          service-name (rand-name "test-request-queue-timeout-unable-to-scale-app")
+          service-name (rand-name)
           request-headers (walk/stringify-keys
                             (merge (kitchen-request-headers)
                                    {:x-waiter-name service-name
@@ -190,7 +190,7 @@
 (deftest ^:parallel ^:integration-fast test-grace-period-with-tokens
   (testing-using-waiter-url
     (let [grace-period (time/minutes 2)
-          token (rand-name "kitchen")]
+          token (rand-name)]
       (try
         (log/info "Creating token for" token)
         (let [{:keys [status body]}

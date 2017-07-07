@@ -25,7 +25,7 @@
     (log/info (str "Basic test using endpoint: /secrun"))
     (let [{:keys [body service-id] :as response}
           (make-request-with-debug-info
-            {:x-waiter-name (rand-name "testbasic")}
+            {:x-waiter-name (rand-name)}
             #(make-kitchen-request waiter-url % :path "/secrun"))]
       (assert-response-status response 200)
       (is (= "Hello World" body))
@@ -35,7 +35,7 @@
   (testing-using-waiter-url
     (log/info "Basic test for empty body in request")
     (let [{:keys [body service-id]} (make-request-with-debug-info
-                                      {:x-waiter-name (rand-name "testnocontent")
+                                      {:x-waiter-name (rand-name)
                                        :accept "text/plain"}
                                       #(make-kitchen-request waiter-url % :path "/request-info"))
           body-json (json/read-str (str body))]
@@ -51,7 +51,7 @@
   (testing-using-waiter-url
     (log/info "Basic test for empty body in request")
     (let [{:keys [request-headers service-id]} (make-request-with-debug-info
-                                                 {:x-waiter-name (rand-name "test-basic-http-methods-support")
+                                                 {:x-waiter-name (rand-name)
                                                   :accept "text/plain"}
                                                  #(make-kitchen-request waiter-url % :path "/hello"))
           http-method-helper (fn http-method-helper [http-method]
@@ -77,7 +77,7 @@
   (testing-using-waiter-url
     (let [request-length 100000
           long-request (apply str (repeat request-length "a"))
-          headers {:x-waiter-name (rand-name "testcontentheaders")}
+          headers {:x-waiter-name (rand-name)}
           {:keys [service-id cookies] :as plain-resp} (make-request-with-debug-info
                                                         headers
                                                         #(make-kitchen-request waiter-url % :path "/request-info" :body long-request))
@@ -98,7 +98,7 @@
 (deftest ^:parallel ^:integration-fast test-large-header
   (testing-using-waiter-url
     (log/info (str "Basic test using endpoint: /secrun"))
-    (let [service-name (rand-name "test-large-header")
+    (let [service-name (rand-name)
           request-headers {:x-waiter-name service-name}
           canary-response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/secrun"))
           all-chars (map char (range 33 127))
@@ -135,7 +135,7 @@
 ; ...
 (deftest ^:parallel ^:integration-fast ^:explicit test-basic-logs
   (testing-using-waiter-url
-    (let [waiter-headers {:x-waiter-name (rand-name "test-basic-logs")}
+    (let [waiter-headers {:x-waiter-name (rand-name)}
           {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
       (let [active-instances (get-in (service-settings waiter-url service-id) [:instances :active-instances])
             log-url (:log-url (first active-instances))
@@ -167,7 +167,7 @@
       (log/info (str "Basic backoff config test using endpoint: " path))
       (let [{:keys [service-id] :as response}
             (make-request-with-debug-info
-              {:x-waiter-name (rand-name "testbasicbackoffconfig")
+              {:x-waiter-name (rand-name)
                :x-waiter-restart-backoff-factor 2.5}
               #(make-kitchen-request waiter-url % :path path))
             service-settings (service-settings waiter-url service-id)]
@@ -177,7 +177,7 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-shell-command
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "testbasicshellcommand")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
           {:keys [status service-id]} (make-request-with-debug-info headers #(make-shell-request waiter-url %))
           _ (is (not (nil? service-id)))
@@ -189,7 +189,7 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-unknown-command")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-cmd-type "fakecommand"}
           {:keys [body status]} (make-light-request waiter-url headers)]
       (is (= 400 status))
@@ -198,7 +198,7 @@
 
 (deftest ^:parallel ^:integration-fast test-header-metadata
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-header-metadata")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-metadata-foo "bar"
                    :x-waiter-metadata-baz "quux"
                    :x-waiter-metadata-beginDate "null"
@@ -213,7 +213,7 @@
 (deftest ^:parallel ^:integration-fast test-list-apps
   (testing-using-waiter-url
     (let [service-id (:service-id (make-request-with-debug-info
-                                    {:x-waiter-name (rand-name "test-list-apps")}
+                                    {:x-waiter-name (rand-name)}
                                     #(make-kitchen-request waiter-url %)))]
       (testing "without parameters"
         (let [service (service waiter-url service-id {})] ;; see my app as myself
@@ -251,7 +251,7 @@
 
     (let [current-user (retrieve-username)
           service-id (:service-id (make-request-with-debug-info
-                                    {:x-waiter-name (rand-name "test-list-apps2")
+                                    {:x-waiter-name (rand-name)
                                      :x-waiter-run-as-user current-user}
                                     #(make-kitchen-request waiter-url %)))]
       (testing "list-apps-with-waiter-user-disabled-and-see-another-app" ;; can see another user's app
@@ -279,7 +279,7 @@
   (testing-using-waiter-url
     "test-delete-app"
     (let [{:keys [service-id cookies]} (make-request-with-debug-info
-                                         {:x-waiter-name (rand-name "test-delete-service")}
+                                         {:x-waiter-name (rand-name)}
                                          #(make-kitchen-request waiter-url %))]
       (testing "service-known-on-all-routers"
         (let [services (loop [routers (routers waiter-url)
@@ -319,7 +319,7 @@
 
 (deftest ^:parallel ^:integration-fast test-suspend-resume
   (testing-using-waiter-url
-    (let [waiter-headers {:x-waiter-name (rand-name "test-suspend-resume")}
+    (let [waiter-headers {:x-waiter-name (rand-name)}
           {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
       (let [results (parallelize-requests 10 2
                                           #(let [response (make-kitchen-request waiter-url waiter-headers)]
@@ -345,7 +345,7 @@
 
 (deftest ^:parallel ^:integration-fast test-override
   (testing-using-waiter-url
-    (let [waiter-headers {:x-waiter-name (rand-name "test-override")}
+    (let [waiter-headers {:x-waiter-name (rand-name)}
           {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
       (let [service-description (:service-description (service-settings waiter-url service-id))]
         (is (every? #(not (nil? %)) (vals (select-keys service-description [:cpus :mem :cmd :name]))))
@@ -393,7 +393,7 @@
 ;     actual: (not (not-empty #{}))
 (deftest ^:parallel ^:integration-slow ^:explicit test-killed-instances
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-killed-instances")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-max-instances 6
                    :x-waiter-scale-up-factor 0.99
                    :x-waiter-scale-down-factor 0.85
@@ -426,7 +426,7 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-priority-support
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-basic-priority-support")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-distribution-scheme "simple" ;; disallow work-stealing interference from balanced
                    :x-waiter-max-instances 1}
           {:keys [cookies service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
@@ -458,7 +458,7 @@
 (deftest ^:parallel ^:integration-fast test-multiple-ports
   (testing-using-waiter-url
     (let [num-ports 8
-          waiter-headers {:x-waiter-name (rand-name "test-multiple-ports")
+          waiter-headers {:x-waiter-name (rand-name)
                           :x-waiter-ports num-ports}
           {:keys [body service-id]}
           (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :path "/environment"))

@@ -19,7 +19,7 @@
 
 (deftest ^:parallel ^:integration-fast test-response-headers
   (testing-using-waiter-url
-    (let [extra-headers {:x-waiter-name (rand-name "test-response-headers")}
+    (let [extra-headers {:x-waiter-name (rand-name)}
           {:keys [request-headers]} (make-kitchen-request waiter-url extra-headers)
           service-id (retrieve-service-id waiter-url request-headers)]
 

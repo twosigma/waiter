@@ -47,7 +47,7 @@
                          :x-waiter-distribution-scheme "simple"
                          :x-waiter-scale-down-factor 0.9
                          :x-kitchen-delay-ms 5000
-                         :x-waiter-name (rand-name "delegate-kill")}
+                         :x-waiter-name (rand-name)}
           request-fn (fn []
                        (log/info "making kitchen request")
                        (make-kitchen-request waiter-url extra-headers))
@@ -67,7 +67,8 @@
   (testing-using-waiter-url
     (log/info (str "Testing blacklisted instance is not reserved (should take " (colored-time "~2 minutes") ")"))
     (let [num-requests-per-thread 20
-          extra-headers {:x-waiter-name (rand-name "testkilledinst"), :x-waiter-debug "true"}
+          extra-headers {:x-waiter-name (rand-name)
+                         :x-waiter-debug "true"}
           request-fn (fn [time instance-map-atom & {:keys [cookies] :or {cookies {}}}]
                        (let [{:keys [headers] :as response}
                              (make-kitchen-request waiter-url (assoc extra-headers :x-kitchen-delay-ms time) :cookies cookies)

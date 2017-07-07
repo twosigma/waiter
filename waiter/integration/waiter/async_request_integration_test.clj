@@ -19,7 +19,7 @@
 (deftest ^:parallel ^:integration-fast test-202-response-without-location-header
   (testing-using-waiter-url
     (let [request-processing-time-ms 15000
-          async-request-headers {:x-waiter-name (rand-name "test-202-response-without-location-header")
+          async-request-headers {:x-waiter-name (rand-name)
                                  :x-kitchen-delay-ms request-processing-time-ms
                                  :x-kitchen-exclude-headers "location"
                                  :x-kitchen-store-async-response-ms 40000}
@@ -41,7 +41,7 @@
 
 (defn- make-async-request
   [waiter-url request-processing-time-ms]
-  (let [headers {:x-waiter-name (rand-name "make-async-request")
+  (let [headers {:x-waiter-name (rand-name)
                  :x-waiter-max-instances 1
                  :x-waiter-concurrency-level 100}
         {:keys [request-headers service-id cookies]}
@@ -181,7 +181,8 @@
     (let [waiter-settings (waiter-settings waiter-url)
           metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])
           inter-router-metrics-interval-ms (max (int 2000) (int (* 3 metrics-sync-interval-ms)))
-          headers {:x-waiter-name (rand-name "test-multiple-async-requests"), :x-waiter-concurrency-level 5}
+          headers {:x-waiter-name (rand-name)
+                   :x-waiter-concurrency-level 5}
           {:keys [request-headers service-id cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           request-processing-time-ms 60000
           num-threads 20
