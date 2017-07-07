@@ -379,14 +379,15 @@
                                                     (select-keys ["outstanding" "total"])
                                                     (assoc "alive?" (contains? available-service-ids service-id))))
                                               (keys service-id->metrics))]
-      (if (not (and (nil? service-id->metrics) (nil? scheduler-messages)))
+      (if (or service-id->metrics scheduler-messages)
         (do
           (async/>! service-id->state-chan service-id->state)
           (recur))
         (log/info "[transient-metrics-gc] stopping populating service-id->state-chan")))))
 
 (defn transient-metrics-gc
-  "Launches go-blocks that keep running for the lifetime of the router watching for idle services known to the router.
+  "Launches go-blocks that keep running for the lifetime of the router watching for idle services (services that no
+   longer exist in the scheduler, i.e. not alive?, and have not received any new requests) known to the router.
    When such an idle service is found (based on the timestamp it was last updated), the metrics (except the one for
    outstanding requests) are deleted locally."
   [scheduler-state-chan service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
