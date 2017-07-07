@@ -623,73 +623,6 @@
       (is (= {} headers))
       (is (= "ok" (str body))))))
 
-(deftest test-thread-dump-handler
-  (let [process-request (fn [waiter-request?-fn handlers request]
-                          ((ring-handler-factory waiter-request?-fn handlers) request))]
-    (testing "thread-dump-handler:success-no-params"
-      (let [request {:request-method :get, :uri "/waiter-thread-dump"}
-            retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
-                                                     (is (= [] excluded-methods))
-                                                     (is (zero? stale-threshold-ms))
-                                                     {"thread-1-key" ["thread-1-content"]})
-            waiter-request?-fn (fn [_] true)
-            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (= {"thread-1-key" ["thread-1-content"]} (json/read-str (str body))))))
-    (testing "thread-dump-handler:success-excluded-params"
-      (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "excluded-methods=foo,bar,baz"}
-            retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
-                                                     (is (= ["foo" "bar" "baz"] excluded-methods))
-                                                     (is (zero? stale-threshold-ms))
-                                                     {"thread-2-key" ["thread-2-content"]})
-            waiter-request?-fn (fn [_] true)
-            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (= {"thread-2-key" ["thread-2-content"]} (json/read-str (str body))))))
-    (testing "thread-dump-handler:success-threshold-params"
-      (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "stale-threshold-ms=10"}
-            retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
-                                                     (is (= [] excluded-methods))
-                                                     (is (= 10 stale-threshold-ms))
-                                                     {"thread-3-key" ["thread-3-content"]})
-            waiter-request?-fn (fn [_] true)
-            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (= {"thread-3-key" ["thread-3-content"]} (json/read-str (str body))))))
-    (testing "thread-dump-handler:failure-threshold-params"
-      (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "stale-threshold-ms=foo"}
-            retrieve-stale-thread-stack-trace-data (fn [_ _]
-                                                     (is false "Unexpected call!"))
-            waiter-request?-fn (fn [_] true)
-            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
-        (is (= 500 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? (str body) "java.lang.NumberFormatException"))))
-    (testing "thread-dump-handler:success-both-params"
-      (let [request {:request-method :get, :uri "/waiter-thread-dump", :query-string "excluded-methods=foo,bar,baz&stale-threshold-ms=10"}
-            retrieve-stale-thread-stack-trace-data (fn [excluded-methods stale-threshold-ms]
-                                                     (is (= ["foo" "bar" "baz"] excluded-methods))
-                                                     (is (= 10 stale-threshold-ms))
-                                                     {"thread-4-key" ["thread-4-content"]})
-            waiter-request?-fn (fn [_] true)
-            configuration {:routines {:retrieve-stale-thread-stack-trace-data retrieve-stale-thread-stack-trace-data}}
-            handlers {:thread-dump-handler-fn ((:thread-dump-handler-fn request-handlers) configuration)}
-            {:keys [body headers status]} (process-request waiter-request?-fn handlers request)]
-        (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (= {"thread-4-key" ["thread-4-content"]} (json/read-str (str body))))))))
-
 (deftest test-leader-fn-factory
   (with-redefs [discovery/cluster-size (fn [discovery] (int discovery))]
     (testing "leader-as-single-instance"
@@ -931,8 +864,6 @@
            (exec-routes-mapper "/waiter-consent/nested/path/example?with=params")))
     (is (= {:handler :kill-instance-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/waiter-kill-instance/test-service")))
-    (is (= {:handler :thread-dump-handler-fn}
-           (exec-routes-mapper "/waiter-thread-dump")))
     (is (= {:handler :work-stealing-handler-fn}
            (exec-routes-mapper "/work-stealing")))))
 

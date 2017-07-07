@@ -481,20 +481,6 @@
       (catch Exception e
         (utils/exception->json-response e :status 500)))))
 
-(defn thread-dump-handler
-  "Perform health check on the current router.
-   It includes tracking state of running threads."
-  [retrieve-stale-thread-stack-trace-data request]
-  (try
-    (let [request-params (:params (ring-params/params-request request))
-          excluded-methods (remove str/blank? (str/split (get request-params "excluded-methods" "") #","))
-          stale-threshold-ms (-> (get request-params "stale-threshold-ms") (or "0") (Integer/parseInt))
-          thread-data (retrieve-stale-thread-stack-trace-data excluded-methods stale-threshold-ms)]
-      (utils/map->json-response (utils/deep-sort-map thread-data)))
-    (catch Exception e
-      (log/error e "Error in retrieving thread dump data")
-      (utils/exception->json-response e :status 500))))
-
 (defn get-router-state
   "Outputs the state of the router as json."
   [state-chan router-metrics-state-fn kv-store leader?-fn scheduler]

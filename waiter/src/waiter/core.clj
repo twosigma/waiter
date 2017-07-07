@@ -40,7 +40,6 @@
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.metrics-sync :as metrics-sync]
-            [waiter.monitoring :as monitoring]
             [waiter.password-store :as password-store]
             [waiter.process-request :as pr]
             [waiter.scaling :as scaling]
@@ -105,7 +104,6 @@
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
-                     "waiter-thread-dump" :thread-dump-handler-fn
                      "work-stealing" :work-stealing-handler-fn}]]
     (or (bidi/match-route routes uri)
         {:handler :process-request-fn})))
@@ -622,14 +620,6 @@
                              (fn request->descriptor-fn [request]
                                (pr/request->descriptor service-description-defaults service-id-prefix kv-store hostname can-run-as?-fn
                                                        metric-group-mappings service-description-builder assoc-run-as-user-approved? request)))
-   :retrieve-stale-thread-stack-trace-data (pc/fnk [[:settings thread-stack-state-refresh-interval-ms]
-                                                    [:state clock thread-id->stack-state-atom]]
-                                             (monitoring/thread-stack-tracker
-                                               thread-id->stack-state-atom thread-stack-state-refresh-interval-ms
-                                               #(Thread/getAllStackTraces) clock)
-                                             (fn retrieve-stale-thread-stack-trace-data [excluded-methods stale-threshold-ms]
-                                               (monitoring/retrieve-stale-thread-stack-trace-data
-                                                 thread-id->stack-state-atom clock excluded-methods stale-threshold-ms)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]
                                {:decryptor (fn router-metrics-decryptor [data] (utils/compressed-bytes->map data password))
@@ -1102,9 +1092,6 @@
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
    :status-handler-fn (pc/fnk []
                         (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
-   :thread-dump-handler-fn (pc/fnk [[:routines retrieve-stale-thread-stack-trace-data]]
-                             (fn thread-dump-handler-fn [request]
-                               (handler/thread-dump-handler retrieve-stale-thread-stack-trace-data request)))
    :token-handler-fn (pc/fnk [[:curator kv-store]
                               [:routines can-run-as?-fn make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
                               [:settings hostname]
