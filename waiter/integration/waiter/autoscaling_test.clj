@@ -47,7 +47,7 @@
     (let [custom-headers {:x-kitchen-delay-ms 5000
                           :x-waiter-scale-up-factor 0.9
                           :x-waiter-scale-down-factor 0.9
-                          :x-waiter-name (rand-name "testscaling1")}]
+                          :x-waiter-name (rand-name)}]
       (scaling-for-service-test "Scaling healthy app" waiter-url 5 10 #(make-kitchen-request waiter-url custom-headers)))))
 
 ; Marked explicit due to:
@@ -60,7 +60,7 @@
     (log/info (str "Scaling unhealthy app test (should take " (colored-time "~2 minutes") ")"))
     (let [custom-headers {:x-waiter-scale-up-factor 0.9
                           :x-waiter-scale-down-factor 0.9
-                          :x-waiter-name (rand-name "testscaling2")
+                          :x-waiter-name (rand-name)
                           :x-waiter-cmd "sleep 600"
                           :x-waiter-queue-timeout 5000}]
       (scaling-for-service-test "Scaling unhealthy app" waiter-url 5 10 #(make-shell-request waiter-url custom-headers)))))
@@ -76,7 +76,7 @@
                           :x-waiter-scale-factor 0.45
                           :x-waiter-scale-up-factor 0.99
                           :x-waiter-scale-down-factor 0.001
-                          :x-waiter-name (rand-name "testscalefactor")}
+                          :x-waiter-name (rand-name)}
           request-fn (fn [& {:keys [cookies] :or {cookies {}}}]
                        (make-kitchen-request waiter-url custom-headers :cookies cookies))
           _ (log/info (str "Making canary request..."))
@@ -111,7 +111,7 @@
     (let [requests-per-thread 20
           metrics-sync-interval-ms (get-in (waiter-settings waiter-url) [:metrics-config :metrics-sync-interval-ms])
           extra-headers {:x-kitchen-delay-ms (int (* 2.25 metrics-sync-interval-ms))
-                         :x-waiter-name (rand-name "testconcurrencylevel")
+                         :x-waiter-name (rand-name)
                          :x-waiter-concurrency-level 4
                          :x-waiter-scale-up-factor 0.99
                          :x-waiter-scale-down-factor 0.75
@@ -170,7 +170,7 @@
     (let [extra-headers {:x-waiter-cmd (kitchen-cmd "-p $PORT0 --start-up-sleep-ms 10000")
                          :x-waiter-idle-timeout-mins 60
                          :x-waiter-instance-expiry-mins 1
-                         :x-waiter-name (rand-name "testexpiredinstance")}
+                         :x-waiter-name (rand-name)}
           {:keys [service-id]} (make-request-with-debug-info extra-headers #(make-shell-request waiter-url %))
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")
           get-responder-states (fn []
@@ -214,7 +214,7 @@
           custom-headers {:x-kitchen-delay-ms request-delay-ms
                           :x-waiter-min-instances 2
                           :x-waiter-max-instances 5
-                          :x-waiter-name (rand-name "test-minmax-instances")
+                          :x-waiter-name (rand-name)
                           :x-waiter-scale-up-factor 0.99}
           request-fn (fn [& {:keys [cookies] :or {cookies {}}}]
                        (log/info "making kitchen request")

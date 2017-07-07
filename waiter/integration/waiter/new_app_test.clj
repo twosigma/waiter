@@ -19,7 +19,8 @@
 
 (deftest ^:parallel ^:integration-fast test-new-app
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-new-app"), :x-kitchen-echo "true"}
+    (let [headers {:x-kitchen-echo "true"
+                   :x-waiter-name (rand-name)}
           lorem-ipsum "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
           {:keys [service-id body]}
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :body lorem-ipsum))]
@@ -30,7 +31,7 @@
   (testing-using-waiter-url
     (let [idle-timeout-in-mins 1
           {:keys [service-id]} (make-request-with-debug-info
-                                 {:x-waiter-name (rand-name "test-new-app-gc")
+                                 {:x-waiter-name (rand-name)
                                   :x-waiter-idle-timeout-mins idle-timeout-in-mins}
                                  #(make-kitchen-request waiter-url %))]
       (log/debug "Waiting for" service-id "to show up...")
@@ -42,7 +43,7 @@
 (deftest ^:parallel ^:integration-fast test-default-grace-period
   (testing-using-waiter-url
     (if (can-query-for-grace-period? waiter-url)
-      (let [headers {:x-waiter-name (rand-name "test-default-grace-period")}
+      (let [headers {:x-waiter-name (rand-name)}
             {:keys [service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
             settings-json (waiter-settings waiter-url)
             default-grace-period (get-in settings-json [:service-description-defaults :grace-period-secs])]
@@ -54,7 +55,7 @@
   (testing-using-waiter-url
     (if (can-query-for-grace-period? waiter-url)
       (let [custom-grace-period-secs 120
-            headers {:x-waiter-name (rand-name "test-custom-grace-period")
+            headers {:x-waiter-name (rand-name)
                      :x-waiter-grace-period-secs custom-grace-period-secs}
             {:keys [service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
         (is (= custom-grace-period-secs (service-id->grace-period waiter-url service-id)))

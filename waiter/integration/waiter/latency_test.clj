@@ -74,7 +74,7 @@
           client-concurrency-level 800
           waiter-concurrency-level 4
           total-requests 100000
-          name (rand-name "test-request-latency-apache-bench")
+          name (rand-name)
           extra-headers {:x-waiter-max-instances max-instances
                          :x-waiter-name name
                          :x-waiter-scale-down-factor 0.001

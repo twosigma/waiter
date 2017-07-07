@@ -27,7 +27,7 @@
   (testing-using-waiter-url
     (log/info (str "Testing instance allocation for each request"))
     (let [cookies-atom (atom {})
-          extra-headers {:x-waiter-name (rand-name "testreservation")
+          extra-headers {:x-waiter-name (rand-name)
                          :x-waiter-scale-up-factor 0.99
                          :x-waiter-debug "true"}
           request-fn (fn [delay-ms & {:keys [cookies] :or {cookies {}}}]
@@ -93,7 +93,7 @@
     (log/info (str "Testing instance allocation for concurrent service for each request (will take "
                    (colored-time (str "~3 minutes"))
                    " to complete)."))
-    (let [extra-headers {:x-waiter-name (rand-name "testreservation100cl")
+    (let [extra-headers {:x-waiter-name (rand-name)
                          :x-waiter-concurrency-level 100
                          :x-waiter-scale-up-factor 0.99}
           request-fn (fn [time & {:keys [cookies] :or {cookies {}}}]

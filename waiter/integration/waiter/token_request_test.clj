@@ -25,7 +25,7 @@
 (deftest ^:parallel ^:integration-fast test-update-token-cache-consistency
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name "testhostname")
-          token (rand-name "test-cached-token")
+          token (rand-name)
           update-token-fn (fn [version]
                             (let [{:keys [status]} (http/post (waiter-url->token-url waiter-url)
                                                               {:headers {}
@@ -97,7 +97,7 @@
 
 (deftest ^:parallel ^:integration-fast test-token-create-delete
   (testing-using-waiter-url
-    (let [service-id-prefix (rand-name "testtokencredel")
+    (let [service-id-prefix (rand-name)
           token-prefix (create-token-name waiter-url service-id-prefix)
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")
           num-tokens-to-create 10
@@ -147,7 +147,7 @@
 
 (deftest ^:parallel ^:integration-fast test-hostname-token
   (testing-using-waiter-url
-    (let [service-id-prefix (rand-name "test-hostname-token")
+    (let [service-id-prefix (rand-name)
           token (create-token-name waiter-url service-id-prefix)]
       (testing "hostname-token-test"
         (try
@@ -237,7 +237,7 @@
 (deftest ^:parallel ^:integration-fast test-named-token
   (testing-using-waiter-url
     (log/info (str "Basic named token test"))
-    (let [service-id-prefix (rand-name "test-named-token")
+    (let [service-id-prefix (rand-name)
           token (create-token-name waiter-url service-id-prefix)]
       (try
         (log/info (str "Creating configuration using token " token))
@@ -283,7 +283,7 @@
 
 (deftest ^:parallel ^:integration-fast test-star-run-as-user-token
   (testing-using-waiter-url
-    (let [service-id-prefix (rand-name "test-star-run-as-user-token")
+    (let [service-id-prefix (rand-name)
           token (create-token-name waiter-url service-id-prefix)]
       (try
         (log/info (str "Creating configuration using token " token))
@@ -341,7 +341,7 @@
 
 (deftest ^:parallel ^:integration-fast test-on-the-fly-to-token
   (testing-using-waiter-url
-    (let [name-string (rand-name "testontheflytotoken")
+    (let [name-string (rand-name)
           canary-response (make-kitchen-request waiter-url {:x-waiter-name name-string})
           service-id (retrieve-service-id waiter-url (:request-headers canary-response))]
       (is (str/includes? service-id name-string) (str "ERROR: App-name is missing " name-string))
@@ -379,7 +379,7 @@
 
 (deftest ^:parallel ^:integration-fast test-token-metadata
   (testing-using-waiter-url
-    (let [token (rand-name "metadata-token")
+    (let [token (rand-name)
           service-desc {"name" token
                         "cpus" 1
                         "mem" 100
@@ -403,12 +403,12 @@
 
 (deftest ^:parallel ^:integration-fast test-token-bad-metadata
   (testing-using-waiter-url
-    (let [service-desc {"name" (rand-name "bad-metadata-token")
+    (let [service-desc {"name" "token-bad-metadata"
                         "cpus" 1
                         "mem" 100
                         "version" "1"
                         "cmd-type" "shell"
-                        "token" (rand-name "bad-metadata-token")
+                        "token" (rand-name)
                         "cmd" "exit 0"
                         "run-as-user" (retrieve-username)
                         "health-check-url" "/not-used"
@@ -420,7 +420,7 @@
 
 (deftest ^:parallel ^:integration-fast test-token-environment-variables
   (testing-using-waiter-url
-    (let [token (rand-name "test-token-env")
+    (let [token (rand-name)
           binary (kitchen-cmd)
           token-response (http/post (waiter-url->token-url waiter-url)
                                     {:body (json/write-str
@@ -447,7 +447,7 @@
     (let [{:keys [body status]} (http/post (waiter-url->token-url waiter-url)
                                            {:body (json/write-str (clojure.walk/stringify-keys
                                                                     {:env {"HOME" "/my/home"}
-                                                                     :token (rand-name "invalid-token-env")}))
+                                                                     :token (rand-name)}))
                                             :spnego-auth true
                                             :throw-exceptions false})]
       (is (= 400 status))
@@ -456,7 +456,7 @@
 
 (deftest ^:parallel ^:integration-fast test-auto-run-as-requester-support
   (testing-using-waiter-url
-    (let [service-name (rand-name "test-auto-run-as-requester")
+    (let [service-name (rand-name)
           token (create-token-name waiter-url service-name)
           service-description (-> (kitchen-request-headers :prefix "")
                                   (assoc :name service-name :permitted-user "*")
@@ -530,7 +530,7 @@
                         (delete-service waiter-url @service-id-atom))))))
 
               (testing "token update"
-                (let [updated-service-name (rand-name "test-auto-run-as-requester")
+                (let [updated-service-name (rand-name)
                       token-description (assoc service-description :name updated-service-name :token token)
                       response (post-token waiter-url token-description)]
                   (assert-response-status response 200)))
@@ -579,7 +579,7 @@
 
 (deftest ^:parallel ^:integration-fast test-authentication-disabled-support
   (testing-using-waiter-url
-    (let [service-name (rand-name "test-authentication-disabled-support")
+    (let [service-name (rand-name)
           token (create-token-name waiter-url service-name)
           current-user (retrieve-username)
           service-description (-> (kitchen-request-headers :prefix "")

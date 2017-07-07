@@ -54,7 +54,7 @@
           ws-response-atom (atom [])
           waiter-headers (assoc (kitchen-request-headers)
                            "x-waiter-metric-group" "test-ws-support"
-                           "x-waiter-name" (rand-name "test-ws-request-auth-success"))]
+                           "x-waiter-name" (rand-name))]
       (is auth-cookie-value)
       (try
         (let [response-promise (promise)]
@@ -87,7 +87,7 @@
           send-success-after-timeout-atom (atom true)
           waiter-headers (assoc (kitchen-request-headers)
                            "x-waiter-metric-group" "test-ws-support"
-                           "x-waiter-name" (rand-name "test-ws-request-socket-timeout"))]
+                           "x-waiter-name" (rand-name))]
       (is auth-cookie-value)
       (try
         (let [response-promise (promise)]
@@ -120,7 +120,7 @@
           send-success-after-timeout-atom (atom true)
           waiter-headers (assoc (kitchen-request-headers)
                            "x-waiter-metric-group" "test-ws-support"
-                           "x-waiter-name" (rand-name "test-ws-request-connection-timeout")
+                           "x-waiter-name" (rand-name)
                            "x-waiter-max-instances" "1"
                            "x-waiter-concurrency-level" "20")]
       (is auth-cookie-value)
@@ -158,7 +158,7 @@
           uncorrupted-data-streamed-atom (atom false)
           waiter-headers (assoc (kitchen-request-headers)
                            "x-waiter-metric-group" "test-ws-support"
-                           "x-waiter-name" (rand-name "test-ws-request-stream-bytes-and-string"))]
+                           "x-waiter-name" (rand-name))]
       (is auth-cookie-value)
       (try
         (let [response-promise (promise)]
@@ -235,7 +235,7 @@
           concurrency-level 5
           waiter-headers (assoc (kitchen-request-headers)
                            "x-waiter-metric-group" "test-ws-support"
-                           "x-waiter-name" (rand-name "test-ws-request-parallel-streaming")
+                           "x-waiter-name" (rand-name)
                            "x-waiter-concurrency-level" concurrency-level
                            "x-waiter-scale-up-factor" 0.99
                            "x-waiter-scale-down-factor" 0.001)

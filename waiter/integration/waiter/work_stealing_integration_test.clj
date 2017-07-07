@@ -22,7 +22,7 @@
                          #(make-request router-url "/endpoint" :headers % :cookies cookies)))
           max-instances 6
           extra-headers (merge (kitchen-request-headers)
-                               {:x-waiter-name (rand-name "testworkstealingloadbalancing")
+                               {:x-waiter-name (rand-name)
                                 :x-waiter-max-instances max-instances
                                 :x-waiter-scale-up-factor 0.999
                                 :x-waiter-scale-down-factor 0.001
@@ -77,7 +77,7 @@
 
 (deftest ^:parallel ^:integration-slow test-slots-in-use-consistency
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-slots-in-use-consistency")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-max-instances 7
                    :x-kitchen-delay-ms 4000}
           {:keys [service-id request-headers cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))

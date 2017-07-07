@@ -14,7 +14,7 @@
 
 (deftest ^:parallel ^:integration-fast test-cookie-support
   (testing-using-waiter-url
-    (let [extra-headers {:x-waiter-name (rand-name "testcookies")
+    (let [extra-headers {:x-waiter-name (rand-name)
                          :x-kitchen-cookies "test=CrazyCase,test2=lol2,test3=\"lol3\""}
           response (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))
           cookies (:cookies response)]

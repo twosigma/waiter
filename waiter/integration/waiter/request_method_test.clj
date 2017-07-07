@@ -15,7 +15,7 @@
 
 (deftest ^:parallel ^:integration-fast test-request-method
   (testing-using-waiter-url
-    (let [service-name (rand-name "test-request-method")
+    (let [service-name (rand-name)
           headers {:x-waiter-name service-name, :x-kitchen-echo "true"}
           canary-response (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           lorem-ipsum "Lorem ipsum dolor sit amet, consectetur adipiscing elit."]

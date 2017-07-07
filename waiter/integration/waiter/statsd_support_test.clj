@@ -15,7 +15,7 @@
 
 (deftest ^:parallel ^:integration-fast test-header-metric-group
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-header-metric-group")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-metric-group "foo"}
           {:keys [status service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           value (:metric-group (response->service-description waiter-url response))]
@@ -31,7 +31,7 @@
   (testing-using-waiter-url
     (if (statsd-enabled? waiter-url)
       (log/info "Skipping statsd disabled assertion because statsd is turned on by Waiter")
-      (let [headers {:x-waiter-name (rand-name "test-statsd-disabled")}
+      (let [headers {:x-waiter-name (rand-name)}
             cookies (all-cookies waiter-url)
             make-request (fn [url]
                            (make-request-with-debug-info headers #(make-kitchen-request url % :cookies cookies)))

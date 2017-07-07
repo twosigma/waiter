@@ -510,10 +510,13 @@
       futures)))
 
 (defn rand-name
-  [service-name]
-  (let [username (System/getProperty "user.name")
-        test-prefix (System/getenv "WAITER_TEST_PREFIX")]
-    (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" "")))
+  ([]
+    (let [service-name (str (or (:name (meta (first *testing-vars*))) "test-unknown-name"))]
+      (rand-name service-name)))
+  ([service-name]
+    (let [username (System/getProperty "user.name")
+          test-prefix (System/getenv "WAITER_TEST_PREFIX")]
+      (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
 
 (defn delete-token-and-assert
   [waiter-url token]
