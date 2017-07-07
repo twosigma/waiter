@@ -826,7 +826,8 @@
                         (let [scheduler-state-query-chan (async/chan 32)]
                           (async/go-loop []
                             (let [{:keys [response-chan service-id]} (async/<! scheduler-state-query-chan)]
-                              (async/>! response-chan (scheduler/service-id->state scheduler service-id)))
+                              (when-let [scheduler-state (scheduler/service-id->state scheduler service-id)]
+                                (async/>! response-chan scheduler-state)))
                             (recur))
                           {:app-maintainer-state query-app-maintainer-chan
                            :autoscaler-state (:query autoscaler)
