@@ -505,13 +505,13 @@
    :assoc-run-as-user-approved? (pc/fnk [[:curator kv-store]
                                          [:settings consent-expiry-days]
                                          [:state clock passwords]]
-                                  (fn assoc-run-as-user-approved? [{:keys [headers]} service-id]
-                                    (let [{:strs [cookie host]} headers
+                                  (fn assoc-run-as-user-approved? [{:keys [cookies headers]} service-id]
+                                    (let [{:strs [host]} headers
                                           token (when-not (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys)
                                                   (utils/authority->host host))
                                           service-description-template (when token
                                                                          (sd/token->service-description-template kv-store token))
-                                          service-consent-cookie (cookie-support/cookie-value cookie "x-waiter-consent")
+                                          service-consent-cookie (get-in cookies ["x-waiter-consent" :value])
                                           decoded-cookie (when service-consent-cookie
                                                            (some #(cookie-support/decode-cookie-cached service-consent-cookie %1)
                                                                  passwords))]

@@ -55,4 +55,4 @@ curl -s ${WAITER_URI}/settings | jq .port
 
 # Run the integration tests
 cd ${WAITER_DIR}
-lein with-profiles +test-log ${TEST_COMMAND} :${TEST_SELECTOR}
+lein with-profiles +test-log ${TEST_COMMAND} :${TEST_SELECTOR} ${@:3}

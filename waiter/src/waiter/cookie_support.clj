@@ -19,35 +19,14 @@
             [taoensso.nippy :as nippy]
             [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
+           java.net.HttpCookie
            java.nio.charset.StandardCharsets
            org.eclipse.jetty.util.UrlEncoded))
-
-(defn url-decode
-  "Decode a URL-encoded string.  java.util.URLDecoder is super slow.  Also Jetty 9.3 adds an overload
-  to decodeString that takes just a string.  This implementation should use that once we upgrade."
-  [^String string]
-  (when string
-    (UrlEncoded/decodeString string 0 (count string) StandardCharsets/UTF_8)))
-
-(defn- strip-double-quotes
-  [value]
-  (let [value-length (count value)]
-    (if (and (> value-length 1) (str/starts-with? value "\"") (str/ends-with? value "\""))
-      (subs value 1 (dec value-length))
-      value)))
-
-(defn cookie-value
-  "Retrieves the value corresponding to the cookie name."
-  [cookie-string cookie-name]
-  (when cookie-string
-    (let [name-regex (re-pattern (str "(?i)" cookie-name "=([^;]+)"))]
-      (when-let [^String value (second (re-find name-regex cookie-string))]
-        (-> value url-decode strip-double-quotes)))))
 
 (defn correct-cookies-as-vector
   "Ring expects the Set-Cookie header to be a vector of cookies. This puts them in the 'right' format"
   [response]
-  (update-in response [:headers "Set-Cookie"] #(if (string? %) [%] %)))
+  (update-in response [:headers "set-cookie"] #(if (string? %) [%] %)))
 
 (defn cookies-async-response
   "For responses with :cookies, adds Set-Cookie header and returns response without :cookies."

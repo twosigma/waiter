@@ -228,11 +228,11 @@
 
 (defn make-http-request
   "Makes an asynchronous request to the endpoint using Basic authentication."
-  [http-client make-basic-auth-fn request-method endpoint headers body app-password {:keys [username principal]}
+  [http-client make-basic-auth-fn {:keys [body cookies headers request-method]} endpoint app-password {:keys [username principal]}
    idle-timeout output-buffer-size]
   (let [auth (make-basic-auth-fn endpoint "waiter" app-password)
-        headers (headers/assoc-auth-headers headers username principal)
-        http-method (http-method-fn request-method)]
+        http-method (http-method-fn request-method)
+        headers (headers/assoc-auth-headers headers username principal)]
     (http-method
       http-client endpoint
       {:as :bytes
@@ -242,22 +242,29 @@
        :fold-chunked-response? true
        :fold-chunked-response-buffer-size output-buffer-size
        :follow-redirects? false
-       :idle-timeout idle-timeout})))
+       :idle-timeout idle-timeout
+       :cookies cookies})))
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
-  [http-client make-basic-auth-fn instance {:keys [body request-method] :as request}
+  [http-client make-basic-auth-fn instance {:keys [body cookies request-method] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route app-password metric-group]
   (let [instance-endpoint (scheduler/end-point-url instance end-route)
         service-id (scheduler/instance->service-id instance)
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
         ; Also remove hop-by-hop headers https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
-        headers (-> (dissoc passthrough-headers "expect" "authorization")
+        headers (-> (dissoc passthrough-headers "expect" "authorization" "cookie")
                     (headers/dissoc-hop-by-hop-headers)
                     ;; ensure a value (potentially nil) is available for content-type to prevent Jetty from generating a default content-type
                     ;; please see org.eclipse.jetty.client.HttpConnection#normalizeRequest(request) for the control-flow for content-type header
                     (assoc "content-type" (get passthrough-headers "content-type")))
-        waiter-debug-enabled? (utils/request->debug-enabled? request)]
+        waiter-debug-enabled? (utils/request->debug-enabled? request)
+        cookies (->> cookies
+                     seq
+                     (filter (fn [[k _]] (not (.startsWith k "x-waiter"))))
+                     (map (fn [[key {:keys [value]}]] [key value]))
+                     (into {}))
+        request (assoc request :headers headers :cookies cookies)]
     (try
       (let [content-length-str (get passthrough-headers "content-length")
             content-length (if content-length-str (Integer/parseInt content-length-str) 0)]
@@ -269,7 +276,7 @@
         (log/error e "Unable to track content-length on request")))
     (when waiter-debug-enabled?
       (log/info "connecting to" instance-endpoint))
-    (make-http-request http-client make-basic-auth-fn request-method instance-endpoint headers body app-password
+    (make-http-request http-client make-basic-auth-fn request instance-endpoint app-password
                        (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size)))
 
 (defn inspect-for-202-async-request-response

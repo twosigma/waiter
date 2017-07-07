@@ -18,6 +18,7 @@
             [plumbing.core :as pc]
             [plumbing.graph :as graph]
             [qbits.jet.server :as server]
+            [ring.middleware.cookies :as cookies]
             [schema.core :as s]
             [waiter.core :as core]
             [waiter.correlation-id :as cid]
@@ -56,6 +57,10 @@
             (log/error e "Unable to consume request stream"))))
       resp)))
 
+(defn- wrap-request-cookies [handler]
+  (fn [req]
+    (handler (cookies/cookies-request req))))
+
 (defn wire-app
   [settings]
   {:settings (pc/fnk dummy-symbol-for-fnk-schema-logic :- settings/settings-schema [] settings)
@@ -67,7 +72,9 @@
    :http-server (pc/fnk [[:routines waiter-request?-fn websocket-request-authenticator]
                          [:settings host port]
                          handlers] ; Insist that all systems are running before we start server
-                  (server/run-jetty {:ring-handler (consume-request-stream (core/ring-handler-factory waiter-request?-fn handlers))
+                        (server/run-jetty {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
+                                                             consume-request-stream
+                                                             wrap-request-cookies)
                                      :websocket-acceptor websocket-request-authenticator
                                      :websocket-handler (core/websocket-handler-factory handlers)
                                      :host host

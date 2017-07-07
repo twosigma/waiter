@@ -72,11 +72,6 @@
         one-day-in-millis (-> 1 t/days t/in-millis)]
     (and well-formed? (> (+ auth-time one-day-in-millis) (System/currentTimeMillis)))))
 
-(defn get-auth-cookie-value
-  "Retrieves the auth cookie."
-  [cookie-string]
-  (cookie-support/cookie-value cookie-string AUTH-COOKIE-NAME))
-
 (defn assoc-auth-in-request
   "Associate values for authenticated user in the request."
   [request auth-principal]

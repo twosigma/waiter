@@ -16,19 +16,6 @@
             [waiter.cookie-support :refer :all])
   (:import (clojure.lang ExceptionInfo)))
 
-(deftest test-url-decode
-  (is (= "testtest" (url-decode "testtest")))
-  (is (= "test test" (url-decode "test%20test")))
-  (is (= nil (url-decode nil))))
-
-(deftest test-cookie-value
-  (let [cookie-string "user=john; mode=test; product-name=waiter; special=\"quotes\"abound\""]
-    (is (nil? (cookie-value cookie-string #"username")))
-    (is (= "john" (cookie-value cookie-string #"user")))
-    (is (= "test" (cookie-value cookie-string #"mode")))
-    (is (= "waiter" (cookie-value cookie-string #"product-name")))
-    (is (= "quotes\"abound" (cookie-value cookie-string #"special")))))
-
 (deftest test-correct-cookies-as-vector
   (is (= {:headers {"test" "a", "Set-Cookie" nil}} (correct-cookies-as-vector {:headers {"test" "a"}})))
   (is (= ["a"] (get-in (correct-cookies-as-vector {:headers {"Set-Cookie" "a"}}) [:headers "Set-Cookie"])))

@@ -77,8 +77,8 @@
    returned instead.  This middleware doesn't handle cookies for
    authentication, but that should be stacked before this handler."
   [request-handler password]
-  (fn require-gss-handler [{:keys [headers] :as req}]
-    (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
+  (fn require-gss-handler [{:keys [cookies headers] :as req}]
+    (let [waiter-cookie (get-in cookies [auth/AUTH-COOKIE-NAME :value])
           [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
       (cond
         ;; Use the cookie, if not expired

@@ -72,8 +72,8 @@
 (defn request-handler
   "Handler for websocket requests.
    It populates the kerberos credentials and invokes process-request-fn."
-  [password process-request-fn {:keys [headers] :as request}]
-  (let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value) ;; auth-cookie is assumed to be valid
+  [password process-request-fn {:keys [cookies headers] :as request}]
+  (let [auth-cookie (get-in cookies [auth/AUTH-COOKIE-NAME :value]) ;; auth-cookie is assumed to be valid
         [auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)]
     (log/info "processing websocket request" {:user auth-principal})
     (-> (auth/assoc-auth-in-request request auth-principal)
