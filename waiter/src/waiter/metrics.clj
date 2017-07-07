@@ -23,7 +23,7 @@
             [waiter.async-utils :as au]
             [waiter.correlation-id :as cid]
             [waiter.utils :as utils])
-  (:import (com.codahale.metrics Counter Histogram Meter MetricFilter MetricRegistry Timer Timer$Context)))
+  (:import (com.codahale.metrics Counter Gauge Histogram Meter MetricFilter MetricRegistry Timer Timer$Context)))
 
 (defn compress-strings
   "Compress adjacent strings in vector with a delimeter.
@@ -131,6 +131,8 @@
      (merge
        (pc/map-vals (fn [c] (counters/value c))
                     (.getCounters registry metric-filter))
+       (pc/map-vals (fn [^Gauge m] {"value" (.getValue m)})
+                    (.getGauges registry metric-filter))
        (pc/map-vals (fn [^Histogram h] {"count" (.getCount h)
                                         "value" (->> (histograms/percentiles h [0.0 0.25 0.5 0.75 0.95 0.99 0.999 1.0])
                                                      (pc/map-keys str))})
@@ -179,24 +181,28 @@
                          (persistent!))))
                  service-id->metrics)))
 
+(defn- prefix-metrics-filter
+  "Creates a MetricFilter that filters by the provided prefix"
+  [prefix-string]
+  (reify MetricFilter
+    (matches [_ name _]
+      (str/starts-with? name prefix-string))))
+
 (defn get-service-metrics
   "Retrieves the metrics for a sepcific service-id available at this router."
   [service-id]
-  (let [prefix-string (str "services" "." service-id)
-        metric-filter (reify MetricFilter
-                        (matches [_ name _]
-                          (str/starts-with? name prefix-string)))
-        service-metrics (get-metrics mc/default-registry metric-filter)]
-    service-metrics))
+  (let [prefix-string (str "services" "." service-id)]
+    (get-metrics mc/default-registry (prefix-metrics-filter prefix-string))))
 
 (defn get-waiter-metrics
   "Retrieves the waiter metrics at this router."
   []
-  (let [metric-filter (reify MetricFilter
-                        (matches [_ name _]
-                          (str/starts-with? name "waiter")))
-        waiter-metrics (get-metrics mc/default-registry metric-filter)]
-    waiter-metrics))
+  (get-metrics mc/default-registry (prefix-metrics-filter "waiter")))
+
+(defn get-jvm-metrics
+  "Retrieves the jvm metrics at this router."
+  []
+  (get-metrics mc/default-registry (prefix-metrics-filter "jvm")))
 
 (defn update-counter
   "Updates the counter to the size of the `new-coll`."

@@ -54,6 +54,12 @@
                  ^{:voom {:repo "https://github.com/twosigma/metrics-clojure.git" :branch "waiter-patch"}}
                  [metrics-clojure "2.6.0-20170531_164957-gd0d2c2c"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
+                 [metrics-clojure-jvm "2.6.0"
+                  :exclusions [io.dropwizard.metrics/metrics-core
+                               io.netty/netty
+                               metrics-clojure
+                               org.clojure/clojure
+                               org.slf4j/slf4j-api]]
                  [org.apache.curator/curator-framework "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.apache.curator/curator-recipes "2.11.0"
