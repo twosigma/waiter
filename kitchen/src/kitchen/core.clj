@@ -395,104 +395,91 @@
      :or {body "", decompress-body false, headers {}, http-method-fn http/get, query-params {}, use-spnego false, verbose false}}]
    (let [request-url (str "http://" waiter-url path)
          request-headers (walk/stringify-keys headers)]
-     (try
-       (when verbose
-         (log/info "request url:" request-url)
-         (log/info "request headers:" (into (sorted-map) request-headers)))
-       (let [{:keys [body headers status]}
-             (http-method-fn (http/client)
-                             request-url
-                             (cond-> {:spnego-auth use-spnego
-                                      :throw-exceptions false
-                                      :decompress-body decompress-body
-                                      :follow-redirects false
-                                      :headers request-headers
-                                      :query-params query-params
-                                      :body body}
-                                     multipart (assoc :multipart multipart)))]
-         (when verbose
-           (log/info (get request-headers "x-cid") "response size:" (count (str body))))
-         {:request-headers request-headers
-          :status status
-          :headers headers
-          :body body})
-       (catch Exception e
-         (when verbose
-           (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
-         (throw e))))))
+     (when verbose
+       (log/info "request url:" request-url)
+       (log/info "request headers:" (into (sorted-map) request-headers)))
+     (let [start-nanos (System/nanoTime)
+           {:keys [status]} (async/<!! (http-method-fn (http/client)
+                                                       request-url
+                                                       (cond-> {:spnego-auth use-spnego
+                                                                :throw-exceptions false
+                                                                :decompress-body decompress-body
+                                                                :follow-redirects false
+                                                                :headers request-headers
+                                                                :query-params query-params
+                                                                :body body}
+                                                               multipart (assoc :multipart multipart))))
+           elapsed-nanos (- (System/nanoTime) start-nanos)]
+       {:status status
+        :elapsed-nanos elapsed-nanos}))))
 
-(defn all-cookies
-  "Retrieves all cookies from the /waiter-auth endpoint"
-  [waiter-url]
-  (:cookies (make-request waiter-url "/waiter-auth")))
-
-(defn auth-cookie
-  "Retrieves and returns the value of the x-waiter-auth cookie"
-  [waiter-url]
-  (get-in (all-cookies waiter-url) ["x-waiter-auth" :value]))
-
-(defn- headers->options
+(defn make-parallel-requests
   "TODO(DPO)"
-  [headers]
-  (flatten (map (fn [[key val]] ["-H" (str (name key) ": " val)]) headers)))
+  [url path concurrency-level total-requests & {:keys [verbose] :or {verbose false}}]
+  (let [responses-atom (atom [])
+        make-requests (fn []
+                        (try
+                          (let [future-uuid (UUID/randomUUID)]
+                            (loop []
+                              (when verbose
+                                (log/info "making request from future" future-uuid))
+                              (let [response (make-request url path :verbose verbose)]
+                                (if (< (count (swap! responses-atom conj response)) total-requests)
+                                  (recur)
+                                  (log/info "no more requests to make from future" future-uuid)))))
+                          (catch Throwable t
+                            (log/error t "encountered exception making parallel requests"))))
+        futures (doall (repeatedly concurrency-level #(future (make-requests))))]
+    (dorun (map deref futures))
+    @responses-atom))
 
-(defn- parse-int
-  "TODO(DPO)"
-  [re s]
-  (let [match (re-find re s)]
-    (when match (read-string (second match)))))
+(defn percentile
+  "Calculates the p-th percentile of the values in coll
+  (where 0 < p <= 100), using the Nearest Rank method:
 
-(defn apache-bench
-  "TODO(DPO)"
-  [url endpoint headers concurrency-level total-requests apache-bench-dir]
-  (let [header-options (headers->options headers)
-        auth-cookie (auth-cookie url)
-        _ (log/debug "auth cookie:" auth-cookie)
-        base-command (into [(str apache-bench-dir "/ab")
-                         "-c" (str concurrency-level)
-                         "-n" (str total-requests)]
-                        header-options)
-        command-with-auth (if auth-cookie
-                            (concat base-command ["-H" (str "Cookie: x-waiter-auth=" auth-cookie ";")])
-                            base-command)
-        command (conj command-with-auth (str "http://" url endpoint))
-        _ (log/info command)
-        result (apply shell/sh command)
-        out (:out result)
-        complete-requests (parse-int #"Complete requests:\s+(\d+)" out)
-        failed-requests (parse-int #"Failed requests:\s+(\d+)" out)
-        write-errors (parse-int #"Write errors:\s+(\d+)" out)
-        latency-50% (parse-int #"50%\s+(\d+)" out)
-        latency-66% (parse-int #"66%\s+(\d+)" out)
-        latency-75% (parse-int #"75%\s+(\d+)" out)
-        latency-80% (parse-int #"80%\s+(\d+)" out)
-        latency-90% (parse-int #"90%\s+(\d+)" out)
-        non-2xx-responses (parse-int #"Non-2xx responses:\s+(\d+)" out)]
-    (log/info out)
-    (assoc result :complete-requests complete-requests
-                  :failed-requests failed-requests
-                  :write-errors write-errors
-                  :latency-50% latency-50%
-                  :latency-66% latency-66%
-                  :latency-75% latency-75%
-                  :latency-80% latency-80%
-                  :latency-90% latency-90%
-                  :non-2xx-responses (or non-2xx-responses 0))))
+  https://en.wikipedia.org/wiki/Percentile#The_Nearest_Rank_method
+
+  Assumes that coll is sorted (see percentiles below for context)"
+  [coll p]
+  (if (or (empty? coll) (not (number? p)) (<= p 0) (> p 100))
+    nil
+    (nth coll
+         (-> p
+             (/ 100)
+             (* (count coll))
+             (Math/ceil)
+             (dec)))))
+
+(defn percentiles
+  "Calculates the p-th percentiles of the values in coll for
+  each p in p-list (where 0 < p <= 100), and returns a map of
+  p -> value"
+  [coll & p-list]
+  (let [sorted (sort coll)]
+    (into {} (map (fn [p] [p (percentile sorted p)]) p-list))))
 
 (defn load-test-handler
   "TODO(DPO)"
   [{:keys [headers]}]
-  (let [url (get headers "x-kitchen-load-test-url")
-        endpoint (get headers "x-kitchen-load-test-endpoint" "/status")
-        concurrency-level (get headers "x-kitchen-load-test-concurrency" 1)
-        total-requests (get headers "x-kitchen-load-test-requests" 1)
-        apache-bench-dir (get headers "x-kitchen-load-test-apache-bench-dir" "/usr/bin")]
+  (let [url (get headers "x-load-test-url")
+        path (get headers "x-load-test-path" "/status")
+        concurrency-level (Integer/parseInt (get headers "x-load-test-concurrency" "1"))
+        total-requests (Integer/parseInt (get headers "x-load-test-total-requests" "1"))
+        verbose (Boolean/parseBoolean (get headers "x-load-test-verbose" "false"))]
     (if url
-      (let [result (apache-bench url endpoint {} concurrency-level total-requests apache-bench-dir)]
-        {:status (if (= 0 (:exit result)) 200 500)
-         :body (json/write-str result)})
+      (let [responses (make-parallel-requests url path concurrency-level total-requests :verbose verbose)
+            total-requests-made (count responses)
+            non-2xx-responses (count (filter #(or (< (:status %) 200) (>= (:status %) 300)) responses))
+            latencies (map :elapsed-nanos responses)
+            latency-percentiles (percentiles latencies 50 75 95 99 100)
+            latency-average (/ (reduce + latencies) total-requests-made)]
+        {:status (if (>= total-requests-made total-requests) 200 500)
+         :body (json/write-str {:latency-average-nanos latency-average
+                                :latency-percentiles-nanos latency-percentiles
+                                :non-2xx-responses non-2xx-responses
+                                :total-requests-made total-requests-made})})
       {:status 400
-       :body "Missing header x-kitchen-load-test-url"})))
+       :body "Missing header x-load-test-url"})))
 
 (defn http-handler
   [request]
