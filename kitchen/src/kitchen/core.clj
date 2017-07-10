@@ -411,7 +411,7 @@
                                          :query-params query-params
                                          :body body}
                                         multipart (assoc :multipart multipart)
-                                        use-spnego (assoc :auth (spnego/spnego-authentication (URI. url))))))
+                                        use-spnego (assoc :auth (spnego/spnego-authentication (URI. request-url))))))
            elapsed-nanos (- (System/nanoTime) start-nanos)]
        {:status status
         :elapsed-nanos elapsed-nanos}))))
