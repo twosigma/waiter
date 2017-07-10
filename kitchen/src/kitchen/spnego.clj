@@ -20,6 +20,8 @@
       (try
         (let [gss-manager (GSSManager/getInstance)
               server-princ (str "HTTP@" (.getHost endpoint))
+              _ (log/info "gss-manager" gss-manager "server-princ" server-princ
+                          "NT_HOSTBASED_SERVICE" GSSName/NT_HOSTBASED_SERVICE "spnego-oid" spnego-oid)
               server-name (.createName gss-manager server-princ GSSName/NT_HOSTBASED_SERVICE spnego-oid)
               gss-context (.createContext gss-manager server-name spnego-oid nil GSSContext/DEFAULT_LIFETIME)
               _ (.requestMutualAuth gss-context true)
