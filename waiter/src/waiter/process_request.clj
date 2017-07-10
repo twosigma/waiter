@@ -386,7 +386,9 @@
   [response]
   (fn abort-http-request-callback [^Exception e]
     (let [ex (if (instance? IOException e) e (IOException. e))
-          aborted (.abort (:request response) ex)]
+          aborted (if-let [request (:request response)]
+                    (.abort request ex)
+                    (log/warn "unable to abort as request not found inside response!"))]
       (log/info "aborted backend request:" aborted))))
 
 (defn process-http-response

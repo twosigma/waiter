@@ -9,8 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (defproject kitchen "0.1.0-SNAPSHOT"
-  :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
-                 [cc.qbits/jet "0.7.10-20170705_021440-g5a6aaab"]
+  :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch-add-request-to-response"}}
+                 [cc.qbits/jet "0.7.10-20170710_173656-ga89e431"]
                  [log4j/log4j "1.2.17" :exclusions [javax.mail/mail
                                                     javax.jms/jms
                                                     com.sun.jmdk/jmxtools
