@@ -415,7 +415,7 @@
 
 (defn make-parallel-requests
   "TODO(DPO)"
-  [url path concurrency-level total-requests & {:keys [verbose] :or {verbose false}}]
+  [url path concurrency-level total-requests & {:keys [verbose use-spnego] :or {verbose false, use-spnego false}}]
   (let [responses-atom (atom [])
         make-requests (fn []
                         (try
@@ -423,7 +423,7 @@
                             (loop []
                               (when verbose
                                 (log/info "making request from future" future-uuid))
-                              (let [response (make-request url path :verbose verbose)]
+                              (let [response (make-request url path :verbose verbose :use-spnego use-spnego)]
                                 (if (< (count (swap! responses-atom conj response)) total-requests)
                                   (recur)
                                   (log/info "no more requests to make from future" future-uuid)))))
@@ -465,9 +465,12 @@
         path (get headers "x-load-test-path" "/status")
         concurrency-level (Integer/parseInt (get headers "x-load-test-concurrency" "1"))
         total-requests (Integer/parseInt (get headers "x-load-test-total-requests" "1"))
-        verbose (Boolean/parseBoolean (get headers "x-load-test-verbose" "false"))]
+        verbose (Boolean/parseBoolean (get headers "x-load-test-verbose" "false"))
+        use-spnego (Boolean/parseBoolean (get headers "x-load-test-use-spnego" "false"))]
     (if url
-      (let [responses (make-parallel-requests url path concurrency-level total-requests :verbose verbose)
+      (let [responses (make-parallel-requests url path concurrency-level total-requests
+                                              :verbose verbose
+                                              :use-spnego use-spnego)
             total-requests-made (count responses)
             non-2xx-responses (count (filter #(or (< (:status %) 200) (>= (:status %) 300)) responses))
             latencies (map :elapsed-nanos responses)
