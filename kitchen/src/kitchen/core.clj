@@ -17,22 +17,23 @@
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [kitchen.pi :as pi]
+            [kitchen.spnego :as spnego]
             [kitchen.utils :as utils]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [qbits.jet.server :as server]
             [ring.middleware.basic-authentication :as basic-authentication]
             [ring.middleware.cookies :as cookies]
-            [ring.middleware.params :as params]
-            [clojure.walk :as walk])
+            [ring.middleware.params :as params])
   (:gen-class)
   (:import (java.io InputStream ByteArrayOutputStream)
-           (java.nio ByteBuffer)
-           (java.util UUID)
-           (java.util.zip GZIPOutputStream)
-           (org.eclipse.jetty.server HttpOutput)
-           (java.net CookieStore)))
+           java.net.URI
+           java.nio.ByteBuffer
+           java.util.UUID
+           java.util.zip.GZIPOutputStream
+           org.eclipse.jetty.server.HttpOutput))
 
 
 (def async-requests (atom {}))
@@ -390,25 +391,27 @@
 
 (defn make-request
   "TODO(DPO)"
-  ([waiter-url path &
+  ([url path &
     {:keys [body decompress-body headers http-method-fn multipart query-params use-spnego verbose]
      :or {body "", decompress-body false, headers {}, http-method-fn http/get, query-params {}, use-spnego false, verbose false}}]
-   (let [request-url (str "http://" waiter-url path)
+   (let [request-url (str "http://" url path)
          request-headers (walk/stringify-keys headers)]
      (when verbose
        (log/info "request url:" request-url)
        (log/info "request headers:" (into (sorted-map) request-headers)))
      (let [start-nanos (System/nanoTime)
-           {:keys [status]} (async/<!! (http-method-fn (http/client)
-                                                       request-url
-                                                       (cond-> {:spnego-auth use-spnego
-                                                                :throw-exceptions false
-                                                                :decompress-body decompress-body
-                                                                :follow-redirects false
-                                                                :headers request-headers
-                                                                :query-params query-params
-                                                                :body body}
-                                                               multipart (assoc :multipart multipart))))
+           {:keys [status]} (async/<!!
+                              (http-method-fn
+                                (http/client)
+                                request-url
+                                (cond-> {:throw-exceptions false
+                                         :decompress-body decompress-body
+                                         :follow-redirects false
+                                         :headers request-headers
+                                         :query-params query-params
+                                         :body body}
+                                        multipart (assoc :multipart multipart)
+                                        use-spnego (assoc :auth (spnego/spnego-authentication (URI. url))))))
            elapsed-nanos (- (System/nanoTime) start-nanos)]
        {:status status
         :elapsed-nanos elapsed-nanos}))))
