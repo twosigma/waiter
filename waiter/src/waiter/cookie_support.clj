@@ -27,11 +27,9 @@
   "Ring expects the Set-Cookie header to be a vector of cookies. This puts them in the 'right' format"
   [{:keys [headers] :as resp}]
   (let [string->vec (fn [x] (if (string? x) [x] x))
-        cookies (concat []
-                        (string->vec (get headers "set-cookie"))
-                        (string->vec (get headers "Set-Cookie")))
-        headers (-> headers
-                    (dissoc "set-cookie")
+        set-cookie-headers (filter #(= "set-cookie" (.toLowerCase %)) (keys headers))
+        cookies (apply concat (map #(string->vec (get headers %)) set-cookie-headers))
+        headers (-> (apply dissoc headers set-cookie-headers)
                     (assoc "Set-Cookie" (when-not (empty? cookies) cookies)))]
     (assoc resp :headers headers)))
 

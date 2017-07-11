@@ -76,7 +76,8 @@
                                                              consume-request-stream
                                                              wrap-request-cookies)
                                      :websocket-acceptor websocket-request-authenticator
-                                     :websocket-handler (core/websocket-handler-factory handlers)
+                                     :websocket-handler (-> (core/websocket-handler-factory handlers)
+                                                            wrap-request-cookies)
                                      :host host
                                      :join? false
                                      :max-threads 250
