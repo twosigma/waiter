@@ -166,8 +166,7 @@
               (log/info (str "Created configuration using token " token))
               (let [token-response (get-token waiter-url token)
                     response-body (json/read-str (:body token-response))]
-                (is (= {"health-check-url" "/custom-endpoint", "name" service-id-prefix,
-                        "token-metadata" {"owner" (retrieve-username)}}
+                (is (= {"health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username)}
                        response-body)))
               (log/info (str "Asserted retrieval of configuration for token " token)))
 
@@ -475,7 +474,7 @@
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
             (is (nil? (get response-body :run-as-user)))
-            (is (= (assoc service-description :token-metadata {:owner (retrieve-username)})
+            (is (= (assoc service-description :owner (retrieve-username))
                    response-body))))
 
         (testing "expecting redirect"
@@ -596,7 +595,7 @@
         (testing "token retrieval"
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
-            (is (= (assoc service-description :authentication "disabled" :token-metadata {:owner current-user})
+            (is (= (assoc service-description :authentication "disabled" :owner current-user)
                    response-body))))
 
         (testing "successful request"

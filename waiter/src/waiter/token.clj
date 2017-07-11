@@ -197,7 +197,7 @@
                  ;;NB do not ever return the password to the user
                  (do
                    (log/info "successfully retrieved token " token)
-                   (utils/map->json-response (assoc service-description-template "token-metadata" token-metadata)))
+                   (utils/map->json-response (merge service-description-template token-metadata)))
                  (do
                    (log/info "token not found " token)
                    (utils/map->json-response {:message (str "couldn't find token " token)} :status 404)))))
