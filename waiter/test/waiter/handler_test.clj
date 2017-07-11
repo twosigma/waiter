@@ -20,12 +20,12 @@
             [plumbing.core :as pc]
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
-            [waiter.scheduler :as scheduler]
+            [waiter.scheduler.scheduler :as scheduler]
             [waiter.test-helpers :refer :all])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
            (java.io StringBufferInputStream StringReader)
-           (waiter.scheduler ServiceScheduler)))
+           (waiter.scheduler.scheduler ServiceScheduler)))
 
 (deftest test-complete-async-handler
   (testing "missing-request-id"

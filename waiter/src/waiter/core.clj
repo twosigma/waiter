@@ -43,7 +43,7 @@
             [waiter.password-store :as password-store]
             [waiter.process-request :as pr]
             [waiter.scaling :as scaling]
-            [waiter.scheduler :as scheduler]
+            [waiter.scheduler.scheduler :as scheduler]
             [waiter.security :as sec]
             [waiter.service :as service]
             [waiter.service-description :as sd]

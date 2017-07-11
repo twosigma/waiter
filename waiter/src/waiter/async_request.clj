@@ -15,7 +15,7 @@
             [metrics.counters :as counters]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
-            [waiter.scheduler :as scheduler]
+            [waiter.scheduler.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.statsd :as statsd])
   (:import [java.net ConnectException SocketTimeoutException URI URLEncoder]
