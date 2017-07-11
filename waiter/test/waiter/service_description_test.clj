@@ -10,6 +10,7 @@
 ;;
 (ns waiter.service-description-test
   (:require [clj-time.core :as t]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
@@ -1090,16 +1091,20 @@
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           service-id-prefix "test#"
           token "test-token"
-          service-description {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "token" token,
-                               "run-as-user" "tu1", "permitted-user" "tu2", "owner" "tu3"}
-          service-id (service-description->service-id service-id-prefix service-description)]
+          in-service-description {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "token" token,
+                                  "run-as-user" "tu1", "permitted-user" "tu2", "owner" "tu3"}
+          service-id (service-description->service-id service-id-prefix in-service-description)]
       ; prepare
-      (kv/store kv-store token service-description)
+      (kv/store kv-store token in-service-description)
       ; test
       (testing "test:token->service-description-1"
         (is (nil? (kv/fetch kv-store service-id))))
       (testing "test:token->service-description-2"
-        (is (= service-description (token->service-description-template kv-store token)))
+        (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token)
+              service-description-template-2 (token->service-description-template kv-store token)]
+          (is (= service-description-template service-description-template-2))
+          (is (= (select-keys in-service-description service-description-keys) service-description-template))
+          (is (= (select-keys in-service-description token-metadata-keys) token-metadata)))
         (is (= {} (token->service-description-template kv-store "invalid-token" :error-on-missing false)))
         (is (thrown? ExceptionInfo (token->service-description-template kv-store "invalid-token")))))))
 
@@ -1356,3 +1361,7 @@
   (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "*"})))
   (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
   (is (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
+
+(deftest test-no-intersection-in-token-service-description-and-metadata
+  (is (empty? (set/intersection service-description-keys token-metadata-keys))
+      "We found common elements in service-description-keys and token-metadata-keys!"))
