@@ -16,7 +16,8 @@
             [ring.middleware.params :as ring-params]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils]))
+            [waiter.utils :as utils])
+  (:import (org.joda.time DateTime)))
 
 (def ^:const ANY-USER "*")
 (def ^:const valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+")
@@ -159,7 +160,8 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn {:keys [request-method] :as req}]
+  [clock synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+   {:keys [request-method] :as req}]
   ;;if post, validate that this is a valid job schema & that the user == the kerberos user, then sign & store in riak
   ;;  remember that we need an extra field in this schema, which is who is allowed to use this. Could be "*" or a string username
   ;;if get, return whatever data's in riak
@@ -247,7 +249,11 @@
                   (when-not (can-run-as? authenticated-user owner)
                     (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user :owner owner})))))
               ; Store the token
-              (store-service-description-for-token synchronize-fn kv-store token new-service-description-template {"owner" owner})
+              (let [new-token-metadata (merge {"deleted" false
+                                               "last-update-time" (.getMillis ^DateTime (clock))
+                                               "owner" owner}
+                                              new-token-metadata)]
+                (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata))
               ; notify peers of token update
               (make-peer-requests-fn "tokens/refresh"
                                      :method :post

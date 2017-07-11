@@ -145,8 +145,9 @@
               (log/info (str "Created configuration using token " token))
               (let [token-response (get-token waiter-url token)
                     response-body (json/read-str (:body token-response))]
-                (is (= {"health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username)}
-                       response-body)))
+                (is (contains? response-body "last-update-time"))
+                (is (= {"deleted" false, "health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username)}
+                       (dissoc response-body "last-update-time"))))
               (log/info (str "Asserted retrieval of configuration for token " token)))
 
             (testing "support-for-token-with-x-waiter-headers"
@@ -432,8 +433,9 @@
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
             (is (nil? (get response-body :run-as-user)))
-            (is (= (assoc service-description :owner (retrieve-username))
-                   response-body))))
+            (is (contains? response-body :last-update-time))
+            (is (= (assoc service-description :deleted false :owner (retrieve-username))
+                   (dissoc response-body :last-update-time)))))
 
         (testing "expecting redirect"
           (let [{:keys [body headers] :as response} (make-request waiter-url "/hello-world" :headers {"host" host-header})]
@@ -553,8 +555,9 @@
         (testing "token retrieval"
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
-            (is (= (assoc service-description :authentication "disabled" :owner current-user)
-                   response-body))))
+            (is (contains? response-body :last-update-time))
+            (is (= (assoc service-description :authentication "disabled" :deleted false :owner current-user)
+                   (dissoc response-body :last-update-time)))))
 
         (testing "successful request"
           (let [{:keys [body] :as response} (make-request waiter-url "/hello-world" :headers request-headers :spnego-auth false)]
