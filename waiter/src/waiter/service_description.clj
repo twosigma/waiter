@@ -243,9 +243,8 @@
   (let [{:strs [name]} service-description
         prefix (cond-> service-id-prefix
                        name (str (str/replace (str/lower-case name) #"[^a-z0-9]" "") "-"))
-        sorted-service-desc (->> service-description
-                                 (filter (fn [k] (service-description-keys (key k))))
-                                 sort)
+        sorted-service-desc (-> (select-keys service-description service-description-keys)
+                                sort)
         service-id (loop [[[k v] & kvs] sorted-service-desc
                           acc (transient [])]
                      (if k
