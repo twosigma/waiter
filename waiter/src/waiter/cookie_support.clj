@@ -25,8 +25,15 @@
 
 (defn correct-cookies-as-vector
   "Ring expects the Set-Cookie header to be a vector of cookies. This puts them in the 'right' format"
-  [response]
-  (update-in response [:headers "set-cookie"] #(if (string? %) [%] %)))
+  [{:keys [headers] :as resp}]
+  (let [string->vec (fn [x] (if (string? x) [x] x))
+        cookies (concat []
+                        (string->vec (get headers "set-cookie"))
+                        (string->vec (get headers "Set-Cookie")))
+        headers (-> headers
+                    (dissoc "set-cookie")
+                    (assoc "Set-Cookie" (when-not (empty? cookies) cookies)))]
+    (assoc resp :headers headers)))
 
 (defn cookies-async-response
   "For responses with :cookies, adds Set-Cookie header and returns response without :cookies."

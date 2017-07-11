@@ -571,9 +571,10 @@
                                   [:state http-client]
                                   make-basic-auth-fn service-id->password-fn]
                            (fn make-http-request-fn [service-id location auth-user-map request-method headers body]
-                             (let [service-password (service-id->password-fn service-id)]
-                               (pr/make-http-request http-client make-basic-auth-fn request-method location headers body
-                                                     service-password auth-user-map initial-socket-timeout-ms output-buffer-size))))
+                             (let [service-password (service-id->password-fn service-id)
+                                   request {:request-method request-method :headers headers :body body}]
+                               (pr/make-http-request http-client make-basic-auth-fn request location service-password
+                                                     auth-user-map initial-socket-timeout-ms output-buffer-size))))
    :make-inter-router-requests-async-fn (pc/fnk [[:curator discovery]
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state http-client passwords router-id]
