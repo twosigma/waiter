@@ -19,7 +19,6 @@
                          :x-kitchen-cookies "test=CrazyCase,test2=lol2,test3=\"lol3\""}
           response (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))
           cookies (:cookies response)]
-      (println cookies)
       (is (= "CrazyCase" (get-in cookies ["test" :value])))
       (is (= "lol2" (get-in cookies ["test2" :value])))
       (is (= "%22lol3%22" (get-in cookies ["test3" :value])))
