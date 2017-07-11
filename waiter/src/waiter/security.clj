@@ -8,10 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.security
-  (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
-            [waiter.utils :as utils]))
+(ns waiter.security)
 
 (defprotocol EntitlementManager 
   "Security related methods"
