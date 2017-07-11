@@ -30,7 +30,7 @@
    (let [extra-headers {:x-waiter-name (rand-name)
                         :x-kitchen-cookies "test=singlecookie"}
          {:keys [service-id cookies]} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))
-         {:keys [body cokies]} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url % :path "/request-info"
+         {:keys [body cookies]} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url % :path "/request-info"
                                                                                            :cookies (assoc cookies "test" {:value "cookie"
                                                                                                                            :discard false
                                                                                                                            :path "/"})))
