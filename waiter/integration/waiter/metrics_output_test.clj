@@ -36,8 +36,7 @@
   {(s/required-key "count") gauge-metric-schema})
 
 (def service-metrics-schema
-  {
-   (s/required-key "counters") {(s/required-key "request-counts") {(s/required-key "outstanding") schema/non-negative-num
+  {(s/required-key "counters") {(s/required-key "request-counts") {(s/required-key "outstanding") schema/non-negative-num
                                                                    (s/required-key "successful") schema/positive-num
                                                                    (s/required-key "total") schema/positive-num
                                                                    (s/required-key "streaming") schema/non-negative-num
@@ -65,8 +64,7 @@
    s/Str s/Any})
 
 (def jvm-metrics-schema
-  {
-   (s/required-key "attribute") s/Any
+  {(s/required-key "attribute") s/Any
    (s/required-key "file") s/Any
    (s/required-key "gc") s/Any
    (s/required-key "memory") s/Any
@@ -84,8 +82,7 @@
    s/Str s/Any})
 
 (def waiter-metrics-schema
-  {
-   (s/required-key "autoscaler") s/Any
+  {(s/required-key "autoscaler") s/Any
    (s/required-key "core") s/Any
    (s/required-key "gc") s/Any
    (s/required-key "requests") s/Any
@@ -120,11 +117,11 @@
                           metrics-json-response (make-request router-url "/metrics")
                           metrics-response (json/read-str (:body metrics-json-response))
                           service-metrics (get-in metrics-response ["services" service-id])]
-                      (log/info "Asserting jvm metrics output for" router-url)
+                      (log/info "asserting jvm metrics output for" router-url)
                       (assert-metrics-output (get metrics-response "jvm") jvm-metrics-schema)
-                      (log/info "Asserting service metrics output for" router-url)
+                      (log/info "asserting service metrics output for" router-url)
                       (assert-metrics-output service-metrics service-metrics-schema)
-                      (log/info "Asserting waiter metrics output for" router-url)
+                      (log/info "asserting waiter metrics output for" router-url)
                       (assert-metrics-output (get metrics-response "waiter") waiter-metrics-schema)))
                   (keys router->endpoint)))
 
@@ -132,12 +129,12 @@
             routers->metrics (get-in apps-response ["metrics" "routers"])
             aggregate-metrics (get-in apps-response ["metrics" "aggregate"])]
         (when (get apps-response "error-messages")
-          (log/info "Error messages from /apps:" (get apps-response "error-messages")))
+          (log/info "error messages from /apps:" (get apps-response "error-messages")))
         (is (pos? (count routers->metrics)))
         (doseq [[router-id metrics] routers->metrics]
-          (log/info "Asserting /apps output for" router-id)
+          (log/info "asserting /apps output for" router-id)
           (assert-metrics-output metrics service-metrics-schema))
-        (log/info "Asserting aggregate /apps output")
+        (log/info "asserting aggregate /apps output")
         (assert-metrics-output aggregate-metrics service-metrics-schema)
         (is (number? (get aggregate-metrics "routers-sent-requests-to")))
         (is (>= (get-in aggregate-metrics ["counters" "request-counts" "total"]) num-requests)))

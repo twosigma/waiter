@@ -193,11 +193,11 @@
     (let [request-params (:params (ring-params/params-request request))
           exclude-services (utils/request-flag request-params "exclude-services")
           service-id (get request-params "service-id" nil)
-          show-jvm-metrics (utils/request-flag request-params "show-jvm-metrics")
+          include-jvm-metrics (utils/request-flag request-params "include-jvm-metrics")
           metrics (cond
                     exclude-services (metrics/get-waiter-metrics)
                     (and (not exclude-services) service-id) (metrics/get-service-metrics service-id)
-                    show-jvm-metrics (metrics/get-jvm-metrics)
+                    include-jvm-metrics (metrics/get-jvm-metrics)
                     :else (metrics/get-metrics))]
       (utils/map->streaming-json-response metrics))
     (catch Exception e
