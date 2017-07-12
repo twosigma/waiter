@@ -42,8 +42,7 @@
       (assoc :authorization/user user
              :authenticated-principal principal)
       request-handler
-      (add-cached-auth password principal)
-      cookie-support/cookies-async-response))
+      (add-cached-auth password principal)))
 
 (defn decode-auth-cookie
   "Decodes the provided cookie using the provided password.
@@ -76,6 +75,11 @@
   "Retrieves the auth cookie."
   [cookie-string]
   (cookie-support/cookie-value cookie-string AUTH-COOKIE-NAME))
+
+(defn remove-auth-cookie
+  "Removes the auth cookie"
+  [cookie-string]
+  (cookie-support/remove-cookie cookie-string AUTH-COOKIE-NAME))
 
 (defn assoc-auth-in-request
   "Associate values for authenticated user in the request."
