@@ -106,7 +106,7 @@
 (def ^:const on-the-fly-service-description-keys (set/union service-description-keys #{"token"}))
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
-(def ^:const token-metadata-keys #{"deleted" "last-update-time" "owner"})
+(def ^:const token-metadata-keys #{"deleted" "last-update-time" "owner" "update-mode"})
 
 ; keys allowed in a token description
 (def ^:const token-description-keys (set/union service-description-keys token-metadata-keys))

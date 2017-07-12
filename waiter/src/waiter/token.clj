@@ -243,16 +243,19 @@
                                   {:missing-parameters (->> sd/service-required-keys
                                                             (remove #(contains? new-service-description-template %1)) seq)
                                    :service-description new-service-description-template}))))
-              (when (and run-as-user (not= "*" run-as-user))
-                (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
-                  (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user :run-as-user run-as-user}))))
-              (let [existing-service-description-owner (get existing-token-metadata "owner")]
-                (if-not (str/blank? existing-service-description-owner)
-                  (when-not (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata)
-                    (throw (ex-info "Cannot change owner of token"
-                                    {:existing-owner existing-service-description-owner, :new-user owner})))
-                  (when-not (authz/run-as? entitlement-manager authenticated-user owner)
-                    (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user :owner owner})))))
+              (when (= "sync" (get new-token-metadata "update-mode"))
+                (when-not (authz/sync-token? entitlement-manager authenticated-user token new-token-metadata)
+                  (throw (ex-info "Cannot sync token" {:status 403 :token-metadata new-token-metadata :user authenticated-user}))))
+              (when (not= "sync" (get new-token-metadata "update-mode"))
+                (when (and run-as-user (not= "*" run-as-user))
+                  (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
+                    (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user :run-as-user run-as-user :status 403}))))
+                (let [existing-service-description-owner (get existing-token-metadata "owner")]
+                  (if-not (str/blank? existing-service-description-owner)
+                    (when-not (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata)
+                      (throw (ex-info "Cannot change owner of token" {:existing-owner existing-service-description-owner :new-user owner :status 403})))
+                    (when-not (authz/run-as? entitlement-manager authenticated-user owner)
+                      (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user :owner owner :status 403}))))))
               ; Store the token
               (let [new-token-metadata (merge {"deleted" false
                                                "last-update-time" (.getMillis ^DateTime (clock))

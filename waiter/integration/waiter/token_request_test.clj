@@ -59,7 +59,7 @@
         (update-and-validate-token-fn version2)
         (update-and-validate-token-fn version3)
         (finally
-          (delete-token-and-assert waiter-url token))))))
+          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
 
 (defn- name-from-service-description [waiter-url service-id]
   (get-in (service-settings waiter-url service-id) [:service-description :name]))
@@ -230,7 +230,61 @@
                     (str headers))
                 (delete-service waiter-url service-id))))
           (finally
-            (delete-token-and-assert waiter-url token)))))))
+            (delete-token-and-assert waiter-url token :query-params {"erase" true})))))))
+
+(deftest ^:parallel ^:integration-fast test-token-sync-invalid-run-as-user
+  (testing-using-waiter-url
+    (let [service-id-prefix (rand-name)]
+      (testing "token-syncing"
+        (testing "active-token"
+          (let [token (create-token-name waiter-url service-id-prefix)]
+            (try
+              (log/info (str "Creating configuration using token " token))
+              (let [token-description {:health-check-url "/custom-endpoint"
+                                       :name service-id-prefix
+                                       :owner (retrieve-username)
+                                       :run-as-user "foo-bar"
+                                       :token token
+                                       :update-mode "sync"}
+                    response (post-token waiter-url token-description)]
+                (assert-response-status response 200))
+              (log/info (str "Created configuration using token " token))
+              (let [token-response (get-token waiter-url token)
+                    response-body (json/read-str (:body token-response))]
+                (is (contains? response-body "last-update-time"))
+                (is (= {"deleted" false, "health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username),
+                        "run-as-user" "foo-bar", "update-mode" "sync"}
+                       (dissoc response-body "last-update-time"))))
+              (log/info (str "Asserted retrieval of configuration for token " token))
+              (finally
+                (delete-token-and-assert waiter-url token :query-params {"erase" true})))))
+
+        (testing "deleted-token"
+          (let [token (create-token-name waiter-url service-id-prefix)]
+            (try
+              (log/info (str "Creating configuration using token " token))
+              (let [token-description {:deleted true
+                                       :health-check-url "/custom-endpoint"
+                                       :name service-id-prefix
+                                       :owner (retrieve-username)
+                                       :run-as-user "foo-bar"
+                                       :token token
+                                       :update-mode "sync"}
+                    response (post-token waiter-url token-description)]
+                (assert-response-status response 200))
+              (log/info (str "Created configuration using token " token))
+              (let [{:keys [body] :as response} (get-token waiter-url token)]
+                (assert-response-status response 404)
+                (is (str/includes? (str body) "couldn't find token") (str body)))
+              (let [token-response (get-token waiter-url token :query-params {"show-deleted" true})
+                    response-body (json/read-str (:body token-response))]
+                (is (contains? response-body "last-update-time"))
+                (is (= {"deleted" true, "health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username),
+                        "run-as-user" "foo-bar", "update-mode" "sync"}
+                       (dissoc response-body "last-update-time"))))
+              (log/info (str "Asserted retrieval of configuration for token " token))
+              (finally
+                (delete-token-and-assert waiter-url token :query-params {"erase" true})))))))))
 
 (deftest ^:parallel ^:integration-fast test-named-token
   (testing-using-waiter-url
@@ -277,7 +331,7 @@
               (str headers))
           (delete-service waiter-url service-id))
         (finally
-          (delete-token-and-assert waiter-url token))))))
+          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
 
 (deftest ^:parallel ^:integration-fast test-star-run-as-user-token
   (testing-using-waiter-url
@@ -335,7 +389,7 @@
               (str headers))
           (delete-service waiter-url service-id))
         (finally
-          (delete-token-and-assert waiter-url token))))))
+          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
 
 (deftest ^:parallel ^:integration-fast test-on-the-fly-to-token
   (testing-using-waiter-url
@@ -386,7 +440,7 @@
           {:keys [body]} (get-token waiter-url token)]
       (assert-response-status register-response 200)
       (is (= (:metadata service-desc) (get (json/read-str body) "metadata")))
-      (delete-token-and-assert waiter-url token)
+      (delete-token-and-assert waiter-url token :query-params {"erase" true})
       (delete-service waiter-url (:name service-desc)))))
 
 (deftest ^:parallel ^:integration-fast test-token-bad-metadata
@@ -420,7 +474,7 @@
       (is (= 200 (:status token-response)) (:body token-response))
       (is (= 200 status))
       (is (= {:BINARY binary} env) (str service-description))
-      (delete-token-and-assert waiter-url token)
+      (delete-token-and-assert waiter-url token :query-params {"erase" true})
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-token-invalid-environment-variables
@@ -554,7 +608,7 @@
                         (delete-service waiter-url @service-id-atom)))))))))
 
         (finally
-          (delete-token-and-assert waiter-url token))))))
+          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
 
 (deftest ^:parallel ^:integration-fast test-authentication-disabled-support
   (testing-using-waiter-url
@@ -591,4 +645,4 @@
             (is (contains? headers "x-cid"))))
 
         (finally
-          (delete-token-and-assert waiter-url token))))))
+          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
