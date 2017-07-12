@@ -9,13 +9,13 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.basic-test
-  (:require [clj-http.client :as http]
-            [clojure.core.async :as async]
+  (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
             [waiter.service-description :as sd])
   (:import java.io.ByteArrayInputStream))
@@ -55,14 +55,14 @@
                                                   :accept "text/plain"}
                                                  #(make-kitchen-request waiter-url % :path "/hello"))
           http-method-helper (fn http-method-helper [http-method]
-                               (fn inner-http-method-helper [url & [req]]
-                                 (http/request (merge req {:method http-method :url url}))))]
+                               (fn inner-http-method-helper [client url & [req]]
+                                 (http/request client (merge req {:method http-method :url url}))))]
       (testing "verifying whether request method HEAD works"
         (let [response (make-kitchen-request waiter-url request-headers
                                              :http-method-fn (http-method-helper :head)
                                              :path "/request-info")]
           (assert-response-status response 200)
-          (is (nil? (:body response)))))
+          (is (str/blank? (:body response)))))
       (doseq [request-method [:delete :copy :get :move :patch :post :put]]
         (testing (str "verifying whether request method " (-> request-method name str/upper-case) " works")
           (let [{:keys [body] :as response} (make-kitchen-request waiter-url request-headers
@@ -327,14 +327,14 @@
                                           :verbose true)]
         (is (every? true? results)))
       (log/info "Suspending service " service-id)
-      (http/get (str HTTP-SCHEME waiter-url "/apps/" service-id "/suspend") {:headers {} :spnego-auth true})
+      (make-request waiter-url (str "/apps/" service-id "/suspend"))
       (let [results (parallelize-requests 10 2
                                           #(let [{:keys [body]} (make-kitchen-request waiter-url waiter-headers)]
                                              (str/includes? body "Service has been suspended!"))
                                           :verbose true)]
         (is (every? true? results)))
       (log/info "Resuming service " service-id)
-      (http/get (str HTTP-SCHEME waiter-url "/apps/" service-id "/resume") {:headers {} :spnego-auth true})
+      (make-request waiter-url (str "/apps/" service-id "/resume"))
       (let [results (parallelize-requests 10 2
                                           #(let [_ (log/info "making kitchen request")
                                                  response (make-kitchen-request waiter-url waiter-headers)]
@@ -350,14 +350,11 @@
       (let [service-description (:service-description (service-settings waiter-url service-id))]
         (is (every? #(not (nil? %)) (vals (select-keys service-description [:cpus :mem :cmd :name]))))
         (is (every? #(nil? %) (vals (select-keys service-description [:max-instances :min-instances :scale-factor])))))
-      (http/post (str HTTP-SCHEME waiter-url "/apps/" service-id "/override")
-                 {:headers {}
-                  :throw-exceptions false
-                  :spnego-auth true
-                  :body (json/write-str {"scale-factor" 0.3
-                                         "cmd" "overridden-cmd"
-                                         "max-instances" 100
-                                         "min-instances" 2})})
+      (make-request waiter-url (str "/apps/" service-id "/override")
+                    :body (json/write-str {"scale-factor" 0.3
+                                           "cmd" "overridden-cmd"
+                                           "max-instances" 100
+                                           "min-instances" 2}))
       (let [service-settings (service-settings waiter-url service-id)
             service-description (:service-description service-settings)
             service-description-overrides (:service-description-overrides service-settings)]
@@ -365,11 +362,7 @@
         (is (every? #(nil? %) (vals (select-keys service-description [:max-instances :min-instances :scale-factor]))))
         (is (every? #(not (nil? %)) (vals (select-keys (:overrides service-description-overrides)
                                                        [:max-instances :min-instances :scale-factor])))))
-      (http/delete (str HTTP-SCHEME waiter-url "/apps/" service-id "/override")
-                   {:headers {}
-                    :throw-exceptions false
-                    :spnego-auth true
-                    :body ""})
+      (make-request waiter-url (str "/apps/" service-id "/override") :http-method-fn http/delete)
       (let [service-settings (service-settings waiter-url service-id)
             service-description (:service-description service-settings)
             service-description-overrides (:service-description-overrides service-settings)]

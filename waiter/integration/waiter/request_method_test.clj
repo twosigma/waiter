@@ -9,8 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.request-method-test
-  (:require [clj-http.client :as http]
-            [clojure.test :refer :all]
+  (:require [clojure.test :refer :all]
+            [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-request-method
