@@ -19,7 +19,6 @@
             [taoensso.nippy :as nippy]
             [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
-           java.net.HttpCookie
            java.nio.charset.StandardCharsets
            org.eclipse.jetty.util.UrlEncoded))
 
@@ -27,10 +26,11 @@
   "Ring expects the Set-Cookie header to be a vector of cookies. This puts them in the 'right' format"
   [{:keys [headers] :as resp}]
   (let [string->vec (fn [x] (if (string? x) [x] x))
-        set-cookie-headers (filter #(= "set-cookie" (.toLowerCase %)) (keys headers))
-        cookies (apply concat (map #(string->vec (get headers %)) set-cookie-headers))
-        headers (-> (apply dissoc headers set-cookie-headers)
-                    (assoc "Set-Cookie" (when-not (empty? cookies) cookies)))]
+        set-cookie-headers (filter #(.equalsIgnoreCase "set-cookie" %) (keys headers))
+        headers (if-not (empty? set-cookie-headers)
+                  (-> (apply dissoc headers set-cookie-headers)
+                      (assoc "Set-Cookie" (apply concat (map #(string->vec (get headers %)) set-cookie-headers))))
+                  headers)]
     (assoc resp :headers headers)))
 
 (defn cookies-async-response
@@ -43,6 +43,16 @@
       (-> (async/<! response)
           correct-cookies-as-vector
           cookies/cookies-response))))
+
+(defn remove-waiter-cookies
+  "Removes x-waiter cookies and changes the format from the ring map
+   to a key-value map"
+  [cookies]
+  (->> cookies
+       seq
+       (filter (fn [[k _]] (not (str/starts-with? k "x-waiter"))))
+       (map (fn [[key {:keys [value]}]] [key value]))
+       (into {})))
 
 (defn encode-cookie
   "Encodes the cookie value."

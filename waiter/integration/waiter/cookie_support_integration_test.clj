@@ -23,19 +23,20 @@
       (is (= "lol2" (get-in cookies ["test2" :value])))
       (is (= "%22lol3%22" (get-in cookies ["test3" :value])))
       (is (get-in cookies ["x-waiter-auth" :value]))
+      (let [single-cookie-headers (assoc extra-headers :x-kitchen-cookies "test=singlecookie")
+            {:keys [cookies]} (make-request-with-debug-info single-cookie-headers #(make-kitchen-request waiter-url %))]
+        (is (= "singlecookie" (get-in cookies ["test" :value])))
+        (is (get-in cookies ["x-waiter-auth" :value])))
       (delete-service waiter-url (:service-id response)))))
 
 (deftest ^:parallel ^:integration-fast test-cookie-sent-to-backend
   (testing-using-waiter-url
-   (let [extra-headers {:x-waiter-name (rand-name)
-                        :x-kitchen-cookies "test=singlecookie"}
+   (let [extra-headers {:x-waiter-name (rand-name)}
          {:keys [service-id cookies]} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))
-         {:keys [body cookies]} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url % :path "/request-info"
+         {:keys [body]} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url % :path "/request-info"
                                                                                            :cookies (assoc cookies "test" {:value "cookie"
                                                                                                                            :discard false
                                                                                                                            :path "/"})))
          body-json (json/read-str (str body))]
      (is (= "test=cookie" (get-in body-json ["headers" "cookie"])))
-     (is (get-in cookies ["x-waiter-auth" :value]))
-     (is (= "singlecookie" (get-in cookies ["test" :value])))
      (delete-service waiter-url service-id))))

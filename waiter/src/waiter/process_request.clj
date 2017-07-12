@@ -25,6 +25,7 @@
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
+            [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
@@ -34,7 +35,8 @@
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.token :as token]
-            [waiter.utils :as utils])
+            [waiter.utils :as utils]
+            [waiter.cookie-support :as cookie-support])
   (:import java.io.InputStream
            java.io.IOException
            org.eclipse.jetty.io.EofException
@@ -238,12 +240,12 @@
       {:as :bytes
        :auth auth
        :body body
+       :cookies cookies
        :headers headers
        :fold-chunked-response? true
        :fold-chunked-response-buffer-size output-buffer-size
        :follow-redirects? false
-       :idle-timeout idle-timeout
-       :cookies cookies})))
+       :idle-timeout idle-timeout})))
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
@@ -253,17 +255,13 @@
         service-id (scheduler/instance->service-id instance)
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
         ; Also remove hop-by-hop headers https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
-        headers (-> (dissoc passthrough-headers "expect" "authorization" "cookie")
+        headers (-> (dissoc passthrough-headers "expect" "cookie" "authorization")
                     (headers/dissoc-hop-by-hop-headers)
                     ;; ensure a value (potentially nil) is available for content-type to prevent Jetty from generating a default content-type
                     ;; please see org.eclipse.jetty.client.HttpConnection#normalizeRequest(request) for the control-flow for content-type header
                     (assoc "content-type" (get passthrough-headers "content-type")))
         waiter-debug-enabled? (utils/request->debug-enabled? request)
-        cookies (->> cookies
-                     seq
-                     (filter (fn [[k _]] (not (.startsWith k "x-waiter"))))
-                     (map (fn [[key {:keys [value]}]] [key value]))
-                     (into {}))
+        cookies (cookie-support/remove-waiter-cookies cookies)
         request (assoc request :headers headers :cookies cookies)]
     (try
       (let [content-length-str (get passthrough-headers "content-length")

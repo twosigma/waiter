@@ -17,10 +17,18 @@
   (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-correct-cookies-as-vector
-  (is (= {:headers {"test" "a", "Set-Cookie" nil}} (correct-cookies-as-vector {:headers {"test" "a"}})))
+  (is (= {:headers {"test" "a"}} (correct-cookies-as-vector {:headers {"test" "a"}})))
   (is (= ["a"] (get-in (correct-cookies-as-vector {:headers {"Set-Cookie" "a"}}) [:headers "Set-Cookie"])))
   (is (= ["a"] (get-in (correct-cookies-as-vector {:headers {"Set-Cookie" ["a"]}}) [:headers "Set-Cookie"])))
   (is (= ["a" "b"] (get-in (correct-cookies-as-vector {:headers {"Set-Cookie" ["a" "b"]}}) [:headers "Set-Cookie"]))))
+
+(deftest test-remove-waiter-cookies
+  (is (= {"a" "b"}
+         (remove-waiter-cookies {"a" {:value "b"}
+                                 "x-waiter-auth" {:value "auth"}})))
+  (is (= {} (remove-waiter-cookies {"x-waiter-auth" {:value "auth"}})))
+  (is (= {} (remove-waiter-cookies {})))
+  (is (= {} (remove-waiter-cookies nil))))
 
 (deftest test-cookies-async-response
   (is (= {:status 200}

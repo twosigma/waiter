@@ -79,6 +79,11 @@
     :authenticated-principal auth-principal
     :authorization/user (first (str/split auth-principal #"@" 2))))
 
+(defn get-auth-cookie-value
+  "Returns the value of the x-waiter-auth cookie"
+  [cookies]
+  (get-in cookies [AUTH-COOKIE-NAME :value]))
+
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.
 ;; The anonymous authenticator attaches the principal of run-as-user to the request.

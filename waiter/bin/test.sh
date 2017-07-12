@@ -5,6 +5,7 @@
 #   test.sh parallel-test integration-fast
 #   test.sh parallel-test integration-slow
 #   test.sh parallel-test
+#   test.sh test :only waiter.basic-test
 #   test.sh
 #
 # Waits for waiter to be listening and then runs the given test selector. Checks if WAITER_URI and
