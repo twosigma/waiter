@@ -25,7 +25,7 @@
 
   :dependencies [[bidi "2.0.16"
                   :exclusions [prismatic/schema ring/ring-core]]
-                 ^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
+                 ^{:voom {:repo "https://github.com/dposada/jet.git" :branch "waiter-patch"}}
                  [cc.qbits/jet "0.7.10-20170711_221612-g4813285"]
                  ^{:voom {:repo "https://github.com/twosigma/clj-http.git" :branch "waiter-patch"}}
                  [clj-http "1.0.2-20170524_085846-g161c42f"
