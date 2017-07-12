@@ -22,11 +22,10 @@
            org.eclipse.jetty.util.UrlEncoded))
 
 (defn url-decode
-  "Decode a URL-encoded string.  java.util.URLDecoder is super slow.  Also Jetty 9.3 adds an overload
-  to decodeString that takes just a string.  This implementation should use that once we upgrade."
+  "Decode a URL-encoded string.  java.util.URLDecoder is super slow."
   [^String string]
   (when string
-    (UrlEncoded/decodeString string 0 (count string) StandardCharsets/UTF_8)))
+    (UrlEncoded/decodeString string)))
 
 (defn- strip-double-quotes
   [value]
@@ -59,7 +58,8 @@
   "Inserts the provided name-value pair as a Set-Cookie header in the response"
   [response password name value age-in-days]
   (letfn [(add-cookie-into-response [response]
-            (let [encoded-cookie (encode-cookie value password)
+            (let [encoded-cookie (-> (encode-cookie value password)
+                                     UrlEncoded/encodeString)
                   max-age (-> age-in-days t/days t/in-seconds)
                   path "/"
                   set-cookie-header (str name "=" encoded-cookie ";Max-Age=" max-age ";Path=" path)
