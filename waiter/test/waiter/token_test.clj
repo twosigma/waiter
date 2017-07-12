@@ -82,7 +82,7 @@
           (finally
             (kv/delete kv-store token))))
 
-      (testing "delete:token-does-exist-authorized"
+      (testing "delete:token-does-exist-authorized:erase-missing"
         (try
           (kv/store kv-store token (assoc service-description1 "owner" "tu1"))
           (is (not (nil? (kv/fetch kv-store token))))
@@ -92,7 +92,39 @@
                   {:request-method :delete, :authorization/user "tu1", :headers {"x-waiter-token" token}})]
             (is (= 200 status))
             (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
-            (is (nil? (kv/fetch kv-store token))))
+            (is (= (assoc service-description1 "deleted" true, "last-update-time" (clock-millis), "owner" "tu1")
+                   (kv/fetch kv-store token))
+                "Entry deleted from kv-store!"))
+          (finally
+            (kv/delete kv-store token))))
+
+      (testing "delete:token-does-exist-authorized:erase-false"
+        (try
+          (kv/store kv-store token (assoc service-description1 "owner" "tu1"))
+          (is (not (nil? (kv/fetch kv-store token))))
+          (let [{:keys [status body]}
+                (run-handle-token-request
+                  kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"erase" "false"}, :request-method :delete})]
+            (is (= 200 status))
+            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
+            (is (= (assoc service-description1 "deleted" true, "last-update-time" (clock-millis), "owner" "tu1")
+                   (kv/fetch kv-store token))
+                "Entry deleted from kv-store!"))
+          (finally
+            (kv/delete kv-store token))))
+
+      (testing "delete:token-does-exist-authorized:erase-true"
+        (try
+          (kv/store kv-store token (assoc service-description1 "owner" "tu1"))
+          (is (not (nil? (kv/fetch kv-store token))))
+          (let [{:keys [status body]}
+                (run-handle-token-request
+                  kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"erase" "true"}, :request-method :delete})]
+            (is (= 200 status))
+            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
+            (is (nil? (kv/fetch kv-store token)) "Entry not deleted from kv-store!"))
           (finally
             (kv/delete kv-store token))))
 

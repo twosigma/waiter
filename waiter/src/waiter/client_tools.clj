@@ -555,9 +555,12 @@
      (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
 
 (defn delete-token-and-assert
-  [waiter-url token]
+  [waiter-url token & {:keys [query-params] :or {query-params {}}}]
   (log/info "deleting token" token)
-  (let [response (make-request waiter-url "/token" :headers {"host" token} :http-method-fn http/delete)]
+  (let [response (make-request waiter-url "/token"
+                               :headers {"host" token}
+                               :http-method-fn http/delete
+                               :query-params query-params)]
     (assert-response-status response 200)))
 
 (defn wait-for
@@ -784,14 +787,14 @@
   "Sends a POST request with the given token definition"
   [waiter-url {:keys [token] :as token-map}]
   (make-request waiter-url "/token"
-                :http-method-fn http/post
+                :body (json/write-str token-map)
                 :headers {"host" token}
-                :body (json/write-str token-map)))
+                :http-method-fn http/post))
 
 (defn get-token
   "Gets the token with the given name"
-  [waiter-url token & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url token & {:keys [cookies query-params] :or {cookies {}, query-params {}}}]
   (let [request-headers (clojure.walk/stringify-keys {:host token})
-        {:keys [body] :as token-response} (make-request waiter-url "/token" :headers request-headers :cookies cookies)]
-    (log/debug "retrieved token" token ":" body)
+        token-response (make-request waiter-url "/token" :cookies cookies :headers request-headers :query-params query-params)]
+    (log/debug "Retrieved token" token ":" (:body token-response))
     token-response))

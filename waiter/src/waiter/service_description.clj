@@ -349,27 +349,31 @@
 
 (defn- token->kv-data
   "Retrieves the data stored against the token in the kv-store."
-  [kv-store ^String token error-on-missing]
-  (let [{:strs [run-as-user] :as data} (when token (kv/fetch kv-store token))
+  [kv-store ^String token error-on-missing show-deleted]
+  (let [{:strs [deleted run-as-user] :as data} (when token (kv/fetch kv-store token))
         data (when data ; populate token owner for backwards compatibility
                (update-in data ["owner"] (fn [current-owner] (or current-owner run-as-user))))]
     (when (and error-on-missing (not data))
       (throw (ex-info (str "No service description template available for token " token) {})))
     (log/debug "Extracted data for" token "is" data)
-    data))
+    (if (and deleted (not show-deleted))
+      {}
+      data)))
 
 (defn token->token-description
   "Retrieves the token description for the given token."
-  [kv-store ^String token]
-  (let [config (token->kv-data kv-store token false)]
+  [kv-store ^String token & {:keys [show-deleted] :or {show-deleted false}}]
+  (let [config (token->kv-data kv-store token false show-deleted)]
     {:service-description-template (select-keys config service-description-keys)
      :token-metadata (select-keys config token-metadata-keys)}))
 
 (defn token->service-description-template
   "Retrieves the service description template for the given token."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (let [config (token->kv-data kv-store token error-on-missing)]
-    (select-keys config service-description-keys)))
+  (let [config (token->kv-data kv-store token error-on-missing false)]
+    (if (not-empty config)
+      (select-keys config service-description-keys)
+      {})))
 
 (defn retrieve-token-from-service-description-or-hostname
   "Retrieve the token name from the service description map using the x-waiter-token key.

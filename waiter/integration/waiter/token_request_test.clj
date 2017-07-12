@@ -74,6 +74,13 @@
     (log/debug "Retrieved tokens for owner " owner ":" (:body tokens-response))
     tokens-response))
 
+(defn parse-token-description
+  [response-body]
+  (try
+    (-> response-body str json/read-str pc/keywordize-map)
+    (catch Exception _
+      (is false (str "Failed to parse token " response-body)))))
+
 (deftest ^:parallel ^:integration-fast test-token-create-delete
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
@@ -92,15 +99,11 @@
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
           (let [{:keys [body] :as token-response} (get-token router-url token :cookies cookies)
-                token-description (try (json/read-str (str body))
-                                       (catch Exception _
-                                         (is false (str "Failed to parse token " body))))]
+                token-description (parse-token-description body)]
             (assert-response-status token-response 200)
-            (is (= "/custom-endpoint" (token-description "health-check-url")))
-            (is (= service-id-prefix (token-description "name")))
-            (is current-user (token-description "owner"))
-            (is (not-any? #(contains? token-description %) ["cmd" "cpus" "mem" "run-as-user" "permitted-user"])
-                (str "Unexpected content in token response: " body)))
+            (is (contains? token-description :last-update-time))
+            (is (= {:deleted false :health-check-url "/custom-endpoint" :name service-id-prefix :owner (retrieve-username)}
+                   (dissoc token-description :last-update-time))))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
@@ -108,7 +111,7 @@
       (log/info "deleting the tokens")
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token))
-      (log/info "ensuring tokens can no longer be retrieved on each router")
+      (log/info "ensuring tokens can no longer be retrieved on each router without show-deleted parameter")
       (doseq [token tokens-to-create]
         (doseq [[router-id router-url] (routers waiter-url)]
           (let [router-state (router-state router-url :cookies cookies)
@@ -119,10 +122,25 @@
           (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
             (assert-response-status response 404)
             (is (str/includes? (str body) "couldn't find token") (str body)))
+          (let [{:keys [body] :as response} (get-token router-url token :cookies cookies :query-params {"show-deleted" true})]
+            (assert-response-status response 200)
+            (let [token-description (parse-token-description body)]
+              (is (contains? token-description :last-update-time))
+              (is (= {:deleted true :health-check-url "/custom-endpoint" :name service-id-prefix :owner (retrieve-username)}
+                     (dissoc token-description :last-update-time)))))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
-            (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) tokens))))))))
+            (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
+      (log/info "deleting the tokens in erase mode")
+      (doseq [token tokens-to-create]
+        (delete-token-and-assert waiter-url token :query-params {"erase" true}))
+      (log/info "ensuring tokens can no longer be retrieved on each router with show-deleted parameter after erase")
+      (doseq [token tokens-to-create]
+        (doseq [[_ router-url] (routers waiter-url)]
+          (let [{:keys [body] :as response} (get-token router-url token :cookies cookies :query-params {"show-deleted" true})]
+            (assert-response-status response 404)
+            (is (str/includes? (str body) "couldn't find token") (str body))))))))
 
 (deftest ^:parallel ^:integration-fast test-hostname-token
   (testing-using-waiter-url

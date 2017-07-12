@@ -68,12 +68,18 @@
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
-    [synchronize-fn kv-store token owner]
+    [clock synchronize-fn kv-store token owner & {:keys [erase] :or {erase false}}]
     (synchronize-fn
       token-lock
       (fn inner-delete-service-description-for-token []
-        (log/info "Deleting service description for token:" token)
-        (kv/delete kv-store token)
+        (log/info "Deleting service description for token:" token "erase mode:" erase)
+        (if erase
+          (kv/delete kv-store token)
+          (when-let [existing-token-description (kv/fetch kv-store token)]
+            (let [new-token-description (assoc existing-token-description
+                                          "deleted" true
+                                          "last-update-time" (.getMillis ^DateTime (clock)))]
+              (kv/store kv-store token new-token-description))))
         ; Remove token from owner
         (when owner
           (let [owner->owner-key (kv/fetch kv-store token-owners-key)
@@ -161,17 +167,18 @@
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
-   {:keys [request-method] :as req}]
+   {:keys [headers request-method] :as req}]
   ;;if post, validate that this is a valid job schema & that the user == the kerberos user, then sign & store in riak
   ;;  remember that we need an extra field in this schema, which is who is allowed to use this. Could be "*" or a string username
   ;;if get, return whatever data's in riak
   (case request-method
     :delete (try
-              (let [req-headers (:headers req)
-                    {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname req-headers req-headers waiter-hostname)
-                    current-user (get req :authorization/user)]
+              (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)
+                    current-user (get req :authorization/user)
+                    request-params (:query-params (ring-params/params-request req))
+                    erase (utils/request-flag request-params "erase")]
                 (if token
-                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
+                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :show-deleted erase)]
                     (if (and service-description-template (not-empty service-description-template))
                       (let [token-owner (get token-metadata "owner")]
                         (when-not (can-run-as? current-user token-owner)
@@ -179,7 +186,7 @@
                                           {:existing-owner token-owner
                                            :current-user current-user
                                            :status 403})))
-                        (delete-service-description-for-token synchronize-fn kv-store token token-owner)
+                        (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :erase erase)
                         ; notify peers of token delete and ask them to refresh their caches
                         (make-peer-requests-fn "tokens/refresh"
                                                :method :post
@@ -192,9 +199,10 @@
                 (log/error e "Token delete failed")
                 (utils/exception->json-response e)))
     :get (try
-           (let [req-headers (:headers req)
-                 {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname req-headers req-headers waiter-hostname)]
-             (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
+           (let [request-params (:query-params (ring-params/params-request req))
+                 show-deleted (utils/request-flag request-params "show-deleted")
+                 {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)]
+             (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :show-deleted show-deleted)]
                (if (and service-description-template (not-empty service-description-template))
                  ;;NB do not ever return the password to the user
                  (do
