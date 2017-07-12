@@ -15,6 +15,7 @@
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [clojure.tools.logging :as log]
+            [metrics.jvm.core :as jvm-metrics]
             [plumbing.core :as pc]
             [plumbing.graph :as graph]
             [qbits.jet.server :as server]
@@ -117,6 +118,7 @@
     (reify Thread$UncaughtExceptionHandler
       (uncaughtException [_ thread throwable]
         (log/error throwable (str (.getName thread) " threw exception: " (.getMessage throwable))))))
+  (jvm-metrics/instrument-jvm)
   (let [{:keys [validate-config]} (parse-options args)]
     (if validate-config
       (validate-config-schema config)
