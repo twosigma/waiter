@@ -84,7 +84,7 @@
 (def waiter-metrics-schema
   {(s/required-key "autoscaler") s/Any
    (s/required-key "core") s/Any
-   (s/required-key "gc") s/Any
+   (s/optional-key "gc") s/Any
    (s/required-key "requests") s/Any
    (s/required-key "state") s/Any
    s/Str s/Any})
