@@ -84,7 +84,7 @@
           chunked-resp (make-request-with-debug-info
                          headers
                          #(make-kitchen-request waiter-url % :path "/request-info"
-                                                ; force clj-http to make a chunked request
+                                                ; force a chunked request
                                                 :body (ByteArrayInputStream. (.getBytes long-request))
                                                 :cookies cookies))
           plain-body-json (json/read-str (str (:body plain-resp)))
