@@ -22,32 +22,16 @@
            java.nio.charset.StandardCharsets
            org.eclipse.jetty.util.UrlEncoded))
 
-(defn url-decode
-  "Decode a URL-encoded string.  java.util.URLDecoder is super slow.  Also Jetty 9.3 adds an overload
-  to decodeString that takes just a string.  This implementation should use that once we upgrade."
-  [^String string]
-  (when string
-    (UrlEncoded/decodeString string 0 (count string) StandardCharsets/UTF_8)))
-
-(defn- strip-double-quotes
-  [value]
-  (let [value-length (count value)]
-    (if (and (> value-length 1) (str/starts-with? value "\"") (str/ends-with? value "\""))
-      (subs value 1 (dec value-length))
-      value)))
-
-(defn cookie-value
-  "Retrieves the value corresponding to the cookie name."
-  [cookie-string cookie-name]
-  (when cookie-string
-    (let [name-regex (re-pattern (str "(?i)" cookie-name "=([^;]+)"))]
-      (when-let [^String value (second (re-find name-regex cookie-string))]
-        (-> value url-decode strip-double-quotes)))))
-
 (defn correct-cookies-as-vector
   "Ring expects the Set-Cookie header to be a vector of cookies. This puts them in the 'right' format"
-  [response]
-  (update-in response [:headers "Set-Cookie"] #(if (string? %) [%] %)))
+  [{:keys [headers] :as resp}]
+  (let [string->vec (fn [x] (if (string? x) [x] x))
+        set-cookie-headers (filter #(.equalsIgnoreCase "set-cookie" %) (keys headers))
+        headers (if-not (empty? set-cookie-headers)
+                  (-> (apply dissoc headers set-cookie-headers)
+                      (assoc "Set-Cookie" (apply concat (map #(string->vec (get headers %)) set-cookie-headers))))
+                  headers)]
+    (assoc resp :headers headers)))
 
 (defn cookies-async-response
   "For responses with :cookies, adds Set-Cookie header and returns response without :cookies."
@@ -59,6 +43,16 @@
       (-> (async/<! response)
           correct-cookies-as-vector
           cookies/cookies-response))))
+
+(defn remove-waiter-cookies
+  "Removes x-waiter cookies and changes the format from the ring map
+   to a key-value map"
+  [cookies]
+  (->> cookies
+       seq
+       (filter (fn [[k _]] (not (str/starts-with? k "x-waiter"))))
+       (map (fn [[key {:keys [value]}]] [key value]))
+       (into {})))
 
 (defn encode-cookie
   "Encodes the cookie value."

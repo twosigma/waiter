@@ -72,17 +72,17 @@
         one-day-in-millis (-> 1 t/days t/in-millis)]
     (and well-formed? (> (+ auth-time one-day-in-millis) (System/currentTimeMillis)))))
 
-(defn get-auth-cookie-value
-  "Retrieves the auth cookie."
-  [cookie-string]
-  (cookie-support/cookie-value cookie-string AUTH-COOKIE-NAME))
-
 (defn assoc-auth-in-request
   "Associate values for authenticated user in the request."
   [request auth-principal]
   (assoc request
     :authenticated-principal auth-principal
     :authorization/user (first (str/split auth-principal #"@" 2))))
+
+(defn get-auth-cookie-value
+  "Returns the value of the x-waiter-auth cookie"
+  [cookies]
+  (get-in cookies [AUTH-COOKIE-NAME :value]))
 
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.

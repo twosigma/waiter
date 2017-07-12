@@ -505,13 +505,13 @@
    :assoc-run-as-user-approved? (pc/fnk [[:curator kv-store]
                                          [:settings consent-expiry-days]
                                          [:state clock passwords]]
-                                  (fn assoc-run-as-user-approved? [{:keys [headers]} service-id]
-                                    (let [{:strs [cookie host]} headers
+                                  (fn assoc-run-as-user-approved? [{:keys [cookies headers]} service-id]
+                                    (let [{:strs [host]} headers
                                           token (when-not (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys)
                                                   (utils/authority->host host))
                                           service-description-template (when token
                                                                          (sd/token->service-description-template kv-store token))
-                                          service-consent-cookie (cookie-support/cookie-value cookie "x-waiter-consent")
+                                          service-consent-cookie (get-in cookies ["x-waiter-consent" :value])
                                           decoded-cookie (when service-consent-cookie
                                                            (some #(cookie-support/decode-cookie-cached service-consent-cookie %1)
                                                                  passwords))]
@@ -571,9 +571,10 @@
                                   [:state http-client]
                                   make-basic-auth-fn service-id->password-fn]
                            (fn make-http-request-fn [service-id location auth-user-map request-method headers body]
-                             (let [service-password (service-id->password-fn service-id)]
-                               (pr/make-http-request http-client make-basic-auth-fn request-method location headers body
-                                                     service-password auth-user-map initial-socket-timeout-ms output-buffer-size))))
+                             (let [service-password (service-id->password-fn service-id)
+                                   request {:request-method request-method :headers headers :body body}]
+                               (pr/make-http-request http-client make-basic-auth-fn request location service-password
+                                                     auth-user-map initial-socket-timeout-ms output-buffer-size))))
    :make-inter-router-requests-async-fn (pc/fnk [[:curator discovery]
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state http-client passwords router-id]

@@ -39,8 +39,7 @@
       (let [response-code-atom (atom nil)
             request (reified-upgrade-request {"x-waiter-auth" cookie-value})
             response (Object.)]
-        (with-redefs [auth/get-auth-cookie-value identity
-                      auth/decode-auth-cookie (fn [in-cookie in-password]
+        (with-redefs [auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 [auth-principal auth-time])]
@@ -51,8 +50,7 @@
       (let [response-code-atom (atom nil)
             request (reified-upgrade-request {"fee" "fie", "foo" "bar", "x-waiter-auth" cookie-value})
             response (Object.)]
-        (with-redefs [auth/get-auth-cookie-value identity
-                      auth/decode-auth-cookie (fn [in-cookie in-password]
+        (with-redefs [auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 [auth-principal auth-time])]
@@ -64,8 +62,7 @@
             request (reified-upgrade-request {"fee" "fie", "foo" "bar"})
             response (proxy [ServletUpgradeResponse] [nil]
                        (sendForbidden [code] (reset! response-code-atom code)))]
-        (with-redefs [auth/get-auth-cookie-value identity
-                      auth/decode-auth-cookie (fn [in-cookie in-password]
+        (with-redefs [auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 nil)]
@@ -77,8 +74,7 @@
             request (reified-upgrade-request {"x-waiter-auth" cookie-value})
             response (proxy [ServletUpgradeResponse] [nil]
                        (sendForbidden [code] (reset! response-code-atom code)))]
-        (with-redefs [auth/get-auth-cookie-value identity
-                      auth/decode-auth-cookie (fn [in-cookie in-password]
+        (with-redefs [auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 nil)]
@@ -90,8 +86,7 @@
             request (reified-upgrade-request {"x-waiter-auth" cookie-value})
             response (proxy [ServletUpgradeResponse] [nil]
                        (sendError [status code] (reset! response-code-atom (str status ":" code))))]
-        (with-redefs [auth/get-auth-cookie-value identity
-                      auth/decode-auth-cookie (fn [in-cookie in-password]
+        (with-redefs [auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 (throw (Exception. "Test-Exception")))]
@@ -119,14 +114,14 @@
 (deftest test-request-handler
   (let [password (Object.)
         cookie-value "test-cookie-string"
-        headers {"cookie" cookie-value}
+        cookies {auth/AUTH-COOKIE-NAME {:value cookie-value}}
         auth-user "test-user"
         auth-principal (str auth-user "@test.com")
         auth-time (System/currentTimeMillis)]
 
     (testing "successful-auth"
       (let [output-channel (async/promise-chan)
-            request {:headers headers, :out output-channel}
+            request {:cookies cookies, :out output-channel}
             process-request-atom (atom false)
             process-request-fn (fn process-request-fn [in-request]
                                  (is (= in-request
@@ -134,8 +129,7 @@
                                                        :authorization/user auth-user
                                                        :authenticated-principal auth-principal)))
                                  (reset! process-request-atom true))]
-        (with-redefs [auth/get-auth-cookie-value identity
-                      auth/decode-auth-cookie (fn [in-cookie in-password]
+        (with-redefs [auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 [auth-principal auth-time])]
