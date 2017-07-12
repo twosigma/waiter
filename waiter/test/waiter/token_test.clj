@@ -13,6 +13,7 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
             [waiter.test-helpers :refer :all]
@@ -31,15 +32,22 @@
     (locking lock
       (f))))
 
+(defn- public-entitlement-manager
+  []
+  (reify authz/EntitlementManager
+    (authorized? [_ _ _ _]
+      true)))
+
 (defn- run-handle-token-request
-  [kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn request]
-  (handle-token-request clock synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn request))
+  [kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn request]
+  (handle-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn
+                        validate-service-description-fn request))
 
 (deftest test-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           service-id-prefix "test#"
-          can-run-as? (fn [auth-user run-as-user] (= auth-user run-as-user))
+          entitlement-manager (authz/->SimpleEntitlementManager nil)
           make-peer-requests-fn (fn [endpoint & _] (and (str/starts-with? endpoint "token/") (str/ends-with? endpoint "/refresh")) {})
           token "test-token"
           service-description1 (clojure.walk/stringify-keys
@@ -51,10 +59,11 @@
           service-id2 (sd/service-description->service-id service-id-prefix service-description2)
           waiter-hostname "waiter-hostname.app.example.com"
           handle-list-tokens-request (wrap-handler-json-response handle-list-tokens-request)]
+
       (testing "delete:no-token-in-request"
         (let [{:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :delete, :headers {}})]
           (is (= 400 status))
           (is (str/includes? body "couldn't find token in request"))))
@@ -62,7 +71,7 @@
       (testing "delete:token-does-not-exist"
         (let [{:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :delete, :headers {"x-waiter-token" (str "invalid-" token)}})]
           (is (= 404 status))
           (is (str/includes? body (str "token invalid-" token " does not exist!")))))
@@ -73,7 +82,7 @@
           (is (not (nil? (kv/fetch kv-store token))))
           (let [{:keys [status body]}
                 (run-handle-token-request
-                  kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                  kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                   {:request-method :delete, :authorization/user "tu1", :headers {"x-waiter-token" token}})]
             (is (= 403 status))
             (is (every? #(str/includes? body (str %))
@@ -88,7 +97,7 @@
           (is (not (nil? (kv/fetch kv-store token))))
           (let [{:keys [status body]}
                 (run-handle-token-request
-                  kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                  kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                   {:request-method :delete, :authorization/user "tu1", :headers {"x-waiter-token" token}})]
             (is (= 200 status))
             (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
@@ -104,7 +113,7 @@
           (is (not (nil? (kv/fetch kv-store token))))
           (let [{:keys [status body]}
                 (run-handle-token-request
-                  kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                  kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                   {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"erase" "false"}, :request-method :delete})]
             (is (= 200 status))
             (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
@@ -120,7 +129,7 @@
           (is (not (nil? (kv/fetch kv-store token))))
           (let [{:keys [status body]}
                 (run-handle-token-request
-                  kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                  kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                   {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"erase" "true"}, :request-method :delete})]
             (is (= 200 status))
             (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
@@ -131,14 +140,14 @@
       (testing "test:get-empty-service-description"
         (let [{:keys [status]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :get, :headers {"x-waiter-token" token}})]
           (is (= 404 status))))
 
       (testing "test:post-new-service-description"
         (let [{:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str service-description1))})]
           (is (= 200 status))
@@ -162,7 +171,7 @@
         (let [token (str token "-tu")
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname (constantly true) make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname (public-entitlement-manager) make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str (assoc service-description1 "owner" "tu2"
                                                                                              "token" token)))})]
@@ -178,7 +187,7 @@
       (testing "test:get-new-service-description"
         (let [{:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :get, :headers {"x-waiter-token" token}})
               json-keys ["metadata" "env"]]
           (is (= 200 status))
@@ -190,7 +199,7 @@
       (testing "test:post-update-service-description"
         (let [{:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str service-description2))})]
           (is (= 200 status))
@@ -206,7 +215,7 @@
       (testing "test:post-update-service-description-change-owner"
         (let [{:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname (constantly true) make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname (public-entitlement-manager) make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str (assoc service-description2 "owner" "tu2")))})]
           (is (= 200 status))
@@ -222,7 +231,7 @@
       (testing "test:post-update-service-description-do-not-change-owner"
         (let [{:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname (constantly true) make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname (public-entitlement-manager) make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str service-description2))})]
           (is (= 200 status))
@@ -238,7 +247,7 @@
       (testing "test:get-updated-service-description"
         (let [{:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :get, :headers {"x-waiter-token" token}})]
           (is (= 200 status))
           (doseq [key (keys (select-keys service-description2 sd/service-description-keys))]
@@ -247,7 +256,7 @@
       (testing "test:get-invalid-token"
         (let [{:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :get, :headers {"x-waiter-token" "###"}})]
           (is (= 404 status))
           (is (str/includes? body "couldn't find token ###"))))
@@ -259,7 +268,7 @@
                                     {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1", :token token})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 200 status))
@@ -276,7 +285,7 @@
                                     {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "*", :token token})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 200 status))
@@ -294,7 +303,7 @@
               _ (kv/store kv-store token (assoc service-description "run-as-user" "tu0" "owner" "tu1" "cpus" 2))
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 200 status))
@@ -306,7 +315,7 @@
 
 (deftest test-post-failure-in-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
-    (let [can-run-as? (fn [auth-user run-as-user] (= auth-user run-as-user))
+    (let [entitlement-manager (authz/->SimpleEntitlementManager nil)
           make-peer-requests-fn (fn [endpoint _ _] (and (str/starts-with? endpoint "token/") (str/ends-with? endpoint "/refresh")) {})
           validate-service-description-fn (fn validate-service-description-fn [service-description] (sd/validate-schema service-description nil))
           token "test-token"
@@ -318,7 +327,7 @@
                                      :permitted-user "tu2"})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -331,7 +340,7 @@
                                      :permitted-user "tu2", :token waiter-hostname})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -344,7 +353,7 @@
                                      :permitted-user "tu2", :token token})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1", :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -358,7 +367,7 @@
               _ (kv/store kv-store token (assoc service-description "run-as-user" "tu0" "owner" "tu1" "cpus" 2))
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -372,7 +381,7 @@
               _ (kv/store kv-store token (assoc service-description "run-as-user" "tu0" "owner" "tu0" "cpus" 2))
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -385,7 +394,7 @@
                                      :permitted-user "tu2", :token token, :owner "tu0"})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1", :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -399,7 +408,7 @@
                                      :min-instances 2, :max-instances 1})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1", :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -413,7 +422,7 @@
                                      :min-instances 2, :max-instances 10})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -427,7 +436,7 @@
                                      :min-instances 2, :max-instances 10, :invalid-key "invalid-value"})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn (constantly true)
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
@@ -440,7 +449,7 @@
                                      :token "abcdefgh", :metadata {"a" 12}})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
               {:strs [exception]} (json/read-str body)]
@@ -456,7 +465,7 @@
                                      :token "abcdefgh", :env {"HOME" "12"}})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
               {:strs [exception]} (json/read-str body)]
@@ -471,7 +480,7 @@
                                      :token "abcdefgh"})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
               {:strs [exception]} (json/read-str body)]
@@ -485,7 +494,7 @@
                                      :token "abcdefgh"})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
               {:strs [exception]} (json/read-str body)]
@@ -499,7 +508,7 @@
                                      :token "abcdefgh"})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
               {:strs [exception]} (json/read-str body)]
@@ -513,7 +522,7 @@
                                      :token "abcdefgh"})
               {:keys [status body]}
               (run-handle-token-request
-                kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
               {:strs [exception]} (json/read-str body)]

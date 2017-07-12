@@ -1108,15 +1108,15 @@
    :status-handler-fn (pc/fnk []
                         (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
    :token-handler-fn (pc/fnk [[:curator kv-store]
-                              [:routines can-run-as?-fn make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
+                              [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
                               [:settings hostname]
-                              [:state clock]
+                              [:state clock entitlement-manager]
                               handle-secure-request-fn]
                        (fn token-handler-fn [request]
                          (handle-secure-request-fn
                            (fn inner-token-handler-fn [request]
                              (token/handle-token-request
-                               clock synchronize-fn kv-store hostname can-run-as?-fn make-inter-router-requests-sync-fn
+                               clock synchronize-fn kv-store hostname entitlement-manager make-inter-router-requests-sync-fn
                                validate-service-description-fn request))
                            request)))
    :token-list-handler-fn (pc/fnk [[:curator kv-store]

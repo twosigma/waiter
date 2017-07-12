@@ -14,6 +14,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [ring.middleware.params :as ring-params]
+            [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
             [waiter.utils :as utils])
@@ -166,7 +167,7 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn
+  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
    {:keys [headers request-method] :as req}]
   ;;if post, validate that this is a valid job schema & that the user == the kerberos user, then sign & store in riak
   ;;  remember that we need an extra field in this schema, which is who is allowed to use this. Could be "*" or a string username
@@ -181,17 +182,14 @@
                   (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :show-deleted erase)]
                     (if (and service-description-template (not-empty service-description-template))
                       (let [token-owner (get token-metadata "owner")]
-                        (when-not (can-run-as? current-user token-owner)
+                        (when-not (authz/manage-token? entitlement-manager current-user token token-metadata)
                           (throw (ex-info "User not allowed to delete token"
-                                          {:existing-owner token-owner
-                                           :current-user current-user
-                                           :status 403})))
+                                          {:current-user current-user, :existing-owner token-owner, :status 403})))
                         (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :erase erase)
                         ; notify peers of token delete and ask them to refresh their caches
                         (make-peer-requests-fn "tokens/refresh"
-                                               :method :post
-                                               :body (json/write-str {:token token
-                                                                      :owner token-owner}))
+                                               :body (json/write-str {:owner token-owner, :token token})
+                                               :method :post)
                         (utils/map->json-response {:delete token, :success true}))
                       (utils/map->json-response {:message (str "token " token " does not exist!")} :status 404)))
                   (utils/map->json-response {:message "couldn't find token in request"} :status 400)))
@@ -246,15 +244,14 @@
                                                             (remove #(contains? new-service-description-template %1)) seq)
                                    :service-description new-service-description-template}))))
               (when (and run-as-user (not= "*" run-as-user))
-                (when-not (can-run-as? authenticated-user run-as-user)
+                (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
                   (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user :run-as-user run-as-user}))))
               (let [existing-service-description-owner (get existing-token-metadata "owner")]
                 (if-not (str/blank? existing-service-description-owner)
-                  (when-not (can-run-as? authenticated-user existing-service-description-owner)
+                  (when-not (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata)
                     (throw (ex-info "Cannot change owner of token"
-                                    {:existing-owner existing-service-description-owner
-                                     :new-user owner})))
-                  (when-not (can-run-as? authenticated-user owner)
+                                    {:existing-owner existing-service-description-owner, :new-user owner})))
+                  (when-not (authz/run-as? entitlement-manager authenticated-user owner)
                     (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user :owner owner})))))
               ; Store the token
               (let [new-token-metadata (merge {"deleted" false
