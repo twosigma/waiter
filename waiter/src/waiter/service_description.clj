@@ -356,8 +356,7 @@
     (when (and error-on-missing (not data))
       (throw (ex-info (str "No service description template available for token " token) {})))
     (log/debug "Extracted data for" token "is" data)
-    (if (and deleted (not show-deleted))
-      {}
+    (when (or (not deleted) show-deleted)
       data)))
 
 (defn token->token-description
