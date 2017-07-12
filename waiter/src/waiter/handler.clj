@@ -217,7 +217,7 @@
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
-  [state-chan prepend-waiter-url service-id->service-description-fn authorized? request]
+  [entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request]
   (try
     (let [timeout-ms 30000
           current-state (async/alt!!
@@ -234,7 +234,7 @@
                                      (and service-description
                                           (if run-as-user-param
                                             (= run-as-user run-as-user-param)
-                                            (authorized? auth-user :manage (security/make-service-resource % service-description)))))
+                                            (security/manage-service? entitlement-manager auth-user % service-description))))
                                   (->> (concat (keys (:service-id->healthy-instances current-state))
                                                (keys (:service-id->unhealthy-instances current-state)))
                                        (apply sorted-set)))

@@ -21,6 +21,7 @@
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
+            [waiter.security :as security]
             [waiter.test-helpers :refer :all])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
@@ -395,10 +396,11 @@
                                                           [:healthy-instances, :unhealthy-instances])))
                                             parsed-body)))
         prepend-waiter-url identity
-        authorized? (fn [user action {:keys [service-id]}]
-                      (and (= user test-user)
-                           (= action :manage)
-                           (some #(= % service-id) test-user-services)))
+        entitlement-manager (reify security/EntitlementManager
+                              (authorized? [_ user action {:keys [service-id]}]
+                                (and (= user test-user)
+                                     (= action :manage)
+                                     (some #(= % service-id) test-user-services))))
         list-services-handler (wrap-handler-json-response list-services-handler)]
     (let [service-id->service-description-fn
           (fn [service-id & _] {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})]
@@ -412,7 +414,7 @@
                                :service-id->unhealthy-instances {"service3" []
                                                                  "service5" []}})
         (let [{:keys [body headers status]}
-              (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "Content-Type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -429,7 +431,7 @@
                                  :service-id->unhealthy-instances {"service3" []
                                                                    "service5" []}})
           (let [{:keys [body headers status]}
-                (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
+                (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "Content-Type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -437,7 +439,11 @@
             (is (instance-counts-present body)))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-same-user"
-        (let [request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
+        (let [entitlement-manager (reify security/EntitlementManager
+                                    (authorized? [_ _ _ _]
+                                      ; use (constantly true) for authorized? to verify that filter still applies
+                                      true))
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
           (async/>!! state-chan {:service-id->healthy-instances {"service1" []
                                                                  "service2" []
                                                                  "service3" []
@@ -446,8 +452,8 @@
                                  :service-id->unhealthy-instances {"service3" []
                                                                    "service5" []}})
           (let [{:keys [body headers status]}
-                ; use (constantly true) for authorized? to verify that filter still applies
-                (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn (constantly true) request)]
+
+                (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "Content-Type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -460,7 +466,7 @@
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (RuntimeException. exception-message)))
               {:keys [body headers status]}
-              (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "Content-Type")))
           (is (str/includes? (str body) exception-message))))
@@ -473,13 +479,14 @@
                                                                "service6" []}
                                :service-id->unhealthy-instances {"service3" []
                                                                  "service5" []}})
-        (let [authorized? (fn [user action {:keys [service-id]}]
-                            (and (= user test-user)
-                                 (= :manage action)
-                                 (some #(= (str "service" %) service-id) (range 1 7))))
+        (let [entitlement-manager (reify security/EntitlementManager
+                                    (authorized? [_ user action {:keys [service-id]}]
+                                      (and (= user test-user)
+                                           (= :manage action)
+                                           (some #(= (str "service" %) service-id) (range 1 7)))))
               {:keys [body headers status]}
               ; without a run-as-user, should return all apps
-              (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "Content-Type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 7)))

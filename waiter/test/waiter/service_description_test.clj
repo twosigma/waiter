@@ -16,6 +16,7 @@
             [clojure.tools.logging :as log]
             [schema.core :as s]
             [waiter.kv :as kv]
+            [waiter.security :as security]
             [waiter.service-description :refer :all])
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
@@ -1116,13 +1117,15 @@
         service-description {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1", "version" "a1b2c3"}
         service-description-1 (assoc service-description "run-as-user" username)
         service-description-2 (assoc service-description "run-as-user" (str username "2"))
-        authorized? (fn [subject _ {:keys [user]}] (= subject user))
+        entitlement-manager (reify security/EntitlementManager
+                              (authorized? [_ subject _ {:keys [user]}]
+                                (= subject user)))
         validate-description (constantly true)]
     (testing "test-service-suspend-resume"
       (store-core kv-store service-id-1 service-description-1 validate-description)
       (store-core kv-store service-id-2 service-description-2 validate-description)
-      (is (can-manage-service? kv-store service-id-1 authorized? username))
-      (is (not (can-manage-service? kv-store service-id-2 authorized? username)))
+      (is (can-manage-service? kv-store entitlement-manager service-id-1 username))
+      (is (not (can-manage-service? kv-store entitlement-manager service-id-2 username)))
       (is (nil? (service-id->suspended-state kv-store service-id-1)))
       (is (nil? (service-id->suspended-state kv-store service-id-2)))
       (suspend-service kv-store service-id-1 username)
@@ -1143,22 +1146,23 @@
         service-description-1 {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1a", "version" "a1b2c3"}
         service-description-2 (assoc service-description-1 "run-as-user" username-1)
         service-description-3 (assoc service-description-1 "run-as-user" "tu2")
-        authorized? (fn [subject verb {:keys [user]}]
-                      (and (= verb :manage) (or (str/includes? user subject) (= admin-username subject))))
+        entitlement-manager (reify security/EntitlementManager
+                              (authorized? [_ subject verb {:keys [user]}]
+                                (and (= verb :manage) (or (str/includes? user subject) (= admin-username subject)))))
         validate-description (constantly true)]
     (testing "test-service-suspend-resume"
       (store-core kv-store service-id-1 service-description-1 validate-description)
       (store-core kv-store service-id-2 service-description-2 validate-description)
       (store-core kv-store service-id-3 service-description-3 validate-description)
-      (is (can-manage-service? kv-store service-id-1 authorized? username-1))
-      (is (can-manage-service? kv-store service-id-2 authorized? username-1))
-      (is (not (can-manage-service? kv-store service-id-3 authorized? username-1)))
-      (is (not (can-manage-service? kv-store service-id-1 authorized? username-2)))
-      (is (not (can-manage-service? kv-store service-id-2 authorized? username-2)))
-      (is (can-manage-service? kv-store service-id-3 authorized? username-2))
-      (is (can-manage-service? kv-store service-id-1 authorized? admin-username))
-      (is (can-manage-service? kv-store service-id-2 authorized? admin-username))
-      (is (can-manage-service? kv-store service-id-3 authorized? admin-username)))))
+      (is (can-manage-service? kv-store entitlement-manager service-id-1 username-1))
+      (is (can-manage-service? kv-store entitlement-manager service-id-2 username-1))
+      (is (not (can-manage-service? kv-store entitlement-manager service-id-3 username-1)))
+      (is (not (can-manage-service? kv-store entitlement-manager service-id-1 username-2)))
+      (is (not (can-manage-service? kv-store entitlement-manager service-id-2 username-2)))
+      (is (can-manage-service? kv-store entitlement-manager service-id-3 username-2))
+      (is (can-manage-service? kv-store entitlement-manager service-id-1 admin-username))
+      (is (can-manage-service? kv-store entitlement-manager service-id-2 admin-username))
+      (is (can-manage-service? kv-store entitlement-manager service-id-3 admin-username)))))
 
 (deftest test-metadata-error-message
   (let [service-description {"cpus" 1, "mem" 1, "cmd" "exit 0", "version" "1", "run-as-user" "someone"}]

@@ -611,10 +611,10 @@
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."
-  ([kv-store service-id authorized? username]
-    ; the stored service description should already have a run-as-user
-   (let [service-description (service-id->service-description kv-store service-id {} [])]
-     (authorized? username :manage (security/make-service-resource service-id service-description)))))
+  [kv-store entitlement-manager service-id username]
+  ; the stored service description should already have a run-as-user
+  (let [service-description (service-id->service-description kv-store service-id {} [])]
+    (security/manage-service? entitlement-manager username service-id service-description)))
 
 (defn consent-cookie-value
   "Creates the consent cookie value vector based on the mode.
