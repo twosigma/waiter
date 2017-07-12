@@ -23,7 +23,7 @@ test2junit/
 bin/generated-nginx.conf
 
 # Shell scheduler directory
-scheduler/
+./scheduler/
 
 # Minimesos
 .minimesos

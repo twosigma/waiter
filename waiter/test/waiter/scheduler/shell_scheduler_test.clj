@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.shell-scheduler-test
+(ns waiter.scheduler.shell-scheduler-test
   (:require [clj-time.core :as t]
             [clj-time.format :as f]
             [clojure.core.async :as async]
@@ -17,12 +17,12 @@
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :as ct]
-            [waiter.scheduler :as scheduler]
-            [waiter.shell-scheduler :refer :all]
+            [waiter.scheduler.scheduler :as scheduler]
+            [waiter.scheduler.shell-scheduler :refer :all]
             [waiter.test-helpers :as th]
             [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
-           waiter.shell_scheduler.ShellScheduler))
+           waiter.scheduler.shell_scheduler.ShellScheduler))
 
 (defn work-dir
   "Returns the canonical path for the ./scheduler directory"

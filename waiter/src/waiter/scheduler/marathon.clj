@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.marathon
+(ns waiter.scheduler.marathon
   (:require [clj-http.client :as http]
             [clj-time.core :as t]
             [clojure.core.memoize :as memo]
@@ -21,7 +21,7 @@
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
             [waiter.metrics :as metrics]
-            [waiter.scheduler :as scheduler]
+            [waiter.scheduler.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.utils :as utils])
   (:import java.io.StringWriter

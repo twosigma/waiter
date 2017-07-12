@@ -25,9 +25,9 @@
             [waiter.discovery :as discovery]
             [waiter.handler :as handler]
             [waiter.kv :as kv]
-            [waiter.marathon :as marathon]
             [waiter.metrics :as metrics]
-            [waiter.scheduler :as scheduler]
+            [waiter.scheduler.marathon :as marathon]
+            [waiter.scheduler.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.test-helpers :refer :all]
             [waiter.utils :as utils])
