@@ -796,5 +796,5 @@
   [waiter-url token & {:keys [cookies query-params] :or {cookies {}, query-params {}}}]
   (let [request-headers (clojure.walk/stringify-keys {:host token})
         token-response (make-request waiter-url "/token" :cookies cookies :headers request-headers :query-params query-params)]
-    (log/debug "Retrieved token" token ":" (:body token-response))
+    (log/debug "retrieved token" token ":" (:body token-response))
     token-response))

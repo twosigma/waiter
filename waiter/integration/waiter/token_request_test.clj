@@ -47,9 +47,9 @@
                                     (is (every? #(str/includes? (str body) (str %)) [service-id-prefix "1250" version "test command"]))
                                     (is (not-any? #(str/includes? (str body) (str %)) ["invalid"]))))))
           update-and-validate-token-fn (fn [version]
-                                         (log/info (str "Creating configuration using token " token " with version " version))
+                                         (log/info "creating configuration using token" token "with version" version)
                                          (update-token-fn version)
-                                         (log/info (str "Asserting configuration for token " token " from routers (best-effort)"))
+                                         (log/info "asserting configuration for token" token "from routers (best-effort)")
                                          (validate-token-fn version 10 10))
           version1 "123987132937213712"
           version2 "656760465406467480"
@@ -71,7 +71,7 @@
 (defn- list-tokens
   [waiter-url owner & {:keys [cookies] :or {cookies {}}}]
   (let [tokens-response (make-request waiter-url "/tokens" :cookies cookies)]
-    (log/debug "Retrieved tokens for owner " owner ":" (:body tokens-response))
+    (log/debug "retrieved tokens for owner " owner ":" (:body tokens-response))
     tokens-response))
 
 (defn parse-token-description
@@ -148,28 +148,28 @@
           token (create-token-name waiter-url service-id-prefix)]
       (testing "hostname-token-test"
         (try
-          (log/info (str "Basic hostname as token test"))
+          (log/info "basic hostname as token test")
           (let [current-user (retrieve-username)
                 service-description (assoc (kitchen-request-headers) :x-waiter-permitted-user "*"
                                                                      :x-waiter-run-as-user current-user)]
             (testing "hostname-token-creation"
-              (log/info (str "Creating configuration using token " token))
+              (log/info "creating configuration using token" token)
               (let [{:keys [body status]} (post-token waiter-url {:health-check-url "/custom-endpoint"
                                                                   :token token
                                                                   :name service-id-prefix})]
                 (when (not= 200 status)
-                  (log/info (str "Error: " body))
+                  (log/info "error:" body)
                   (is (not body))))
-              (log/info (str "Created configuration using token " token))
+              (log/info "created configuration using token" token)
               (let [token-response (get-token waiter-url token)
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
                 (is (= {"deleted" false, "health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username)}
                        (dissoc response-body "last-update-time"))))
-              (log/info (str "Asserted retrieval of configuration for token " token)))
+              (log/info "asserted retrieval of configuration for token" token))
 
             (testing "support-for-token-with-x-waiter-headers"
-              (log/info "Request with hostname token" token "along with x-waiter headers")
+              (log/info "request with hostname token" token "along with x-waiter headers")
               (let [request-headers (merge service-description {"host" token})
                     path "/foo"
                     response (make-request waiter-url path :headers request-headers)
@@ -177,7 +177,7 @@
                 (assert-response-status response 200)
                 (is (= (name-from-service-description waiter-url service-id) service-id-prefix)))
 
-              (log/info "Request with hostname token" token "along with x-waiter headers except permitted-user")
+              (log/info "request with hostname token" token "along with x-waiter headers except permitted-user")
               (let [request-headers (merge (dissoc service-description :x-waiter-permitted-user) {"host" token})
                     path "/foo"
                     response (make-request waiter-url path :headers request-headers)
@@ -187,7 +187,7 @@
                 ;; the above request hashes to a different service-id than the rest of the test, so we need to cleanup
                 (delete-service waiter-url service-id))
 
-              (log/info "Request with hostname token" token "along with x-waiter headers except run-as-user")
+              (log/info "request with hostname token" token "along with x-waiter headers except run-as-user")
               (let [request-headers (merge (dissoc service-description :x-waiter-run-as-user) {"host" token})
                     path "/foo"
                     response (make-request waiter-url path :headers request-headers)
@@ -207,7 +207,7 @@
                 (when (not= (System/getProperty "user.name") current-user)
                   (delete-service waiter-url service-id)))
 
-              (log/info "Request with hostname token" token "along with missing x-waiter headers except cmd")
+              (log/info "request with hostname token" token "along with missing x-waiter headers except cmd")
               (let [request-headers (merge (dissoc service-description :x-waiter-cmd) {"host" token})
                     path "/foo"
                     {:keys [body] :as response} (make-request waiter-url path :headers request-headers)]
@@ -218,7 +218,7 @@
                     (str "response body was: " response))
                 (assert-response-status response 400))
 
-              (log/info "Request with hostname token and x-waiter-debug token" token " along with x-waiter headers")
+              (log/info "request with hostname token and x-waiter-debug token" token "along with x-waiter headers")
               (let [request-headers (merge service-description {:x-waiter-debug "true", "host" token})
                     path "/foo"
                     {:keys [headers request-headers] :as response} (make-request waiter-url path :headers request-headers)
@@ -239,7 +239,7 @@
         (testing "active-token"
           (let [token (create-token-name waiter-url service-id-prefix)]
             (try
-              (log/info (str "Creating configuration using token " token))
+              (log/info "creating configuration using token" token)
               (let [token-description {:health-check-url "/custom-endpoint"
                                        :name service-id-prefix
                                        :owner (retrieve-username)
@@ -248,21 +248,21 @@
                                        :update-mode "sync"}
                     response (post-token waiter-url token-description)]
                 (assert-response-status response 200))
-              (log/info (str "Created configuration using token " token))
+              (log/info "created configuration using token" token)
               (let [token-response (get-token waiter-url token)
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
                 (is (= {"deleted" false, "health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username),
                         "run-as-user" "foo-bar", "update-mode" "sync"}
                        (dissoc response-body "last-update-time"))))
-              (log/info (str "Asserted retrieval of configuration for token " token))
+              (log/info "asserted retrieval of configuration for token" token)
               (finally
                 (delete-token-and-assert waiter-url token :query-params {"erase" true})))))
 
         (testing "deleted-token"
           (let [token (create-token-name waiter-url service-id-prefix)]
             (try
-              (log/info (str "Creating configuration using token " token))
+              (log/info "creating configuration using token" token)
               (let [token-description {:deleted true
                                        :health-check-url "/custom-endpoint"
                                        :name service-id-prefix
@@ -272,7 +272,7 @@
                                        :update-mode "sync"}
                     response (post-token waiter-url token-description)]
                 (assert-response-status response 200))
-              (log/info (str "Created configuration using token " token))
+              (log/info "created configuration using token" token)
               (let [{:keys [body] :as response} (get-token waiter-url token)]
                 (assert-response-status response 404)
                 (is (str/includes? (str body) "couldn't find token") (str body)))
@@ -282,36 +282,36 @@
                 (is (= {"deleted" true, "health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username),
                         "run-as-user" "foo-bar", "update-mode" "sync"}
                        (dissoc response-body "last-update-time"))))
-              (log/info (str "Asserted retrieval of configuration for token " token))
+              (log/info "asserted retrieval of configuration for token" token)
               (finally
                 (delete-token-and-assert waiter-url token :query-params {"erase" true})))))))))
 
 (deftest ^:parallel ^:integration-fast test-named-token
   (testing-using-waiter-url
-    (log/info (str "Basic named token test"))
+    (log/info "basic named token test")
     (let [service-id-prefix (rand-name)
           token (create-token-name waiter-url service-id-prefix)]
       (try
-        (log/info (str "Creating configuration using token " token))
+        (log/info "creating configuration using token" token)
         (let [token-definition (assoc
                                  (kitchen-request-headers :prefix "")
                                  :name service-id-prefix
                                  :token token)
               {:keys [body status]} (post-token waiter-url token-definition)]
           (when (not= 200 status)
-            (log/info (str "Error: " body))
+            (log/info "error:" body)
             (is (not body))))
-        (log/info (str "Created configuration using token " token))
-        (log/info (str "Retrieving configuration for token " token))
+        (log/info "created configuration using token" token)
+        (log/info "retrieving configuration for token" token)
         (let [token-response (get-token waiter-url token)
               response-body (str (:body token-response))]
           (when (not (str/includes? response-body service-id-prefix))
             (log/info response-body))
           (assert-response-status token-response 200)
           (is (str/includes? response-body service-id-prefix)))
-        (log/info (str "Asserted retrieval of configuration for token " token))
+        (log/info "asserted retrieval of configuration for token" token)
 
-        (log/info (str "Making Waiter request with token " token " in header"))
+        (log/info "making Waiter request with token" token "in header")
         (let [request-headers {:x-waiter-token token}
               path "/foo"
               response (make-request waiter-url path :headers request-headers)
@@ -319,7 +319,7 @@
           (assert-response-status response 200)
           (is (= (name-from-service-description waiter-url service-id) service-id-prefix)))
 
-        (log/info (str "Making Waiter request with token and x-waiter-debug token" token " in header"))
+        (log/info "making Waiter request with token and x-waiter-debug token" token "in header")
         (let [request-headers {:x-waiter-debug "true", :x-waiter-token token}
               path "/foo"
               {:keys [headers request-headers] :as response} (make-request waiter-url path :headers request-headers)
@@ -338,7 +338,7 @@
     (let [service-id-prefix (rand-name)
           token (create-token-name waiter-url service-id-prefix)]
       (try
-        (log/info (str "Creating configuration using token " token))
+        (log/info "creating configuration using token" token)
         (let [token-definition (assoc
                                  (kitchen-request-headers :prefix "")
                                  :name service-id-prefix
@@ -346,29 +346,29 @@
                                  :token token)
               {:keys [body status]} (post-token waiter-url token-definition)]
           (when (not= 200 status)
-            (log/info (str "Error: " body))
+            (log/info "error:" body)
             (is (not body))))
-        (log/info (str "Created configuration using token " token))
-        (log/info (str "Retrieving configuration for token " token))
+        (log/info "created configuration using token" token)
+        (log/info "retrieving configuration for token" token)
         (let [token-response (get-token waiter-url token)
               response-body (str (:body token-response))]
           (when (not (str/includes? response-body service-id-prefix))
             (log/info response-body))
           (assert-response-status token-response 200)
           (is (str/includes? response-body service-id-prefix)))
-        (log/info (str "Asserted retrieval of configuration for token " token))
+        (log/info "asserted retrieval of configuration for token" token)
 
         (let [{:keys [body] :as token-response} (get-token waiter-url token)
               token-description (try (json/read-str (str body))
                                      (catch Exception _
-                                       (is false (str "Failed to parse token " body))))]
+                                       (is false (str "Failed to parse token" body))))]
           (assert-response-status token-response 200)
           (is (= "/status" (token-description "health-check-url")))
           (is (= service-id-prefix (token-description "name")))
           (is (= "*" (token-description "run-as-user")))
           (is (System/getProperty "user.name") (token-description "owner")))
 
-        (log/info (str "Making Waiter request with token " token " in header"))
+        (log/info "making Waiter request with token" token "in header")
         (let [request-headers {:x-waiter-token token}
               path "/foo"
               response (make-request waiter-url path :headers request-headers)
@@ -377,7 +377,7 @@
           (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
           (is (= (retrieve-username) (:run-as-user (service-id->service-description waiter-url service-id)))))
 
-        (log/info (str "Making Waiter request with token and x-waiter-debug token" token " in header"))
+        (log/info "making Waiter request with token and x-waiter-debug token" token "in header")
         (let [request-headers {:x-waiter-debug "true", :x-waiter-token token}
               path "/foo"
               {:keys [headers request-headers] :as response} (make-request waiter-url path :headers request-headers)
