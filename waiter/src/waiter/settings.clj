@@ -177,7 +177,7 @@
                     :name "waiter"}
    :consent-expiry-days 90
    :entitlement-config {:kind :simple
-                        :simple {:factory-fn 'waiter.security/->SimpleEntitlementManager}}
+                        :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}}
    :health-check-timeout-ms 200
    :host "0.0.0.0"
    :hostname "localhost"

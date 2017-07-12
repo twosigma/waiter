@@ -30,6 +30,7 @@
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
+            [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.cors :as cors]
@@ -44,7 +45,6 @@
             [waiter.process-request :as pr]
             [waiter.scaling :as scaling]
             [waiter.scheduler :as scheduler]
-            [waiter.security :as sec]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.settings :as settings]
@@ -411,6 +411,8 @@
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
+   :entitlement-manager (pc/fnk [[:settings entitlement-config]]
+                          (utils/create-component entitlement-config))
    :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
                   (http-client-factory connection-timeout-ms))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
@@ -497,11 +499,11 @@
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
-                                           authorized?-fn]
+                                           [:state entitlement-manager]]
                                     (fn allowed-to-manage-service? [service-id auth-user]
                                       ; Returns whether the authenticated user is allowed to manage the service.
                                       ; Either she can run as the waiter user or the run-as-user of the service description."
-                                      (sd/can-manage-service? kv-store service-id authorized?-fn auth-user)))
+                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user)))
    :assoc-run-as-user-approved? (pc/fnk [[:settings consent-expiry-days]
                                          [:state clock passwords]
                                          token->token-description]
@@ -533,14 +535,9 @@
                                                  (log/info "skipping authentication for request")
                                                  (request-handler request))
                                                (auth-handler request))))))
-   :authorized?-fn (pc/fnk [[:settings entitlement-config]]
-                     (let [entitlement-manager (utils/create-component entitlement-config)]
-                       (fn authorized? [auth-user action resource]
-                         (sec/authorized? entitlement-manager auth-user action resource))))
-   :can-run-as?-fn (pc/fnk [authorized?-fn]
+   :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
-                       (and auth-user run-as-user
-                            (authorized?-fn auth-user :run-as {:resource-type :credential, :user run-as-user}))))
+                       (authz/run-as? entitlement-manager auth-user run-as-user)))
    :crypt-helpers (pc/fnk [[:state passwords]]
                     (let [password (first passwords)]
                       {:bytes-decryptor (fn bytes-decryptor [data] (utils/compressed-bytes->map data password))
@@ -1031,14 +1028,15 @@
                                   (handler/service-name-handler request request->descriptor-fn kv-store store-service-description-fn))
                                 request)))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
-                                     [:routines authorized?-fn prepend-waiter-url service-id->service-description-fn]
+                                     [:routines prepend-waiter-url service-id->service-description-fn]
+                                     [:state entitlement-manager]
                                      handle-secure-request-fn]
                               (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
                                 (fn service-list-handler-fn [request]
                                   (handle-secure-request-fn
                                     (fn inner-service-list-handler-fn [request]
-                                      (handler/list-services-handler state-chan prepend-waiter-url service-id->service-description-fn
-                                                                     authorized?-fn request))
+                                      (handler/list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                                                     service-id->service-description-fn request))
                                     request))))
    :service-override-handler-fn (pc/fnk [[:curator kv-store]
                                          [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]

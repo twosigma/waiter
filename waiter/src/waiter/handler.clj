@@ -24,13 +24,13 @@
             [ring.middleware.multipart-params :as multipart-params]
             [ring.middleware.params :as ring-params]
             [waiter.async-request :as async-req]
+            [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
-            [waiter.security :as security]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
@@ -217,7 +217,7 @@
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
-  [state-chan prepend-waiter-url service-id->service-description-fn authorized? request]
+  [entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request]
   (try
     (let [timeout-ms 30000
           current-state (async/alt!!
@@ -234,7 +234,7 @@
                                      (and service-description
                                           (if run-as-user-param
                                             (= run-as-user run-as-user-param)
-                                            (authorized? auth-user :manage (security/make-service-resource % service-description)))))
+                                            (authz/manage-service? entitlement-manager auth-user % service-description))))
                                   (->> (concat (keys (:service-id->healthy-instances current-state))
                                                (keys (:service-id->unhealthy-instances current-state)))
                                        (apply sorted-set)))
