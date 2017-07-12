@@ -14,7 +14,7 @@
 ;      {
 ;       ; ...
 ;       :entitlement-config {:kind :custom
-;                            :custom {:factory-fn waiter-extensions.security/my-entitlement-manager
+;                            :custom {:factory-fn waiter-extensions.authz/my-entitlement-manager
 ;                                     :foo "bar"
 ;                                     :baz "qux"}}
 ;       ; ...
@@ -23,10 +23,10 @@
 ; Which would invoke your custom implementation of the EntitlementManager protocol:
 ;
 ;     (ns waiter-extensions.security
-;       (:require [waiter.security :as sec]))
+;       (:require [waiter.authorization :as authz]))
 ;
 ;     (defrecord MyEntitlementManager [foo baz]
-;       sec/EntitlementManager
+;       authz/EntitlementManager
 ;
 ;       (authorized? [this subject action resource]
 ;         ; your custom entitlements code goes here
@@ -196,8 +196,8 @@
                       :kind :simple
                       :simple {
                                ;; Custom implementations should specify a :factory-fn
-                               ;; that returns an instance of waiter.security.EntitlementManager:
-                               :factory-fn waiter.security/->SimpleEntitlementManager}}
+                               ;; that returns an instance of waiter.authorization.EntitlementManager:
+                               :factory-fn waiter.authorization/->SimpleEntitlementManager}}
 
  :password-store-config {
                          ;; :kind :configured takes a simple list of passwords:

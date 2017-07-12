@@ -24,13 +24,13 @@
             [ring.middleware.multipart-params :as multipart-params]
             [ring.middleware.params :as ring-params]
             [waiter.async-request :as async-req]
+            [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
-            [waiter.security :as security]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
@@ -234,7 +234,7 @@
                                      (and service-description
                                           (if run-as-user-param
                                             (= run-as-user run-as-user-param)
-                                            (security/manage-service? entitlement-manager auth-user % service-description))))
+                                            (authz/manage-service? entitlement-manager auth-user % service-description))))
                                   (->> (concat (keys (:service-id->healthy-instances current-state))
                                                (keys (:service-id->unhealthy-instances current-state)))
                                        (apply sorted-set)))

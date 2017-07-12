@@ -30,6 +30,7 @@
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
+            [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.cors :as cors]
@@ -44,7 +45,6 @@
             [waiter.process-request :as pr]
             [waiter.scaling :as scaling]
             [waiter.scheduler :as scheduler]
-            [waiter.security :as sec]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.settings :as settings]
@@ -537,7 +537,7 @@
                                                (auth-handler request))))))
    :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
-                       (sec/run-as? entitlement-manager auth-user run-as-user)))
+                       (authz/run-as? entitlement-manager auth-user run-as-user)))
    :crypt-helpers (pc/fnk [[:state passwords]]
                     (let [password (first passwords)]
                       {:bytes-decryptor (fn bytes-decryptor [data] (utils/compressed-bytes->map data password))

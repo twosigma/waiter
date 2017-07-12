@@ -15,8 +15,8 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [schema.core :as s]
+            [waiter.authorization :as authz]
             [waiter.kv :as kv]
-            [waiter.security :as security]
             [waiter.service-description :refer :all])
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
@@ -1117,7 +1117,7 @@
         service-description {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1", "version" "a1b2c3"}
         service-description-1 (assoc service-description "run-as-user" username)
         service-description-2 (assoc service-description "run-as-user" (str username "2"))
-        entitlement-manager (reify security/EntitlementManager
+        entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject _ {:keys [user]}]
                                 (= subject user)))
         validate-description (constantly true)]
@@ -1146,7 +1146,7 @@
         service-description-1 {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1a", "version" "a1b2c3"}
         service-description-2 (assoc service-description-1 "run-as-user" username-1)
         service-description-3 (assoc service-description-1 "run-as-user" "tu2")
-        entitlement-manager (reify security/EntitlementManager
+        entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject verb {:keys [user]}]
                                 (and (= verb :manage) (or (str/includes? user subject) (= admin-username subject)))))
         validate-description (constantly true)]

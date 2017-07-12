@@ -18,6 +18,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as auth]
+            [waiter.authorization :as authz]
             [waiter.core :refer :all]
             [waiter.cors :as cors]
             [waiter.curator :as curator]
@@ -27,7 +28,6 @@
             [waiter.marathon :as marathon]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
-            [waiter.security :as security]
             [waiter.service-description :as sd]
             [waiter.test-helpers :refer :all]
             [waiter.utils :as utils])
@@ -165,7 +165,7 @@
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
         waiter-request?-fn (fn [_] true)
-        entitlement-manager (reify security/EntitlementManager
+        entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
@@ -209,7 +209,7 @@
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
         waiter-request?-fn (fn [_] true)
-        entitlement-manager (reify security/EntitlementManager
+        entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
@@ -337,7 +337,7 @@
         service-id "test-service-1"
         kv-store (kv/->LocalKeyValueStore (atom {}))
         waiter-request?-fn (fn [_] true)
-        entitlement-manager (reify security/EntitlementManager
+        entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))

@@ -18,10 +18,10 @@
             [comb.template :as template]
             [full.async :as fa]
             [plumbing.core :as pc]
+            [waiter.authorization :as authz]
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
-            [waiter.security :as security]
             [waiter.test-helpers :refer :all])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
@@ -396,7 +396,7 @@
                                                           [:healthy-instances, :unhealthy-instances])))
                                             parsed-body)))
         prepend-waiter-url identity
-        entitlement-manager (reify security/EntitlementManager
+        entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ user action {:keys [service-id]}]
                                 (and (= user test-user)
                                      (= action :manage)
@@ -439,7 +439,7 @@
             (is (instance-counts-present body)))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-same-user"
-        (let [entitlement-manager (reify security/EntitlementManager
+        (let [entitlement-manager (reify authz/EntitlementManager
                                     (authorized? [_ _ _ _]
                                       ; use (constantly true) for authorized? to verify that filter still applies
                                       true))
@@ -479,7 +479,7 @@
                                                                "service6" []}
                                :service-id->unhealthy-instances {"service3" []
                                                                  "service5" []}})
-        (let [entitlement-manager (reify security/EntitlementManager
+        (let [entitlement-manager (reify authz/EntitlementManager
                                     (authorized? [_ user action {:keys [service-id]}]
                                       (and (= user test-user)
                                            (= :manage action)

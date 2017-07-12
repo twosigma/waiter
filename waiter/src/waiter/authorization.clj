@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.security)
+(ns waiter.authorization)
 
 (defprotocol EntitlementManager 
   "Security related methods"

@@ -8,13 +8,13 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.security-test
+(ns waiter.authorization-test
   (:require [clojure.test :refer :all]
-            [waiter.security :as sec]
+            [waiter.authorization :as authz]
             [waiter.utils :as utils]))
 
 (defrecord TestEntitlementManager [entitlements]
-  sec/EntitlementManager
+  authz/EntitlementManager
   (authorized? [_ subject action resource]
     (entitlements [subject action resource])))
 
@@ -29,18 +29,18 @@
 
     (testing "should support custom implementations"
       (let [em (utils/create-component {:kind :test
-                                        :test {:factory-fn 'waiter.security-test/test-em}})]
+                                        :test {:factory-fn 'waiter.authorization-test/test-em}})]
         (is em)
-        (is (sec/authorized? em "foo@example.com" :run-as {:user "waiteruser"}))
-        (is (not (sec/authorized? em "foo@example.com" :run-as {:user "waiteruser2"})))
-        (is (not (sec/authorized? em "randomguy@example.com" :run-as {:user "waiteruser"})))))
+        (is (authz/authorized? em "foo@example.com" :run-as {:user "waiteruser"}))
+        (is (not (authz/authorized? em "foo@example.com" :run-as {:user "waiteruser2"})))
+        (is (not (authz/authorized? em "randomguy@example.com" :run-as {:user "waiteruser"})))))
 
     (testing "should support :kind :simple"
       (let [em (utils/create-component {:kind :simple
-                                        :simple {:factory-fn 'waiter.security/->SimpleEntitlementManager}})]
+                                        :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}})]
         (is em)
-        (is (sec/authorized? em "foo" :run-as {:user "foo"}))
-        (is (not (sec/authorized? em "foo" :run-as {:user "bar"})))))))
+        (is (authz/authorized? em "foo" :run-as {:user "foo"}))
+        (is (not (authz/authorized? em "foo" :run-as {:user "bar"})))))))
 
 (deftest test-manage-service?
   (let [test-user "test-user"
@@ -54,7 +54,7 @@
                                 :service-id test-service-id}
                                resource)))
         entitlement-manager (TestEntitlementManager. assertion-fn)]
-    (is (sec/manage-service? entitlement-manager test-user test-service-id test-service-description))))
+    (is (authz/manage-service? entitlement-manager test-user test-service-id test-service-description))))
 
 (deftest test-run-as?
   (let [test-user-1 "test-user-1"
@@ -66,4 +66,4 @@
                                 :user test-user-2}
                                resource)))
         entitlement-manager (TestEntitlementManager. assertion-fn)]
-    (is (sec/run-as? entitlement-manager test-user-1 test-user-2))))
+    (is (authz/run-as? entitlement-manager test-user-1 test-user-2))))

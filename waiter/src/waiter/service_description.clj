@@ -16,10 +16,10 @@
             [digest]
             [plumbing.core :as pc]
             [schema.core :as s]
+            [waiter.authorization :as authz]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.schema :as schema]
-            [waiter.security :as security]
             [waiter.utils :as utils]
             [slingshot.slingshot :as sling])
   (:import (org.joda.time DateTime)
@@ -614,7 +614,7 @@
   [kv-store entitlement-manager service-id username]
   ; the stored service description should already have a run-as-user
   (let [service-description (service-id->service-description kv-store service-id {} [])]
-    (security/manage-service? entitlement-manager username service-id service-description)))
+    (authz/manage-service? entitlement-manager username service-id service-description)))
 
 (defn consent-cookie-value
   "Creates the consent cookie value vector based on the mode.
