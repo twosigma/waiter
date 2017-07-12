@@ -63,7 +63,8 @@
                   synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn nil
                   {:request-method :delete, :authorization/user "tu1", :headers {"x-waiter-token" token}})]
             (is (= 403 status))
-            (is (every? #(str/includes? body (str %)) ["User not allowed to delete token", "existing-owner: tu2", "current-user: tu1"]))
+            (is (every? #(str/includes? body (str %))
+                        ["User not allowed to delete token", "existing-owner: tu2", "current-user: tu1"]))
             (is (not (nil? (kv/fetch kv-store token)))))
           (finally
             (kv/delete kv-store token))))
@@ -97,8 +98,11 @@
                  :body (StringBufferInputStream. (json/write-str service-description1))})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (select-keys (merge service-description1 {"owner" "tu1"}) sd/token-service-description-template-keys)
+          (is (= (select-keys service-description1 sd/token-description-keys)
                  (sd/token->service-description-template kv-store token)))
+          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description1 "token") service-description-template))
+            (is (= {"owner" "tu1"} token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id1)))))
 
       (testing "test:list-tokens"
@@ -119,8 +123,11 @@
                                                                                              "token" token)))})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (select-keys (merge service-description1 {"owner" "tu2"}) sd/token-service-description-template-keys)
+          (is (= (select-keys service-description1 sd/token-description-keys)
                  (sd/token->service-description-template kv-store token)))
+          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description1 "token") service-description-template))
+            (is (= {"owner" "tu2"} token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id1)))))
 
       (testing "test:get-new-service-description"
@@ -143,8 +150,11 @@
                  :body (StringBufferInputStream. (json/write-str service-description2))})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (select-keys (merge service-description2 {"owner" "tu1"}) sd/token-service-description-template-keys)
+          (is (= (select-keys service-description2 sd/token-description-keys)
                  (sd/token->service-description-template kv-store token)))
+          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description2 "token") service-description-template))
+            (is (= {"owner" "tu1"} token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id1)))
           (is (empty? (sd/fetch-core kv-store service-id2)))))
 
@@ -156,8 +166,11 @@
                  :body (StringBufferInputStream. (json/write-str (assoc service-description2 "owner" "tu2")))})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (select-keys (merge service-description2 {"owner" "tu2"}) sd/token-service-description-template-keys)
+          (is (= (select-keys service-description2 sd/token-description-keys)
                  (sd/token->service-description-template kv-store token)))
+          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description2 "token") service-description-template))
+            (is (= {"owner" "tu2"} token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id1)))
           (is (empty? (sd/fetch-core kv-store service-id2)))))
 
@@ -169,8 +182,11 @@
                  :body (StringBufferInputStream. (json/write-str service-description2))})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (select-keys (merge service-description2 {"owner" "tu2"}) sd/token-service-description-template-keys)
+          (is (= (select-keys service-description2 sd/token-description-keys)
                  (sd/token->service-description-template kv-store token)))
+          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description2 "token") service-description-template))
+            (is (= {"owner" "tu2"} token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id1)))
           (is (empty? (sd/fetch-core kv-store service-id2)))))
 
@@ -466,10 +482,13 @@
         token "test-token"
         service-description (clojure.walk/stringify-keys
                               {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                               :permitted-user "tu2", :name token, :min-instances 2, :max-instances 10})]
-    (store-service-description-for-token synchronize-fn kv-store token service-description)
-    (is (= (sd/sanitize-service-description service-description)
-           (kv/fetch kv-store token)))))
+                               :permitted-user "tu2", :name token, :min-instances 2, :max-instances 10})
+        token-metadata {"owner" "test-user"}]
+    (store-service-description-for-token synchronize-fn kv-store token service-description token-metadata)
+    (let [token-description (kv/fetch kv-store token)]
+      (is (= service-description (select-keys token-description sd/service-description-keys)))
+      (is (= token-metadata (select-keys token-description sd/token-metadata-keys)))
+      (is (= (merge service-description token-metadata) token-description)))))
 
 (deftest test-token-index
   (let [lock (Object.)
@@ -520,25 +539,25 @@
                            (f)))
         kv-store (kv/->LocalKeyValueStore (atom {}))
         handle-list-tokens-request (wrap-handler-json-response handle-list-tokens-request)]
-    (store-service-description-for-token synchronize-fn kv-store "token1" {"owner" "owner1"})
-    (store-service-description-for-token synchronize-fn kv-store "token2" {"owner" "owner1"})
-    (store-service-description-for-token synchronize-fn kv-store "token3" {"owner" "owner2"})
+    (store-service-description-for-token synchronize-fn kv-store "token1" {} {"owner" "owner1"})
+    (store-service-description-for-token synchronize-fn kv-store "token2" {} {"owner" "owner1"})
+    (store-service-description-for-token synchronize-fn kv-store "token3" {} {"owner" "owner2"})
     (let [{:keys [body status]} (handle-list-tokens-request kv-store {:request-method :get})]
       (is (= 200 status))
-      (is (= #{{"owner" "owner1" "token" "token1"}
-               {"owner" "owner1" "token" "token2"}
-               {"owner" "owner2" "token" "token3"}} (set (json/read-str body)))))
+      (is (= #{{"owner" "owner1", "token" "token1"}
+               {"owner" "owner1", "token" "token2"}
+               {"owner" "owner2", "token" "token3"}} (set (json/read-str body)))))
     (let [{:keys [body status]} (handle-list-tokens-request kv-store {:request-method :get :query-string "owner=owner1"})]
       (is (= 200 status))
-      (is (= #{{"owner" "owner1" "token" "token1"}
-               {"owner" "owner1" "token" "token2"}} (set (json/read-str body)))))
+      (is (= #{{"owner" "owner1", "token" "token1"}
+               {"owner" "owner1", "token" "token2"}} (set (json/read-str body)))))
     (let [{:keys [status body]} (handle-list-tokens-request kv-store {:request-method :post})
           json-response (json/read-str body)]
       (is (= 405 status))
       (is (= {:message "Only GET supported!" :request-method "post"} (-> json-response clojure.walk/keywordize-keys))))
     (let [{:keys [body status]} (handle-list-tokens-request kv-store {:request-method :get :query-string "owner=owner2"})]
       (is (= 200 status))
-      (is (= #{{"owner" "owner2" "token" "token3"}} (set (json/read-str body)))))
+      (is (= #{{"owner" "owner2", "token" "token3"}} (set (json/read-str body)))))
     (let [{:keys [body]} (handle-list-token-owners-request kv-store {:request-method :get})
           owner-map-keys (keys (json/read-str body))]
       (is (some #(= "owner1" %) owner-map-keys) "Should have had a key 'owner1'")

@@ -474,7 +474,8 @@
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
             (is (nil? (get response-body :run-as-user)))
-            (is (= (assoc service-description :owner (retrieve-username)) response-body))))
+            (is (= (assoc service-description :owner (retrieve-username))
+                   response-body))))
 
         (testing "expecting redirect"
           (let [{:keys [body headers] :as response} (make-request waiter-url "/hello-world" :headers {"host" host-header})]
@@ -594,7 +595,8 @@
         (testing "token retrieval"
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
-            (is (= (assoc service-description :authentication "disabled" :owner current-user) response-body))))
+            (is (= (assoc service-description :authentication "disabled" :owner current-user)
+                   response-body))))
 
         (testing "successful request"
           (let [{:keys [body] :as response} (make-request waiter-url "/hello-world" :headers request-headers :spnego-auth false)]

@@ -502,20 +502,19 @@
                                       ; Returns whether the authenticated user is allowed to manage the service.
                                       ; Either she can run as the waiter user or the run-as-user of the service description."
                                       (sd/can-manage-service? kv-store service-id authorized?-fn auth-user)))
-   :assoc-run-as-user-approved? (pc/fnk [[:curator kv-store]
-                                         [:settings consent-expiry-days]
-                                         [:state clock passwords]]
+   :assoc-run-as-user-approved? (pc/fnk [[:settings consent-expiry-days]
+                                         [:state clock passwords]
+                                         token->token-description]
                                   (fn assoc-run-as-user-approved? [{:keys [headers]} service-id]
                                     (let [{:strs [cookie host]} headers
                                           token (when-not (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys)
                                                   (utils/authority->host host))
-                                          service-description-template (when token
-                                                                         (sd/token->service-description-template kv-store token))
+                                          {:keys [token-metadata]} (when token (token->token-description token))
                                           service-consent-cookie (cookie-support/cookie-value cookie "x-waiter-consent")
                                           decoded-cookie (when service-consent-cookie
                                                            (some #(cookie-support/decode-cookie-cached service-consent-cookie %1)
                                                                  passwords))]
-                                      (sd/assoc-run-as-user-approved? clock consent-expiry-days service-id token service-description-template decoded-cookie))))
+                                      (sd/assoc-run-as-user-approved? clock consent-expiry-days service-id token token-metadata decoded-cookie))))
    :async-request-terminate-fn (pc/fnk [[:state async-request-store-atom]]
                                  (fn async-request-terminate [request-id]
                                    (async-req/async-request-terminate async-request-store-atom request-id)))
@@ -676,6 +675,9 @@
    :token->service-description-template (pc/fnk [[:curator kv-store]]
                                           (fn token->service-description-template [token]
                                             (sd/token->service-description-template kv-store token :error-on-missing false)))
+   :token->token-description (pc/fnk [[:curator kv-store]]
+                               (fn token->token-description [token]
+                                 (sd/token->token-description kv-store token)))
    :validate-service-description-fn (pc/fnk [[:state service-description-builder]]
                                       (fn validate-service-description [service-description]
                                         (sd/validate service-description-builder service-description {})))
@@ -1141,20 +1143,20 @@
                                  (fn inner-waiter-auth-handler-fn [request]
                                    {:body (str (:authorization/user request)), :status 200})
                                  request)))
-   :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
+   :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->token-description]
                                                    [:settings consent-expiry-days]
                                                    [:state clock passwords]
                                                    handle-secure-request-fn]
                                             (let [password (first passwords)]
                                               (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
                                                         (cookie-support/add-encoded-cookie response password cookie-name value expiry-days))
-                                                      (consent-cookie-value [mode service-id token description]
-                                                        (sd/consent-cookie-value clock mode service-id token description))]
+                                                      (consent-cookie-value [mode service-id token token-metadata]
+                                                        (sd/consent-cookie-value clock mode service-id token token-metadata))]
                                                 (fn waiter-acknowledge-consent-handler-fn [request]
                                                   (handle-secure-request-fn
                                                     (fn inner-waiter-acknowledge-consent-handler-fn [request]
                                                       (handler/acknowledge-consent-handler
-                                                        token->service-description-template service-description->service-id
+                                                        token->token-description service-description->service-id
                                                         consent-cookie-value add-encoded-cookie consent-expiry-days request))
                                                     request)))))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]

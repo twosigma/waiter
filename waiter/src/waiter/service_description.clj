@@ -105,8 +105,11 @@
 ; keys allowed in a service description for on-the-fly requests
 (def ^:const on-the-fly-service-description-keys (set/union service-description-keys #{"token"}))
 
-; keys allowed in a service description templates for tokens
-(def ^:const token-service-description-template-keys (set/union service-description-keys #{"owner"}))
+; keys allowed in metadata for tokens, these need to be distinct from service description keys
+(def ^:const token-metadata-keys #{"owner"})
+
+; keys allowed in a token description
+(def ^:const token-description-keys (set/union service-description-keys token-metadata-keys))
 
 (defn map-validation-helper [issue key]
   (when-let [error (get issue key)]
@@ -240,9 +243,8 @@
   (let [{:strs [name]} service-description
         prefix (cond-> service-id-prefix
                        name (str (str/replace (str/lower-case name) #"[^a-z0-9]" "") "-"))
-        sorted-service-desc (->> service-description
-                                 (filter (fn [k] (service-description-keys (key k))))
-                                 sort)
+        sorted-service-desc (-> (select-keys service-description service-description-keys)
+                                sort)
         service-id (loop [[[k v] & kvs] sorted-service-desc
                           acc (transient [])]
                      (if k
@@ -345,16 +347,29 @@
   [service-description]
   (or (get service-description "health-check-url") default-health-check-path))
 
+(defn- token->kv-data
+  "Retrieves the data stored against the token in the kv-store."
+  [kv-store ^String token error-on-missing]
+  (let [{:strs [run-as-user] :as data} (when token (kv/fetch kv-store token))
+        data (when data ; populate token owner for backwards compatibility
+               (update-in data ["owner"] (fn [current-owner] (or current-owner run-as-user))))]
+    (when (and error-on-missing (not data))
+      (throw (ex-info (str "No service description template available for token " token) {})))
+    (log/debug "Extracted data for" token "is" data)
+    data))
+
+(defn token->token-description
+  "Retrieves the token description for the given token."
+  [kv-store ^String token]
+  (let [config (token->kv-data kv-store token false)]
+    {:service-description-template (select-keys config service-description-keys)
+     :token-metadata (select-keys config token-metadata-keys)}))
+
 (defn token->service-description-template
   "Retrieves the service description template for the given token."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (let [config (when token (kv/fetch kv-store token))
-        config (when config ; populate token owner for backwards compatibility
-                 (update-in config ["owner"] (fn [current-owner] (or current-owner (get config "run-as-user")))))]
-    (when (and error-on-missing (not config))
-      (throw (ex-info (str "No service description template available for token " token) {})))
-    (log/debug "Extracted config for" token "is" config)
-    (or config {})))
+  (let [config (token->kv-data kv-store token error-on-missing)]
+    (select-keys config service-description-keys)))
 
 (defn retrieve-token-from-service-description-or-hostname
   "Retrieve the token name from the service description map using the x-waiter-token key.
