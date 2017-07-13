@@ -37,10 +37,13 @@
 
     (testing "should support :kind :simple"
       (let [em (utils/create-component {:kind :simple
-                                        :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}})]
+                                        :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}})
+            process-owner (System/getProperty "user.name")]
         (is em)
-        (is (authz/authorized? em "foo" :run-as {:user "foo"}))
-        (is (not (authz/authorized? em "foo" :run-as {:user "bar"})))))))
+        (is (authz/authorized? em process-owner :admin {:user "test:foo"}))
+        (is (not (authz/authorized? em process-owner :run-as {:user "test:foo"})))
+        (is (authz/authorized? em "test:foo" :run-as {:user "test:foo"}))
+        (is (not (authz/authorized? em "test:foo" :run-as {:user "test:bar"})))))))
 
 (deftest test-manage-service?
   (let [test-user "test-user"

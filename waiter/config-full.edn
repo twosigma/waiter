@@ -50,8 +50,15 @@
                   :min-routers 3
 
                   ;; Use a descriptive name for your cluster;
-                  ;; it's best to keep this unique across clusters:
-                  :name "my-waiter-cluster"}
+                  ;; this name is also used in the token metadata as the root to identify the
+                  ;; cluster in which a token was first created.
+                  ;; It's best to keep this unique across clusters:
+                  :name "my-waiter-cluster"
+
+                  ;; Use a descriptive prefix for services running in your cluster;
+                  ;; Waiter uses this prefix to identify services to manage in a given cluster.
+                  ;; It's best to keep this unique across clusters:
+                  :service-prefix "waiter-c1-"}
 
  :zookeeper {
              ;; The root path to which Waiter will write data:
