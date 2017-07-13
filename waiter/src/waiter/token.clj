@@ -50,7 +50,7 @@
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
-        (log/info "Storing service description for token:" token)
+        (log/info "storing service description for token:" token)
         (let [token-description (merge service-description-template (select-keys token-metadata sd/token-metadata-keys))
               {:strs [owner] :as filtered-service-desc} (sd/sanitize-service-description token-description sd/token-description-keys)
               previous-owner (get (kv/fetch kv-store token :refresh true) "owner")
@@ -65,7 +65,7 @@
           (when owner
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)]
               (update-kv kv-store owner-key (fn [v] (conj (or v #{}) token)))))
-          (log/info "Stored service description template for" token)))))
+          (log/info "stored service description template for" token)))))
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
@@ -73,7 +73,7 @@
     (synchronize-fn
       token-lock
       (fn inner-delete-service-description-for-token []
-        (log/info "Deleting service description for token:" token "erase mode:" erase)
+        (log/info "deleting service description for token:" token "erase mode:" erase)
         (if erase
           (kv/delete kv-store token)
           (when-let [existing-token-description (kv/fetch kv-store token)]
@@ -87,7 +87,7 @@
                 owner-key (ensure-owner-key kv-store owner->owner-key owner)]
             (update-kv kv-store owner-key (fn [v] (disj v token)))))
         ; Don't bother removing owner from token-owners, even if they have no tokens now
-        (log/info "Deleted token for" token))))
+        (log/info "deleted token for" token))))
 
   (defn refresh-token
     "Refresh the KV cache for a given token"
@@ -314,7 +314,7 @@
   [kv-store src-router-id {:keys [body]}]
   (try
     (let [{:strs [token owner index] :as json-data} (json/read-str (slurp body))]
-      (log/info "Received token refresh request" json-data)
+      (log/info "received token refresh request" json-data)
       (when index
         (log/info src-router-id "is force refreshing the token index")
         (refresh-token-index kv-store))

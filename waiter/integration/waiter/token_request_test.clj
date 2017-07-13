@@ -74,12 +74,23 @@
     (log/debug "retrieved tokens for owner " owner ":" (:body tokens-response))
     tokens-response))
 
-(defn parse-token-description
+(defn- parse-token-description
+  "Parses a response as json and keywordizes the map."
   [response-body]
   (try
     (-> response-body str json/read-str pc/keywordize-map)
     (catch Exception _
       (is false (str "Failed to parse token " response-body)))))
+
+(defmacro assert-get-token-response-200
+  "Asserts the token data in the response"
+  [response service-id-prefix deleted]
+  `(let [body# (:body ~response)
+         token-description# (parse-token-description body#)]
+     (assert-response-status ~response 200)
+     (is (contains? token-description# :last-update-time))
+     (is (= {:deleted ~deleted :health-check-url "/probe" :name ~service-id-prefix :owner (retrieve-username)}
+            (dissoc token-description# :last-update-time)))))
 
 (deftest ^:parallel ^:integration-fast test-token-create-delete
   (testing-using-waiter-url
@@ -89,28 +100,26 @@
           num-tokens-to-create 10
           tokens-to-create (map #(str "token" %1 "." token-prefix) (range num-tokens-to-create))
           current-user (System/getProperty "user.name")]
+
       (log/info "creating the tokens")
       (doseq [token tokens-to-create]
-        (let [{:keys [body status]} (post-token waiter-url {:health-check-url "/custom-endpoint"
-                                                            :token token
-                                                            :name service-id-prefix})]
-          (is (= 200 status) (str "Error: " body))))
+        (let [response (post-token waiter-url {:health-check-url "/probe" :name service-id-prefix :token token})]
+          (assert-response-status response 200)))
+
       (log/info "ensuring tokens can be retrieved and listed on each router")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
-          (let [{:keys [body] :as token-response} (get-token router-url token :cookies cookies)
-                token-description (parse-token-description body)]
-            (assert-response-status token-response 200)
-            (is (contains? token-description :last-update-time))
-            (is (= {:deleted false :health-check-url "/custom-endpoint" :name service-id-prefix :owner (retrieve-username)}
-                   (dissoc token-description :last-update-time))))
+          (let [response (get-token router-url token :cookies cookies)]
+            (assert-get-token-response-200 response service-id-prefix false))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
             (is (some (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
-      (log/info "deleting the tokens")
+
+      (log/info "deleting the tokens (not erasing)")
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token))
+
       (log/info "ensuring tokens can no longer be retrieved on each router without show-deleted parameter")
       (doseq [token tokens-to-create]
         (doseq [[router-id router-url] (routers waiter-url)]
@@ -122,19 +131,17 @@
           (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
             (assert-response-status response 404)
             (is (str/includes? (str body) "couldn't find token") (str body)))
-          (let [{:keys [body] :as response} (get-token router-url token :cookies cookies :query-params {"show-deleted" true})]
-            (assert-response-status response 200)
-            (let [token-description (parse-token-description body)]
-              (is (contains? token-description :last-update-time))
-              (is (= {:deleted true :health-check-url "/custom-endpoint" :name service-id-prefix :owner (retrieve-username)}
-                     (dissoc token-description :last-update-time)))))
+          (let [response (get-token router-url token :cookies cookies :query-params {"show-deleted" true})]
+            (assert-get-token-response-200 response service-id-prefix true))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
             (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
+
       (log/info "deleting the tokens in erase mode")
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token :query-params {"erase" true}))
+
       (log/info "ensuring tokens can no longer be retrieved on each router with show-deleted parameter after erase")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
@@ -154,9 +161,8 @@
                                                                      :x-waiter-run-as-user current-user)]
             (testing "hostname-token-creation"
               (log/info "creating configuration using token" token)
-              (let [{:keys [body status]} (post-token waiter-url {:health-check-url "/custom-endpoint"
-                                                                  :token token
-                                                                  :name service-id-prefix})]
+              (let [{:keys [body status]}
+                    (post-token waiter-url {:health-check-url "/probe" :name service-id-prefix :token token})]
                 (when (not= 200 status)
                   (log/info "error:" body)
                   (is (not body))))
@@ -164,7 +170,7 @@
               (let [token-response (get-token waiter-url token)
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
-                (is (= {"deleted" false, "health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username)}
+                (is (= {"deleted" false, "health-check-url" "/probe", "name" service-id-prefix, "owner" (retrieve-username)}
                        (dissoc response-body "last-update-time"))))
               (log/info "asserted retrieval of configuration for token" token))
 
@@ -240,7 +246,7 @@
           (let [token (create-token-name waiter-url service-id-prefix)]
             (try
               (log/info "creating configuration using token" token)
-              (let [token-description {:health-check-url "/custom-endpoint"
+              (let [token-description {:health-check-url "/probe"
                                        :name service-id-prefix
                                        :owner (retrieve-username)
                                        :run-as-user "foo-bar"
@@ -252,7 +258,7 @@
               (let [token-response (get-token waiter-url token)
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
-                (is (= {"deleted" false, "health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username),
+                (is (= {"deleted" false, "health-check-url" "/probe", "name" service-id-prefix, "owner" (retrieve-username),
                         "run-as-user" "foo-bar", "update-mode" "sync"}
                        (dissoc response-body "last-update-time"))))
               (log/info "asserted retrieval of configuration for token" token)
@@ -264,7 +270,7 @@
             (try
               (log/info "creating configuration using token" token)
               (let [token-description {:deleted true
-                                       :health-check-url "/custom-endpoint"
+                                       :health-check-url "/probe"
                                        :name service-id-prefix
                                        :owner (retrieve-username)
                                        :run-as-user "foo-bar"
@@ -279,7 +285,7 @@
               (let [token-response (get-token waiter-url token :query-params {"show-deleted" true})
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
-                (is (= {"deleted" true, "health-check-url" "/custom-endpoint", "name" service-id-prefix, "owner" (retrieve-username),
+                (is (= {"deleted" true, "health-check-url" "/probe", "name" service-id-prefix, "owner" (retrieve-username),
                         "run-as-user" "foo-bar", "update-mode" "sync"}
                        (dissoc response-body "last-update-time"))))
               (log/info "asserted retrieval of configuration for token" token)
