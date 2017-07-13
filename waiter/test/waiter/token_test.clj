@@ -86,7 +86,7 @@
                   {:request-method :delete, :authorization/user "tu1", :headers {"x-waiter-token" token}})]
             (is (= 403 status))
             (is (every? #(str/includes? body (str %))
-                        ["User not allowed to delete token", "existing-owner: tu2", "current-user: tu1"]))
+                        ["User not allowed to delete token", "owner: tu2", "user: tu1"]))
             (is (not (nil? (kv/fetch kv-store token)))))
           (finally
             (kv/delete kv-store token))))
@@ -132,8 +132,26 @@
                   kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                   {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"erase" "true"}, :request-method :delete})]
             (is (= 200 status))
-            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
+            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"erase\":true", "\"success\":true"]))
             (is (nil? (kv/fetch kv-store token)) "Entry not deleted from kv-store!"))
+          (finally
+            (kv/delete kv-store token))))
+
+      (testing "delete:token-does-exist-authorized:erase-true:disallowed"
+        (try
+          (kv/store kv-store token (assoc service-description1 "owner" "tu2"))
+          (is (not (nil? (kv/fetch kv-store token))))
+          (let [entitlement-manager (reify authz/EntitlementManager
+                                      (authorized? [_ subject verb {:keys [user]}]
+                                        (is (and (= subject "tu1") (= :sync verb) (= "tu2" user)))
+                                        false))
+                {:keys [status body]}
+                (run-handle-token-request
+                  kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
+                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"erase" "true"}, :request-method :delete})]
+            (is (= 403 status))
+            (is (every? #(str/includes? body (str %)) ["Cannot erase token", "user: tu1", "metadata"]))
+            (is (not-empty (kv/fetch kv-store token)) "Entry deleted from kv-store!"))
           (finally
             (kv/delete kv-store token))))
 

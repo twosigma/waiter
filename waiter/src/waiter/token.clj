@@ -175,22 +175,25 @@
   (case request-method
     :delete (try
               (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)
-                    current-user (get req :authorization/user)
+                    authenticated-user (get req :authorization/user)
                     request-params (:query-params (ring-params/params-request req))
                     erase (utils/request-flag request-params "erase")]
                 (if token
                   (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :show-deleted erase)]
                     (if (and service-description-template (not-empty service-description-template))
                       (let [token-owner (get token-metadata "owner")]
-                        (when-not (authz/manage-token? entitlement-manager current-user token token-metadata)
-                          (throw (ex-info "User not allowed to delete token"
-                                          {:current-user current-user, :existing-owner token-owner, :status 403})))
+                        (if erase
+                          (when-not (authz/sync-token? entitlement-manager authenticated-user token token-metadata)
+                            (throw (ex-info "Cannot erase token" {:metadata token-metadata :status 403 :user authenticated-user})))
+                          (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
+                            (throw (ex-info "User not allowed to delete token" {:owner token-owner :status 403 :user authenticated-user}))))
                         (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :erase erase)
                         ; notify peers of token delete and ask them to refresh their caches
                         (make-peer-requests-fn "tokens/refresh"
-                                               :body (json/write-str {:owner token-owner, :token token})
+                                               :body (json/write-str {:owner token-owner :token token})
                                                :method :post)
-                        (utils/map->json-response {:delete token, :success true}))
+                        (utils/map->json-response (cond-> {:delete token :success true}
+                                                          erase (assoc :erase true))))
                       (utils/map->json-response {:message (str "token " token " does not exist!")} :status 404)))
                   (utils/map->json-response {:message "couldn't find token in request"} :status 400)))
               (catch Exception e
