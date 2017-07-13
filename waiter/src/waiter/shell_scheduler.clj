@@ -97,7 +97,7 @@
   (try
     (log/info "killing process:" instance)
     (.destroyForcibly process)
-    (sh/sh "pkill" "-9" "-s" (str pid))
+    (sh/sh "pkill" "-9" "-g" (str pid))
     (release-port! port->reservation-atom port port-grace-period-ms)
     (doseq [port extra-ports]
       (release-port! port->reservation-atom port port-grace-period-ms))
