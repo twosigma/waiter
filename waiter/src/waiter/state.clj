@@ -590,7 +590,8 @@
       (cid/cinfo correlation-id "requesting instance" instance-id "to be unblacklisted")
       (async/>! unblacklist-instance-chan {:instance-id instance-id})
       (catch Throwable th
-        (log/error th "unexpected error inside trigger-unblacklist-process")))))
+        (log/error th "unexpected error inside trigger-unblacklist-process"
+                   {:blacklist-period-ms blacklist-period-ms :cid correlation-id :instance-id instance-id})))))
 
 (defn prepare-and-start-service-chan-responder
   "Starts the service channel responder."
