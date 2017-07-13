@@ -18,9 +18,13 @@
         port->reservation-atom (atom {})
         {:keys [shell-scheduler/pid] :as instance} (launch-instance "abc" working-dir test-cmd "http" {} 1
                                                                     port->reservation-atom [40000 50000])]
-    (wait-for #(= 4 (count (str/split (:out (sh/sh "pgrep" "-g" (str pid)))
-                                      #"\n")))
-              :interval 1 :timeout 10)
+    ; There are 4 processes spawned by the instance:
+    ; 1. The wrapper process launched by the scheduler
+    ; 2. The `test-command.sh` script
+    ; 3/4 sleep commands forked by `test-command.sh`
+    (is (wait-for #(= 4 (count (str/split (:out (sh/sh "pgrep" "-g" (str pid)))
+                                          #"\n")))
+                  :interval 1 :timeout 10))
     (kill-process! instance port->reservation-atom 100)
-    (wait-for #(= "" (:out (sh/sh "pgrep" "-g" (str pid))))
-              :interval 1 :timeout 10)))
+    (is (wait-for #(= "" (:out (sh/sh "pgrep" "-g" (str pid))))
+                  :interval 1 :timeout 10))))
