@@ -22,6 +22,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.cookies :as cookies]
             [qbits.jet.client.http :as http]
+            [waiter.auth.authentication :as authentication]
             [waiter.auth.spnego :as spnego]
             [waiter.correlation-id :as cid]
             [waiter.statsd :as statsd]
@@ -213,7 +214,9 @@
        (when verbose
          (log/info "request url:" request-url)
          (log/info "request headers:" (into (sorted-map) request-headers)))
-       (let [{:keys [body headers status]}
+       (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
+             add-spnego-auth (and use-spnego (not waiter-auth-cookie))
+             {:keys [body headers status]}
              (async/<!! (http-method-fn
                           client
                           request-url
@@ -222,7 +225,7 @@
                                    :query-string query-params
                                    :body body}
                                   multipart (assoc :multipart multipart)
-                                  use-spnego (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                                  add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
                                   form-params (assoc :form-params form-params)
                                   content-type (assoc :content-type content-type))))
              response-body (if body (async/<!! body) nil)]
