@@ -30,13 +30,19 @@
        (delete-service waiter-url (:service-id response))))))
 
 (deftest ^:parallel ^:integration-fast test-cookie-sent-to-backend
-  (testing-using-waiter-url
-   (let [extra-headers {:x-waiter-name (rand-name)}
-         {:keys [service-id cookies]} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))
-         {:keys [body]} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url % :path "/request-info"
-                                                                                           :cookies (assoc cookies "test" {:value "cookie"
-                                                                                                                           :discard false
-                                                                                                                           :path "/"})))
-         body-json (json/read-str (str body))]
-     (is (= "test=cookie" (get-in body-json ["headers" "cookie"])))
-     (delete-service waiter-url service-id))))
+  (let [headers {:x-waiter-name (rand-name)}]
+    (testing-using-waiter-url
+     (let [{:keys [cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+           {:keys [body]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/request-info"
+                                                                                             :cookies (assoc cookies "test" {:value "cookie"
+                                                                                                                             :discard false
+                                                                                                                             :path "/"})))
+           body-json (json/read-str (str body))]
+       (is (= "test=cookie" (get-in body-json ["headers" "cookie"])))))
+    (testing-using-waiter-url
+     (let [{:keys [service-id cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+           {:keys [body]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/request-info"
+                                                                                       :cookies cookies))
+           {:strings [headers]} (json/read-str (str body))]
+       (is (not (contains? (set (keys headers)) "cookie")))
+       (delete-service waiter-url service-id)))))
