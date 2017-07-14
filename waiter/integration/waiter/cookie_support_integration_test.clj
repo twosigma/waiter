@@ -14,20 +14,20 @@
             [waiter.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-cookie-support
-  (testing-using-waiter-url
-    (let [extra-headers {:x-waiter-name (rand-name)
-                         :x-kitchen-cookies "test=CrazyCase,test2=lol2,test3=\"lol3\""}
-          response (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))
-          cookies (:cookies response)]
-      (is (= "CrazyCase" (get-in cookies ["test" :value])))
-      (is (= "lol2" (get-in cookies ["test2" :value])))
-      (is (= "%22lol3%22" (get-in cookies ["test3" :value])))
-      (is (get-in cookies ["x-waiter-auth" :value]))
-      (let [single-cookie-headers (assoc extra-headers :x-kitchen-cookies "test=singlecookie")
-            {:keys [cookies]} (make-request-with-debug-info single-cookie-headers #(make-kitchen-request waiter-url %))]
-        (is (= "singlecookie" (get-in cookies ["test" :value])))
-        (is (get-in cookies ["x-waiter-auth" :value])))
-      (delete-service waiter-url (:service-id response)))))
+  (let [headers {:x-waiter-name (rand-name)}]
+    (testing-using-waiter-url
+     (let [headers (assoc headers :x-kitchen-cookies "test=CrazyCase,test2=lol2,test3=\"lol3\"")
+           {:keys [cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+       (is (= "CrazyCase" (get-in cookies ["test" :value])))
+       (is (= "lol2" (get-in cookies ["test2" :value])))
+       (is (= "%22lol3%22" (get-in cookies ["test3" :value])))
+       (is (get-in cookies ["x-waiter-auth" :value]))))
+    (testing-using-waiter-url
+     (let [headers (assoc headers :x-kitchen-cookies "test=singlecookie")
+           {:keys [cookies] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+       (is (= "singlecookie" (get-in cookies ["test" :value])))
+       (is (get-in cookies ["x-waiter-auth" :value]))
+       (delete-service waiter-url (:service-id response))))))
 
 (deftest ^:parallel ^:integration-fast test-cookie-sent-to-backend
   (testing-using-waiter-url

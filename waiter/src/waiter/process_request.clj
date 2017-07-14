@@ -25,6 +25,7 @@
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
+            [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
@@ -34,8 +35,7 @@
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.token :as token]
-            [waiter.utils :as utils]
-            [waiter.auth.authentication :as auth])
+            [waiter.utils :as utils])
   (:import java.io.InputStream
            java.io.IOException
            org.eclipse.jetty.io.EofException

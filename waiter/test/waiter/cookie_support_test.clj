@@ -31,6 +31,7 @@
     (is (= "quotes\"abound" (cookie-value cookie-string #"special")))))
 
 (deftest test-remove-cookie
+  (is (= "" (remove-cookie "x-waiter-auth=foo" "x-waiter-auth")))
   (is (= "bar=baz" (remove-cookie "x-waiter-auth=foo; bar=baz" "x-waiter-auth")))
   (is (= "bar=baz" (remove-cookie "bar=baz; x-waiter-auth=foo" "x-waiter-auth")))
   (is (= "bar=\"x-waiter-auth=this is a real cookie\"" (remove-cookie "x-waiter-auth=auth-value; bar=\"x-waiter-auth=this is a real cookie\""
