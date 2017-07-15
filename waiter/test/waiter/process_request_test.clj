@@ -398,6 +398,9 @@
                                  (is (= username "waiter"))
                                  (is (= app-password password))
                                  (Object.))
+            service-id->password-fn (fn service-id->password-fn [service-id]
+                                      (is (= "test-service-id" service-id))
+                                      app-password)
             http-client (http/client)
             request-method-fn-call-counter (atom 0)]
         (with-redefs [http-method-fn
@@ -415,7 +418,7 @@
                                      (merge {"x-waiter-auth-principal" "test-user"
                                              "x-waiter-authenticated-principal" "test-user@test.com"}))
                                  (:headers request-config)))))]
-          (make-request http-client make-basic-auth-fn instance request request-properties passthrough-headers end-route app-password nil)
+          (make-request http-client make-basic-auth-fn service-id->password-fn instance request request-properties passthrough-headers end-route nil)
           (is (= 1 @request-method-fn-call-counter)))))))
 
 (deftest test-request->descriptor
@@ -566,7 +569,7 @@
         request-abort-callback-factory (fn [_] (constantly nil))]
     (testing "with-query-params"
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
-            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil
+            response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory request)
             {:keys [body headers status]} (async/<!! response-chan)]
         (is (= 303 status))
@@ -576,7 +579,7 @@
 
     (testing "with-query-params-and-default-port"
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
-            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil
+            response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory request)
             {:keys [body headers status]} (async/<!! response-chan)]
         (is (= 303 status))
@@ -586,7 +589,7 @@
 
     (testing "without-query-params"
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :uri "/path"}
-            response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] prepend-waiter-url nil nil
+            response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory request)
             {:keys [body headers status]} (async/<!! response-chan)]
         (is (= 303 status))
@@ -601,7 +604,7 @@
         process-exception-fn (fn process-exception-fn [_ _ response-headers _ e]
                                (utils/exception->response "Error in process" e :headers response-headers))
         request-abort-callback-factory (fn [_] (constantly nil))
-        response-chan (process "router-id" nil nil request->descriptor-fn nil nil {} [] nil nil nil
+        response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-fn request-abort-callback-factory request)
         {:keys [body headers status]} (async/<!! response-chan)]
     (is (= 400 status))
