@@ -571,13 +571,11 @@
    :make-basic-auth-fn (pc/fnk []
                          (fn make-basic-auth-fn [endpoint username password]
                            (BasicAuthentication$BasicResult. (URI. endpoint) username password)))
-   :make-http-request-fn (pc/fnk [[:settings [:instance-request-properties initial-socket-timeout-ms output-buffer-size]]
+   :make-http-request-fn (pc/fnk [[:settings instance-request-properties]
                                   [:state http-client]
                                   make-basic-auth-fn service-id->password-fn]
-                           (fn make-http-request-fn [service-id location auth-user-map request-method headers body]
-                             (let [service-password (service-id->password-fn service-id)]
-                               (pr/make-http-request http-client make-basic-auth-fn request-method location headers body
-                                                     service-password auth-user-map initial-socket-timeout-ms output-buffer-size))))
+                           (handler/async-make-request-helper http-client instance-request-properties make-basic-auth-fn service-id->password-fn
+                                                              pr/prepare-request-properties pr/make-request))
    :make-inter-router-requests-async-fn (pc/fnk [[:curator discovery]
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state http-client passwords router-id]
@@ -607,10 +605,10 @@
    :post-process-async-request-response-fn (pc/fnk [[:state async-request-store-atom instance-rpc-chan router-id]
                                                     make-http-request-fn]
                                              (fn post-process-async-request-response-wrapper
-                                               [service-id metric-group instance auth-user reason-map request-properties location response-headers]
+                                               [service-id metric-group instance _ reason-map request-properties location response-headers]
                                                (async-req/post-process-async-request-response
                                                  router-id async-request-store-atom make-http-request-fn instance-rpc-chan service-id metric-group
-                                                 instance auth-user reason-map request-properties location response-headers)))
+                                                 instance reason-map request-properties location response-headers)))
    :prepend-waiter-url (pc/fnk [[:settings port hostname]]
                          (fn [endpoint-url]
                            (if (str/blank? endpoint-url)

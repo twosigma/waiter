@@ -285,17 +285,14 @@
         async-request-store-atom (atom {})
         request-id "request-2394613984619"
         reason-map {:request-id request-id}
-        auth-user "test-user"
         request-properties {:async-check-interval-ms 100, :async-request-timeout-ms 200}
         location (str "/location/" request-id)
         response-headers (atom {})
-        make-http-request-fn (fn [in-service-id status-endpoint in-auth-user request-method passthrough-headers body]
-                               (is (= "proto://www.example.com:1234/location/request-2394613984619" status-endpoint))
-                               (is (= service-id in-service-id))
-                               (is (= auth-user in-auth-user))
-                               (is (= :get request-method))
-                               (is (= {} passthrough-headers))
-                               (is (= "" body)))
+        make-http-request-fn (fn [in-instance in-request end-route metric-group]
+                               (is (= instance in-instance))
+                               (is (= {:body nil, :headers {}, :request-method :get} in-request))
+                               (is (= "/location/request-2394613984619" end-route))
+                               (is (= "test-metric-group" metric-group)))
         instance-rpc-chan (async/chan 1)
         complete-async-request-atom (atom nil)]
     (with-redefs [service/release-instance-go (constantly nil)
@@ -311,7 +308,7 @@
                     (reset! complete-async-request-atom complete-async-request-fn))]
       (post-process-async-request-response
         router-id async-request-store-atom make-http-request-fn instance-rpc-chan service-id metric-group instance
-        auth-user reason-map request-properties location response-headers)
+        reason-map request-properties location response-headers)
       (is (get @async-request-store-atom request-id))
       (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location)
              (get @response-headers "location")))

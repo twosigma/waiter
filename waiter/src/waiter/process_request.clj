@@ -254,7 +254,7 @@
         service-password (service-id->password-fn service-id)
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
         ; Also remove hop-by-hop headers https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
-        headers (-> (dissoc passthrough-headers "expect" "authorization")
+        headers (-> (dissoc passthrough-headers "authorization" "expect")
                     (headers/dissoc-hop-by-hop-headers)
                     ;; ensure a value (potentially nil) is available for content-type to prevent Jetty from generating a default content-type
                     ;; please see org.eclipse.jetty.client.HttpConnection#normalizeRequest(request) for the control-flow for content-type header
