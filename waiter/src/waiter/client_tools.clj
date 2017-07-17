@@ -31,6 +31,7 @@
            (java.util.concurrent Callable Future Executors)
            (marathonclj.common Connection)
            (org.apache.http.client CookieStore)
+           (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.util HttpCookieStore)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
@@ -139,6 +140,14 @@
   `(using-waiter-url
      (time-it ~name ~@body)))
 
+(defn make-http-client
+  "Instantiates and returns a new HttpClient with a cookie store"
+  []
+  (let [client (http/client)
+        cookie-store (HttpCookieStore.)
+        _ (.setCookieStore ^HttpClient client cookie-store)]
+    client))
+
 (defmacro testing-using-waiter-url
   [& body]
   `(let [name# (str (or (:name (meta (first *testing-vars*))) "test-unknown-name"))]
@@ -147,7 +156,7 @@
          name#
          (timing-using-waiter-url
            name#
-           (binding [http-client (http/client)]
+           (binding [http-client (make-http-client)]
              ~@body))))))
 
 (defn instance-id->service-id [^String instance-id]
@@ -202,10 +211,7 @@
           query-params {}
           verbose false
           client http-client}}]
-   (let [cs (HttpCookieStore.)
-         _ (.setCookieStore client cs)
-         _ (add-cookies waiter-url cookies cs)
-         request-url (str
+   (let [request-url (str
                        (when-not (str/starts-with? waiter-url HTTP-SCHEME) HTTP-SCHEME)
                        (strip-trailing-slash waiter-url)
                        path)
@@ -227,12 +233,13 @@
                                   multipart (assoc :multipart multipart)
                                   add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
                                   form-params (assoc :form-params form-params)
-                                  content-type (assoc :content-type content-type))))
+                                  content-type (assoc :content-type content-type)
+                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
              response-body (if body (async/<!! body) nil)]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:request-headers request-headers
-          :cookies (cookies/get-cookies cs)
+          :cookies (cookies/get-cookies (.getCookieStore client))
           :status status
           :headers headers
           :body response-body})
