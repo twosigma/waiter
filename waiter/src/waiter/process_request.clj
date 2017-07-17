@@ -25,6 +25,7 @@
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
+            [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
@@ -256,7 +257,8 @@
                     (headers/dissoc-hop-by-hop-headers)
                     ;; ensure a value (potentially nil) is available for content-type to prevent Jetty from generating a default content-type
                     ;; please see org.eclipse.jetty.client.HttpConnection#normalizeRequest(request) for the control-flow for content-type header
-                    (assoc "content-type" (get passthrough-headers "content-type")))
+                    (assoc "content-type" (get passthrough-headers "content-type"))
+                    (assoc "cookie" (auth/remove-auth-cookie (get passthrough-headers "cookie"))))
         waiter-debug-enabled? (utils/request->debug-enabled? request)]
     (try
       (let [content-length-str (get passthrough-headers "content-length")

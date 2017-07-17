@@ -26,7 +26,7 @@
                              :authenticated-principal username)
           actual-result (request-handler request)]
       (is (= expected-request (dissoc actual-result :headers)))
-      (is (str/includes? (first (get-in actual-result [:headers "Set-Cookie"])) "x-waiter-auth="))
+      (is (str/includes? (get-in actual-result [:headers "set-cookie"]) "x-waiter-auth="))
       (is (nil? (check-user authenticator "user" "service-id"))))))
 
 (deftest test-get-auth-cookie-value

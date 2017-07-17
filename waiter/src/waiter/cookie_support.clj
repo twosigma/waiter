@@ -15,7 +15,6 @@
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [ring.middleware.cookies :as cookies]
             [taoensso.nippy :as nippy]
             [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
@@ -23,11 +22,10 @@
            org.eclipse.jetty.util.UrlEncoded))
 
 (defn url-decode
-  "Decode a URL-encoded string.  java.util.URLDecoder is super slow.  Also Jetty 9.3 adds an overload
-  to decodeString that takes just a string.  This implementation should use that once we upgrade."
+  "Decode a URL-encoded string.  java.util.URLDecoder is super slow."
   [^String string]
   (when string
-    (UrlEncoded/decodeString string 0 (count string) StandardCharsets/UTF_8)))
+    (UrlEncoded/decodeString string)))
 
 (defn- strip-double-quotes
   [value]
@@ -44,21 +42,11 @@
       (when-let [^String value (second (re-find name-regex cookie-string))]
         (-> value url-decode strip-double-quotes)))))
 
-(defn correct-cookies-as-vector
-  "Ring expects the Set-Cookie header to be a vector of cookies. This puts them in the 'right' format"
-  [response]
-  (update-in response [:headers "Set-Cookie"] #(if (string? %) [%] %)))
-
-(defn cookies-async-response
-  "For responses with :cookies, adds Set-Cookie header and returns response without :cookies."
-  [response]
-  (log/debug "making a response with cookies: " response)
-  (if (map? response)
-    (cookies/cookies-response response)
-    (async/go
-      (-> (async/<! response)
-          correct-cookies-as-vector
-          cookies/cookies-response))))
+(defn remove-cookie
+  "Removes the specified cookie"
+  [cookie-string cookie-name]
+  (when cookie-string
+    (str/replace cookie-string (re-pattern (str "(?i)(^" cookie-name "=[^;]+(; )?)|(; " cookie-name "=[^;]+)")) "")))
 
 (defn encode-cookie
   "Encodes the cookie value."
@@ -67,11 +55,20 @@
     (String. ^bytes value-bytes "utf-8")))
 
 (defn add-encoded-cookie
-  "Inserts the provided name-value pair as a Cookie in the :cookies map of the response."
+  "Inserts the provided name-value pair as a Set-Cookie header in the response"
   [response password name value age-in-days]
   (letfn [(add-cookie-into-response [response]
-            (let [cookie-value {:value (encode-cookie value password), :max-age (-> age-in-days t/days t/in-seconds), :path "/"}]
-              (assoc-in response [:cookies name] cookie-value)))]
+            (let [encoded-cookie (-> (encode-cookie value password)
+                                     UrlEncoded/encodeString)
+                  max-age (-> age-in-days t/days t/in-seconds)
+                  path "/"
+                  set-cookie-header (str name "=" encoded-cookie ";Max-Age=" max-age ";Path=" path)
+                  existing-header (get-in response [:headers "set-cookie"])
+                  new-header (cond
+                               (nil? existing-header) set-cookie-header
+                               (string? existing-header) [existing-header set-cookie-header]
+                               :else (conj existing-header set-cookie-header))]
+              (assoc-in response [:headers "set-cookie"] new-header)))]
     (if (map? response)
       (add-cookie-into-response response)
       (async/go (add-cookie-into-response (async/<! response))))))

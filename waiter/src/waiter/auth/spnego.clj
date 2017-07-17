@@ -84,8 +84,7 @@
         ;; Use the cookie, if not expired
         (auth/decoded-auth-valid? decoded-auth-cookie)
         (-> (auth/assoc-auth-in-request req auth-principal)
-            (request-handler)
-            (cookie-support/cookies-async-response))
+            (request-handler))
         ;; Try and authenticate using kerberos and add cookie in response when valid
         (get-in req [:headers "authorization"])
         (let [^GSSContext gss_context (gss-context-init)
