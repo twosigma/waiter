@@ -49,8 +49,8 @@
   (testing "pi handler"
     (testing "should return expected fields"
       (let [{:keys [body]} (http-handler {:uri "/pi"
-                                     :form-params {"iterations" "100"
-                                                   "threads" "2"}})
+                                          :form-params {"iterations" "100"
+                                                        "threads" "2"}})
             {:strs [iterations inside pi-estimate]} (json/read-str body)]
         (is (and iterations inside pi-estimate))))))
 
@@ -191,7 +191,7 @@
       (async/>!! in "bytes-10000")
       (let [response-data (async/<!! out)
             expected-data (byte-array (take 10000 (cycle (range 103))))]
-        (is (Arrays/equals ^bytes expected-data ^bytes  response-data))))
+        (is (Arrays/equals ^bytes expected-data ^bytes response-data))))
 
     (testing "raw-bytes"
       (let [byte-data (byte-array (take 100000 (cycle (range 2121))))
@@ -199,7 +199,7 @@
             _ (async/>!! in byte-buffer)
             response-data (async/<!! out)]
         (is (not (identical? byte-data response-data)))
-        (is (Arrays/equals ^bytes byte-data ^bytes  response-data))))
+        (is (Arrays/equals ^bytes byte-data ^bytes response-data))))
 
     (testing "exit"
       (async/>!! in "exit")

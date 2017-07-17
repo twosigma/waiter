@@ -409,17 +409,17 @@
 (defn websocket-handler
   [{:keys [in out] :as request}]
   (swap! total-ws-requests inc)
-  (printlog request "Received websocket request:" request)
+  (printlog request "received websocket request:" request)
   (swap! pending-ws-requests inc)
   (async/go
     (async/>! out "Connected to kitchen")
     (loop []
       (let [in-data (async/<! in)]
-        (printlog request "Received data on websocket:" in-data)
+        (printlog request "received data on websocket:" in-data)
         (if (or (str/blank? (str in-data)) (= "exit" in-data))
           (do
             (async/>! out "bye")
-            (printlog request "Closing connection.")
+            (printlog request "closing connection.")
             (async/close! out)
             (swap! pending-ws-requests dec))
           (do
@@ -456,26 +456,28 @@
 
 (defn basic-auth-middleware
   "Adds support for basic authentication when both the provided username and password are not nil.
-  /status urls always bypass basic auth check."
+   /status urls always bypass basic auth check."
   [username password handler]
-  (when (not (and username password))
-    (log/info "basic authentication is disabled since username or password is missing"))
-  (fn basic-auth-middleware-fn [{:keys [uri] :as request}]
-    (cond
-      (not (and username password)) (handler request)
-      (= "/status" uri) (handler request)
-      :else ((basic-authentication/wrap-basic-authentication
-               handler
-               (fn [u p]
-                 (let [result (and (= username u)
-                                   (= password p))]
-                   (printlog request "authenticating" u (if result "successful" "failed"))
-                   result)))
-              request))))
+  (let [basic-auth-enabled (not (and username password))]
+    (if basic-auth-enabled
+      (do
+        (log/info "basic authentication is disabled since username or password is missing")
+        handler)
+      (fn basic-auth-middleware-fn [{:keys [uri] :as request}]
+        (cond
+          (= "/status" uri) (handler request)
+          :else ((basic-authentication/wrap-basic-authentication
+                   handler
+                   (fn [u p]
+                     (let [result (and (= username u)
+                                       (= password p))]
+                       (printlog request "authenticating" u (if result "successful" "failed"))
+                       result)))
+                  request))))))
 
 (defn correlation-id-middleware
-  "Attached a x-cid header to the request if one is not already provided.
-  It also generates a unique x-kitchen-request-id header for the request."
+  "Attaches a x-cid header to the request if one is not already provided.
+   It also generates a unique x-kitchen-request-id header for the request."
   [handler]
   (fn correlation-id-middleware-fn [request]
     (let [{:keys [headers request-method uri] :as request}
