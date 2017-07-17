@@ -458,22 +458,21 @@
   "Adds support for basic authentication when both the provided username and password are not nil.
    /status urls always bypass basic auth check."
   [username password handler]
-  (let [basic-auth-enabled (not (and username password))]
-    (if basic-auth-enabled
-      (do
-        (log/info "basic authentication is disabled since username or password is missing")
-        handler)
-      (fn basic-auth-middleware-fn [{:keys [uri] :as request}]
-        (cond
-          (= "/status" uri) (handler request)
-          :else ((basic-authentication/wrap-basic-authentication
-                   handler
-                   (fn [u p]
-                     (let [result (and (= username u)
-                                       (= password p))]
-                       (printlog request "authenticating" u (if result "successful" "failed"))
-                       result)))
-                  request))))))
+  (if (not (and username password))
+    (do
+      (log/info "basic authentication is disabled since username or password is missing")
+      handler)
+    (fn basic-auth-middleware-fn [{:keys [uri] :as request}]
+      (cond
+        (= "/status" uri) (handler request)
+        :else ((basic-authentication/wrap-basic-authentication
+                 handler
+                 (fn [u p]
+                   (let [result (and (= username u)
+                                     (= password p))]
+                     (printlog request "authenticating" u (if result "successful" "failed"))
+                     result)))
+                request)))))
 
 (defn correlation-id-middleware
   "Attaches a x-cid header to the request if one is not already provided.
