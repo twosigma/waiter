@@ -848,12 +848,20 @@
                                     (fn inner-async-complete-handler-fn [src-router-id request]
                                       (handler/complete-async-handler async-request-terminate-fn src-router-id request))
                                     request)))
-   :async-result-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]]
+   :async-result-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]
+                                     handle-secure-request-fn]
                               (fn async-result-handler-fn [request]
-                                (handler/async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request)))
-   :async-status-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]]
+                                (handle-secure-request-fn
+                                  (fn inner-async-result-handler-fn [request]
+                                    (handler/async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))
+                                  request)))
+   :async-status-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]
+                                     handle-secure-request-fn]
                               (fn async-status-handler-fn [request]
-                                (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request)))
+                                (handle-secure-request-fn
+                                  (fn inner-async-status-handler-fn [request]
+                                    (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))
+                                  request)))
    :blacklist-instance-handler-fn (pc/fnk [[:state instance-rpc-chan]
                                            handle-inter-router-request-fn]
                                     (fn blacklist-instance-handler-fn [request]
