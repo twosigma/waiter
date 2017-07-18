@@ -201,11 +201,10 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body cookies decompress-body headers http-method-fn multipart
+    {:keys [body cookies headers http-method-fn multipart
             query-params verbose client form-params content-type]
      :or {body nil
-          cookies {}
-          decompress-body false
+          cookies []
           headers {}
           http-method-fn http/get
           query-params {}
