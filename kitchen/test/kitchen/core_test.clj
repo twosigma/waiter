@@ -49,8 +49,8 @@
   (testing "pi handler"
     (testing "should return expected fields"
       (let [{:keys [body]} (http-handler {:uri "/pi"
-                                     :form-params {"iterations" "100"
-                                                   "threads" "2"}})
+                                          :form-params {"iterations" "100"
+                                                        "threads" "2"}})
             {:strs [iterations inside pi-estimate]} (json/read-str body)]
         (is (and iterations inside pi-estimate))))))
 
@@ -150,7 +150,10 @@
 (deftest test-websocket-handler
   (let [out (async/chan)
         in (async/chan)
-        request {:in in, :out out}]
+        request {:headers {"foo" "bar", "lorem" "ipsum"}
+                 :in in
+                 :out out
+                 :request-method :get}]
     (reset! async-requests {})
     (reset! pending-http-requests 0)
     (reset! pending-ws-requests 0)
@@ -167,8 +170,9 @@
     (testing "request-info"
       (async/>!! in "request-info")
       (let [response (-> (async/<!! out) json/read-str)]
-        (is (get-in response ["headers" "x-cid"]))
-        (is (get-in response ["headers" "x-kitchen-request-id"]))))
+        (is (= {"headers" {"foo" "bar", "lorem" "ipsum"}
+                "request-method" "get"}
+               response))))
 
     (testing "kitchen-state"
       (async/>!! in "kitchen-state")
@@ -187,7 +191,7 @@
       (async/>!! in "bytes-10000")
       (let [response-data (async/<!! out)
             expected-data (byte-array (take 10000 (cycle (range 103))))]
-        (is (Arrays/equals ^bytes expected-data ^bytes  response-data))))
+        (is (Arrays/equals ^bytes expected-data ^bytes response-data))))
 
     (testing "raw-bytes"
       (let [byte-data (byte-array (take 100000 (cycle (range 2121))))
@@ -195,7 +199,7 @@
             _ (async/>!! in byte-buffer)
             response-data (async/<!! out)]
         (is (not (identical? byte-data response-data)))
-        (is (Arrays/equals ^bytes byte-data ^bytes  response-data))))
+        (is (Arrays/equals ^bytes byte-data ^bytes response-data))))
 
     (testing "exit"
       (async/>!! in "exit")
@@ -205,7 +209,7 @@
     (async/close! in)
     (async/close! out)))
 
-(deftest basic-auth-test
+(deftest test-basic-auth
   (testing "no username and password"
     (let [handler (basic-auth-middleware nil nil (constantly {:status 200}))]
       (is (= {:status 200} (handler {:uri "/handler"})))))
@@ -224,3 +228,15 @@
 
     (testing "Successful authentication"
       (is (= {:status 200} (handler {:uri "/handler", :headers {"authorization" auth}}))))))
+
+(deftest test-correlation-id-middleware
+  (let [handler (fn test-correlation-id-middleware-helper
+                  [{:keys [headers request-method]}]
+                  (is (get headers "x-cid"))
+                  (is (get headers "x-kitchen-request-id"))
+                  (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
+                  (is (= :get request-method))
+                  :test-correlation-id-middleware-helper)
+        request {:headers {"foo" "bar", "lorem" "ipsum"}
+                 :request-method :get}]
+    (is (= :test-correlation-id-middleware-helper ((correlation-id-middleware handler) request)))))

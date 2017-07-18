@@ -385,16 +385,10 @@
      :headers {"content-type" "application/json"}}))
 
 (defn http-handler
-  [request]
+  [{:keys [uri] :as request}]
   (try
     (swap! total-http-requests inc)
-    (let [{:keys [request-method uri] :as request}
-          (-> request
-              (update-in [:headers "x-cid"] (fn [cid] (or cid (str (UUID/randomUUID)))))
-              (assoc-in [:headers "x-kitchen-request-id"] (str (UUID/randomUUID))))
-          _ (printlog request "handler: request-method" request-method "and request uri:" uri)
-          _ (printlog request "headers:" (into (sorted-map) (:headers request)))
-          response (case uri
+    (let [response (case uri
                      "/async/request" (async-request-handler request)
                      "/async/result" (async-result-handler request)
                      "/async/status" (async-status-handler request)
@@ -413,68 +407,84 @@
       (utils/exception->json-response e))))
 
 (defn websocket-handler
-  [request]
+  [{:keys [in out] :as request}]
   (swap! total-ws-requests inc)
-  (let [{:keys [in out] :as request}
-        (-> request
-            (update-in [:headers "x-cid"] (fn [cid] (or cid (str (UUID/randomUUID)))))
-            (assoc-in [:headers "x-kitchen-request-id"] (str (UUID/randomUUID))))]
-    (printlog request "Received websocket request:" request)
-    (swap! pending-ws-requests inc)
-    (async/go
-      (async/>! out "Connected to kitchen")
-      (loop []
-        (let [in-data (async/<! in)]
-          (printlog request "Received data on websocket:" in-data)
-          (if (or (str/blank? (str in-data)) (= "exit" in-data))
-            (do
-              (async/>! out "bye")
-              (printlog request "Closing connection.")
-              (async/close! out)
-              (swap! pending-ws-requests dec))
-            (do
-              (cond
-                (instance? ByteBuffer in-data)
-                (let [response-bytes (byte-array (.remaining in-data))]
-                  (.get in-data response-bytes)
-                  (async/>! out response-bytes))
+  (printlog request "received websocket request:" request)
+  (swap! pending-ws-requests inc)
+  (async/go
+    (async/>! out "Connected to kitchen")
+    (loop []
+      (let [in-data (async/<! in)]
+        (printlog request "received data on websocket:" in-data)
+        (if (or (str/blank? (str in-data)) (= "exit" in-data))
+          (do
+            (async/>! out "bye")
+            (printlog request "closing connection.")
+            (async/close! out)
+            (swap! pending-ws-requests dec))
+          (do
+            (cond
+              (instance? ByteBuffer in-data)
+              (let [response-bytes (byte-array (.remaining in-data))]
+                (.get in-data response-bytes)
+                (async/>! out response-bytes))
 
-                (= "request-info" in-data)
-                (async/>! out (-> request request-info-handler :body))
+              (= "request-info" in-data)
+              (async/>! out (-> request request-info-handler :body))
 
-                (= "kitchen-state" in-data)
-                (async/>! out (-> request state-handler :body))
+              (= "kitchen-state" in-data)
+              (async/>! out (-> request state-handler :body))
 
-                (and (string? in-data) (str/starts-with? in-data "chars-") (> (count in-data) (count "chars-")))
-                (let [num-chars-str (subs in-data (count "chars-"))
-                      num-chars-int (Integer/parseInt num-chars-str)
-                      chars (map char (range 65 91))
-                      string-data (->> (repeatedly #(rand-nth chars))
-                                       (take num-chars-int)
-                                       (reduce str))]
-                  (async/>! out string-data))
+              (and (string? in-data) (str/starts-with? in-data "chars-") (> (count in-data) (count "chars-")))
+              (let [num-chars-str (subs in-data (count "chars-"))
+                    num-chars-int (Integer/parseInt num-chars-str)
+                    chars (map char (range 65 91))
+                    string-data (->> (repeatedly #(rand-nth chars))
+                                     (take num-chars-int)
+                                     (reduce str))]
+                (async/>! out string-data))
 
-                (and (string? in-data) (str/starts-with? in-data "bytes-") (> (count in-data) (count "bytes-")))
-                (let [num-bytes-str (subs in-data (count "bytes-"))
-                      num-bytes-int (Integer/parseInt num-bytes-str)
-                      byte-data (byte-array (take num-bytes-int (cycle (range 103))))]
-                  (async/>! out byte-data))
+              (and (string? in-data) (str/starts-with? in-data "bytes-") (> (count in-data) (count "bytes-")))
+              (let [num-bytes-str (subs in-data (count "bytes-"))
+                    num-bytes-int (Integer/parseInt num-bytes-str)
+                    byte-data (byte-array (take num-bytes-int (cycle (range 103))))]
+                (async/>! out byte-data))
 
-                :else
-                (async/>! out in-data))
-              (recur))))))))
+              :else
+              (async/>! out in-data))
+            (recur)))))))
 
-(defn basic-auth-middleware [username password handler]
-  (fn [{:keys [uri] :as req}]
-    (cond
-      (not (and username password)) (handler req)
-      (= "/status" uri) (handler req)
-      :else ((basic-authentication/wrap-basic-authentication
-               handler
-               (fn [u p]
-                 (and (= username u)
-                      (= password p))))
-              req))))
+(defn basic-auth-middleware
+  "Adds support for basic authentication when both the provided username and password are not nil.
+   /status urls always bypass basic auth check."
+  [username password handler]
+  (if (not (and username password))
+    (do
+      (log/info "basic authentication is disabled since username or password is missing")
+      handler)
+    (fn basic-auth-middleware-fn [{:keys [uri] :as request}]
+      (cond
+        (= "/status" uri) (handler request)
+        :else ((basic-authentication/wrap-basic-authentication
+                 handler
+                 (fn [u p]
+                   (let [result (and (= username u)
+                                     (= password p))]
+                     (printlog request "authenticating" u (if result "successful" "failed"))
+                     result)))
+                request)))))
+
+(defn correlation-id-middleware
+  "Attaches a x-cid header to the request if one is not already provided.
+   It also generates a unique x-kitchen-request-id header for the request."
+  [handler]
+  (fn correlation-id-middleware-fn [request]
+    (let [{:keys [headers request-method uri] :as request}
+          (-> request
+              (update-in [:headers "x-cid"] (fn [cid] (or cid (str (UUID/randomUUID)))))
+              (assoc-in [:headers "x-kitchen-request-id"] (str (UUID/randomUUID))))]
+      (printlog request (str "request received uri:" uri ", method" request-method ", headers:" (into (sorted-map) headers)))
+      (handler request))))
 
 (defn -main
   [& args]
@@ -511,9 +521,12 @@
           (when (pos? start-up-sleep-ms)
             (log/info "sleeping for" start-up-sleep-ms "ms before starting server")
             (Thread/sleep start-up-sleep-ms))
-          (let [partial-server-options {:ring-handler (basic-auth-middleware username password (params/wrap-params http-handler))
+          (let [partial-server-options {:ring-handler (->> (params/wrap-params http-handler)
+                                                           (basic-auth-middleware username password)
+                                                           correlation-id-middleware)
                                         :request-header-size 32768
-                                        :websocket-handler websocket-handler}
+                                        :websocket-handler (->> websocket-handler
+                                                                correlation-id-middleware)}
                 server-options (if ssl
                                  (assoc partial-server-options
                                    :key-password keystore-password
