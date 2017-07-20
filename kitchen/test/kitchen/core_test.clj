@@ -18,6 +18,16 @@
            (java.util Arrays)
            (org.apache.commons.codec.binary Base64)))
 
+(deftest bad-status-handler-test
+  (testing "bad status handler"
+    (testing "should return intended status code"
+      (let [{:keys [status]} (http-handler {:uri "/status-400"})]
+        (is (= 400 status))
+      (let [{:keys [status]} (http-handler {:uri "/status-401"})]
+        (is (= 401 status)))
+      (let [{:keys [status]} (http-handler {:uri "/status-402"})]
+        (is (= 402 status)))))))
+
 (deftest default-handler-test
   (testing "Default handler"
     (testing "should echo request body when x-kitchen-echo is present"
@@ -219,6 +229,11 @@
 
     (testing "Do not authenticate /status"
       (is (= {:status 200} (handler {:uri "/status"}))))
+
+    (testing "Do not authenticate designated endpoints (/status-400, /status-401, /status-402)"
+      (is (= {:status 200} (handler {:uri "/status-400"})))
+      (is (= {:status 200} (handler {:uri "/status-401"})))
+      (is (= {:status 200} (handler {:uri "/status-402"}))))
 
     (testing "Return 401 on missing auth"
       (is (= 401 (:status (handler {:uri "/handler", :headers {}})))))

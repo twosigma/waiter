@@ -209,7 +209,7 @@
      :body (str "Will die after " die-after-ms " ms.")}))
 
 (defn- chunked-handler
-  "Handles requests that may potentially fail, uses chunjked responses."
+  "Handles requests that may potentially fail, uses chunked responses."
   [{:keys [headers] :as request}]
   (let [max-response-size 50000000
         resp-chan (async/chan 1024)
@@ -255,6 +255,12 @@
      :headers {"Content-Type" "text/plain"
                "Transfer-Encoding" "chunked"}
      :body resp-chan}))
+
+(defn bad-status-handler
+  "Simulates health check that returns an intended status."
+  [intended-status]
+  {:status intended-status
+   :body "Health check returned bad status"})
 
 (defn- gzip-handler
   "Handles requests that may potentially fail, uses unchunked response."
@@ -396,10 +402,13 @@
                      "/die" (die-handler request)
                      "/environment" (environment-handler request)
                      "/gzip" (gzip-handler request)
+                     "/kitchen-state" (state-handler request)
                      "/pi" (pi-handler request)
                      "/request-info" (request-info-handler request)
+                     "/status-400" (bad-status-handler 400)
+                     "/status-401" (bad-status-handler 401)
+                     "/status-402" (bad-status-handler 402)
                      "/unchunked" (unchunked-handler request)
-                     "/kitchen-state" (state-handler request)
                      (default-handler request))]
       (update-in response [:headers "x-cid"] (fn [cid] (or cid (request->cid request)))))
     (catch Exception e
@@ -465,6 +474,9 @@
     (fn basic-auth-middleware-fn [{:keys [uri] :as request}]
       (cond
         (= "/status" uri) (handler request)
+        (= "/status-400" uri) (handler request)
+        (= "/status-401" uri) (handler request)
+        (= "/status-402" uri) (handler request)
         :else ((basic-authentication/wrap-basic-authentication
                  handler
                  (fn [u p]
