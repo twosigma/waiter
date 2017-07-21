@@ -18,8 +18,6 @@
             [ring.middleware.cookies :as cookies]
             [ring.util.response :as rr]
             [waiter.auth.authentication :as auth]
-            [waiter.cookie-support :as cookie-support]
-            [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics])
   (:import [org.ietf.jgss GSSManager GSSCredential GSSContext]))
 
@@ -53,7 +51,6 @@
       (rr/status 401)
       (rr/header "Content-Type" "text/html")
       (rr/header "WWW-Authenticate" "Negotiate")
-      (rr/header cid/HEADER-CORRELATION-ID (cid/get-correlation-id))
       (cookies/cookies-response)))
 
 (defn gss-context-init

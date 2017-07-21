@@ -479,7 +479,7 @@
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
           ; update response headers eagerly to enable reporting these in case of failure
-          response-headers (atom (cond-> {cid/HEADER-CORRELATION-ID (cid/get-correlation-id)}
+          response-headers (atom (cond-> {}
                                          waiter-debug-enabled? (assoc "X-Waiter-Router-Id" router-id)))
           add-debug-header-into-response! (fn [name value]
                                            (when waiter-debug-enabled?

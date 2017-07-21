@@ -17,26 +17,26 @@
            (org.apache.log4j Appender Category ConsoleAppender EnhancedPatternLayout Logger PatternLayout Priority SimpleLayout)
            org.apache.log4j.spi.LoggingEvent))
 
-(deftest test-request->correlation-id
-  (let [test-cases [{:name "request->correlation-id:nil-input",
+(deftest test-http-object->correlation-id
+  (let [test-cases [{:name "http-object->correlation-id:nil-input",
                      :input nil,
                      :expected nil}
-                    {:name "request->correlation-id:nil-headers",
+                    {:name "http-object->correlation-id:nil-headers",
                      :input {:headers nil},
                      :expected nil}
-                    {:name "request->correlation-id:missing-cid-headers",
+                    {:name "http-object->correlation-id:missing-cid-headers",
                      :input {:headers {:foo :bar}},
                      :expected nil}
-                    {:name "request->correlation-id:invalid-case-cid-headers",
+                    {:name "http-object->correlation-id:invalid-case-cid-headers",
                      :input {:headers {:foo :bar, (str/upper-case HEADER-CORRELATION-ID) "baz"}},
                      :expected nil}
-                    {:name "request->correlation-id:valid-cid-headers",
+                    {:name "http-object->correlation-id:valid-cid-headers",
                      :input {:headers {:foo :bar, (str/lower-case HEADER-CORRELATION-ID) "baz"}},
                      :expected "baz"}]]
     (doseq [test-case test-cases]
       (let [{:keys [name input expected]} test-case]
         (testing (str "Test " name)
-          (let [actual-value (request->correlation-id input)]
+          (let [actual-value (http-object->correlation-id input)]
             (is (= expected actual-value))))))))
 
 (deftest test-ensure-correlation-id
@@ -50,7 +50,7 @@
       (let [{:keys [name input]} test-case]
         (testing (str "Test " name)
           (let [modified-request (ensure-correlation-id input #(str (UUID/randomUUID)))]
-            (is (not-empty (request->correlation-id modified-request)))))))))
+            (is (not-empty (http-object->correlation-id modified-request)))))))))
 
 (deftest test-with-correlation-id
   (testing "Test with-correlation-id"

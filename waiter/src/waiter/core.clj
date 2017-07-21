@@ -112,45 +112,53 @@
   "Creates the handler for processing http requests."
   [waiter-request?-fn {:keys [cors-preflight-handler-fn process-request-fn] :as handlers}]
   (fn http-handler [{:keys [uri] :as request}]
-    (let [request (cid/ensure-correlation-id request utils/unique-identifier)]
-      (cid/with-correlation-id
-        (cid/request->correlation-id request)
-        (log/info "request received:"
-                  (-> (dissoc request :body :ctrl :server-name :server-port :servlet-request :ssl-client-cert)
-                      (update-in [:headers] headers/truncate-header-values)))
-        (cond
-          (cors/preflight-request? request)
-          (do
-            (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
-            (cors-preflight-handler-fn request))
+    (cond
+      (cors/preflight-request? request)
+      (do
+        (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
+        (cors-preflight-handler-fn request))
 
-          (not (waiter-request?-fn request))
-          (do
-            (counters/inc! (metrics/waiter-counter "requests" "service-request"))
-            (process-request-fn request))
+      (not (waiter-request?-fn request))
+      (do
+        (counters/inc! (metrics/waiter-counter "requests" "service-request"))
+        (process-request-fn request))
 
-          :else
-          (let [{:keys [handler route-params]} (routes-mapper request)
-                request (assoc request :route-params (or route-params {}))
-                handler-fn (get handlers handler process-request-fn)]
-            (when (and (not= handler :process-request-fn) (= handler-fn process-request-fn))
-              (log/warn "using default handler as no mapping found for" handler "at uri" uri))
-            (when handler
-              (counters/inc! (metrics/waiter-counter "requests" (name handler))))
-            (handler-fn request)))))))
+      :else
+      (let [{:keys [handler route-params]} (routes-mapper request)
+            request (assoc request :route-params (or route-params {}))
+            handler-fn (get handlers handler process-request-fn)]
+        (when (and (not= handler :process-request-fn) (= handler-fn process-request-fn))
+          (log/warn "using default handler as no mapping found for" handler "at uri" uri))
+        (when handler
+          (counters/inc! (metrics/waiter-counter "requests" (name handler))))
+        (handler-fn request)))))
 
 (defn websocket-handler-factory
-  "Creates the handler for prcessing websocket requests.
+  "Creates the handler for processing websocket requests.
    Websockets are currently used for inter-router metrics syncing."
   [{:keys [default-websocket-handler-fn router-metrics-handler-fn]}]
   (fn websocket-handler [{:keys [headers uri] :as request}]
-    (let [request (cid/ensure-correlation-id request utils/unique-identifier)]
+    (case uri
+      "/waiter-router-metrics" (router-metrics-handler-fn request)
+      (default-websocket-handler-fn request))))
+
+(defn correlation-id-middleware
+  "Attaches an x-cid header to the request and response if one is not already provided."
+  [handler]
+  (fn correlation-id-middleware-fn [request]
+    (let [request (cid/ensure-correlation-id request utils/unique-identifier)
+          request-cid (cid/http-object->correlation-id request)]
       (cid/with-correlation-id
-        (cid/request->correlation-id request)
-        (log/info "received websocket request at" uri "with headers:" headers)
-        (case uri
-          "/waiter-router-metrics" (router-metrics-handler-fn request)
-          (default-websocket-handler-fn request))))))
+        request-cid
+        (log/info "request received:"
+                  (-> (dissoc request :body :ctrl :server-name :server-port :servlet-request :ssl-client-cert)
+                      (update-in [:headers] headers/truncate-header-values)))
+        (let [response (handler request)
+              get-request-cid (fn get-request-cid [] request-cid)]
+          (if (map? response)
+            (cid/ensure-correlation-id response get-request-cid)
+            (async/go (cid/ensure-correlation-id (async/<! response) get-request-cid))))))))
+
 
 (defn- make-blacklist-request
   [make-inter-router-requests-fn blacklist-period-ms dest-router-id dest-endpoint {:keys [id] :as instance} reason]
