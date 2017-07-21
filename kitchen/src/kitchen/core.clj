@@ -487,7 +487,7 @@
                 request)))))
 
 (defn correlation-id-middleware
-  "Attaches a x-cid header to the request if one is not already provided.
+  "Attaches an x-cid header to the request and response if one is not already provided.
    It also generates a unique x-kitchen-request-id header for the request."
   [handler]
   (fn correlation-id-middleware-fn [request]
@@ -496,7 +496,12 @@
               (update-in [:headers "x-cid"] (fn [cid] (or cid (str (UUID/randomUUID)))))
               (assoc-in [:headers "x-kitchen-request-id"] (str (UUID/randomUUID))))]
       (printlog request (str "request received uri:" uri ", method" request-method ", headers:" (into (sorted-map) headers)))
-      (handler request))))
+      (let [response (handler request)
+            add-cid-into-response (fn add-cid-into-response [response]
+                                    (update-in response [:headers "x-cid"] (fn [cid] (or cid (get-in request [:headers "x-cid"])))))]
+        (if (map? response)
+          (add-cid-into-response response)
+          (async/go (add-cid-into-response (async/<! response))))))))
 
 (defn -main
   [& args]
