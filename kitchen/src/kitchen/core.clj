@@ -490,18 +490,19 @@
   "Attaches an x-cid header to the request and response if one is not already provided.
    It also generates a unique x-kitchen-request-id header for the request."
   [handler]
-  (fn correlation-id-middleware-fn [request]
-    (let [{:keys [headers request-method uri] :as request}
-          (-> request
-              (update-in [:headers "x-cid"] (fn [cid] (or cid (str (UUID/randomUUID)))))
-              (assoc-in [:headers "x-kitchen-request-id"] (str (UUID/randomUUID))))]
-      (printlog request (str "request received uri:" uri ", method" request-method ", headers:" (into (sorted-map) headers)))
-      (let [response (handler request)
-            add-cid-into-response (fn add-cid-into-response [response]
-                                    (update-in response [:headers "x-cid"] (fn [cid] (or cid (get-in request [:headers "x-cid"])))))]
-        (if (map? response)
-          (add-cid-into-response response)
-          (async/go (add-cid-into-response (async/<! response))))))))
+  (letfn [(add-cid-into-request [request]
+            (update-in request [:headers "x-cid"] (fn [cid] (or cid (str (UUID/randomUUID))))))
+          (add-request-id-into-request [request]
+            (assoc-in request [:headers "x-kitchen-request-id"] (str (UUID/randomUUID))))
+          (add-cid-into-response [request response]
+            (update-in response [:headers "x-cid"] (fn [cid] (or cid (get-in request [:headers "x-cid"])))))]
+    (fn correlation-id-middleware-fn [request]
+      (let [{:keys [headers request-method uri] :as request} (-> request add-cid-into-request add-request-id-into-request)]
+        (printlog request (str "request received uri:" uri ", method" request-method ", headers:" (into (sorted-map) headers)))
+        (let [response (handler request)]
+          (if (map? response)
+            (add-cid-into-response request response)
+            (async/go (add-cid-into-response request (async/<! response)))))))))
 
 (defn -main
   [& args]
