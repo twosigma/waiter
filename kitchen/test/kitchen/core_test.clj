@@ -245,13 +245,68 @@
       (is (= {:status 200} (handler {:uri "/handler", :headers {"authorization" auth}}))))))
 
 (deftest test-correlation-id-middleware
-  (let [handler (fn test-correlation-id-middleware-helper
-                  [{:keys [headers request-method]}]
-                  (is (get headers "x-cid"))
-                  (is (get headers "x-kitchen-request-id"))
-                  (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
-                  (is (= :get request-method))
-                  :test-correlation-id-middleware-helper)
-        request {:headers {"foo" "bar", "lorem" "ipsum"}
-                 :request-method :get}]
-    (is (= :test-correlation-id-middleware-helper ((correlation-id-middleware handler) request)))))
+  (testing "no cid in request/response"
+    (let [cid-atom (atom nil)
+          test-response {:body :test-correlation-id-middleware-helper}
+          handler (fn test-correlation-id-middleware-helper
+                    [{:keys [headers request-method]}]
+                    (is (get headers "x-cid"))
+                    (reset! cid-atom (get headers "x-cid"))
+                    (is (get headers "x-kitchen-request-id"))
+                    (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
+                    (is (= :get request-method))
+                    test-response)
+          request {:headers {"foo" "bar", "lorem" "ipsum"}
+                   :request-method :get}
+          actual-response ((correlation-id-middleware handler) request)]
+      (is (= (assoc-in test-response [:headers "x-cid"] @cid-atom)
+             actual-response))))
+
+  (testing "cid in request, but not in response"
+    (let [correlation-id (str "cid-" (rand-int 10000))
+          test-response {:body :test-correlation-id-middleware-helper}
+          handler (fn test-correlation-id-middleware-helper
+                    [{:keys [headers request-method]}]
+                    (is (= correlation-id (get headers "x-cid")))
+                    (is (get headers "x-kitchen-request-id"))
+                    (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
+                    (is (= :get request-method))
+                    test-response)
+          request {:headers {"foo" "bar", "lorem" "ipsum", "x-cid" correlation-id}
+                   :request-method :get}
+          actual-response ((correlation-id-middleware handler) request)]
+      (is (= (assoc-in test-response [:headers "x-cid"] correlation-id)
+             actual-response))))
+
+  (testing "cid in response, but not in request"
+    (let [correlation-id (str "cid-" (rand-int 10000))
+          test-response {:body :test-correlation-id-middleware-helper
+                         :headers {"humpty" "dumpty", "x-cid" correlation-id}}
+          handler (fn test-correlation-id-middleware-helper
+                    [{:keys [headers request-method]}]
+                    (is (not= (get headers "x-cid") correlation-id))
+                    (is (get headers "x-kitchen-request-id"))
+                    (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
+                    (is (= :get request-method))
+                    test-response)
+          request {:headers {"foo" "bar", "lorem" "ipsum"}
+                   :request-method :get}
+          actual-response ((correlation-id-middleware handler) request)]
+      (is (= test-response actual-response))))
+
+  (testing "different cid in request and response"
+    (let [correlation-id-1 (str "cid-req-" (rand-int 10000))
+          correlation-id-2 (str "cid-res-" (rand-int 10000))
+          test-response {:body :test-correlation-id-middleware-helper
+                         :headers {"humpty" "dumpty", "x-cid" correlation-id-2}}
+          handler (fn test-correlation-id-middleware-helper
+                    [{:keys [headers request-method]}]
+                    (is (= (get headers "x-cid") correlation-id-1))
+                    (is (get headers "x-kitchen-request-id"))
+                    (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
+                    (is (= :get request-method))
+                    test-response)
+          request {:headers {"foo" "bar", "lorem" "ipsum", "x-cid" correlation-id-1}
+                   :request-method :get}
+          actual-response ((correlation-id-middleware handler) request)]
+      (is (= test-response actual-response)))))
