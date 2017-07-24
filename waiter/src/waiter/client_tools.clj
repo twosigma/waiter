@@ -157,7 +157,10 @@
          (timing-using-waiter-url
            name#
            (binding [http-client (make-http-client)]
-             ~@body))))))
+             (try
+               ~@body
+               (finally
+                 (http/stop-client! http-client)))))))))
 
 (defn instance-id->service-id [^String instance-id]
   (when (str/index-of instance-id ".") (subs instance-id 0 (str/index-of instance-id "."))))
@@ -201,15 +204,14 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body cookies headers http-method-fn multipart
-            query-params verbose client form-params content-type]
+    {:keys [body client cookies content-type form-params headers http-method-fn multipart query-params verbose]
      :or {body nil
+          client http-client
           cookies []
           headers {}
           http-method-fn http/get
           query-params {}
-          verbose false
-          client http-client}}]
+          verbose false}}]
    (let [request-url (str
                        (when-not (str/starts-with? waiter-url HTTP-SCHEME) HTTP-SCHEME)
                        (strip-trailing-slash waiter-url)
