@@ -47,7 +47,7 @@
 (defn sync-token?
   "Returns whether the auth-user is allowed to sync the specified token."
   [entitlement-manager auth-user token token-metadata]
-  (authorized? entitlement-manager auth-user :sync (make-token-resource token token-metadata)))
+  (authorized? entitlement-manager auth-user :system (make-token-resource token token-metadata)))
 
 (defn run-as?
   "Helper function that checks the whether the auth-user has privileges to run as the run-as-user."

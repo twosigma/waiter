@@ -69,12 +69,12 @@
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
-    [clock synchronize-fn kv-store token owner & {:keys [erase] :or {erase false}}]
+    [clock synchronize-fn kv-store token owner & {:keys [excise] :or {excise false}}]
     (synchronize-fn
       token-lock
       (fn inner-delete-service-description-for-token []
-        (log/info "deleting service description for token:" token "erase mode:" erase)
-        (if erase
+        (log/info "deleting service description for token:" token "excise mode:" excise)
+        (if excise
           (kv/delete kv-store token)
           (when-let [existing-token-description (kv/fetch kv-store token)]
             (let [new-token-description (assoc existing-token-description
@@ -177,23 +177,23 @@
               (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)
                     authenticated-user (get req :authorization/user)
                     request-params (:query-params (ring-params/params-request req))
-                    erase (utils/request-flag request-params "erase")]
+                    excise (utils/request-flag request-params "excise")]
                 (if token
-                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :show-deleted erase)]
+                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :show-deleted excise)]
                     (if (and service-description-template (not-empty service-description-template))
                       (let [token-owner (get token-metadata "owner")]
-                        (if erase
+                        (if excise
                           (when-not (authz/sync-token? entitlement-manager authenticated-user token token-metadata)
-                            (throw (ex-info "Cannot erase token" {:metadata token-metadata :status 403 :user authenticated-user})))
+                            (throw (ex-info "Cannot excise token" {:metadata token-metadata :status 403 :user authenticated-user})))
                           (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
                             (throw (ex-info "User not allowed to delete token" {:owner token-owner :status 403 :user authenticated-user}))))
-                        (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :erase erase)
+                        (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :excise excise)
                         ; notify peers of token delete and ask them to refresh their caches
                         (make-peer-requests-fn "tokens/refresh"
                                                :body (json/write-str {:owner token-owner :token token})
                                                :method :post)
                         (utils/map->json-response (cond-> {:delete token :success true}
-                                                          erase (assoc :erase true))))
+                                                          excise (assoc :excise true))))
                       (utils/map->json-response {:message (str "token " token " does not exist!")} :status 404)))
                   (utils/map->json-response {:message "couldn't find token in request"} :status 400)))
               (catch Exception e
@@ -216,7 +216,8 @@
              (log/error e "token GET failed")
              (utils/exception->json-response e)))
     :post (try
-            (let [authenticated-user (get req :authorization/user)
+            (let [request-params (:query-params (ring-params/params-request req))
+                  authenticated-user (get req :authorization/user)
                   {:strs [token] :as new-token-description} (json/read-str (slurp (:body req)))
                   new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
                   {:strs [authentication permitted-user run-as-user] :as new-service-description-template}
@@ -246,10 +247,10 @@
                                   {:missing-parameters (->> sd/service-required-keys
                                                             (remove #(contains? new-service-description-template %1)) seq)
                                    :service-description new-service-description-template}))))
-              (when (= "sync" (get new-token-metadata "update-mode"))
+              (when (= "sync" (get request-params "update-mode"))
                 (when-not (authz/sync-token? entitlement-manager authenticated-user token new-token-metadata)
                   (throw (ex-info "Cannot sync token" {:status 403 :token-metadata new-token-metadata :user authenticated-user}))))
-              (when (not= "sync" (get new-token-metadata "update-mode"))
+              (when (not= "sync" (get request-params "update-mode"))
                 (when (and run-as-user (not= "*" run-as-user))
                   (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
                     (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user :run-as-user run-as-user :status 403}))))
@@ -260,8 +261,7 @@
                     (when-not (authz/run-as? entitlement-manager authenticated-user owner)
                       (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user :owner owner :status 403}))))))
               ; Store the token
-              (let [new-token-metadata (merge {"deleted" false
-                                               "last-update-time" (.getMillis ^DateTime (clock))
+              (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))
                                                "owner" owner}
                                               new-token-metadata)]
                 (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata))

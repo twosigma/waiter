@@ -785,11 +785,12 @@
 
 (defn post-token
   "Sends a POST request with the given token definition"
-  [waiter-url {:keys [token] :as token-map}]
+  [waiter-url {:keys [token] :as token-map} & {:keys [query-params] :or {query-params {}}}]
   (make-request waiter-url "/token"
                 :body (json/write-str token-map)
                 :headers {"host" token}
-                :http-method-fn http/post))
+                :http-method-fn http/post
+                :query-params query-params))
 
 (defn get-token
   "Gets the token with the given name"

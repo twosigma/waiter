@@ -59,7 +59,7 @@
         (update-and-validate-token-fn version2)
         (update-and-validate-token-fn version3)
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
+          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
 
 (defn- name-from-service-description [waiter-url service-id]
   (get-in (service-settings waiter-url service-id) [:service-description :name]))
@@ -89,10 +89,10 @@
          token-description# (parse-token-description body#)]
      (assert-response-status ~response 200)
      (is (contains? token-description# :last-update-time))
-     (is (= {:deleted ~deleted
-             :health-check-url "/probe"
-             :name ~service-id-prefix
-             :owner (retrieve-username)}
+     (is (= (cond-> {:health-check-url "/probe"
+                     :name ~service-id-prefix
+                     :owner (retrieve-username)}
+                    ~deleted (assoc :deleted ~deleted))
             (dissoc token-description# :last-update-time)))))
 
 (deftest ^:parallel ^:integration-fast test-token-create-delete
@@ -145,11 +145,11 @@
             (assert-response-status tokens-response 200)
             (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
 
-      (log/info "deleting the tokens in erase mode")
+      (log/info "deleting the tokens in excise mode")
       (doseq [token tokens-to-create]
-        (delete-token-and-assert waiter-url token :query-params {"erase" true}))
+        (delete-token-and-assert waiter-url token :query-params {"excise" true}))
 
-      (log/info "ensuring tokens can no longer be retrieved on each router with show-deleted parameter after erase")
+      (log/info "ensuring tokens can no longer be retrieved on each router with show-deleted parameter after excise")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
           (let [{:keys [body] :as response} (get-token router-url token
@@ -182,8 +182,7 @@
               (let [token-response (get-token waiter-url token)
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
-                (is (= {"deleted" false
-                        "health-check-url" "/probe"
+                (is (= {"health-check-url" "/probe"
                         "name" service-id-prefix
                         "owner" (retrieve-username)}
                        (dissoc response-body "last-update-time"))))
@@ -251,9 +250,9 @@
                     (str headers))
                 (delete-service waiter-url service-id))))
           (finally
-            (delete-token-and-assert waiter-url token :query-params {"erase" true})))))))
+            (delete-token-and-assert waiter-url token :query-params {"excise" true})))))))
 
-(deftest ^:parallel ^:integration-fast test-token-sync-invalid-run-as-user
+(deftest ^:parallel ^:integration-fast test-token-sync-unaffected-by-run-as-user-permissions
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)]
       (testing "token-syncing"
@@ -264,21 +263,20 @@
               (let [token-description {:health-check-url "/probe"
                                        :name service-id-prefix
                                        :owner (retrieve-username)
-                                       :run-as-user "foo-bar"
-                                       :token token
-                                       :update-mode "sync"}
-                    response (post-token waiter-url token-description)]
+                                       :run-as-user "i-do-not-exist-but-will-not-be-checked"
+                                       :token token}
+                    response (post-token waiter-url token-description :query-params {"update-mode" "sync"})]
                 (assert-response-status response 200))
               (log/info "created configuration using token" token)
               (let [token-response (get-token waiter-url token)
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
-                (is (= {"deleted" false, "health-check-url" "/probe", "name" service-id-prefix, "owner" (retrieve-username),
-                        "run-as-user" "foo-bar", "update-mode" "sync"}
+                (is (= {"health-check-url" "/probe", "name" service-id-prefix, "owner" (retrieve-username),
+                        "run-as-user" "i-do-not-exist-but-will-not-be-checked"}
                        (dissoc response-body "last-update-time"))))
               (log/info "asserted retrieval of configuration for token" token)
               (finally
-                (delete-token-and-assert waiter-url token :query-params {"erase" true})))))
+                (delete-token-and-assert waiter-url token :query-params {"excise" true})))))
 
         (testing "deleted-token"
           (let [token (create-token-name waiter-url service-id-prefix)]
@@ -289,9 +287,8 @@
                                        :name service-id-prefix
                                        :owner (retrieve-username)
                                        :run-as-user "foo-bar"
-                                       :token token
-                                       :update-mode "sync"}
-                    response (post-token waiter-url token-description)]
+                                       :token token}
+                    response (post-token waiter-url token-description :query-params {"update-mode" "sync"})]
                 (assert-response-status response 200))
               (log/info "created configuration using token" token)
               (let [{:keys [body] :as response} (get-token waiter-url token)]
@@ -301,11 +298,11 @@
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
                 (is (= {"deleted" true, "health-check-url" "/probe", "name" service-id-prefix, "owner" (retrieve-username),
-                        "run-as-user" "foo-bar", "update-mode" "sync"}
+                        "run-as-user" "foo-bar"}
                        (dissoc response-body "last-update-time"))))
               (log/info "asserted retrieval of configuration for token" token)
               (finally
-                (delete-token-and-assert waiter-url token :query-params {"erase" true})))))))))
+                (delete-token-and-assert waiter-url token :query-params {"excise" true})))))))))
 
 (deftest ^:parallel ^:integration-fast test-named-token
   (testing-using-waiter-url
@@ -352,7 +349,7 @@
               (str headers))
           (delete-service waiter-url service-id))
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
+          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
 
 (deftest ^:parallel ^:integration-fast test-star-run-as-user-token
   (testing-using-waiter-url
@@ -410,7 +407,7 @@
               (str headers))
           (delete-service waiter-url service-id))
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
+          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
 
 (deftest ^:parallel ^:integration-fast test-on-the-fly-to-token
   (testing-using-waiter-url
@@ -461,7 +458,7 @@
           {:keys [body]} (get-token waiter-url token)]
       (assert-response-status register-response 200)
       (is (= (:metadata service-desc) (get (json/read-str body) "metadata")))
-      (delete-token-and-assert waiter-url token :query-params {"erase" true})
+      (delete-token-and-assert waiter-url token :query-params {"excise" true})
       (delete-service waiter-url (:name service-desc)))))
 
 (deftest ^:parallel ^:integration-fast test-token-bad-metadata
@@ -495,7 +492,7 @@
       (is (= 200 (:status token-response)) (:body token-response))
       (is (= 200 status))
       (is (= {:BINARY binary} env) (str service-description))
-      (delete-token-and-assert waiter-url token :query-params {"erase" true})
+      (delete-token-and-assert waiter-url token :query-params {"excise" true})
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-token-invalid-environment-variables
@@ -527,7 +524,7 @@
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
             (is (nil? (get response-body :run-as-user)))
             (is (contains? response-body :last-update-time))
-            (is (= (assoc service-description :deleted false :owner (retrieve-username))
+            (is (= (assoc service-description :owner (retrieve-username))
                    (dissoc response-body :last-update-time)))))
 
         (testing "expecting redirect"
@@ -629,7 +626,7 @@
                         (delete-service waiter-url @service-id-atom)))))))))
 
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
+          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
 
 (deftest ^:parallel ^:integration-fast test-authentication-disabled-support
   (testing-using-waiter-url
@@ -649,7 +646,7 @@
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
             (is (contains? response-body :last-update-time))
-            (is (= (assoc service-description :authentication "disabled" :deleted false :owner current-user)
+            (is (= (assoc service-description :authentication "disabled" :owner current-user)
                    (dissoc response-body :last-update-time)))))
 
         (testing "successful request"
@@ -666,4 +663,4 @@
             (is (contains? headers "x-cid"))))
 
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"erase" true}))))))
+          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
