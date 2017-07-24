@@ -59,7 +59,7 @@
         (update-and-validate-token-fn version2)
         (update-and-validate-token-fn version3)
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
+          (delete-token-and-assert waiter-url token))))))
 
 (defn- name-from-service-description [waiter-url service-id]
   (get-in (service-settings waiter-url service-id) [:service-description :name]))
@@ -123,7 +123,7 @@
 
       (log/info "deleting the tokens (not erasing)")
       (doseq [token tokens-to-create]
-        (delete-token-and-assert waiter-url token))
+        (delete-token-and-assert waiter-url token :excise false))
 
       (log/info "ensuring tokens can no longer be retrieved on each router without include-deleted parameter")
       (doseq [token tokens-to-create]
@@ -147,7 +147,7 @@
 
       (log/info "deleting the tokens in excise mode")
       (doseq [token tokens-to-create]
-        (delete-token-and-assert waiter-url token :query-params {"excise" true}))
+        (delete-token-and-assert waiter-url token))
 
       (log/info "ensuring tokens can no longer be retrieved on each router with include-deleted parameter after excise")
       (doseq [token tokens-to-create]
@@ -250,7 +250,7 @@
                     (str headers))
                 (delete-service waiter-url service-id))))
           (finally
-            (delete-token-and-assert waiter-url token :query-params {"excise" true})))))))
+            (delete-token-and-assert waiter-url token)))))))
 
 (deftest ^:parallel ^:integration-fast test-token-sync-unaffected-by-run-as-user-permissions
   (testing-using-waiter-url
@@ -276,7 +276,7 @@
                        (dissoc response-body "last-update-time"))))
               (log/info "asserted retrieval of configuration for token" token)
               (finally
-                (delete-token-and-assert waiter-url token :query-params {"excise" true})))))
+                (delete-token-and-assert waiter-url token)))))
 
         (testing "deleted-token"
           (let [token (create-token-name waiter-url service-id-prefix)]
@@ -302,7 +302,7 @@
                        (dissoc response-body "last-update-time"))))
               (log/info "asserted retrieval of configuration for token" token)
               (finally
-                (delete-token-and-assert waiter-url token :query-params {"excise" true})))))))))
+                (delete-token-and-assert waiter-url token)))))))))
 
 (deftest ^:parallel ^:integration-fast test-named-token
   (testing-using-waiter-url
@@ -349,7 +349,7 @@
               (str headers))
           (delete-service waiter-url service-id))
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
+          (delete-token-and-assert waiter-url token))))))
 
 (deftest ^:parallel ^:integration-fast test-star-run-as-user-token
   (testing-using-waiter-url
@@ -407,7 +407,7 @@
               (str headers))
           (delete-service waiter-url service-id))
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
+          (delete-token-and-assert waiter-url token))))))
 
 (deftest ^:parallel ^:integration-fast test-on-the-fly-to-token
   (testing-using-waiter-url
@@ -458,7 +458,7 @@
           {:keys [body]} (get-token waiter-url token)]
       (assert-response-status register-response 200)
       (is (= (:metadata service-desc) (get (json/read-str body) "metadata")))
-      (delete-token-and-assert waiter-url token :query-params {"excise" true})
+      (delete-token-and-assert waiter-url token)
       (delete-service waiter-url (:name service-desc)))))
 
 (deftest ^:parallel ^:integration-fast test-token-bad-metadata
@@ -492,7 +492,7 @@
       (is (= 200 (:status token-response)) (:body token-response))
       (is (= 200 status))
       (is (= {:BINARY binary} env) (str service-description))
-      (delete-token-and-assert waiter-url token :query-params {"excise" true})
+      (delete-token-and-assert waiter-url token)
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-token-invalid-environment-variables
@@ -626,7 +626,7 @@
                         (delete-service waiter-url @service-id-atom)))))))))
 
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
+          (delete-token-and-assert waiter-url token))))))
 
 (deftest ^:parallel ^:integration-fast test-authentication-disabled-support
   (testing-using-waiter-url
@@ -663,4 +663,4 @@
             (is (contains? headers "x-cid"))))
 
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
+          (delete-token-and-assert waiter-url token))))))

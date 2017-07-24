@@ -215,4 +215,4 @@
             (is (= (time/in-seconds grace-period) (service-id->grace-period waiter-url service-id))))
           (delete-service waiter-url service-id))
         (finally
-          (delete-token-and-assert waiter-url token :query-params {"excise" true}))))))
+          (delete-token-and-assert waiter-url token))))))
