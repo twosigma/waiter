@@ -1118,7 +1118,7 @@
           (is (empty? service-description-template-2))
           (is (empty? service-description-template))
           (is (empty? token-metadata)))
-        (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token :show-deleted true)
+        (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token :include-deleted true)
               service-description-template-2 (token->service-description-template kv-store token)]
           (is (empty? service-description-template-2))
           (is (= (select-keys in-service-description service-description-keys) service-description-template))

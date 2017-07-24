@@ -179,11 +179,11 @@
                     request-params (:query-params (ring-params/params-request req))
                     excise (utils/request-flag request-params "excise")]
                 (if token
-                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :show-deleted excise)]
+                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :include-deleted excise)]
                     (if (and service-description-template (not-empty service-description-template))
                       (let [token-owner (get token-metadata "owner")]
                         (if excise
-                          (when-not (authz/sync-token? entitlement-manager authenticated-user token token-metadata)
+                          (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
                             (throw (ex-info "Cannot excise token" {:metadata token-metadata :status 403 :user authenticated-user})))
                           (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
                             (throw (ex-info "User not allowed to delete token" {:owner token-owner :status 403 :user authenticated-user}))))
@@ -201,9 +201,9 @@
                 (utils/exception->json-response e)))
     :get (try
            (let [request-params (:query-params (ring-params/params-request req))
-                 show-deleted (utils/request-flag request-params "show-deleted")
+                 include-deleted (utils/request-flag request-params "include-deleted")
                  {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)]
-             (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :show-deleted show-deleted)]
+             (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :include-deleted include-deleted)]
                (if (and service-description-template (not-empty service-description-template))
                  ;;NB do not ever return the password to the user
                  (do
@@ -247,10 +247,10 @@
                                   {:missing-parameters (->> sd/service-required-keys
                                                             (remove #(contains? new-service-description-template %1)) seq)
                                    :service-description new-service-description-template}))))
-              (when (= "sync" (get request-params "update-mode"))
-                (when-not (authz/sync-token? entitlement-manager authenticated-user token new-token-metadata)
+              (when (= "admin" (get request-params "update-mode"))
+                (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
                   (throw (ex-info "Cannot sync token" {:status 403 :token-metadata new-token-metadata :user authenticated-user}))))
-              (when (not= "sync" (get request-params "update-mode"))
+              (when (not= "admin" (get request-params "update-mode"))
                 (when (and run-as-user (not= "*" run-as-user))
                   (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
                     (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user :run-as-user run-as-user :status 403}))))

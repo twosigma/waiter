@@ -125,7 +125,7 @@
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token))
 
-      (log/info "ensuring tokens can no longer be retrieved on each router without show-deleted parameter")
+      (log/info "ensuring tokens can no longer be retrieved on each router without include-deleted parameter")
       (doseq [token tokens-to-create]
         (doseq [[router-id router-url] (routers waiter-url)]
           (let [router-state (router-state router-url :cookies cookies)
@@ -138,7 +138,7 @@
             (is (str/includes? (str body) "couldn't find token") (str body)))
           (let [response (get-token router-url token
                                     :cookies cookies
-                                    :query-params {"show-deleted" true})]
+                                    :query-params {"include-deleted" true})]
             (assert-get-token-response-200 response service-id-prefix true))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
@@ -149,12 +149,12 @@
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token :query-params {"excise" true}))
 
-      (log/info "ensuring tokens can no longer be retrieved on each router with show-deleted parameter after excise")
+      (log/info "ensuring tokens can no longer be retrieved on each router with include-deleted parameter after excise")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
           (let [{:keys [body] :as response} (get-token router-url token
                                                        :cookies cookies
-                                                       :query-params {"show-deleted" true})]
+                                                       :query-params {"include-deleted" true})]
             (assert-response-status response 404)
             (is (str/includes? (str body) "couldn't find token") (str body))))))))
 
@@ -265,7 +265,7 @@
                                        :owner (retrieve-username)
                                        :run-as-user "i-do-not-exist-but-will-not-be-checked"
                                        :token token}
-                    response (post-token waiter-url token-description :query-params {"update-mode" "sync"})]
+                    response (post-token waiter-url token-description :query-params {"update-mode" "admin"})]
                 (assert-response-status response 200))
               (log/info "created configuration using token" token)
               (let [token-response (get-token waiter-url token)
@@ -288,13 +288,13 @@
                                        :owner (retrieve-username)
                                        :run-as-user "foo-bar"
                                        :token token}
-                    response (post-token waiter-url token-description :query-params {"update-mode" "sync"})]
+                    response (post-token waiter-url token-description :query-params {"update-mode" "admin"})]
                 (assert-response-status response 200))
               (log/info "created configuration using token" token)
               (let [{:keys [body] :as response} (get-token waiter-url token)]
                 (assert-response-status response 404)
                 (is (str/includes? (str body) "couldn't find token") (str body)))
-              (let [token-response (get-token waiter-url token :query-params {"show-deleted" true})
+              (let [token-response (get-token waiter-url token :query-params {"include-deleted" true})
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
                 (is (= {"deleted" true, "health-check-url" "/probe", "name" service-id-prefix, "owner" (retrieve-username),

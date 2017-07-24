@@ -143,7 +143,7 @@
           (is (not (nil? (kv/fetch kv-store token))))
           (let [entitlement-manager (reify authz/EntitlementManager
                                       (authorized? [_ subject verb {:keys [user]}]
-                                        (is (and (= subject "tu1") (= :system verb) (= "tu2" user)))
+                                        (is (and (= subject "tu1") (= :admin verb) (= "tu2" user)))
                                         false))
                 {:keys [status body]}
                 (run-handle-token-request
@@ -337,7 +337,7 @@
               token "test-token-sync"
               entitlement-manager (reify authz/EntitlementManager
                                     (authorized? [_ subject verb {:keys [user]}]
-                                      (and (= subject test-user) (= :system verb) (= "user2" user))))
+                                      (and (= subject test-user) (= :admin verb) (= "user2" user))))
               service-description (clojure.walk/stringify-keys
                                     {:cmd "tc1", :cpus 1, :mem 200, :permitted-user "user1", :run-as-user "user1", :version "a1b2c3",
                                      :owner "user2", :token token})
@@ -346,7 +346,7 @@
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user test-user, :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))
-                 :query-params {"update-mode" "sync"}})]
+                 :query-params {"update-mode" "admin"}})]
           (is (= 200 status))
           (is (str/includes? body "Successfully created test-token"))
           (is (= (-> service-description
@@ -447,7 +447,7 @@
               token "test-token-sync"
               entitlement-manager (reify authz/EntitlementManager
                                     (authorized? [_ subject verb {:keys [user]}]
-                                      (and (= subject user) (= :system verb))))
+                                      (and (= subject user) (= :admin verb))))
               service-description (clojure.walk/stringify-keys
                                     {:cmd "tc1", :cpus 1, :mem 200, :permitted-user "user1", :run-as-user "user1", :version "a1b2c3",
                                      :owner "user2", :token token})
@@ -456,7 +456,7 @@
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post, :authorization/user test-user, :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))
-                 :query-params {"update-mode" "sync"}})]
+                 :query-params {"update-mode" "admin"}})]
           (is (= 403 status))
           (is (str/includes? body "Cannot sync token"))
           (is (nil? (kv/fetch kv-store token)))))
