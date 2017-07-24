@@ -227,7 +227,8 @@
       (log/error e "error in executing websocket request for test")
       (is false (str "websocket streaming iteration threw an error:" (.getMessage e))))))
 
-(deftest ^:parallel ^:integration-fast test-request-parallel-streaming
+; Marked explicit due to flaky failures
+(deftest ^:parallel ^:integration-fast ^:explicit test-request-parallel-streaming
   (testing-using-waiter-url
     (let [auth-cookie-value (auth-cookie waiter-url)
           _ (is auth-cookie-value)
