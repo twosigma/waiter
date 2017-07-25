@@ -9,11 +9,11 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.async-request-integration-test
-  (:require [clj-http.client :as http]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-202-response-without-location-header

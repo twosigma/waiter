@@ -9,8 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.new-app-test
-  (:require [clj-http.client :as http]
-            [clojure.data.json :as json]
+  (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]

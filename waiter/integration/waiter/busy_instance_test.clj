@@ -9,8 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.busy-instance-test
-  (:require [clj-http.client :as http]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
@@ -19,24 +18,20 @@
 
 (deftest ^:parallel ^:integration-slow test-busy-instance-not-reserved
   (testing-using-waiter-url
-    (let [url (str "http://" waiter-url "/endpoint")
-          req-headers (walk/stringify-keys
+    (let [req-headers (walk/stringify-keys
                         (merge (kitchen-request-headers)
                                {:x-waiter-name (rand-name)
                                 :x-waiter-debug true}))
-          make-request (fn []
-                         (log/info "making kitchen request")
-                         (http/get url {:headers (assoc req-headers :x-kitchen-delay-ms 4000)
-                                        :spnego-auth true}))]
+          make-request-fn (fn []
+                            (log/info "making kitchen request")
+                            (make-request waiter-url "/endpoint" :headers (assoc req-headers :x-kitchen-delay-ms 4000)))]
 
       ;; Make requests to get instances started and avoid shuffling among routers later
-      (parallelize-requests 8 10 make-request :verbose true)
+      (parallelize-requests 8 10 make-request-fn :verbose true)
 
       ;; Make a request that returns a 503
       (let [start-millis (System/currentTimeMillis)
-            {:keys [headers]} (http/get url {:headers (assoc req-headers "x-kitchen-act-busy" "true")
-                                             :spnego-auth true
-                                             :throw-exceptions false})
+            {:keys [headers]} (make-request waiter-url "/endpoint" :headers (assoc req-headers "x-kitchen-act-busy" "true"))
             router-id (get headers "X-Waiter-Router-Id")
             backend-id (get headers "X-Waiter-Backend-Id")
             blacklist-time-millis (get-in (waiter-settings waiter-url) [:blacklist-config :blacklist-backoff-base-time-ms])]
@@ -47,10 +42,10 @@
         (let [results (parallelize-requests
                         2
                         30
-                        #(let [{:keys [headers]} (http/get url {:headers req-headers :spnego-auth true})]
+                        #(let [{:keys [headers]} (make-request waiter-url "/endpoint" :headers req-headers)]
                            (when (-> (System/currentTimeMillis) (- start-millis) (< (- blacklist-time-millis 1000)))
-                             (and (= backend-id (get headers "X-Waiter-Backend-Id"))
-                                  (= router-id (get headers "X-Waiter-Router-Id")))))
+                             (and (= backend-id (get headers "x-waiter-backend-id"))
+                                  (= router-id (get headers "x-waiter-router-id")))))
                         :verbose true)]
           (is (every? #(not %) results))))
 

@@ -9,8 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.client-tools
-  (:require [clj-http.client :as http]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.shell :as shell]
@@ -21,14 +20,21 @@
             [marathonclj.common :as mc]
             [marathonclj.rest.apps :as apps]
             [plumbing.core :as pc]
+            [qbits.jet.client.cookies :as cookies]
+            [qbits.jet.client.http :as http]
+            [waiter.auth.authentication :as authentication]
+            [waiter.auth.spnego :as spnego]
             [waiter.correlation-id :as cid]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
-  (:import (java.util.concurrent Callable Future Executors)
+  (:import (java.net URI)
+           (java.util.concurrent Callable Future Executors)
            (marathonclj.common Connection)
            (org.apache.http.client CookieStore)
-           (org.joda.time.format PeriodFormatterBuilder)
-           (org.joda.time Period)))
+           (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.util HttpCookieStore)
+           (org.joda.time Period)
+           (org.joda.time.format PeriodFormatterBuilder)))
 
 (def ^:const WAITER-PORT 9091)
 (def ^:const HTTP-SCHEME "http://")
@@ -95,6 +101,8 @@
 
 (def waiter-url "DUMMY-DEF-TO-KEEP-IDE-HAPPY-INSTEAD-WRAP-INSIDE-timing-using-waiter-url")
 
+(def ^:dynamic http-client nil)
+
 (defmacro using-waiter-url
   [& body]
   `(let [~'waiter-url (retrieve-waiter-url)]
@@ -132,13 +140,27 @@
   `(using-waiter-url
      (time-it ~name ~@body)))
 
+(defn make-http-client
+  "Instantiates and returns a new HttpClient with a cookie store"
+  []
+  (let [client (http/client)
+        cookie-store (HttpCookieStore.)
+        _ (.setCookieStore ^HttpClient client cookie-store)]
+    client))
+
 (defmacro testing-using-waiter-url
   [& body]
   `(let [name# (str (or (:name (meta (first *testing-vars*))) "test-unknown-name"))]
      (testing name#
        (cid/with-correlation-id
          name#
-         (timing-using-waiter-url name# ~@body)))))
+         (timing-using-waiter-url
+           name#
+           (binding [http-client (make-http-client)]
+             (try
+               ~@body
+               (finally
+                 (http/stop-client! http-client)))))))))
 
 (defn instance-id->service-id [^String instance-id]
   (when (str/index-of instance-id ".") (subs instance-id 0 (str/index-of instance-id "."))))
@@ -146,9 +168,9 @@
 (defn make-request-with-debug-info [request-headers request-fn]
   (let [response (request-fn (assoc request-headers :x-waiter-debug "true"))
         response-headers (or (:headers response) {})
-        instance-id (str (get response-headers "X-Waiter-Backend-Id"))
+        instance-id (str (get response-headers "x-waiter-backend-id"))
         service-id (instance-id->service-id instance-id)
-        router-id (str (get-in response [:headers "X-Waiter-Router-Id"]))]
+        router-id (str (get-in response [:headers "x-waiter-router-id"]))]
     (assoc response
       :router-id router-id
       :instance-id instance-id
@@ -172,43 +194,56 @@
 (defn- add-cookies
   [waiter-url cookies ^CookieStore cs]
   {:pre [(not (str/blank? waiter-url))]}
-  (let [domain (let [port-index (str/index-of waiter-url ":")]
-                 (cond-> waiter-url (pos? port-index) (subs 0 port-index)))]
-    (doseq [cookie cookies]
-      (->> (doto (clj-http.cookies/to-basic-client-cookie cookie)
-             (.setDomain domain))
-           (.addCookie cs)))))
+  (doseq [cookie cookies]
+    (cookies/add-cookie! cs (str HTTP-SCHEME waiter-url) cookie)))
+
+(defn strip-trailing-slash
+  "If s ends with /, returns s with the / stripped"
+  [s]
+  (cond-> s (str/ends-with? s "/") (subs 0 (- (count s) 1))))
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body cookies decompress-body headers http-method-fn multipart query-params verbose]
-     :or {body "", cookies {}, decompress-body false, headers {}, http-method-fn http/get, query-params {}, verbose false}}]
-   (let [cs (clj-http.cookies/cookie-store)
-         _ (add-cookies waiter-url cookies cs)
-         request-url (str HTTP-SCHEME waiter-url path)
+    {:keys [body client cookies content-type form-params headers http-method-fn multipart query-params verbose]
+     :or {body nil
+          client http-client
+          cookies []
+          headers {}
+          http-method-fn http/get
+          query-params {}
+          verbose false}}]
+   (let [request-url (str
+                       (when-not (str/starts-with? waiter-url HTTP-SCHEME) HTTP-SCHEME)
+                       (strip-trailing-slash waiter-url)
+                       path)
          request-headers (walk/stringify-keys (ensure-cid-in-headers headers))]
      (try
        (when verbose
          (log/info "request url:" request-url)
          (log/info "request headers:" (into (sorted-map) request-headers)))
-       (let [{:keys [body headers status]}
-             (http-method-fn request-url
-                             (cond-> {:spnego-auth use-spnego
-                                      :throw-exceptions false
-                                      :decompress-body decompress-body
-                                      :follow-redirects false
-                                      :headers request-headers
-                                      :cookie-store cs
-                                      :query-params query-params
-                                      :body body}
-                                     multipart (assoc :multipart multipart)))]
+       (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
+             add-spnego-auth (and use-spnego (not waiter-auth-cookie))
+             {:keys [body headers status]}
+             (async/<!! (http-method-fn
+                          client
+                          request-url
+                          (cond-> {:follow-redirects? false
+                                   :headers request-headers
+                                   :query-string query-params
+                                   :body body}
+                                  multipart (assoc :multipart multipart)
+                                  add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                                  form-params (assoc :form-params form-params)
+                                  content-type (assoc :content-type content-type)
+                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
+             response-body (if body (async/<!! body) nil)]
          (when verbose
-           (log/info (get request-headers "x-cid") "response size:" (count (str body))))
+           (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:request-headers request-headers
-          :cookies (clj-http.cookies/get-cookies cs)
+          :cookies (cookies/get-cookies (.getCookieStore client))
           :status status
           :headers headers
-          :body body})
+          :body response-body})
        (catch Exception e
          (when verbose
            (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
@@ -220,8 +255,10 @@
   `(let [response-cid# (get-in ~response [:headers "x-cid"] "unknown")
          actual-status# (:status ~response)
          response-body# (:body ~response)
+         response-error# (:error ~response)
          assertion-message# (str "[CID=" response-cid# "] Expected status: " ~expected-status
-                                 ", actual: " actual-status# "\r\n Body:" response-body#)]
+                                 ", actual: " actual-status# "\r\n Body:" response-body#
+                                 (when response-error# (str "\r\n Error: " response-error#)))]
      (when (not= ~expected-status actual-status#)
        (log/error assertion-message#))
      (is (= ~expected-status actual-status#) assertion-message#)))
@@ -253,9 +290,12 @@
 (defn make-light-request
   [waiter-url custom-headers &
    {:keys [cookies path http-method-fn body debug]
-    :or {cookies {}, path "/endpoint", http-method-fn http/post, body nil, debug true}}]
-  (let [url (str "http://" waiter-url path)
-        headers (cond->
+    :or {cookies {}
+         path "/endpoint"
+         http-method-fn http/post
+         body nil
+         debug true}}]
+  (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
                        :x-waiter-mem 256
                        :x-waiter-health-check-url "/status"
@@ -263,18 +303,12 @@
                       (merge custom-headers)
                       (ensure-cid-in-headers)
                       (walk/stringify-keys))
-                  debug (assoc :x-waiter-debug true))
-        _ (when (not (contains? headers "x-waiter-name"))
-            (log/warn "No x-waiter-name header present:" headers))
-        cs (clj-http.cookies/cookie-store)
-        _ (add-cookies waiter-url cookies cs)
-        response (http-method-fn url {:headers headers
-                                      :cookie-store cs
-                                      :throw-exceptions false
-                                      :spnego-auth use-spnego
-                                      :body body})]
-    (assoc response :cookies (clj-http.cookies/get-cookies cs)
-                    :request-headers headers)))
+                  debug (assoc :x-waiter-debug true))]
+    (make-request waiter-url path
+                  :body body
+                  :cookies cookies
+                  :headers headers
+                  :http-method-fn http-method-fn)))
 
 (defn make-shell-request
   [waiter-url custom-headers &
@@ -417,8 +451,8 @@
      (try
        ((utils/retry-strategy {:delay-multiplier 1.2, :inital-delay-ms 250, :max-retries limit})
          (fn []
-           (let [app-delete-url (str HTTP-SCHEME waiter-url "/apps/" service-id "?force=true")
-                 delete-response (http/delete app-delete-url {:spnego-auth use-spnego, :throw-exceptions false})
+           (let [app-delete-path (str "/apps/" service-id "?force=true")
+                 delete-response (make-request waiter-url app-delete-path :http-method-fn http/delete)
                  delete-json (json/read-str (:body delete-response))
                  delete-success (true? (get delete-json "success"))
                  no-such-service (= "no-such-service-exists" (get delete-json "result"))]
@@ -481,20 +515,22 @@
                      (> target-count 60) 3
                      :else 2)
         checkpoints (set (map #(int (/ (* % target-count) num-groups)) (range 1 num-groups)))
+        client http-client
         tasks (map (fn [_]
                      (retrieve-task
-                       (loop [iter-id 1
-                              result []]
-                         (dosync (alter start-counter inc))
-                         (let [loop-result (f)
-                               result' (conj result loop-result)]
-                           (dosync
-                             (alter finish-counter inc)
-                             (when (contains? checkpoints @finish-counter) (print-state-fn)))
-                           (Thread/sleep 100)
-                           (if (or (>= iter-id niters) (canceled?))
-                             result'
-                             (recur (inc iter-id) result'))))))
+                       (binding [http-client client]
+                         (loop [iter-id 1
+                                result []]
+                           (dosync (alter start-counter inc))
+                           (let [loop-result (f)
+                                 result' (conj result loop-result)]
+                             (dosync
+                               (alter finish-counter inc)
+                               (when (contains? checkpoints @finish-counter) (print-state-fn)))
+                             (Thread/sleep 100)
+                             (if (or (>= iter-id niters) (canceled?))
+                               result'
+                               (recur (inc iter-id) result')))))))
                    (range nthreads))
         futures (loop [futures []
                        [task & remaining-tasks] tasks]
@@ -511,21 +547,17 @@
 
 (defn rand-name
   ([]
-    (let [service-name (str (or (:name (meta (first *testing-vars*))) "test-unknown-name"))]
-      (rand-name service-name)))
+   (let [service-name (str (or (:name (meta (first *testing-vars*))) "test-unknown-name"))]
+     (rand-name service-name)))
   ([service-name]
-    (let [username (System/getProperty "user.name")
-          test-prefix (System/getenv "WAITER_TEST_PREFIX")]
-      (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
+   (let [username (System/getProperty "user.name")
+         test-prefix (System/getenv "WAITER_TEST_PREFIX")]
+     (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
 
 (defn delete-token-and-assert
   [waiter-url token]
   (log/info "deleting token" token)
-  (let [response (http/delete (str HTTP-SCHEME waiter-url "/token")
-                              {:headers {"host" token}
-                               :throw-exceptions false
-                               :spnego-auth use-spnego
-                               :body ""})]
+  (let [response (make-request waiter-url "/token" :headers {"host" token} :http-method-fn http/delete)]
     (assert-response-status response 200)))
 
 (defn wait-for
@@ -646,15 +678,7 @@
 (defn auth-cookie
   "Retrieves and returns the value of the x-waiter-auth cookie"
   [waiter-url]
-  (get-in (all-cookies waiter-url) ["x-waiter-auth" :value]))
-
-(defn time-request
-  "Logs and returns the elapsed time to make a request"
-  [url path headers cookies]
-  (let [elapsed-time-ms (elapsed-time-ms
-                          (make-request url path :http-method-fn http/post :headers headers :cookies cookies))]
-    (log/debug "Request elapsed time:" elapsed-time-ms)
-    elapsed-time-ms))
+  (:value (first (filter #(= "x-waiter-auth" (:name %)) (all-cookies waiter-url)))))
 
 (defn statsd-state
   "Fetches and returns the statsd state for a specific router-id"
@@ -692,10 +716,10 @@
   (let [settings (waiter-settings waiter-url)
         mesos-slave-port (get-in settings [:scheduler-config :mesos-slave-port])
         slave-directory (get-in settings [:scheduler-config :slave-directory])]
-    (cond-> ["X-Waiter-Backend-Id" "X-Waiter-Backend-Host" "X-Waiter-Backend-Port" "X-Waiter-Backend-Proto"
-             "X-Waiter-Backend-Response-ns" "X-Waiter-Get-Available-Instance-ns" "X-Waiter-Router-Id"]
+    (cond-> ["x-waiter-backend-id" "x-waiter-backend-host" "x-waiter-backend-port" "x-waiter-backend-proto"
+             "x-waiter-backend-response-ns" "x-waiter-get-available-instance-ns" "x-waiter-router-id"]
             (and mesos-slave-port slave-directory)
-            (concat ["X-Waiter-Backend-Directory" "X-Waiter-Backend-Log-Url"]))))
+            (concat ["x-waiter-backend-directory" "x-waiter-backend-log-url"]))))
 
 (defn rand-router-url
   "Returns a random router url from the routers in the specified cluster"
@@ -741,8 +765,8 @@
   "Fetches from Marathon and returns the grace period in seconds for the given app"
   [waiter-url service-id]
   (let [marathon-url (marathon-url waiter-url)
-        app-info-url (str marathon-url "/v2/apps/" service-id)
-        app-info-response (http/get app-info-url {:spnego-auth use-spnego})
+        app-info-path (str "/v2/apps/" service-id)
+        app-info-response (make-request marathon-url app-info-path)
         app-info-map (walk/keywordize-keys (json/read-str (:body app-info-response)))]
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 
@@ -755,3 +779,19 @@
   "Returns true if Waiter supports querying for grace period"
   [waiter-url]
   (using-marathon? waiter-url))
+
+(defn post-token
+  "Sends a POST request with the given token definition"
+  [waiter-url {:keys [token] :as token-map}]
+  (make-request waiter-url "/token"
+                :http-method-fn http/post
+                :headers {"host" token}
+                :body (json/write-str token-map)))
+
+(defn get-token
+  "Gets the token with the given name"
+  [waiter-url token & {:keys [cookies] :or {cookies {}}}]
+  (let [request-headers (clojure.walk/stringify-keys {:host token})
+        {:keys [body] :as token-response} (make-request waiter-url "/token" :headers request-headers :cookies cookies)]
+    (log/debug "retrieved token" token ":" body)
+    token-response))

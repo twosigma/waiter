@@ -9,14 +9,14 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.request-timeout-test
-  (:require [clj-http.client :as http]
-            [clj-time.core :as time]
+  (:require [clj-time.core :as time]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all])
   (:import java.util.concurrent.CountDownLatch))
 
@@ -81,10 +81,10 @@
       (is (str/includes? response-body "Connection error while sending request to instance"))
       (is (str/includes? response-body "onIdleExpired"))
       (log/info "Response body check executed.")
-      (is (not (str/blank? (get response-headers "X-Waiter-Backend-Id"))))
-      (is (not (str/blank? (get response-headers "X-Waiter-Backend-Host"))))
-      (is (not (str/blank? (get response-headers "X-Waiter-Backend-Port"))))
-      (is (not (str/blank? (get response-headers "X-Waiter-Backend-Proto"))))
+      (is (not (str/blank? (get response-headers "x-waiter-backend-id"))))
+      (is (not (str/blank? (get response-headers "x-waiter-backend-host"))))
+      (is (not (str/blank? (get response-headers "x-waiter-backend-port"))))
+      (is (not (str/blank? (get response-headers "x-waiter-backend-proto"))))
       (is (not (str/blank? (get response-headers "x-cid"))))
       (log/info "Response headers check executed.")
       (delete-service waiter-url service-id))))
@@ -194,28 +194,21 @@
       (try
         (log/info "Creating token for" token)
         (let [{:keys [status body]}
-              (http/post (str HTTP-SCHEME waiter-url "/token")
-                         {:form-params {:cmd (kitchen-cmd (str "-p $PORT0 " (time/in-millis grace-period)))
-                                        :version "not-used"
-                                        :cpus 1
-                                        :mem 1024
-                                        :health-check-url "/status"
-                                        :permitted-user "*"
-                                        :token token
-                                        :name (str "test" token)
-                                        :grace-period-secs (time/in-seconds grace-period)
-                                        :cmd-type "shell"}
-                          :content-type :json
-                          :spnego-auth true
-                          :throw-exceptions false})]
+              (post-token waiter-url {:cmd (kitchen-cmd (str "-p $PORT0 " (time/in-millis grace-period)))
+                                      :version "not-used"
+                                      :cpus 1
+                                      :mem 1024
+                                      :health-check-url "/status"
+                                      :permitted-user "*"
+                                      :token token
+                                      :name (str "test" token)
+                                      :grace-period-secs (time/in-seconds grace-period)
+                                      :cmd-type "shell"})]
           (is (= 200 status) (str "Did not get a 200 response. " body)))
         (log/info "Making request for" token)
         (let [{:keys [status body service-id] :as response} (make-request-with-debug-info
                                                               {:x-waiter-token token}
-                                                              #(http/get (str HTTP-SCHEME waiter-url "/secrun")
-                                                                         {:headers %
-                                                                          :spnego-auth true
-                                                                          :throw-exceptions false}))]
+                                                              #(make-request waiter-url "/secrun" :headers %))]
           (is (= 200 status) (str "Did not get a 200 response. " body))
           (when (and (= 200 status) (can-query-for-grace-period? waiter-url))
             (log/info "Verifying app grace period for" token)
