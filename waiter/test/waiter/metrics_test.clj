@@ -381,8 +381,9 @@
         read-state-fn (fn [_] @state-store)
         write-state-fn (fn [_ state] (reset! state-store state))
         deleted-services-atom (atom #{})
-        available-services-atom (atom #{"service-remove0-1", "service-keep-2", "service-keep-3", "service-remove1-4"})
-        remove-target (atom "remove0")
+        available-services-atom (atom #{"service-remove0-1", "service-keep-2", "service-keep-3", "service-remove1-4",
+                                        "service-remove2-5-will-be-alive"})
+        remove-target-atom (atom "remove0")
         service-id->metrics-chan-counter (atom 0)
         test-start-time (t/now)
         clock (fn [] (t/plus test-start-time (t/minutes @service-id->metrics-chan-counter)))
@@ -393,30 +394,38 @@
       (let [exit-flag-atom (atom false)
             await-fn (fn [counter-val]
                        (while (< @service-id->metrics-chan-counter counter-val)))]
-        (testing "zk-transient-metrics-gc"
+        (testing "transient-metrics-gc"
           (let [transient-metrics-timeout-ms 10
                 metrics-gc-interval-ms 1
-                result-chans (transient-metrics-gc service-gc-go-routine
+                scheduler-state-chan (async/chan)
+                result-chans (transient-metrics-gc scheduler-state-chan service-gc-go-routine
                                                    {:transient-metrics-timeout-ms transient-metrics-timeout-ms
                                                     :metrics-gc-interval-ms metrics-gc-interval-ms})
                 service-id->metrics-chan (:service-id->metrics-chan result-chans)]
             (async/thread
               (while (not @exit-flag-atom)
+                (let [available-service-ids (remove #(str/includes? % (str @remove-target-atom)) @available-services-atom)
+                      scheduler-messages [[:update-available-apps {:available-apps available-service-ids}]]]
+                  (async/>!! scheduler-state-chan scheduler-messages)))
+              (async/close! scheduler-state-chan))
+            (async/thread
+              (while (not @exit-flag-atom)
                 (try
                   (let [service->metrics (zipmap @available-services-atom
                                                  (map (fn [service-id]
-                                                        (if (str/includes? service-id @remove-target)
-                                                          {"total" 100, "outstanding" 0}
-                                                          {"total" 100, "outstanding" 11}))
+                                                        (if (str/includes? service-id "remove")
+                                                          {"outstanding" 0, "total" 100}
+                                                          {"outstanding" 11, "total" 100}))
                                                       @available-services-atom))]
                     (swap! service-id->metrics-chan-counter inc)
                     (async/>!! service-id->metrics-chan service->metrics)
                     (Thread/sleep 5))
-                  (catch Exception _ (comment "Ignore")))))
+                  (catch Exception _ (comment "Ignore"))))
+              (async/close! service-id->metrics-chan))
             (await-fn (+ 20 @service-id->metrics-chan-counter))
             (is (= 1 (count @deleted-services-atom)))
             (is (contains? @deleted-services-atom "service-remove0-1"))
-            (reset! remove-target "remove1")
+            (reset! remove-target-atom "remove1")
             (await-fn (+ 20 @service-id->metrics-chan-counter))
             (is (= 2 (count @deleted-services-atom)))
             (let [expected-deleted-services ["service-remove0-1" "service-remove1-4"]]

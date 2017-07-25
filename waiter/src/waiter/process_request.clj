@@ -25,6 +25,7 @@
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
+            [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
@@ -256,7 +257,8 @@
                     (headers/dissoc-hop-by-hop-headers)
                     ;; ensure a value (potentially nil) is available for content-type to prevent Jetty from generating a default content-type
                     ;; please see org.eclipse.jetty.client.HttpConnection#normalizeRequest(request) for the control-flow for content-type header
-                    (assoc "content-type" (get passthrough-headers "content-type")))
+                    (assoc "content-type" (get passthrough-headers "content-type"))
+                    (assoc "cookie" (auth/remove-auth-cookie (get passthrough-headers "cookie"))))
         waiter-debug-enabled? (utils/request->debug-enabled? request)]
     (try
       (let [content-length-str (get passthrough-headers "content-length")
@@ -386,7 +388,9 @@
   [response]
   (fn abort-http-request-callback [^Exception e]
     (let [ex (if (instance? IOException e) e (IOException. e))
-          aborted (.abort (:request response) ex)]
+          aborted (if-let [request (:request response)]
+                    (.abort request ex)
+                    (log/warn "unable to abort as request not found inside response!"))]
       (log/info "aborted backend request:" aborted))))
 
 (defn process-http-response
@@ -475,7 +479,7 @@
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
           ; update response headers eagerly to enable reporting these in case of failure
-          response-headers (atom (cond-> {cid/HEADER-CORRELATION-ID (cid/get-correlation-id)}
+          response-headers (atom (cond-> {}
                                          waiter-debug-enabled? (assoc "X-Waiter-Router-Id" router-id)))
           add-debug-header-into-response! (fn [name value]
                                            (when waiter-debug-enabled?

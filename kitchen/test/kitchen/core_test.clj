@@ -18,6 +18,16 @@
            (java.util Arrays)
            (org.apache.commons.codec.binary Base64)))
 
+(deftest bad-status-handler-test
+  (testing "bad status handler"
+    (testing "should return intended status code"
+      (let [{:keys [status]} (http-handler {:uri "/status-400"})]
+        (is (= 400 status))
+      (let [{:keys [status]} (http-handler {:uri "/status-401"})]
+        (is (= 401 status)))
+      (let [{:keys [status]} (http-handler {:uri "/status-402"})]
+        (is (= 402 status)))))))
+
 (deftest default-handler-test
   (testing "Default handler"
     (testing "should echo request body when x-kitchen-echo is present"
@@ -49,8 +59,8 @@
   (testing "pi handler"
     (testing "should return expected fields"
       (let [{:keys [body]} (http-handler {:uri "/pi"
-                                     :form-params {"iterations" "100"
-                                                   "threads" "2"}})
+                                          :form-params {"iterations" "100"
+                                                        "threads" "2"}})
             {:strs [iterations inside pi-estimate]} (json/read-str body)]
         (is (and iterations inside pi-estimate))))))
 
@@ -150,7 +160,10 @@
 (deftest test-websocket-handler
   (let [out (async/chan)
         in (async/chan)
-        request {:in in, :out out}]
+        request {:headers {"foo" "bar", "lorem" "ipsum"}
+                 :in in
+                 :out out
+                 :request-method :get}]
     (reset! async-requests {})
     (reset! pending-http-requests 0)
     (reset! pending-ws-requests 0)
@@ -167,8 +180,9 @@
     (testing "request-info"
       (async/>!! in "request-info")
       (let [response (-> (async/<!! out) json/read-str)]
-        (is (get-in response ["headers" "x-cid"]))
-        (is (get-in response ["headers" "x-kitchen-request-id"]))))
+        (is (= {"headers" {"foo" "bar", "lorem" "ipsum"}
+                "request-method" "get"}
+               response))))
 
     (testing "kitchen-state"
       (async/>!! in "kitchen-state")
@@ -187,7 +201,7 @@
       (async/>!! in "bytes-10000")
       (let [response-data (async/<!! out)
             expected-data (byte-array (take 10000 (cycle (range 103))))]
-        (is (Arrays/equals ^bytes expected-data ^bytes  response-data))))
+        (is (Arrays/equals ^bytes expected-data ^bytes response-data))))
 
     (testing "raw-bytes"
       (let [byte-data (byte-array (take 100000 (cycle (range 2121))))
@@ -195,7 +209,7 @@
             _ (async/>!! in byte-buffer)
             response-data (async/<!! out)]
         (is (not (identical? byte-data response-data)))
-        (is (Arrays/equals ^bytes byte-data ^bytes  response-data))))
+        (is (Arrays/equals ^bytes byte-data ^bytes response-data))))
 
     (testing "exit"
       (async/>!! in "exit")
@@ -205,7 +219,7 @@
     (async/close! in)
     (async/close! out)))
 
-(deftest basic-auth-test
+(deftest test-basic-auth
   (testing "no username and password"
     (let [handler (basic-auth-middleware nil nil (constantly {:status 200}))]
       (is (= {:status 200} (handler {:uri "/handler"})))))
@@ -216,6 +230,11 @@
     (testing "Do not authenticate /status"
       (is (= {:status 200} (handler {:uri "/status"}))))
 
+    (testing "Do not authenticate designated endpoints (/status-400, /status-401, /status-402)"
+      (is (= {:status 200} (handler {:uri "/status-400"})))
+      (is (= {:status 200} (handler {:uri "/status-401"})))
+      (is (= {:status 200} (handler {:uri "/status-402"}))))
+
     (testing "Return 401 on missing auth"
       (is (= 401 (:status (handler {:uri "/handler", :headers {}})))))
 
@@ -224,3 +243,70 @@
 
     (testing "Successful authentication"
       (is (= {:status 200} (handler {:uri "/handler", :headers {"authorization" auth}}))))))
+
+(deftest test-correlation-id-middleware
+  (testing "no cid in request/response"
+    (let [cid-atom (atom nil)
+          test-response {:body :test-correlation-id-middleware-helper}
+          handler (fn test-correlation-id-middleware-helper
+                    [{:keys [headers request-method]}]
+                    (is (get headers "x-cid"))
+                    (reset! cid-atom (get headers "x-cid"))
+                    (is (get headers "x-kitchen-request-id"))
+                    (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
+                    (is (= :get request-method))
+                    test-response)
+          request {:headers {"foo" "bar", "lorem" "ipsum"}
+                   :request-method :get}
+          actual-response ((correlation-id-middleware handler) request)]
+      (is (= (assoc-in test-response [:headers "x-cid"] @cid-atom)
+             actual-response))))
+
+  (testing "cid in request, but not in response"
+    (let [correlation-id (str "cid-" (rand-int 10000))
+          test-response {:body :test-correlation-id-middleware-helper}
+          handler (fn test-correlation-id-middleware-helper
+                    [{:keys [headers request-method]}]
+                    (is (= correlation-id (get headers "x-cid")))
+                    (is (get headers "x-kitchen-request-id"))
+                    (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
+                    (is (= :get request-method))
+                    test-response)
+          request {:headers {"foo" "bar", "lorem" "ipsum", "x-cid" correlation-id}
+                   :request-method :get}
+          actual-response ((correlation-id-middleware handler) request)]
+      (is (= (assoc-in test-response [:headers "x-cid"] correlation-id)
+             actual-response))))
+
+  (testing "cid in response, but not in request"
+    (let [correlation-id (str "cid-" (rand-int 10000))
+          test-response {:body :test-correlation-id-middleware-helper
+                         :headers {"humpty" "dumpty", "x-cid" correlation-id}}
+          handler (fn test-correlation-id-middleware-helper
+                    [{:keys [headers request-method]}]
+                    (is (not= (get headers "x-cid") correlation-id))
+                    (is (get headers "x-kitchen-request-id"))
+                    (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
+                    (is (= :get request-method))
+                    test-response)
+          request {:headers {"foo" "bar", "lorem" "ipsum"}
+                   :request-method :get}
+          actual-response ((correlation-id-middleware handler) request)]
+      (is (= test-response actual-response))))
+
+  (testing "different cid in request and response"
+    (let [correlation-id-1 (str "cid-req-" (rand-int 10000))
+          correlation-id-2 (str "cid-res-" (rand-int 10000))
+          test-response {:body :test-correlation-id-middleware-helper
+                         :headers {"humpty" "dumpty", "x-cid" correlation-id-2}}
+          handler (fn test-correlation-id-middleware-helper
+                    [{:keys [headers request-method]}]
+                    (is (= (get headers "x-cid") correlation-id-1))
+                    (is (get headers "x-kitchen-request-id"))
+                    (is (= {"foo" "bar", "lorem" "ipsum"} (select-keys headers ["foo" "lorem"])))
+                    (is (= :get request-method))
+                    test-response)
+          request {:headers {"foo" "bar", "lorem" "ipsum", "x-cid" correlation-id-1}
+                   :request-method :get}
+          actual-response ((correlation-id-middleware handler) request)]
+      (is (= test-response actual-response)))))

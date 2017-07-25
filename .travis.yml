@@ -20,10 +20,12 @@ env:
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test explicit'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-fast'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-slow'
+    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test explicit'
 matrix:
     fast_finish: true
     allow_failures:
       - env: TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test explicit'
+      - env: TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test explicit'
 cache:
   directories:
     - $HOME/.m2

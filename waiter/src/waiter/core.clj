@@ -30,6 +30,7 @@
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
+            [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.cors :as cors]
@@ -44,7 +45,6 @@
             [waiter.process-request :as pr]
             [waiter.scaling :as scaling]
             [waiter.scheduler :as scheduler]
-            [waiter.security :as sec]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.settings :as settings]
@@ -112,45 +112,53 @@
   "Creates the handler for processing http requests."
   [waiter-request?-fn {:keys [cors-preflight-handler-fn process-request-fn] :as handlers}]
   (fn http-handler [{:keys [uri] :as request}]
-    (let [request (cid/ensure-correlation-id request utils/unique-identifier)]
-      (cid/with-correlation-id
-        (cid/request->correlation-id request)
-        (log/info "request received:"
-                  (-> (dissoc request :body :ctrl :server-name :server-port :servlet-request :ssl-client-cert)
-                      (update-in [:headers] headers/truncate-header-values)))
-        (cond
-          (cors/preflight-request? request)
-          (do
-            (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
-            (cors-preflight-handler-fn request))
+    (cond
+      (cors/preflight-request? request)
+      (do
+        (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
+        (cors-preflight-handler-fn request))
 
-          (not (waiter-request?-fn request))
-          (do
-            (counters/inc! (metrics/waiter-counter "requests" "service-request"))
-            (process-request-fn request))
+      (not (waiter-request?-fn request))
+      (do
+        (counters/inc! (metrics/waiter-counter "requests" "service-request"))
+        (process-request-fn request))
 
-          :else
-          (let [{:keys [handler route-params]} (routes-mapper request)
-                request (assoc request :route-params (or route-params {}))
-                handler-fn (get handlers handler process-request-fn)]
-            (when (and (not= handler :process-request-fn) (= handler-fn process-request-fn))
-              (log/warn "using default handler as no mapping found for" handler "at uri" uri))
-            (when handler
-              (counters/inc! (metrics/waiter-counter "requests" (name handler))))
-            (handler-fn request)))))))
+      :else
+      (let [{:keys [handler route-params]} (routes-mapper request)
+            request (assoc request :route-params (or route-params {}))
+            handler-fn (get handlers handler process-request-fn)]
+        (when (and (not= handler :process-request-fn) (= handler-fn process-request-fn))
+          (log/warn "using default handler as no mapping found for" handler "at uri" uri))
+        (when handler
+          (counters/inc! (metrics/waiter-counter "requests" (name handler))))
+        (handler-fn request)))))
 
 (defn websocket-handler-factory
-  "Creates the handler for prcessing websocket requests.
+  "Creates the handler for processing websocket requests.
    Websockets are currently used for inter-router metrics syncing."
   [{:keys [default-websocket-handler-fn router-metrics-handler-fn]}]
   (fn websocket-handler [{:keys [headers uri] :as request}]
-    (let [request (cid/ensure-correlation-id request utils/unique-identifier)]
+    (case uri
+      "/waiter-router-metrics" (router-metrics-handler-fn request)
+      (default-websocket-handler-fn request))))
+
+(defn correlation-id-middleware
+  "Attaches an x-cid header to the request and response if one is not already provided."
+  [handler]
+  (fn correlation-id-middleware-fn [request]
+    (let [request (cid/ensure-correlation-id request utils/unique-identifier)
+          request-cid (cid/http-object->correlation-id request)]
       (cid/with-correlation-id
-        (cid/request->correlation-id request)
-        (log/info "received websocket request at" uri "with headers:" headers)
-        (case uri
-          "/waiter-router-metrics" (router-metrics-handler-fn request)
-          (default-websocket-handler-fn request))))))
+        request-cid
+        (log/info "request received:"
+                  (-> (dissoc request :body :ctrl :server-name :server-port :servlet-request :ssl-client-cert)
+                      (update-in [:headers] headers/truncate-header-values)))
+        (let [response (handler request)
+              get-request-cid (fn get-request-cid [] request-cid)]
+          (if (map? response)
+            (cid/ensure-correlation-id response get-request-cid)
+            (async/go (cid/ensure-correlation-id (async/<! response) get-request-cid))))))))
+
 
 (defn- make-blacklist-request
   [make-inter-router-requests-fn blacklist-period-ms dest-router-id dest-endpoint {:keys [id] :as instance} reason]
@@ -411,6 +419,8 @@
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
+   :entitlement-manager (pc/fnk [[:settings entitlement-config]]
+                          (utils/create-component entitlement-config))
    :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
                   (http-client-factory connection-timeout-ms))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
@@ -497,25 +507,24 @@
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
-                                           authorized?-fn]
+                                           [:state entitlement-manager]]
                                     (fn allowed-to-manage-service? [service-id auth-user]
                                       ; Returns whether the authenticated user is allowed to manage the service.
                                       ; Either she can run as the waiter user or the run-as-user of the service description."
-                                      (sd/can-manage-service? kv-store service-id authorized?-fn auth-user)))
-   :assoc-run-as-user-approved? (pc/fnk [[:curator kv-store]
-                                         [:settings consent-expiry-days]
-                                         [:state clock passwords]]
+                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user)))
+   :assoc-run-as-user-approved? (pc/fnk [[:settings consent-expiry-days]
+                                         [:state clock passwords]
+                                         token->token-description]
                                   (fn assoc-run-as-user-approved? [{:keys [headers]} service-id]
                                     (let [{:strs [cookie host]} headers
                                           token (when-not (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys)
                                                   (utils/authority->host host))
-                                          service-description-template (when token
-                                                                         (sd/token->service-description-template kv-store token))
+                                          {:keys [token-metadata]} (when token (token->token-description token))
                                           service-consent-cookie (cookie-support/cookie-value cookie "x-waiter-consent")
                                           decoded-cookie (when service-consent-cookie
                                                            (some #(cookie-support/decode-cookie-cached service-consent-cookie %1)
                                                                  passwords))]
-                                      (sd/assoc-run-as-user-approved? clock consent-expiry-days service-id token service-description-template decoded-cookie))))
+                                      (sd/assoc-run-as-user-approved? clock consent-expiry-days service-id token token-metadata decoded-cookie))))
    :async-request-terminate-fn (pc/fnk [[:state async-request-store-atom]]
                                  (fn async-request-terminate [request-id]
                                    (async-req/async-request-terminate async-request-store-atom request-id)))
@@ -534,14 +543,9 @@
                                                  (log/info "skipping authentication for request")
                                                  (request-handler request))
                                                (auth-handler request))))))
-   :authorized?-fn (pc/fnk [[:settings entitlement-config]]
-                     (let [entitlement-manager (utils/create-component entitlement-config)]
-                       (fn authorized? [auth-user action resource]
-                         (sec/authorized? entitlement-manager auth-user action resource))))
-   :can-run-as?-fn (pc/fnk [authorized?-fn]
+   :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
-                       (and auth-user run-as-user
-                            (authorized?-fn auth-user :run-as {:resource-type :credential, :user run-as-user}))))
+                       (authz/run-as? entitlement-manager auth-user run-as-user)))
    :crypt-helpers (pc/fnk [[:state passwords]]
                     (let [password (first passwords)]
                       {:bytes-decryptor (fn bytes-decryptor [data] (utils/compressed-bytes->map data password))
@@ -676,6 +680,9 @@
    :token->service-description-template (pc/fnk [[:curator kv-store]]
                                           (fn token->service-description-template [token]
                                             (sd/token->service-description-template kv-store token :error-on-missing false)))
+   :token->token-description (pc/fnk [[:curator kv-store]]
+                               (fn token->token-description [token]
+                                 (sd/token->token-description kv-store token)))
    :validate-service-description-fn (pc/fnk [[:state service-description-builder]]
                                       (fn validate-service-description [service-description]
                                         (sd/validate service-description-builder service-description {})))
@@ -714,14 +721,16 @@
                                 {}))
    :gc-for-transient-metrics (pc/fnk [[:routines router-metrics-helpers]
                                       [:settings metrics-config]
-                                      [:state clock]]
+                                      [:state clock]
+                                      scheduler-maintainer]
                                (let [state-store-atom (atom {})
                                      read-state-fn (fn read-state [_] @state-store-atom)
                                      write-state-fn (fn write-state [_ state] (reset! state-store-atom state))
                                      leader?-fn (constantly true)
                                      service-gc-go-routine (partial service-gc-go-routine read-state-fn write-state-fn leader?-fn clock)
-                                     {:keys [service-id->metrics-chan] :as metrics-gc-chans} (metrics/transient-metrics-gc service-gc-go-routine metrics-config)
-                                     {:keys [service-id->metrics-fn]} router-metrics-helpers]
+                                     scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
+                                     {:keys [service-id->metrics-fn]} router-metrics-helpers
+                                     {:keys [service-id->metrics-chan] :as metrics-gc-chans} (metrics/transient-metrics-gc scheduler-state-chan service-gc-go-routine metrics-config)]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
                                  metrics-gc-chans))
    :messages (pc/fnk [[:settings {messages nil}]]
@@ -847,12 +856,20 @@
                                     (fn inner-async-complete-handler-fn [src-router-id request]
                                       (handler/complete-async-handler async-request-terminate-fn src-router-id request))
                                     request)))
-   :async-result-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]]
+   :async-result-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]
+                                     handle-secure-request-fn]
                               (fn async-result-handler-fn [request]
-                                (handler/async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request)))
-   :async-status-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]]
+                                (handle-secure-request-fn
+                                  (fn inner-async-result-handler-fn [request]
+                                    (handler/async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))
+                                  request)))
+   :async-status-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]
+                                     handle-secure-request-fn]
                               (fn async-status-handler-fn [request]
-                                (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request)))
+                                (handle-secure-request-fn
+                                  (fn inner-async-status-handler-fn [request]
+                                    (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))
+                                  request)))
    :blacklist-instance-handler-fn (pc/fnk [[:state instance-rpc-chan]
                                            handle-inter-router-request-fn]
                                     (fn blacklist-instance-handler-fn [request]
@@ -1027,14 +1044,15 @@
                                   (handler/service-name-handler request request->descriptor-fn kv-store store-service-description-fn))
                                 request)))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
-                                     [:routines authorized?-fn prepend-waiter-url service-id->service-description-fn]
+                                     [:routines prepend-waiter-url service-id->service-description-fn]
+                                     [:state entitlement-manager]
                                      handle-secure-request-fn]
                               (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
                                 (fn service-list-handler-fn [request]
                                   (handle-secure-request-fn
                                     (fn inner-service-list-handler-fn [request]
-                                      (handler/list-services-handler state-chan prepend-waiter-url service-id->service-description-fn
-                                                                     authorized?-fn request))
+                                      (handler/list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                                                     service-id->service-description-fn request))
                                     request))))
    :service-override-handler-fn (pc/fnk [[:curator kv-store]
                                          [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
@@ -1139,20 +1157,20 @@
                                  (fn inner-waiter-auth-handler-fn [request]
                                    {:body (str (:authorization/user request)), :status 200})
                                  request)))
-   :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
+   :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->token-description]
                                                    [:settings consent-expiry-days]
                                                    [:state clock passwords]
                                                    handle-secure-request-fn]
                                             (let [password (first passwords)]
                                               (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
                                                         (cookie-support/add-encoded-cookie response password cookie-name value expiry-days))
-                                                      (consent-cookie-value [mode service-id token description]
-                                                        (sd/consent-cookie-value clock mode service-id token description))]
+                                                      (consent-cookie-value [mode service-id token token-metadata]
+                                                        (sd/consent-cookie-value clock mode service-id token token-metadata))]
                                                 (fn waiter-acknowledge-consent-handler-fn [request]
                                                   (handle-secure-request-fn
                                                     (fn inner-waiter-acknowledge-consent-handler-fn [request]
                                                       (handler/acknowledge-consent-handler
-                                                        token->service-description-template service-description->service-id
+                                                        token->token-description service-description->service-id
                                                         consent-cookie-value add-encoded-cookie consent-expiry-days request))
                                                     request)))))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]

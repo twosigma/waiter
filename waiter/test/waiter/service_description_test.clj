@@ -10,10 +10,12 @@
 ;;
 (ns waiter.service-description-test
   (:require [clj-time.core :as t]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [schema.core :as s]
+            [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :refer :all])
   (:import (clojure.lang ExceptionInfo)
@@ -1090,16 +1092,20 @@
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           service-id-prefix "test#"
           token "test-token"
-          service-description {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "token" token,
-                               "run-as-user" "tu1", "permitted-user" "tu2", "owner" "tu3"}
-          service-id (service-description->service-id service-id-prefix service-description)]
+          in-service-description {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "token" token,
+                                  "run-as-user" "tu1", "permitted-user" "tu2", "owner" "tu3"}
+          service-id (service-description->service-id service-id-prefix in-service-description)]
       ; prepare
-      (kv/store kv-store token service-description)
+      (kv/store kv-store token in-service-description)
       ; test
       (testing "test:token->service-description-1"
         (is (nil? (kv/fetch kv-store service-id))))
       (testing "test:token->service-description-2"
-        (is (= service-description (token->service-description-template kv-store token)))
+        (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token)
+              service-description-template-2 (token->service-description-template kv-store token)]
+          (is (= service-description-template service-description-template-2))
+          (is (= (select-keys in-service-description service-description-keys) service-description-template))
+          (is (= (select-keys in-service-description token-metadata-keys) token-metadata)))
         (is (= {} (token->service-description-template kv-store "invalid-token" :error-on-missing false)))
         (is (thrown? ExceptionInfo (token->service-description-template kv-store "invalid-token")))))))
 
@@ -1111,13 +1117,15 @@
         service-description {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1", "version" "a1b2c3"}
         service-description-1 (assoc service-description "run-as-user" username)
         service-description-2 (assoc service-description "run-as-user" (str username "2"))
-        authorized? (fn [subject _ {:keys [user]}] (= subject user))
+        entitlement-manager (reify authz/EntitlementManager
+                              (authorized? [_ subject _ {:keys [user]}]
+                                (= subject user)))
         validate-description (constantly true)]
     (testing "test-service-suspend-resume"
       (store-core kv-store service-id-1 service-description-1 validate-description)
       (store-core kv-store service-id-2 service-description-2 validate-description)
-      (is (can-manage-service? kv-store service-id-1 authorized? username))
-      (is (not (can-manage-service? kv-store service-id-2 authorized? username)))
+      (is (can-manage-service? kv-store entitlement-manager service-id-1 username))
+      (is (not (can-manage-service? kv-store entitlement-manager service-id-2 username)))
       (is (nil? (service-id->suspended-state kv-store service-id-1)))
       (is (nil? (service-id->suspended-state kv-store service-id-2)))
       (suspend-service kv-store service-id-1 username)
@@ -1138,22 +1146,23 @@
         service-description-1 {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1a", "version" "a1b2c3"}
         service-description-2 (assoc service-description-1 "run-as-user" username-1)
         service-description-3 (assoc service-description-1 "run-as-user" "tu2")
-        authorized? (fn [subject verb {:keys [user]}]
-                      (and (= verb :manage) (or (str/includes? user subject) (= admin-username subject))))
+        entitlement-manager (reify authz/EntitlementManager
+                              (authorized? [_ subject verb {:keys [user]}]
+                                (and (= verb :manage) (or (str/includes? user subject) (= admin-username subject)))))
         validate-description (constantly true)]
     (testing "test-service-suspend-resume"
       (store-core kv-store service-id-1 service-description-1 validate-description)
       (store-core kv-store service-id-2 service-description-2 validate-description)
       (store-core kv-store service-id-3 service-description-3 validate-description)
-      (is (can-manage-service? kv-store service-id-1 authorized? username-1))
-      (is (can-manage-service? kv-store service-id-2 authorized? username-1))
-      (is (not (can-manage-service? kv-store service-id-3 authorized? username-1)))
-      (is (not (can-manage-service? kv-store service-id-1 authorized? username-2)))
-      (is (not (can-manage-service? kv-store service-id-2 authorized? username-2)))
-      (is (can-manage-service? kv-store service-id-3 authorized? username-2))
-      (is (can-manage-service? kv-store service-id-1 authorized? admin-username))
-      (is (can-manage-service? kv-store service-id-2 authorized? admin-username))
-      (is (can-manage-service? kv-store service-id-3 authorized? admin-username)))))
+      (is (can-manage-service? kv-store entitlement-manager service-id-1 username-1))
+      (is (can-manage-service? kv-store entitlement-manager service-id-2 username-1))
+      (is (not (can-manage-service? kv-store entitlement-manager service-id-3 username-1)))
+      (is (not (can-manage-service? kv-store entitlement-manager service-id-1 username-2)))
+      (is (not (can-manage-service? kv-store entitlement-manager service-id-2 username-2)))
+      (is (can-manage-service? kv-store entitlement-manager service-id-3 username-2))
+      (is (can-manage-service? kv-store entitlement-manager service-id-1 admin-username))
+      (is (can-manage-service? kv-store entitlement-manager service-id-2 admin-username))
+      (is (can-manage-service? kv-store entitlement-manager service-id-3 admin-username)))))
 
 (deftest test-metadata-error-message
   (let [service-description {"cpus" 1, "mem" 1, "cmd" "exit 0", "version" "1", "run-as-user" "someone"}]
@@ -1356,3 +1365,7 @@
   (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "*"})))
   (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
   (is (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
+
+(deftest test-no-intersection-in-token-service-description-and-metadata
+  (is (empty? (set/intersection service-description-keys token-metadata-keys))
+      "We found common elements in service-description-keys and token-metadata-keys!"))

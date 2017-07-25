@@ -15,6 +15,7 @@
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [clojure.tools.logging :as log]
+            [metrics.jvm.core :as jvm-metrics]
             [plumbing.core :as pc]
             [plumbing.graph :as graph]
             [qbits.jet.server :as server]
@@ -67,9 +68,12 @@
    :http-server (pc/fnk [[:routines waiter-request?-fn websocket-request-authenticator]
                          [:settings host port]
                          handlers] ; Insist that all systems are running before we start server
-                  (server/run-jetty {:ring-handler (consume-request-stream (core/ring-handler-factory waiter-request?-fn handlers))
+                  (server/run-jetty {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
+                                                       core/correlation-id-middleware
+                                                       consume-request-stream)
                                      :websocket-acceptor websocket-request-authenticator
-                                     :websocket-handler (core/websocket-handler-factory handlers)
+                                     :websocket-handler (-> (core/websocket-handler-factory handlers)
+                                                            core/correlation-id-middleware)
                                      :host host
                                      :join? false
                                      :max-threads 250
@@ -117,6 +121,7 @@
     (reify Thread$UncaughtExceptionHandler
       (uncaughtException [_ thread throwable]
         (log/error throwable (str (.getName thread) " threw exception: " (.getMessage throwable))))))
+  (jvm-metrics/instrument-jvm)
   (let [{:keys [validate-config]} (parse-options args)]
     (if validate-config
       (validate-config-schema config)

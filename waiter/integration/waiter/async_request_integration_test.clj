@@ -9,11 +9,11 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.async-request-integration-test
-  (:require [clj-http.client :as http]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-202-response-without-location-header
@@ -187,21 +187,20 @@
           request-processing-time-ms 60000
           num-threads 20
           num-requests-to-delete 10
-          status-locations
-          (parallelize-requests
-            num-threads 1
-            (fn []
-              (log/info "making kitchen request")
-              (let [async-request-headers
-                    (assoc request-headers :x-kitchen-delay-ms (int (* (max 0.5 (double (rand))) request-processing-time-ms))
-                                           :x-kitchen-store-async-response-ms 600000)
-                    {:keys [headers] :as response}
-                    (make-kitchen-request waiter-url async-request-headers :http-method-fn http/get :body "" :path "/async/request")
-                    status-location (get (pc/map-keys str/lower-case headers) "location")]
-                (assert-response-status response 202)
-                (is (not (str/blank? status-location)))
-                status-location))
-            :verbose true)]
+          async-responses (parallelize-requests
+                            num-threads 1
+                            (fn []
+                              (log/info "making kitchen request")
+                              (let [async-request-headers
+                                    (assoc request-headers :x-kitchen-delay-ms (int (* (max 0.5 (double (rand))) request-processing-time-ms))
+                                                           :x-kitchen-store-async-response-ms 600000)]
+                                (make-kitchen-request waiter-url async-request-headers :http-method-fn http/get :body "" :path "/async/request")))
+                            :verbose true)
+          status-locations (for [{:keys [headers] :as response} async-responses]
+                             (let [status-location (get (pc/map-keys str/lower-case headers) "location")]
+                               (assert-response-status response 202)
+                               (is (not (str/blank? status-location)))
+                               status-location))]
 
       (testing "validate-pending-request-counters"
         (Thread/sleep inter-router-metrics-interval-ms) ;; allow routers to sync metrics
@@ -216,7 +215,10 @@
       (testing "delete-arbitrary-requests"
         (let [kitchen-delete-headers {:x-kitchen-allow-async-cancel true, :x-kitchen-204-on-async-cancel false}]
           (doseq [status-location (take num-requests-to-delete status-locations)]
-            (make-request waiter-url status-location :http-method-fn http/delete :headers kitchen-delete-headers :cookies cookies)))
+            (let [{:keys [body] :as response} (make-request waiter-url status-location :http-method-fn http/delete
+                                                            :headers kitchen-delete-headers :cookies cookies)]
+              (assert-response-status response 200)
+              (is (str/includes? body "Deleted request-id")))))
         (Thread/sleep inter-router-metrics-interval-ms) ;; allow routers to sync metrics
         (let [service-data (service-settings waiter-url service-id)
               {:keys [async outstanding] :as request-counts}

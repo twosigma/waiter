@@ -24,13 +24,13 @@
             [ring.middleware.multipart-params :as multipart-params]
             [ring.middleware.params :as ring-params]
             [waiter.async-request :as async-req]
+            [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
-            [waiter.security :as security]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
@@ -191,11 +191,13 @@
   [request]
   (try
     (let [request-params (:params (ring-params/params-request request))
-          exclude-services (Boolean/parseBoolean (get request-params "exclude-services" "false"))
+          exclude-services (utils/request-flag request-params "exclude-services")
           service-id (get request-params "service-id" nil)
+          include-jvm-metrics (utils/request-flag request-params "include-jvm-metrics")
           metrics (cond
                     exclude-services (metrics/get-waiter-metrics)
                     (and (not exclude-services) service-id) (metrics/get-service-metrics service-id)
+                    include-jvm-metrics (metrics/get-jvm-metrics)
                     :else (metrics/get-metrics))]
       (utils/map->streaming-json-response metrics))
     (catch Exception e
@@ -217,7 +219,7 @@
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
-  [state-chan prepend-waiter-url service-id->service-description-fn authorized? request]
+  [entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request]
   (try
     (let [timeout-ms 30000
           current-state (async/alt!!
@@ -234,7 +236,7 @@
                                      (and service-description
                                           (if run-as-user-param
                                             (= run-as-user run-as-user-param)
-                                            (authorized? auth-user :manage (security/make-service-resource % service-description)))))
+                                            (authz/manage-service? entitlement-manager auth-user % service-description))))
                                   (->> (concat (keys (:service-id->healthy-instances current-state))
                                                (keys (:service-id->unhealthy-instances current-state)))
                                        (apply sorted-set)))
@@ -545,7 +547,7 @@
 (defn acknowledge-consent-handler
   "Processes the acknowledgment to launch a service as the auth-user.
    It triggers storing of the x-waiter-consent cookie on the client."
-  [token->service-description-template service-description->service-id consent-cookie-value add-encoded-cookie
+  [token->token-description service-description->service-id consent-cookie-value add-encoded-cookie
    consent-expiry-days {:keys [request-method] :as request}]
   (try
     (when-not (= :post request-method)
@@ -567,7 +569,7 @@
         (when-not service-id
           (throw (ex-info "Missing service-id!" params))))
       (let [token (utils/authority->host host)
-            service-description-template (token->service-description-template token)]
+            {:keys [service-description-template token-metadata]} (token->token-description token)]
         (when-not (seq service-description-template)
           (throw (ex-info "Unable to load description for token!" {:token token})))
         (when (= "service" mode)
@@ -579,12 +581,11 @@
               (log/error "computed" computed-service-id ", but user[" auth-user "] provided" service-id "for" token)
               (throw (ex-info "Invalid service-id for specified token" params)))))
         (let [cookie-name "x-waiter-consent"
-              cookie-value (consent-cookie-value mode service-id token service-description-template)]
+              cookie-value (consent-cookie-value mode service-id token token-metadata)]
           (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-success"))
           (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-success"))
           (-> {:body (str "Added cookie " cookie-name), :headers {}, :status 200}
-              (add-encoded-cookie cookie-name cookie-value consent-expiry-days)
-              (cookie-support/cookies-async-response)))))
+              (add-encoded-cookie cookie-name cookie-value consent-expiry-days)))))
     (catch Exception e
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-error"))

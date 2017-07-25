@@ -9,12 +9,12 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.token-request-test
-  (:require [clj-http.client :as http]
-            [clojure.data.json :as json]
+  (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all])
   (:import java.net.URL))
 
@@ -27,32 +27,22 @@
     (let [service-id-prefix (rand-name "testhostname")
           token (rand-name)
           update-token-fn (fn [version]
-                            (let [{:keys [status]} (http/post (waiter-url->token-url waiter-url)
-                                                              {:headers {}
-                                                               :throw-exceptions false
-                                                               :spnego-auth true
-                                                               :body (json/write-str
-                                                                       {:name service-id-prefix
-                                                                        :cpus 1
-                                                                        :mem 1250
-                                                                        :version version
-                                                                        :cmd "test command"
-                                                                        :health-check-url "/ping"
-                                                                        :permitted-user "*"
-                                                                        :run-as-user (retrieve-username)
-                                                                        :token token})})]
+                            (let [{:keys [status]} (post-token waiter-url {:name service-id-prefix
+                                                                           :cpus 1
+                                                                           :mem 1250
+                                                                           :version version
+                                                                           :cmd "test command"
+                                                                           :health-check-url "/ping"
+                                                                           :permitted-user "*"
+                                                                           :run-as-user (retrieve-username)
+                                                                           :token token})]
                               (is (= 200 status))))
           validate-token-fn (fn [version num-threads num-iter]
                               (parallelize-requests
                                 num-threads
                                 num-iter
                                 (fn []
-                                  (let [request-headers (clojure.walk/stringify-keys {:x-waiter-token token})
-                                        request-url (waiter-url->token-url waiter-url)
-                                        {:keys [body status]} (http/get request-url
-                                                                        {:headers request-headers
-                                                                         :spnego-auth true
-                                                                         :throw-exceptions false})]
+                                  (let [{:keys [body status]} (get-token waiter-url token)]
                                     (is (= 200 status))
                                     (is (every? #(str/includes? (str body) (str %)) [service-id-prefix "1250" version "test command"]))
                                     (is (not-any? #(str/includes? (str body) (str %)) ["invalid"]))))))
@@ -77,17 +67,6 @@
 (defn- create-token-name
   [waiter-url service-id-prefix]
   (str service-id-prefix "." (subs waiter-url 0 (str/index-of waiter-url ":"))))
-
-(defn- post-token
-  [waiter-url post-body]
-  (make-request waiter-url "/token" :http-method-fn http/post :headers {"host" (:token post-body)} :body (json/write-str post-body)))
-
-(defn- get-token
-  [waiter-url token & {:keys [cookies] :or {cookies {}}}]
-  (let [request-headers (clojure.walk/stringify-keys {:host token})
-        token-response (make-request waiter-url "/token" :headers request-headers :cookies cookies)]
-    (log/debug "Retrieved token" token ":" (:body token-response))
-    token-response))
 
 (defn- list-tokens
   [waiter-url owner & {:keys [cookies] :or {cookies {}}}]
@@ -345,18 +324,14 @@
           canary-response (make-kitchen-request waiter-url {:x-waiter-name name-string})
           service-id (retrieve-service-id waiter-url (:request-headers canary-response))]
       (is (str/includes? service-id name-string) (str "ERROR: App-name is missing " name-string))
-      (is (= 200 (:status (http/post (str "http://" waiter-url) {:headers {:x-waiter-token (str "^SERVICE-ID#" service-id)}
-                                                                 :throw-exceptions false
-                                                                 :spnego-auth true}))))
+      (is (= 200 (:status (make-request waiter-url "" :headers {:x-waiter-token (str "^SERVICE-ID#" service-id)}))))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-bad-token
   (testing-using-waiter-url
 
     (testing "can't use bad token"
-      (let [response (http/get (str "http://" waiter-url "/pathabc") {:spnego-auth true
-                                                                      :headers {"X-Waiter-Token" "bad#token"}
-                                                                      :throw-exceptions false})]
+      (let [response (make-request waiter-url "/pathabc" :headers {"X-Waiter-Token" "bad#token"})]
         (is (str/includes? (:body response) "No service description template available for token bad#token"))
         (assert-response-status response 400)))
 
@@ -371,33 +346,27 @@
                           :permitted-user "*"
                           :run-as-user (retrieve-username)
                           :health-check-url "/not-used"}
-            response (http/post (str "http://" waiter-url "/token") {:spnego-auth true
-                                                                     :throw-exceptions false
-                                                                     :body (json/write-str (clojure.walk/stringify-keys service-desc))})]
+            response (post-token waiter-url service-desc)]
         (is (str/includes? (:body response) "Token must match pattern"))
         (assert-response-status response 400)))))
 
 (deftest ^:parallel ^:integration-fast test-token-metadata
   (testing-using-waiter-url
     (let [token (rand-name)
-          service-desc {"name" token
-                        "cpus" 1
-                        "mem" 100
-                        "version" "1"
-                        "cmd-type" "shell"
-                        "token" token
-                        "cmd" "exit 0"
-                        "run-as-user" (retrieve-username)
-                        "health-check-url" "/not-used"
-                        "metadata" {"a" "b", "c" "d"}}
-          register-response (http/post (str "http://" waiter-url "/token") {:spnego-auth true
-                                                                            :throw-exceptions false
-                                                                            :body (json/write-str service-desc)})
-          {:keys [body]} (http/get (str "http://" waiter-url "/token") {:spnego-auth true
-                                                                        :throw-exceptions false
-                                                                        :headers {"X-Waiter-Token" (get service-desc "token")}})]
+          service-desc {:name token
+                        :cpus 1
+                        :mem 100
+                        :version "1"
+                        :cmd-type "shell"
+                        :token token
+                        :cmd "exit 0"
+                        :run-as-user (retrieve-username)
+                        :health-check-url "/not-used"
+                        :metadata {"a" "b", "c" "d"}}
+          register-response (post-token waiter-url service-desc)
+          {:keys [body]} (get-token waiter-url token)]
       (assert-response-status register-response 200)
-      (is (= (get service-desc "metadata") (get (json/read-str body) "metadata")))
+      (is (= (:metadata service-desc) (get (json/read-str body) "metadata")))
       (delete-token-and-assert waiter-url token)
       (delete-service waiter-url (:name service-desc)))))
 
@@ -413,26 +382,19 @@
                         "run-as-user" (retrieve-username)
                         "health-check-url" "/not-used"
                         "metadata" {"a" "b", "c" {"d" "e"}}}
-          register-response (http/post (str "http://" waiter-url "/token") {:spnego-auth true
-                                                                            :throw-exceptions false
-                                                                            :body (json/write-str service-desc)})]
+          register-response (post-token waiter-url service-desc)]
       (is (= 400 (:status register-response))))))
 
 (deftest ^:parallel ^:integration-fast test-token-environment-variables
   (testing-using-waiter-url
     (let [token (rand-name)
           binary (kitchen-cmd)
-          token-response (http/post (waiter-url->token-url waiter-url)
-                                    {:body (json/write-str
-                                             (clojure.walk/stringify-keys
-                                               {:cmd "$BINARY -p $PORT0"
-                                                :cmd-type "shell"
-                                                :version "does-not-matter"
-                                                :name token
-                                                :env {"BINARY" binary}
-                                                :token token}))
-                                     :spnego-auth true
-                                     :throw-exceptions false})
+          token-response (post-token waiter-url {:cmd "$BINARY -p $PORT0"
+                                                 :cmd-type "shell"
+                                                 :version "does-not-matter"
+                                                 :name token
+                                                 :env {"BINARY" binary}
+                                                 :token token})
           {:keys [service-id status] :as response} (make-request-with-debug-info {:x-waiter-token token}
                                                                                  #(make-light-request waiter-url %))
           {:keys [env] :as service-description} (response->service-description waiter-url response)]
@@ -444,12 +406,8 @@
 
 (deftest ^:parallel ^:integration-fast test-token-invalid-environment-variables
   (testing-using-waiter-url
-    (let [{:keys [body status]} (http/post (waiter-url->token-url waiter-url)
-                                           {:body (json/write-str (clojure.walk/stringify-keys
-                                                                    {:env {"HOME" "/my/home"}
-                                                                     :token (rand-name)}))
-                                            :spnego-auth true
-                                            :throw-exceptions false})]
+    (let [{:keys [body status]} (post-token waiter-url {:env {"HOME" "/my/home"}
+                                                        :token (rand-name)})]
       (is (= 400 status))
       (is (not (str/includes? body "clojure")) body)
       (is (str/includes? body "The following environment variable keys are reserved: HOME.") body))))
@@ -474,13 +432,14 @@
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
             (is (nil? (get response-body :run-as-user)))
-            (is (= (assoc service-description :owner (retrieve-username)) response-body))))
+            (is (= (assoc service-description :owner (retrieve-username))
+                   response-body))))
 
         (testing "expecting redirect"
           (let [{:keys [body headers] :as response} (make-request waiter-url "/hello-world" :headers {"host" host-header})]
             (is (str/includes? body "service-description-error"))
             (is (= (str "/waiter-consent/hello-world")
-                   (get headers "Location")))
+                   (get headers "location")))
             (assert-response-status response 303)))
 
         (testing "waiter-consent"
@@ -502,11 +461,11 @@
                                               "origin" (str "http://" host-header)
                                               "x-requested-with" "XMLHttpRequest"}
                                     :http-method-fn http/post
-                                    :multipart [{:name "mode" :content "service"}
-                                                {:name "service-id" :content service-id}])]
+                                    :multipart {"mode" "service"
+                                                "service-id" service-id})]
                   (reset! cookies-atom cookies)
                   (is (= "Added cookie x-waiter-consent" body))
-                  (is (every? #(contains? cookies %1) ["x-waiter-auth" "x-waiter-consent"]))
+                  (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
                   (assert-response-status response 200)))
 
               (testing "auto run-as-user population on expected service-id"
@@ -520,7 +479,7 @@
                           {:keys [run-as-user permitted-user]} service-description]
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
-                      (is (every? #(contains? cookies %1) ["x-waiter-auth" "x-waiter-consent"]))
+                      (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
                       (is (= expected-service-id service-id))
                       (is (not (str/blank? permitted-user)))
                       (is (= run-as-user permitted-user))
@@ -539,7 +498,7 @@
                 (let [{:keys [body headers] :as response} (make-request waiter-url "/hello-world" :cookies @cookies-atom :headers {"host" host-header})]
                   (is (str/includes? body "service-description-error"))
                   (is (= (str "/waiter-consent/hello-world")
-                         (get headers "Location")))
+                         (get headers "location")))
                   (assert-response-status response 303)))
 
               (testing "approval of token"
@@ -551,11 +510,11 @@
                                               "origin" (str "http://" host-header)
                                               "x-requested-with" "XMLHttpRequest"}
                                     :http-method-fn http/post
-                                    :multipart [{:name "mode" :content "token"}])]
+                                    :multipart {"mode" "token"})]
                   (is (not= @cookies-atom cookies))
                   (reset! cookies-atom cookies)
                   (is (= "Added cookie x-waiter-consent" body))
-                  (is (every? #(contains? cookies %1) ["x-waiter-auth" "x-waiter-consent"]))
+                  (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
                   (assert-response-status response 200)))
 
               (testing "auto run-as-user population on approved token"
@@ -567,7 +526,7 @@
                                                         #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))]
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
-                      (is (every? #(contains? cookies %1) ["x-waiter-auth" "x-waiter-consent"]))
+                      (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
                       (is (not= previous-service-id service-id))
                       (assert-response-status response 200))
                     (finally
@@ -594,7 +553,8 @@
         (testing "token retrieval"
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
-            (is (= (assoc service-description :authentication "disabled" :owner current-user) response-body))))
+            (is (= (assoc service-description :authentication "disabled" :owner current-user)
+                   response-body))))
 
         (testing "successful request"
           (let [{:keys [body] :as response} (make-request waiter-url "/hello-world" :headers request-headers :spnego-auth false)]

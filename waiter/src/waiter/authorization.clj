@@ -8,10 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.security
-  (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
-            [waiter.utils :as utils]))
+(ns waiter.authorization)
 
 (defprotocol EntitlementManager 
   "Security related methods"
@@ -23,9 +20,20 @@
   (authorized? [_ subject _ resource]
     (= subject (:user resource))))
 
-(defn make-service-resource
+(defn- make-service-resource
   "Creates a resource from a service description for use with an entitlement manager"
   [service-id {:strs [run-as-user]}]
   {:resource-type :service
    :user run-as-user
    :service-id service-id})
+
+(defn manage-service?
+  "Returns whether the auth-user is allowed to modify the specified service description."
+  [entitlement-manager auth-user service-id service-description]
+  (authorized? entitlement-manager auth-user :manage (make-service-resource service-id service-description)))
+
+(defn run-as?
+  "Helper function that checks the whether the auth-user has privileges to run as the run-as-user."
+  [entitlement-manager auth-user run-as-user]
+  (and auth-user run-as-user
+       (authorized? entitlement-manager auth-user :run-as {:resource-type :credential, :user run-as-user})))

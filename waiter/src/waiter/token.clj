@@ -44,12 +44,13 @@
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
-    [synchronize-fn kv-store ^String token service-description-template]
+    [synchronize-fn kv-store ^String token service-description-template token-metadata]
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "Storing service description for token:" token)
-        (let [{:strs [owner] :as filtered-service-desc} (sd/sanitize-service-description service-description-template sd/token-service-description-template-keys)
+        (let [token-description (merge service-description-template (select-keys token-metadata sd/token-metadata-keys))
+              {:strs [owner] :as filtered-service-desc} (sd/sanitize-service-description token-description sd/token-description-keys)
               previous-owner (get (kv/fetch kv-store token :refresh true) "owner")
               owner->owner-key (kv/fetch kv-store token-owners-key)]
           ; Store the service description
@@ -168,9 +169,9 @@
                     {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname req-headers req-headers waiter-hostname)
                     current-user (get req :authorization/user)]
                 (if token
-                  (let [service-description-template (sd/token->service-description-template kv-store token :error-on-missing false)]
+                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
                     (if (and service-description-template (not-empty service-description-template))
-                      (let [token-owner (get service-description-template "owner")]
+                      (let [token-owner (get token-metadata "owner")]
                         (when-not (can-run-as? current-user token-owner)
                           (throw (ex-info "User not allowed to delete token"
                                           {:existing-owner token-owner
@@ -191,12 +192,12 @@
     :get (try
            (let [req-headers (:headers req)
                  {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname req-headers req-headers waiter-hostname)]
-             (let [service-description-template (sd/token->service-description-template kv-store token :error-on-missing false)]
+             (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
                (if (and service-description-template (not-empty service-description-template))
                  ;;NB do not ever return the password to the user
                  (do
                    (log/info "successfully retrieved token " token)
-                   (utils/map->json-response service-description-template))
+                   (utils/map->json-response (merge service-description-template token-metadata)))
                  (do
                    (log/info "token not found " token)
                    (utils/map->json-response {:message (str "couldn't find token " token)} :status 404)))))
@@ -205,34 +206,39 @@
              (utils/exception->json-response e)))
     :post (try
             (let [authenticated-user (get req :authorization/user)
-                  {:strs [token run-as-user] :as service-description-template} (json/read-str (slurp (:body req)))
-                  existing-service-description-template (sd/token->service-description-template kv-store token :error-on-missing false)
-                  owner (or (get service-description-template "owner")
-                            (get existing-service-description-template "owner")
-                            authenticated-user)
-                  {:strs [authentication permitted-user] :as service-description-template} (dissoc service-description-template "token")]
+                  {:strs [token] :as new-token-description} (json/read-str (slurp (:body req)))
+                  new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
+                  {:strs [authentication permitted-user run-as-user] :as new-service-description-template}
+                  (select-keys new-token-description sd/service-description-keys)
+                  {existing-token-metadata :token-metadata} (sd/token->token-description kv-store token)
+                  owner (or (get new-token-metadata "owner")
+                            (get existing-token-metadata "owner")
+                            authenticated-user)]
               (when (str/blank? token)
                 (throw (ex-info "Must provide the token" {})))
               (when (= waiter-hostname token)
                 (throw (ex-info "Token name is reserved" {:token token})))
               (when-not (re-matches valid-token-re token)
                 (throw (ex-info "Token must match pattern." {:token token :pattern (str valid-token-re)})))
-              (validate-service-description-fn service-description-template)
-              (let [unknown-keys (set/difference (set (keys service-description-template)) (set sd/token-service-description-template-keys))]
+              (validate-service-description-fn new-service-description-template)
+              (let [unknown-keys (set/difference (-> new-token-description keys set)
+                                                 (set sd/token-description-keys)
+                                                 #{"token"})]
                 (when (not-empty unknown-keys)
                   (throw (ex-info (str "Unsupported key(s) in token: " (str (vec unknown-keys))) {:token token}))))
               (when (= authentication "disabled")
                 (when (not= permitted-user "*")
                   (throw (ex-info (str "Tokens with authentication disabled must specify permitted-user as *, instead provided " permitted-user) {:token token})))
                 ;; partial tokens not supported when authentication is disabled
-                (when-not (sd/required-keys-present? service-description-template)
+                (when-not (sd/required-keys-present? new-service-description-template)
                   (throw (ex-info "Tokens with authentication disabled must specify all required parameters"
-                                  {:missing-parameters (->> sd/service-required-keys (remove #(contains? service-description-template %1)) seq)
-                                   :service-description service-description-template}))))
+                                  {:missing-parameters (->> sd/service-required-keys
+                                                            (remove #(contains? new-service-description-template %1)) seq)
+                                   :service-description new-service-description-template}))))
               (when (and run-as-user (not= "*" run-as-user))
                 (when-not (can-run-as? authenticated-user run-as-user)
                   (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user :run-as-user run-as-user}))))
-              (let [existing-service-description-owner (get existing-service-description-template "owner")]
+              (let [existing-service-description-owner (get existing-token-metadata "owner")]
                 (if-not (str/blank? existing-service-description-owner)
                   (when-not (can-run-as? authenticated-user existing-service-description-owner)
                     (throw (ex-info "Cannot change owner of token"
@@ -241,14 +247,14 @@
                   (when-not (can-run-as? authenticated-user owner)
                     (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user :owner owner})))))
               ; Store the token
-              (store-service-description-for-token synchronize-fn kv-store token (assoc service-description-template "owner" owner))
+              (store-service-description-for-token synchronize-fn kv-store token new-service-description-template {"owner" owner})
               ; notify peers of token update
               (make-peer-requests-fn "tokens/refresh"
                                      :method :post
                                      :body (json/write-str {:token token
                                                             :owner owner}))
               (utils/map->json-response {:message (str "Successfully created " token)
-                                         :service-description service-description-template}))
+                                         :service-description new-service-description-template}))
             (catch Exception e
               (log/error e "Token post failed")
               (utils/exception->json-response e)))))

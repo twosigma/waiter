@@ -17,20 +17,20 @@
 ; Use lower-case to preserve consistency with Ring's representation of headers
 (def ^:const HEADER-CORRELATION-ID "x-cid")
 
-(defn request->correlation-id [request]
-  (get-in request [:headers HEADER-CORRELATION-ID]))
+(defn http-object->correlation-id [http-object]
+  (get-in http-object [:headers HEADER-CORRELATION-ID]))
 
 (defn ensure-correlation-id
-  "Ensures that the correlation-d is present in the request header,
-   else it modifies the request by attaching the 'x-cid' header with
+  "Ensures that the correlation-d is present in the http-object header,
+   else it modifies the http-object by attaching the 'x-cid' header with
    value created using the `id-factory` function."
-  [request id-factory]
-  (let [current-cid (request->correlation-id request)]
+  [http-object id-factory]
+  (let [current-cid (http-object->correlation-id http-object)]
     (if (nil? current-cid)
       (let [new-cid (id-factory)]
-        (log/debug "attaching correlation id" new-cid "to request.")
-        (update-in request [:headers] #(assoc % HEADER-CORRELATION-ID new-cid)))
-      request)))
+        (log/debug "attaching correlation id" new-cid "to http-object.")
+        (update-in http-object [:headers] #(assoc % HEADER-CORRELATION-ID new-cid)))
+      http-object)))
 
 ; The value of UNKNOWN should never be used, correlation-id should be dynamically bound in the with-correlation-id body.
 (def default-correlation-id "UNKNOWN")

@@ -125,7 +125,8 @@
                            "x-waiter-concurrency-level" "20")]
       (is auth-cookie-value)
       (try
-        (let [response-promise (promise)]
+        (let [response-promise (promise)
+              client http-client]
           (ws-client/connect!
             (websocket-client-factory)
             (ws-url waiter-url "/websocket-timeout")
@@ -135,7 +136,7 @@
                 (async/<! in) ;; kitchen message
                 (async/<! in) ;; hello response
                 ;; cause the backend to die
-                (make-request waiter-url "/die" :headers waiter-headers :verbose true)
+                (make-request waiter-url "/die" :headers waiter-headers :verbose true :client client)
                 (Thread/sleep 5000)
                 ;; expect no response back, and that the input channel will be closed
                 (async/>! out "data-with-no-response")
@@ -227,7 +228,8 @@
       (log/error e "error in executing websocket request for test")
       (is false (str "websocket streaming iteration threw an error:" (.getMessage e))))))
 
-(deftest ^:parallel ^:integration-fast test-request-parallel-streaming
+; Marked explicit due to flaky failures
+(deftest ^:parallel ^:integration-fast ^:explicit test-request-parallel-streaming
   (testing-using-waiter-url
     (let [auth-cookie-value (auth-cookie waiter-url)
           _ (is auth-cookie-value)

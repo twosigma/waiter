@@ -18,6 +18,7 @@
             [comb.template :as template]
             [full.async :as fa]
             [plumbing.core :as pc]
+            [waiter.authorization :as authz]
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
@@ -395,10 +396,11 @@
                                                           [:healthy-instances, :unhealthy-instances])))
                                             parsed-body)))
         prepend-waiter-url identity
-        authorized? (fn [user action {:keys [service-id]}]
-                      (and (= user test-user)
-                           (= action :manage)
-                           (some #(= % service-id) test-user-services)))
+        entitlement-manager (reify authz/EntitlementManager
+                              (authorized? [_ user action {:keys [service-id]}]
+                                (and (= user test-user)
+                                     (= action :manage)
+                                     (some #(= % service-id) test-user-services))))
         list-services-handler (wrap-handler-json-response list-services-handler)]
     (let [service-id->service-description-fn
           (fn [service-id & _] {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})]
@@ -412,7 +414,7 @@
                                :service-id->unhealthy-instances {"service3" []
                                                                  "service5" []}})
         (let [{:keys [body headers status]}
-              (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "Content-Type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -429,7 +431,7 @@
                                  :service-id->unhealthy-instances {"service3" []
                                                                    "service5" []}})
           (let [{:keys [body headers status]}
-                (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
+                (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "Content-Type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -437,7 +439,11 @@
             (is (instance-counts-present body)))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-same-user"
-        (let [request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
+        (let [entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ _ _ _]
+                                      ; use (constantly true) for authorized? to verify that filter still applies
+                                      true))
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
           (async/>!! state-chan {:service-id->healthy-instances {"service1" []
                                                                  "service2" []
                                                                  "service3" []
@@ -446,8 +452,8 @@
                                  :service-id->unhealthy-instances {"service3" []
                                                                    "service5" []}})
           (let [{:keys [body headers status]}
-                ; use (constantly true) for authorized? to verify that filter still applies
-                (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn (constantly true) request)]
+
+                (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "Content-Type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -460,7 +466,7 @@
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (RuntimeException. exception-message)))
               {:keys [body headers status]}
-              (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "Content-Type")))
           (is (str/includes? (str body) exception-message))))
@@ -473,13 +479,14 @@
                                                                "service6" []}
                                :service-id->unhealthy-instances {"service3" []
                                                                  "service5" []}})
-        (let [authorized? (fn [user action {:keys [service-id]}]
-                            (and (= user test-user)
-                                 (= :manage action)
-                                 (some #(= (str "service" %) service-id) (range 1 7))))
+        (let [entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ user action {:keys [service-id]}]
+                                      (and (= user test-user)
+                                           (= :manage action)
+                                           (some #(= (str "service" %) service-id) (range 1 7)))))
               {:keys [body headers status]}
               ; without a run-as-user, should return all apps
-              (list-services-handler state-chan prepend-waiter-url service-id->service-description-fn authorized? request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "Content-Type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 7)))
@@ -688,29 +695,33 @@
 (deftest test-acknowledge-consent-handler
   (let [current-time-ms (System/currentTimeMillis)
         clock (constantly current-time-ms)
-        token->service-description-template (fn [token]
-                                              (when (= token "www.example.com")
-                                                {"cmd" "some-cmd", "cpus" 1, "mem" 1024,
-                                                 "token" token, "owner" "user"})) ;; produces service-6.110
+        test-token "www.example.com"
+        test-service-description {"cmd" "some-cmd", "cpus" 1, "mem" 1024, "token" test-token}
+        token->token-description (fn [token]
+                                   (when (= token test-token)
+                                     {:service-description-template test-service-description
+                                      :token-metadata {"owner" "user"}}))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
+        test-user "test-user"
+        test-service-id (service-description->service-id (assoc test-service-description "permitted-user" test-user "run-as-user" test-user))
         add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
                              (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-days}))
         consent-expiry-days 1
-        consent-cookie-value (fn [mode service-id token {:strs [owner]}]
+        consent-cookie-value (fn consent-cookie-value [mode service-id token {:strs [owner]}]
                                (when mode
                                  (-> [mode (clock)]
                                      (concat (case mode
                                                "service" (when service-id [service-id])
                                                "token" (when (and owner token) [token owner])
                                                nil))
-                                     (vec))))
+                                     vec)))
         acknowledge-consent-handler-fn (fn [request]
                                          (let [request' (-> request
-                                                            (update :authorization/user #(or %1 "test-user"))
+                                                            (update :authorization/user #(or %1 test-user))
                                                             (update :request-method #(or %1 :post))
                                                             (update :scheme #(or %1 :http)))]
-                                           (acknowledge-consent-handler token->service-description-template service-description->service-id
+                                           (acknowledge-consent-handler token->token-description service-description->service-id
                                                                         consent-cookie-value add-encoded-cookie consent-expiry-days request')))]
     (testing "unsupported request method"
       (let [request {:request-method :get}
@@ -721,7 +732,7 @@
 
     (testing "host and origin mismatch"
       (let [request {:headers {"host" "www.example2.com"
-                               "origin" "http://www.example.com"}}
+                               "origin" (str "http://" test-token)}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
         (is (= {"Content-Type" "text/plain"} headers))
@@ -729,8 +740,8 @@
         (is (str/includes? body "Origin is not the same as the host!"))))
 
     (testing "referer and origin mismatch"
-      (let [request {:headers {"host" "www.example.com"
-                               "origin" "http://www.example.com"
+      (let [request {:headers {"host" test-token
+                               "origin" (str "http://" test-token)
                                "referer" "http://www.example2.com/consent"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
@@ -739,9 +750,9 @@
         (is (str/includes? body "Referer does not start with origin!"))))
 
     (testing "mismatch in x-requested-with"
-      (let [request {:headers {"host" "www.example.com"
-                               "origin" "http://www.example.com"
-                               "referer" "http://www.example.com/consent"
+      (let [request {:headers {"host" test-token
+                               "origin" (str "http://" test-token)
+                               "referer" (str "http://" test-token "/consent")
                                "x-requested-with" "AJAX"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
@@ -750,9 +761,9 @@
         (is (str/includes? body "Header x-requested-with does not match expected value!"))))
 
     (testing "missing mode param"
-      (let [request {:headers {"host" "www.example.com"
-                               "origin" "http://www.example.com"
-                               "referer" "http://www.example.com/consent"
+      (let [request {:headers {"host" test-token
+                               "origin" (str "http://" test-token)
+                               "referer" (str "http://" test-token "/consent")
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
@@ -762,10 +773,10 @@
         (is (str/includes? body "Missing or invalid mode!"))))
 
     (testing "invalid mode param"
-      (let [request {:authorization/user "test-user"
-                     :headers {"host" "www.example.com"
-                               "origin" "http://www.example.com"
-                               "referer" "http://www.example.com/consent"
+      (let [request {:authorization/user test-user
+                     :headers {"host" test-token
+                               "origin" (str "http://" test-token)
+                               "referer" (str "http://" test-token "/consent")
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "unsupported", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
@@ -775,10 +786,10 @@
         (is (str/includes? body "Missing or invalid mode!"))))
 
     (testing "missing service-id param"
-      (let [request {:authorization/user "test-user"
-                     :headers {"host" "www.example.com"
-                               "origin" "http://www.example.com"
-                               "referer" "http://www.example.com/consent"
+      (let [request {:authorization/user test-user
+                     :headers {"host" test-token
+                               "origin" (str "http://" test-token)
+                               "referer" (str "http://" test-token "/consent")
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "service"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
@@ -788,10 +799,11 @@
         (is (str/includes? body "Missing service-id!"))))
 
     (testing "missing service description for token"
-      (let [request {:authorization/user "test-user"
-                     :headers {"host" "www.example2.com"
-                               "origin" "http://www.example2.com"
-                               "referer" "http://www.example2.com/consent"
+      (let [test-host (str test-token ".test2")
+            request {:authorization/user test-user
+                     :headers {"host" test-host
+                               "origin" (str "http://" test-host)
+                               "referer" (str "http://" test-host "/consent")
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "service", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
@@ -801,8 +813,8 @@
         (is (str/includes? body "Unable to load description for token!"))))
 
     (testing "invalid service-id param"
-      (let [request {:authorization/user "test-user"
-                     :headers {"host" "www.example.com:1234"
+      (let [request {:authorization/user test-user
+                     :headers {"host" (str test-token ":1234")
                                "origin" "http://www.example.com:1234"
                                "referer" "http://www.example.com:1234/consent"
                                "x-requested-with" "XMLHttpRequest"}
@@ -814,52 +826,52 @@
         (is (str/includes? body "Invalid service-id for specified token"))))
 
     (testing "valid service mode request"
-      (let [request {:authorization/user "test-user"
-                     :headers {"host" "www.example.com:1234"
+      (let [request {:authorization/user test-user
+                     :headers {"host" (str test-token ":1234")
                                "origin" "http://www.example.com:1234"
                                "referer" "http://www.example.com:1234/consent"
                                "x-requested-with" "XMLHttpRequest"}
-                     :params {"mode" "service", "service-id" "service-7.140"}}
+                     :params {"mode" "service", "service-id" test-service-id}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 200 status))
-        (is (= {"x-waiter-consent" {:value ["service" current-time-ms "service-7.140"], :age consent-expiry-days}} cookie))
+        (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-days}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))
 
     (testing "valid service mode request with missing origin"
-      (let [request {:authorization/user "test-user"
-                     :headers {"host" "www.example.com:1234"
+      (let [request {:authorization/user test-user
+                     :headers {"host" (str test-token ":1234")
                                "referer" "http://www.example.com:1234/consent"
                                "x-requested-with" "XMLHttpRequest"}
-                     :params {"mode" "service", "service-id" "service-7.140"}}
+                     :params {"mode" "service", "service-id" test-service-id}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 200 status))
-        (is (= {"x-waiter-consent" {:value ["service" current-time-ms "service-7.140"], :age consent-expiry-days}} cookie))
+        (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-days}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))
 
     (testing "valid token mode request"
-      (let [request {:authorization/user "test-user"
-                     :headers {"host" "www.example.com:1234"
+      (let [request {:authorization/user test-user
+                     :headers {"host" (str test-token ":1234")
                                "origin" "http://www.example.com:1234"
                                "referer" "http://www.example.com:1234/consent"
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "token"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 200 status))
-        (is (= {"x-waiter-consent" {:value ["token" current-time-ms "www.example.com" "user"], :age consent-expiry-days}} cookie))
+        (is (= {"x-waiter-consent" {:value ["token" current-time-ms test-token "user"], :age consent-expiry-days}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))
 
     (testing "valid token mode request with missing origin"
-      (let [request {:authorization/user "test-user"
-                     :headers {"host" "www.example.com:1234"
+      (let [request {:authorization/user test-user
+                     :headers {"host" (str test-token ":1234")
                                "referer" "http://www.example.com:1234/consent"
                                "x-requested-with" "XMLHttpRequest"}
                      :params {"mode" "token"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 200 status))
-        (is (= {"x-waiter-consent" {:value ["token" current-time-ms "www.example.com" "user"], :age consent-expiry-days}} cookie))
+        (is (= {"x-waiter-consent" {:value ["token" current-time-ms test-token "user"], :age consent-expiry-days}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))))
 

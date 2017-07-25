@@ -310,7 +310,7 @@
 
 (defn handle-kill-instance-request
   "Handles a kill request."
-  [{:keys [id->instance instance-id->state] :as current-state} service-id update-status-tag-fn 
+  [{:keys [id->instance instance-id->state] :as current-state} update-status-tag-fn
    [{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (let [{instance-id :id :as instance-to-offer}
         (find-killable-instance id->instance instance-id->state #(not (contains? exclude-ids-set %)))]
@@ -376,7 +376,7 @@
 
 (defn handle-blacklist-request
   "Handle a request to blacklist an instance."
-  [{:keys [instance-id->request-id->use-reason-map instance-id->state] :as current-state} service-id 
+  [{:keys [instance-id->request-id->use-reason-map instance-id->state] :as current-state}
    update-status-tag-fn update-state-by-blacklisting-instance-fn [{:keys [instance-id blacklist-period-ms cid]} response-chan]]
   (cid/with-correlation-id cid
     (log/info "attempt to blacklist" instance-id "which has"
@@ -506,7 +506,6 @@
                       initial-state)]
           (if-let [new-state
                    (let [slots-available? (some slots-available? (vals instance-id->state))
-                         idle-instances-available? (some killable? (vals instance-id->state))
                          ;; `reserve-instance-chan` must be highest priority channel as we want reserve calls
                          ; to be handled before release calls. This allows instances from work-stealing offers
                          ; to be used preferentially. `exit-chan` and `query-state-chan` must be lowest priority
@@ -538,7 +537,7 @@
 
                          kill-instance-chan
                          (let [{:keys [current-state' response-chan response]}
-                               (handle-kill-instance-request current-state service-id update-status-tag-fn data)]
+                               (handle-kill-instance-request current-state update-status-tag-fn data)]
                            (async/>! response-chan response)
                            current-state')
 
@@ -561,8 +560,7 @@
 
                          blacklist-instance-chan
                          (let [{:keys [current-state' response-chan response]}
-                               (handle-blacklist-request current-state service-id update-status-tag-fn 
-                                                         update-state-by-blacklisting-instance-fn data)]
+                               (handle-blacklist-request current-state update-status-tag-fn update-state-by-blacklisting-instance-fn data)]
                            (async/put! response-chan response)
                            current-state')
 
@@ -587,9 +585,13 @@
   "Launches a go-block that sends a message to unblacklist-instance-chan to unblacklist instance-id after blacklist-period-ms have elapsed."
   [correlation-id instance-id blacklist-period-ms unblacklist-instance-chan]
   (async/go
-    (async/<! (async/timeout blacklist-period-ms))
-    (cid/cinfo correlation-id "requesting instance" instance-id "to be unblacklisted")
-    (async/>! unblacklist-instance-chan {:instance-id instance-id})))
+    (try
+      (async/<! (async/timeout blacklist-period-ms))
+      (cid/cinfo correlation-id "requesting instance" instance-id "to be unblacklisted")
+      (async/>! unblacklist-instance-chan {:instance-id instance-id})
+      (catch Throwable th
+        (log/error th "unexpected error inside trigger-unblacklist-process"
+                   {:blacklist-period-ms blacklist-period-ms :cid correlation-id :instance-id instance-id})))))
 
 (defn prepare-and-start-service-chan-responder
   "Starts the service channel responder."
