@@ -82,7 +82,7 @@
     (catch Exception _
       (is false (str "Failed to parse token " response-body)))))
 
-(defmacro assert-get-token-response-200
+(defmacro assert-token-response
   "Asserts the token data in the response"
   [response service-id-prefix deleted]
   `(let [body# (:body ~response)
@@ -115,7 +115,7 @@
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
           (let [response (get-token router-url token :cookies cookies)]
-            (assert-get-token-response-200 response service-id-prefix false))
+            (assert-token-response response service-id-prefix false))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
@@ -139,7 +139,7 @@
           (let [response (get-token router-url token
                                     :cookies cookies
                                     :query-params {"include-deleted" true})]
-            (assert-get-token-response-200 response service-id-prefix true))
+            (assert-token-response response service-id-prefix true))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)

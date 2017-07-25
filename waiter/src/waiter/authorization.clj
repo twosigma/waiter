@@ -45,7 +45,7 @@
   (authorized? entitlement-manager auth-user :manage (make-token-resource token token-metadata)))
 
 (defn administer-token?
-  "Returns whether the auth-user is allowed to sync the specified token."
+  "Returns whether the auth-user is allowed to administer the specified token."
   [entitlement-manager auth-user token token-metadata]
     (authorized? entitlement-manager auth-user :admin (make-token-resource token token-metadata)))
 
