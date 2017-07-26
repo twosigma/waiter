@@ -248,9 +248,8 @@
                                    :service-description new-service-description-template}))))
               (case (get request-params "update-mode")
                 "admin"
-                (do
-                  (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
-                    (throw (ex-info "Cannot administer token" {:status 403, :token-metadata new-token-metadata, :user authenticated-user}))))
+                (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
+                  (throw (ex-info "Cannot administer token" {:status 403, :token-metadata new-token-metadata, :user authenticated-user})))
 
                 nil
                 (do
