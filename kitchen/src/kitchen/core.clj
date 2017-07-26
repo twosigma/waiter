@@ -22,6 +22,7 @@
             [kitchen.spnego :as spnego]
             [kitchen.utils :as utils]
             [plumbing.core :as pc]
+            [qbits.jet.client.cookies :as client-cookies]
             [qbits.jet.client.http :as http]
             [qbits.jet.server :as server]
             [ring.middleware.basic-authentication :as basic-authentication]
@@ -33,7 +34,9 @@
            java.nio.ByteBuffer
            java.util.UUID
            java.util.zip.GZIPOutputStream
-           org.eclipse.jetty.server.HttpOutput))
+           org.eclipse.jetty.server.HttpOutput
+           (org.eclipse.jetty.util HttpCookieStore)
+           (org.eclipse.jetty.client HttpClient)))
 
 
 (def async-requests (atom {}))
@@ -395,44 +398,85 @@
                                            (utils/parse-positive-int threads 1)))
      :headers {"content-type" "application/json"}}))
 
+(def ^:const HTTP-SCHEME "http://")
+(def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
+
+(defn strip-trailing-slash
+  "If s ends with /, returns s with the / stripped"
+  [s]
+  (cond-> s (str/ends-with? s "/") (subs 0 (- (count s) 1))))
+
 (defn make-request
   "TODO(DPO)"
-  ([url path &
-    {:keys [body decompress-body headers http-method-fn multipart query-params use-spnego verbose]
-     :or {body "", decompress-body false, headers {}, http-method-fn http/get, query-params {}, use-spnego false, verbose false}}]
-   (let [request-url (str "http://" url path)
+  ([client waiter-url path &
+    {:keys [body cookies content-type form-params headers http-method-fn multipart query-params use-spnego verbose]
+     :or {body nil
+          cookies []
+          headers {}
+          http-method-fn http/get
+          query-params {}
+          use-spnego false
+          verbose false}}]
+   (let [request-url (str
+                       (when-not (str/starts-with? waiter-url HTTP-SCHEME) HTTP-SCHEME)
+                       (strip-trailing-slash waiter-url)
+                       path)
          request-headers (walk/stringify-keys headers)]
-     (when verbose
-       (log/info "request url:" request-url)
-       (log/info "request headers:" (into (sorted-map) request-headers)))
-     (let [start-nanos (System/nanoTime)
-           {:keys [status]} (async/<!!
-                              (http-method-fn
-                                (http/client)
-                                request-url
-                                (cond-> {:throw-exceptions false
-                                         :decompress-body decompress-body
-                                         :follow-redirects false
-                                         :headers request-headers
-                                         :query-params query-params
-                                         :body body}
-                                        multipart (assoc :multipart multipart)
-                                        use-spnego (assoc :auth (spnego/spnego-authentication (URI. request-url))))))
-           elapsed-nanos (- (System/nanoTime) start-nanos)]
-       {:status status
-        :elapsed-nanos elapsed-nanos}))))
+     (try
+       (when verbose
+         (log/info "request url:" request-url)
+         (log/info "request headers:" (into (sorted-map) request-headers)))
+       (let [waiter-auth-cookie (some #(= AUTH-COOKIE-NAME (:name %)) cookies)
+             add-spnego-auth (and use-spnego (not waiter-auth-cookie))
+             start-nanos (System/nanoTime)
+             {:keys [body headers status]}
+             (async/<!! (http-method-fn
+                          client
+                          request-url
+                          (cond-> {:follow-redirects? false
+                                   :headers request-headers
+                                   :query-string query-params
+                                   :body body}
+                                  multipart (assoc :multipart multipart)
+                                  add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                                  form-params (assoc :form-params form-params)
+                                  content-type (assoc :content-type content-type)
+                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
+             elapsed-nanos (- (System/nanoTime) start-nanos)
+             response-body (if body (async/<!! body) nil)]
+         (when verbose
+           (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
+         {:request-headers request-headers
+          :cookies (client-cookies/get-cookies (.getCookieStore client))
+          :status status
+          :headers headers
+          :body response-body
+          :elapsed-nanos elapsed-nanos})
+       (catch Exception e
+         (when verbose
+           (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
+         (throw e))))))
+
+(defn make-http-client
+  "Instantiates and returns a new HttpClient with a cookie store"
+  []
+  (let [client (http/client)
+        cookie-store (HttpCookieStore.)
+        _ (.setCookieStore ^HttpClient client cookie-store)]
+    client))
 
 (defn make-parallel-requests
   "TODO(DPO)"
   [url path concurrency-level total-requests & {:keys [verbose use-spnego] :or {verbose false, use-spnego false}}]
   (let [responses-atom (atom [])
+        client (make-http-client)
         make-requests (fn []
                         (try
                           (let [future-uuid (UUID/randomUUID)]
                             (loop []
                               (when verbose
                                 (log/info "making request from future" future-uuid))
-                              (let [response (make-request url path :verbose verbose :use-spnego use-spnego)]
+                              (let [response (make-request client url path :verbose verbose :use-spnego use-spnego)]
                                 (if (< (count (swap! responses-atom conj response)) total-requests)
                                   (recur)
                                   (log/info "no more requests to make from future" future-uuid)))))
@@ -506,14 +550,13 @@
                      "/environment" (environment-handler request)
                      "/gzip" (gzip-handler request)
                      "/kitchen-state" (state-handler request)
+                     "/load-test" (load-test-handler request)
                      "/pi" (pi-handler request)
                      "/request-info" (request-info-handler request)
                      "/status-400" (bad-status-handler 400)
                      "/status-401" (bad-status-handler 401)
                      "/status-402" (bad-status-handler 402)
                      "/unchunked" (unchunked-handler request)
-                     "/kitchen-state" (state-handler request)
-                     "/load-test" (load-test-handler request)
                      (default-handler request))]
       (update-in response [:headers "x-cid"] (fn [cid] (or cid (request->cid request)))))
     (catch Exception e
