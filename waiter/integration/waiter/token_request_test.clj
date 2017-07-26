@@ -121,9 +121,9 @@
             (assert-response-status tokens-response 200)
             (is (some (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
 
-      (log/info "deleting the tokens (not erasing)")
+      (log/info "soft-deleting the tokens")
       (doseq [token tokens-to-create]
-        (delete-token-and-assert waiter-url token :excise false))
+        (delete-token-and-assert waiter-url token :hard-delete false))
 
       (log/info "ensuring tokens can no longer be retrieved on each router without include-deleted parameter")
       (doseq [token tokens-to-create]
@@ -145,11 +145,11 @@
             (assert-response-status tokens-response 200)
             (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
 
-      (log/info "deleting the tokens in excise mode")
+      (log/info "hard-deleting the tokens")
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token))
 
-      (log/info "ensuring tokens can no longer be retrieved on each router with include-deleted parameter after excise")
+      (log/info "ensuring tokens can no longer be retrieved on each router with include-deleted parameter after hard-delete")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
           (let [{:keys [body] :as response} (get-token router-url token
@@ -252,10 +252,10 @@
           (finally
             (delete-token-and-assert waiter-url token)))))))
 
-(deftest ^:parallel ^:integration-fast test-token-sync-unaffected-by-run-as-user-permissions
+(deftest ^:parallel ^:integration-fast test-token-administer-unaffected-by-run-as-user-permissions
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)]
-      (testing "token-syncing"
+      (testing "token-administering"
         (testing "active-token"
           (let [token (create-token-name waiter-url service-id-prefix)]
             (try

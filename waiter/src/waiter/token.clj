@@ -69,12 +69,12 @@
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
-    [clock synchronize-fn kv-store token owner & {:keys [excise] :or {excise false}}]
+    [clock synchronize-fn kv-store token owner & {:keys [hard-delete] :or {hard-delete false}}]
     (synchronize-fn
       token-lock
       (fn inner-delete-service-description-for-token []
-        (log/info "deleting service description for token:" token "excise mode:" excise)
-        (if excise
+        (log/info "attempting to delete service description for token:" token " hard-delete:" hard-delete)
+        (if hard-delete
           (kv/delete kv-store token)
           (when-let [existing-token-description (kv/fetch kv-store token)]
             (let [new-token-description (assoc existing-token-description
@@ -177,23 +177,22 @@
               (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)
                     authenticated-user (get req :authorization/user)
                     request-params (:query-params (ring-params/params-request req))
-                    excise (utils/request-flag request-params "excise")]
+                    hard-delete (utils/request-flag request-params "hard-delete")]
                 (if token
-                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :include-deleted excise)]
+                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :include-deleted hard-delete)]
                     (if (and service-description-template (not-empty service-description-template))
                       (let [token-owner (get token-metadata "owner")]
-                        (if excise
+                        (if hard-delete
                           (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
-                            (throw (ex-info "Cannot excise token" {:metadata token-metadata :status 403 :user authenticated-user})))
+                            (throw (ex-info "Cannot hard-delete token" {:metadata token-metadata, :status 403, :user authenticated-user})))
                           (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
-                            (throw (ex-info "User not allowed to delete token" {:owner token-owner :status 403 :user authenticated-user}))))
-                        (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :excise excise)
+                            (throw (ex-info "User not allowed to delete token" {:owner token-owner, :status 403, :user authenticated-user}))))
+                        (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :hard-delete hard-delete)
                         ; notify peers of token delete and ask them to refresh their caches
                         (make-peer-requests-fn "tokens/refresh"
-                                               :body (json/write-str {:owner token-owner :token token})
+                                               :body (json/write-str {:owner token-owner, :token token})
                                                :method :post)
-                        (utils/map->json-response (cond-> {:delete token :success true}
-                                                          excise (assoc :excise true))))
+                        (utils/map->json-response {:delete token, :hard-delete hard-delete, :success true}))
                       (utils/map->json-response {:message (str "token " token " does not exist!")} :status 404)))
                   (utils/map->json-response {:message "couldn't find token in request"} :status 400)))
               (catch Exception e
@@ -231,7 +230,7 @@
               (when (= waiter-hostname token)
                 (throw (ex-info "Token name is reserved" {:token token})))
               (when-not (re-matches valid-token-re token)
-                (throw (ex-info "Token must match pattern." {:token token :pattern (str valid-token-re)})))
+                (throw (ex-info "Token must match pattern." {:token token, :pattern (str valid-token-re)})))
               (validate-service-description-fn new-service-description-template)
               (let [unknown-keys (set/difference (-> new-token-description keys set)
                                                  (set sd/token-description-keys)
@@ -247,19 +246,26 @@
                                   {:missing-parameters (->> sd/service-required-keys
                                                             (remove #(contains? new-service-description-template %1)) seq)
                                    :service-description new-service-description-template}))))
-              (when (= "admin" (get request-params "update-mode"))
-                (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
-                  (throw (ex-info "Cannot sync token" {:status 403 :token-metadata new-token-metadata :user authenticated-user}))))
-              (when (not= "admin" (get request-params "update-mode"))
-                (when (and run-as-user (not= "*" run-as-user))
-                  (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
-                    (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user :run-as-user run-as-user :status 403}))))
-                (let [existing-service-description-owner (get existing-token-metadata "owner")]
-                  (if-not (str/blank? existing-service-description-owner)
-                    (when-not (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata)
-                      (throw (ex-info "Cannot change owner of token" {:existing-owner existing-service-description-owner :new-user owner :status 403})))
-                    (when-not (authz/run-as? entitlement-manager authenticated-user owner)
-                      (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user :owner owner :status 403}))))))
+              (case (get request-params "update-mode")
+                "admin"
+                (do
+                  (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
+                    (throw (ex-info "Cannot administer token" {:status 403, :token-metadata new-token-metadata, :user authenticated-user}))))
+
+                nil
+                (do
+                  (when (and run-as-user (not= "*" run-as-user))
+                    (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
+                      (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user, :run-as-user run-as-user, :status 403}))))
+                  (let [existing-service-description-owner (get existing-token-metadata "owner")]
+                    (if-not (str/blank? existing-service-description-owner)
+                      (when-not (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata)
+                        (throw (ex-info "Cannot change owner of token" {:existing-owner existing-service-description-owner, :new-user owner, :status 403})))
+                      (when-not (authz/run-as? entitlement-manager authenticated-user owner)
+                        (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user, :owner owner, :status 403}))))))
+
+                (throw (ex-info "Invalid update-mode" {:mode (get request-params "update-mode"), :status 403})))
+
               ; Store the token
               (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))
                                                "owner" owner}
@@ -268,8 +274,7 @@
               ; notify peers of token update
               (make-peer-requests-fn "tokens/refresh"
                                      :method :post
-                                     :body (json/write-str {:token token
-                                                            :owner owner}))
+                                     :body (json/write-str {:token token, :owner owner}))
               (utils/map->json-response {:message (str "Successfully created " token)
                                          :service-description new-service-description-template}))
             (catch Exception e
@@ -285,7 +290,7 @@
                  owners (if owner (set [owner]) (list-token-owners kv-store))]
              (->> owners
                   (map (fn [owner] (->> (list-tokens-for-owner kv-store owner)
-                                        (map (fn [v] {:token v :owner owner})))))
+                                        (map (fn [v] {:token v, :owner owner})))))
                   flatten
                   utils/map->streaming-json-response))
       (utils/map->json-response {:message "Only GET supported!" :request-method request-method} :status 405))
@@ -304,7 +309,7 @@
     (case request-method
       :get (let [owner->owner-ref (token-owners-map kv-store)]
              (utils/map->json-response owner->owner-ref))
-      (utils/map->json-response {:message "Only GET supported!" :request-method request-method} :status 405))
+      (utils/map->json-response {:message "Only GET supported!", :request-method request-method} :status 405))
     (catch Exception e
       (log/error e "Token list failed")
       (utils/exception->json-response e))))
@@ -335,6 +340,6 @@
                                                                   :method :post
                                                                   :body (json/write-str {:index true}))
                                            (utils/map->json-response {:message "Successfully re-indexed." :tokens (count tokens)}))
-      (utils/map->json-response {:message "Only POST supported!" :request-method request-method} :status 405))
+      (utils/map->json-response {:message "Only POST supported!", :request-method request-method} :status 405))
     (catch Exception e
       (utils/exception->json-response e))))

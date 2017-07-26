@@ -9,4 +9,4 @@ This API description is meant to be an overview of methods available in the REST
 |`/status`           |`GET`   |Check on the status of Waiter.|
 |`/token`            |`GET`   |Retrieve information about a token. Token should be passed in the `X-Waiter-Token` header. An extra `include-deleted=true` query parameter can be used to retrieve a soft deleted token.|
 |`/token`            |`POST`  |Define a token. Tokens can store all or part of the service description. An extra `update-mode=admin` query parameter can be used to trigger a forced update of a token by a user with admin privileges.|
-|`/token`            |`DELETE`|Remove a token. Token should be passed in the `X-Waiter-Token` header. An extra `excise=true` query parameter can be used to trigger a hard delete of the token.|
+|`/token`            |`DELETE`|Remove a token. Token should be passed in the `X-Waiter-Token` header. An extra `hard-delete=true` query parameter can be used to trigger a hard delete of the token.|

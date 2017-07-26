@@ -555,12 +555,12 @@
      (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
 
 (defn delete-token-and-assert
-  [waiter-url token & {:keys [excise] :or {excise true}}]
+  [waiter-url token & {:keys [hard-delete] :or {hard-delete true}}]
   (log/info "deleting token" token)
   (let [response (make-request waiter-url "/token"
                                :headers {"host" token}
                                :http-method-fn http/delete
-                               :query-params (if excise {"excise" true} {}))]
+                               :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response 200)))
 
 (defn wait-for

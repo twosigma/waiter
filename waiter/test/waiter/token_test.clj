@@ -91,7 +91,26 @@
           (finally
             (kv/delete kv-store token))))
 
-      (testing "delete:token-does-exist-authorized:excise-missing"
+      (testing "delete:token-does-exist-authorized:already-deleted"
+        (let [token-last-update-time (- (clock-millis) 10000)
+              token-description (assoc service-description1
+                      "owner" "tu1"
+                      "deleted" true
+                      "last-update-time" token-last-update-time)]
+          (try
+            (kv/store kv-store token token-description)
+            (is (not (nil? (kv/fetch kv-store token))))
+            (let [{:keys [status body]}
+                  (run-handle-token-request
+                    kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
+                    {:request-method :delete, :authorization/user "tu1", :headers {"x-waiter-token" token}})]
+              (is (= 404 status))
+              (is (str/includes? body (str "token " token " does not exist!")))
+              (is (= token-description (kv/fetch kv-store token)) "Entry deleted from kv-store!"))
+            (finally
+              (kv/delete kv-store token)))))
+
+      (testing "delete:token-does-exist-authorized:hard-delete-missing"
         (try
           (kv/store kv-store token (assoc service-description1 "owner" "tu1"))
           (is (not (nil? (kv/fetch kv-store token))))
@@ -107,14 +126,14 @@
           (finally
             (kv/delete kv-store token))))
 
-      (testing "delete:token-does-exist-authorized:excise-false"
+      (testing "delete:token-does-exist-authorized:hard-delete-false"
         (try
           (kv/store kv-store token (assoc service-description1 "owner" "tu1"))
           (is (not (nil? (kv/fetch kv-store token))))
           (let [{:keys [status body]}
                 (run-handle-token-request
                   kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
-                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"excise" "false"}, :request-method :delete})]
+                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"hard-delete" "false"}, :request-method :delete})]
             (is (= 200 status))
             (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
             (is (= (assoc service-description1 "deleted" true, "last-update-time" (clock-millis), "owner" "tu1")
@@ -123,21 +142,21 @@
           (finally
             (kv/delete kv-store token))))
 
-      (testing "delete:token-does-exist-authorized:excise-true"
+      (testing "delete:token-does-exist-authorized:hard-delete-true"
         (try
           (kv/store kv-store token (assoc service-description1 "owner" "tu1"))
           (is (not (nil? (kv/fetch kv-store token))))
           (let [{:keys [status body]}
                 (run-handle-token-request
                   kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
-                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"excise" "true"}, :request-method :delete})]
+                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"hard-delete" "true"}, :request-method :delete})]
             (is (= 200 status))
-            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"excise\":true", "\"success\":true"]))
+            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"hard-delete\":true", "\"success\":true"]))
             (is (nil? (kv/fetch kv-store token)) "Entry not deleted from kv-store!"))
           (finally
             (kv/delete kv-store token))))
 
-      (testing "delete:token-does-exist-authorized:excise-true:disallowed"
+      (testing "delete:token-does-exist-authorized:hard-delete-true:disallowed"
         (try
           (kv/store kv-store token (assoc service-description1 "owner" "tu2"))
           (is (not (nil? (kv/fetch kv-store token))))
@@ -148,9 +167,9 @@
                 {:keys [status body]}
                 (run-handle-token-request
                   kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
-                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"excise" "true"}, :request-method :delete})]
+                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"hard-delete" "true"}, :request-method :delete})]
             (is (= 403 status))
-            (is (every? #(str/includes? body (str %)) ["Cannot excise token", "user: tu1", "metadata"]))
+            (is (every? #(str/includes? body (str %)) ["Cannot hard-delete token", "user: tu1", "metadata"]))
             (is (not-empty (kv/fetch kv-store token)) "Entry deleted from kv-store!"))
           (finally
             (kv/delete kv-store token))))
@@ -458,7 +477,7 @@
                  :body (StringBufferInputStream. (json/write-str service-description))
                  :query-params {"update-mode" "admin"}})]
           (is (= 403 status))
-          (is (str/includes? body "Cannot sync token"))
+          (is (str/includes? body "Cannot administer token"))
           (is (nil? (kv/fetch kv-store token)))))
 
       (testing "test:post-new-service-description:invalid-instance-counts"
