@@ -257,10 +257,12 @@
     (let [service-id-prefix (rand-name)]
       (testing "token-administering"
         (testing "active-token"
-          (let [token (create-token-name waiter-url service-id-prefix)]
+          (let [last-update-time (System/currentTimeMillis)
+                token (create-token-name waiter-url service-id-prefix)]
             (try
               (log/info "creating configuration using token" token)
               (let [token-description {:health-check-url "/probe"
+                                       :last-update-time last-update-time
                                        :name service-id-prefix
                                        :owner (retrieve-username)
                                        :run-as-user "i-do-not-exist-but-will-not-be-checked"
@@ -270,20 +272,21 @@
               (log/info "created configuration using token" token)
               (let [token-response (get-token waiter-url token)
                     response-body (json/read-str (:body token-response))]
-                (is (contains? response-body "last-update-time"))
-                (is (= {"health-check-url" "/probe", "name" service-id-prefix, "owner" (retrieve-username),
-                        "run-as-user" "i-do-not-exist-but-will-not-be-checked"}
-                       (dissoc response-body "last-update-time"))))
+                (is (= {"health-check-url" "/probe", "last-update-time" last-update-time, "name" service-id-prefix,
+                        "owner" (retrieve-username), "run-as-user" "i-do-not-exist-but-will-not-be-checked"}
+                       response-body)))
               (log/info "asserted retrieval of configuration for token" token)
               (finally
                 (delete-token-and-assert waiter-url token)))))
 
         (testing "deleted-token"
-          (let [token (create-token-name waiter-url service-id-prefix)]
+          (let [last-update-time (System/currentTimeMillis)
+                token (create-token-name waiter-url service-id-prefix)]
             (try
               (log/info "creating configuration using token" token)
               (let [token-description {:deleted true
                                        :health-check-url "/probe"
+                                       :last-update-time last-update-time
                                        :name service-id-prefix
                                        :owner (retrieve-username)
                                        :run-as-user "foo-bar"
@@ -296,10 +299,9 @@
                 (is (str/includes? (str body) "couldn't find token") (str body)))
               (let [token-response (get-token waiter-url token :query-params {"include-deleted" true})
                     response-body (json/read-str (:body token-response))]
-                (is (contains? response-body "last-update-time"))
-                (is (= {"deleted" true, "health-check-url" "/probe", "name" service-id-prefix, "owner" (retrieve-username),
-                        "run-as-user" "foo-bar"}
-                       (dissoc response-body "last-update-time"))))
+                (is (= {"deleted" true, "health-check-url" "/probe", "last-update-time" last-update-time,
+                        "name" service-id-prefix, "owner" (retrieve-username), "run-as-user" "foo-bar"}
+                       response-body)))
               (log/info "asserted retrieval of configuration for token" token)
               (finally
                 (delete-token-and-assert waiter-url token)))))))))
