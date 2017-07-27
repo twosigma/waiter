@@ -106,9 +106,10 @@
 
 (defn make-request
   "Makes an asynchronous websocket request to the instance endpoint and returns a channel."
-  [websocket-client instance ws-request request-properties passthrough-headers end-route service-password _]
+  [websocket-client service-id->password-fn instance ws-request request-properties passthrough-headers end-route _]
   (let [ws-middleware (fn ws-middleware [_ ^UpgradeRequest request]
-                        (let [headers
+                        (let [service-password (-> instance scheduler/instance->service-id service-id->password-fn)
+                              headers
                               (-> (dissoc passthrough-headers "content-length" "expect" "authorization")
                                   (headers/dissoc-hop-by-hop-headers)
                                   (dissoc-forbidden-headers)

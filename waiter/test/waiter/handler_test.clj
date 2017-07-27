@@ -89,7 +89,7 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http"})]
+                                             {"backend-proto" "http", "metric-group" "test-metric-group"})]
     (testing "missing-location"
       (let [request {:route-params (make-route-params "missing-location")}
             {:keys [body headers status]}
@@ -118,21 +118,21 @@
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
 
     (testing "error-in-checking-backend-status"
-      (let [make-http-request-fn (fn [in-service-id location auth-user request-method passthrough-headers _]
-                                   (is (= service-id in-service-id))
-                                   (is (= "http://host:port/location/1234" location))
-                                   (is (= {:username "test-user", :principal "test-user@DOMAIN"} auth-user))
-                                   (is (= :http-method request-method))
-                                   (is (= {} passthrough-headers))
+      (let [request {:authorization/user "test-user"
+                     :authenticated-principal "test-user@DOMAIN"
+                     :request-method :http-method
+                     :route-params (make-route-params "local")}
+            make-http-request-fn (fn [instance in-request end-route metric-group]
+                                   (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
+                                          (select-keys instance [:host :port :protocol :service-id])))
+                                   (is (= request in-request))
+                                   (is (= (-> request :route-params :location) end-route))
+                                   (is (= "test-metric-group" metric-group))
                                    (async/go {:error (Exception. "backend-status-error")}))
             async-trigger-terminate-fn (fn [in-router-id in-service-id in-request-id]
                                          (is (= my-router-id in-router-id))
                                          (is (= service-id in-service-id))
                                          (is (= "req-1234" in-request-id)))
-            request {:authorization/user "test-user"
-                     :authenticated-principal "test-user@DOMAIN"
-                     :request-method :http-method
-                     :route-params (make-route-params "local")}
             {:keys [body headers status]}
             (async/<!!
               (async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
@@ -153,7 +153,7 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http"})
+                                             {"backend-proto" "http", "metric-group" "test-metric-group"})
         request-id-fn (fn [router-type] (if (= router-type "local") "req-1234" "req-6789"))]
     (letfn [(execute-async-result-check
               [{:keys [request-method return-status router-type]}]
@@ -163,19 +163,17 @@
                                                  (is (= (if (= router-type "local") my-router-id remote-router-id) target-router-id))
                                                  (is (= service-id in-service-id))
                                                  (is (= (request-id-fn router-type) request-id)))
-                    make-http-request-fn
-                    (fn [in-service-id location auth-user in-request-method passthrough-headers _]
-                      (is (= service-id in-service-id))
-                      (is (= (str "http://host:port/location/" (if (= router-type "local") "1234" "6789")) location)
-                          (str location))
-                      (is (= {:username "test-user", :principal "test-user@DOMAIN"} auth-user))
-                      (is (= request-method in-request-method))
-                      (is (= {} passthrough-headers))
-                      (async/go {:body "async-result-response", :headers {}, :status return-status}))
                     request {:authorization/user "test-user"
                              :authenticated-principal "test-user@DOMAIN"
                              :request-method request-method,
                              :route-params (make-route-params router-type)}
+                    make-http-request-fn (fn [instance in-request end-route metric-group]
+                                           (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
+                                                  (select-keys instance [:host :port :protocol :service-id])))
+                                           (is (= request in-request))
+                                           (is (= (-> request :route-params :location) end-route))
+                                           (is (= "test-metric-group" metric-group))
+                                           (async/go {:body "async-result-response", :headers {}, :status return-status}))
                     {:keys [status headers]}
                     (async/<!!
                       (async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
@@ -235,7 +233,7 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http"})]
+                                             {"backend-proto" "http", "metric-group" "test-metric-group"})]
     (testing "missing-code"
       (let [request {:query-string ""}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
@@ -265,16 +263,18 @@
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
 
     (testing "error-in-checking-backend-status"
-      (let [make-http-request-fn (fn [in-service-id location auth-user request-method passthrough-headers _]
-                                   (is (= service-id in-service-id))
-                                   (is (= "http://host:port/location/1234" location))
-                                   (is (= {:username "test-user", :principal "test-user@DOMAIN"} auth-user))
-                                   (is (= :http-method request-method))
-                                   (is (= {} passthrough-headers))
+      (let [request {:authorization/user "test-user"
+                     :authenticated-principal "test-user@DOMAIN"
+                     :route-params (make-route-params "local")
+                     :request-method :http-method}
+            make-http-request-fn (fn [instance in-request end-route metric-group]
+                                   (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
+                                          (select-keys instance [:host :port :protocol :service-id])))
+                                   (is (= request in-request))
+                                   (is (= (-> request :route-params :location) end-route))
+                                   (is (= "test-metric-group" metric-group))
                                    (async/go {:error (Exception. "backend-status-error")}))
             async-trigger-terminate-fn nil
-            request {:authorization/user "test-user", :authenticated-principal "test-user@DOMAIN"
-                     :route-params (make-route-params "local"), :request-method :http-method}
             {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
         (is (= 400 status))
         (is (= {"Content-Type" "application/json"} headers))
@@ -293,7 +293,7 @@
                              :service-id service-id})
         service-id->service-description-fn (fn [in-service-id]
                                              (is (= service-id in-service-id))
-                                             {"backend-proto" "http"})
+                                             {"backend-proto" "http", "metric-group" "test-metric-group"})
         request-id-fn (fn [router-type] (if (= router-type "local") "req-1234" "req-6789"))
         result-location-fn (fn [router-type & {:keys [include-host-port] :or {include-host-port false}}]
                              (str (when include-host-port "http://www.example.com:8521")
@@ -313,20 +313,19 @@
                                                  (is (= (if (= router-type "local") my-router-id remote-router-id) target-router-id))
                                                  (is (= service-id in-service-id))
                                                  (is (= (request-id-fn router-type) request-id)))
-                    make-http-request-fn
-                    (fn [in-service-id location auth-user in-request-method passthrough-headers _]
-                      (is (= service-id in-service-id))
-                      (is (= (str "http://host:port/query/location/" (if (= router-type "local") "1234" "6789")) location))
-                      (is (= {:username "test-user", :principal "test-user@DOMAIN"} auth-user))
-                      (is (= request-method in-request-method))
-                      (is (= {} passthrough-headers))
-                      (async/go {:body "status-check-response"
-                                 :headers (if (= return-status 303) {"location" (or result-location (result-location-fn router-type))} {})
-                                 :status return-status}))
                     request {:authorization/user "test-user"
                              :authenticated-principal "test-user@DOMAIN"
                              :request-method request-method
                              :route-params (make-route-params router-type)}
+                    make-http-request-fn (fn [instance in-request end-route metric-group]
+                                           (is (= {:host "host" :port "port" :protocol "http" :service-id service-id}
+                                                  (select-keys instance [:host :port :protocol :service-id])))
+                                           (is (= request in-request))
+                                           (is (= (-> request :route-params :location) end-route))
+                                           (is (= "test-metric-group" metric-group))
+                                           (async/go {:body "status-check-response"
+                                                      :headers (if (= return-status 303) {"location" (or result-location (result-location-fn router-type))} {})
+                                                      :status return-status}))
                     {:keys [status headers]}
                     (async/<!!
                       (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]

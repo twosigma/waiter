@@ -153,7 +153,7 @@
     (is (not (async/>!! out :out-data)))))
 
 (deftest test-make-request
-  (let [instance {:host "www.host.com", :port 1234}
+  (let [instance {:host "www.host.com", :port 1234, :service-id "test-service-id"}
         request {}
         request-properties {:async-request-timeout-ms 1
                             :connection-timeout-ms 2
@@ -197,7 +197,9 @@
                              "x-forwarded-for" "client1, proxy1, proxy2"
                              "x-http-method-override" "DELETE"}
         end-route "/end-route"
-        password "password"
+        service-id->password-fn (fn service-id->password-fn [service-id]
+                                  (is (= (:service-id instance) service-id))
+                                  "password")
         connect-request (Object.)
         assert-request-headers (fn assert-request-headers [upgrade-request]
                                  (is (every? (fn [[header-name header-value]]
@@ -222,7 +224,7 @@
                                          (request-callback connect-request))]
         (let [websocket-client nil
               instance (assoc instance :protocol "http")
-              response (make-request websocket-client instance request request-properties passthrough-headers end-route password nil)
+              response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
               response-map (async/<!! response)]
           (is (= #{:ctrl-mult :request} (-> response-map keys set)))
           (is (= connect-request (-> response-map :request))))))
@@ -239,7 +241,7 @@
                                          (request-callback connect-request))]
         (let [websocket-client nil
               instance (assoc instance :protocol "https")
-              response (make-request websocket-client instance request request-properties passthrough-headers end-route password nil)
+              response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
               response-map (async/<!! response)]
           (is (= #{:ctrl-mult :request} (-> response-map keys set)))
           (is (= connect-request (-> response-map :request))))))
@@ -255,7 +257,7 @@
                                            (throw test-exception))]
           (let [websocket-client nil
                 instance (assoc instance :protocol "http")
-                response (make-request websocket-client instance request request-properties passthrough-headers end-route password nil)]
+                response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)]
             (is (= {:error test-exception} (async/<!! response)))))))))
 
 (deftest test-watch-ctrl-chan

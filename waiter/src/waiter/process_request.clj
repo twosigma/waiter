@@ -247,13 +247,14 @@
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
-  [http-client make-basic-auth-fn instance {:keys [body request-method] :as request}
-   {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route app-password metric-group]
+  [http-client make-basic-auth-fn service-id->password-fn instance {:keys [body request-method] :as request}
+   {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group]
   (let [instance-endpoint (scheduler/end-point-url instance end-route)
         service-id (scheduler/instance->service-id instance)
+        service-password (service-id->password-fn service-id)
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
         ; Also remove hop-by-hop headers https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
-        headers (-> (dissoc passthrough-headers "expect" "authorization")
+        headers (-> (dissoc passthrough-headers "authorization" "expect")
                     (headers/dissoc-hop-by-hop-headers)
                     ;; ensure a value (potentially nil) is available for content-type to prevent Jetty from generating a default content-type
                     ;; please see org.eclipse.jetty.client.HttpConnection#normalizeRequest(request) for the control-flow for content-type header
@@ -271,7 +272,7 @@
         (log/error e "Unable to track content-length on request")))
     (when waiter-debug-enabled?
       (log/info "connecting to" instance-endpoint))
-    (make-http-request http-client make-basic-auth-fn request-method instance-endpoint headers body app-password
+    (make-http-request http-client make-basic-auth-fn request-method instance-endpoint headers body service-password
                        (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size)))
 
 (defn inspect-for-202-async-request-response
@@ -468,7 +469,7 @@
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."
-    [router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn service-id->password-fn
+    [router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
      instance-request-properties handlers prepend-waiter-url determine-priority-fn process-backend-response-fn
      process-exception-fn request-abort-callback-factory
      {:keys [ctrl] :as request}]
@@ -539,7 +540,6 @@
                               (swap! response-headers merge (instance->debug-headers instance prepend-waiter-url)))
                             (confirm-live-connection-without-abort)
                             (let [endpoint (request->endpoint request waiter-headers)
-                                  password (service-id->password-fn service-id)
                                   {:keys [error] :as response} (metrics/with-timer!
                                                                  (metrics/service-timer service-id "backend-response")
                                                                  (fn [nanos]
@@ -547,7 +547,7 @@
                                                                    (statsd/histo! metric-group "backend_response" nanos))
                                                                  (async/<!
                                                                    (make-request-fn instance request instance-request-properties
-                                                                                    passthrough-headers endpoint password metric-group)))
+                                                                                    passthrough-headers endpoint metric-group)))
                                   request-abort-callback (request-abort-callback-factory response)
                                   confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
                               (when error

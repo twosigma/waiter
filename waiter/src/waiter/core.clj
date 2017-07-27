@@ -571,13 +571,11 @@
    :make-basic-auth-fn (pc/fnk []
                          (fn make-basic-auth-fn [endpoint username password]
                            (BasicAuthentication$BasicResult. (URI. endpoint) username password)))
-   :make-http-request-fn (pc/fnk [[:settings [:instance-request-properties initial-socket-timeout-ms output-buffer-size]]
+   :make-http-request-fn (pc/fnk [[:settings instance-request-properties]
                                   [:state http-client]
                                   make-basic-auth-fn service-id->password-fn]
-                           (fn make-http-request-fn [service-id location auth-user-map request-method headers body]
-                             (let [service-password (service-id->password-fn service-id)]
-                               (pr/make-http-request http-client make-basic-auth-fn request-method location headers body
-                                                     service-password auth-user-map initial-socket-timeout-ms output-buffer-size))))
+                           (handler/async-make-request-helper http-client instance-request-properties make-basic-auth-fn service-id->password-fn
+                                                              pr/prepare-request-properties pr/make-request))
    :make-inter-router-requests-async-fn (pc/fnk [[:curator discovery]
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state http-client passwords router-id]
@@ -607,10 +605,10 @@
    :post-process-async-request-response-fn (pc/fnk [[:state async-request-store-atom instance-rpc-chan router-id]
                                                     make-http-request-fn]
                                              (fn post-process-async-request-response-wrapper
-                                               [service-id metric-group instance auth-user reason-map request-properties location response-headers]
+                                               [service-id metric-group instance _ reason-map request-properties location response-headers]
                                                (async-req/post-process-async-request-response
                                                  router-id async-request-store-atom make-http-request-fn instance-rpc-chan service-id metric-group
-                                                 instance auth-user reason-map request-properties location response-headers)))
+                                                 instance reason-map request-properties location response-headers)))
    :prepend-waiter-url (pc/fnk [[:settings port hostname]]
                          (fn [endpoint-url]
                            (if (str/blank? endpoint-url)
@@ -895,12 +893,12 @@
                                      (let [password (first passwords)
                                            process-handlers []
                                            make-request-fn (fn make-ws-request
-                                                             [instance request request-properties passthrough-headers end-route password metric-group]
-                                                             (ws/make-request websocket-client instance request request-properties passthrough-headers
-                                                                              end-route password metric-group))]
+                                                             [instance request request-properties passthrough-headers end-route metric-group]
+                                                             (ws/make-request websocket-client service-id->password-fn instance request request-properties
+                                                                              passthrough-headers end-route metric-group))]
                                        (letfn [(process-request-fn [request]
                                                  (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
-                                                             service-id->password-fn instance-request-properties process-handlers prepend-waiter-url
+                                                             instance-request-properties process-handlers prepend-waiter-url
                                                              determine-priority-fn ws/process-response! ws/process-exception-in-request
                                                              ws/abort-request-callback-factory request))]
                                          (ws/request-handler password process-request-fn request)))))
@@ -1002,10 +1000,9 @@
                                 [:state http-client instance-rpc-chan router-id]
                                 handle-authentication-wrapper-fn handle-secure-request-fn]
                          (let [process-handlers [pr/handle-suspended-service pr/handle-too-many-requests]
-                               make-request-fn (fn [instance request request-properties passthrough-headers end-route
-                                                    password metric-group]
-                                                 (pr/make-request http-client make-basic-auth-fn instance request request-properties
-                                                                  passthrough-headers end-route password metric-group))
+                               make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
+                                                 (pr/make-request http-client make-basic-auth-fn service-id->password-fn
+                                                                  instance request request-properties passthrough-headers end-route metric-group))
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
                            (fn process-request [request]
                              (handle-authentication-wrapper-fn
@@ -1013,7 +1010,7 @@
                                  (handle-secure-request-fn
                                    (fn inner-process-request [request]
                                      (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
-                                                 service-id->password-fn instance-request-properties process-handlers prepend-waiter-url
+                                                 instance-request-properties process-handlers prepend-waiter-url
                                                  determine-priority-fn process-response-fn pr/process-exception-in-http-request
                                                  pr/abort-http-request-callback-factory request))
                                    request))
