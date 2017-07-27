@@ -460,6 +460,26 @@
           (is (= 403 status))
           (is (str/includes? body "Cannot create token as user"))))
 
+      (testing "test:post-new-service-description:token-sync:invalid-admin-mode"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              test-user "test-user"
+              token "test-token-sync"
+              entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ subject verb {:keys [user]}]
+                                      (and (= subject user) (= :admin verb))))
+              service-description (clojure.walk/stringify-keys
+                                    {:cmd "tc1", :cpus 1, :mem 200, :permitted-user "user1", :run-as-user "user1", :version "a1b2c3",
+                                     :owner "user2", :token token})
+              {:keys [status body]}
+              (run-handle-token-request
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
+                {:request-method :post, :authorization/user test-user, :headers {"x-waiter-token" token},
+                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :query-params {"update-mode" "foobar"}})]
+          (is (= 400 status))
+          (is (str/includes? body "Invalid update-mode"))
+          (is (nil? (kv/fetch kv-store token)))))
+
       (testing "test:post-new-service-description:token-sync:not-allowed"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               test-user "test-user"
@@ -521,6 +541,20 @@
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
           (is (str/includes? body "Unsupported key(s) in token"))))
+
+      (testing "test:post-new-service-description:cannot-modify-last-update-time"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (clojure.walk/stringify-keys
+                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
+                                     :permitted-user "tu2", :token "abcdefgh",
+                                     :min-instances 2, :max-instances 10, :last-update-time (System/currentTimeMillis)})
+              {:keys [status body]}
+              (run-handle-token-request
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
+                {:request-method :post, :authorization/user "tu1",
+                 :body (StringBufferInputStream. (json/write-str service-description))})]
+          (is (= 400 status))
+          (is (str/includes? body "Cannot modify last-update-time token metadata"))))
 
       (testing "test:post-new-service-description:bad-token-metadata"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))

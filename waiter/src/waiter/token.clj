@@ -261,9 +261,11 @@
                       (when-not (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata)
                         (throw (ex-info "Cannot change owner of token" {:existing-owner existing-service-description-owner, :new-user owner, :status 403})))
                       (when-not (authz/run-as? entitlement-manager authenticated-user owner)
-                        (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user, :owner owner, :status 403}))))))
+                        (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user, :owner owner, :status 403})))))
+                  (when (contains? new-token-metadata "last-update-time")
+                    (throw (ex-info "Cannot modify last-update-time token metadata" {:status 400, :token-metadata new-token-metadata}))))
 
-                (throw (ex-info "Invalid update-mode" {:mode (get request-params "update-mode"), :status 403})))
+                (throw (ex-info "Invalid update-mode" {:mode (get request-params "update-mode"), :status 400})))
 
               ; Store the token
               (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))
