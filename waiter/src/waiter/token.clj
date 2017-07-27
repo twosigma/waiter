@@ -14,9 +14,11 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [ring.middleware.params :as ring-params]
+            [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils]))
+            [waiter.utils :as utils])
+  (:import (org.joda.time DateTime)))
 
 (def ^:const ANY-USER "*")
 (def ^:const valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+")
@@ -48,7 +50,7 @@
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
-        (log/info "Storing service description for token:" token)
+        (log/info "storing service description for token:" token)
         (let [token-description (merge service-description-template (select-keys token-metadata sd/token-metadata-keys))
               {:strs [owner] :as filtered-service-desc} (sd/sanitize-service-description token-description sd/token-description-keys)
               previous-owner (get (kv/fetch kv-store token :refresh true) "owner")
@@ -63,23 +65,29 @@
           (when owner
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)]
               (update-kv kv-store owner-key (fn [v] (conj (or v #{}) token)))))
-          (log/info "Stored service description template for" token)))))
+          (log/info "stored service description template for" token)))))
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
-    [synchronize-fn kv-store token owner]
+    [clock synchronize-fn kv-store token owner & {:keys [hard-delete] :or {hard-delete false}}]
     (synchronize-fn
       token-lock
       (fn inner-delete-service-description-for-token []
-        (log/info "Deleting service description for token:" token)
-        (kv/delete kv-store token)
+        (log/info "attempting to delete service description for token:" token " hard-delete:" hard-delete)
+        (if hard-delete
+          (kv/delete kv-store token)
+          (when-let [existing-token-description (kv/fetch kv-store token)]
+            (let [new-token-description (assoc existing-token-description
+                                          "deleted" true
+                                          "last-update-time" (.getMillis ^DateTime (clock)))]
+              (kv/store kv-store token new-token-description))))
         ; Remove token from owner
         (when owner
           (let [owner->owner-key (kv/fetch kv-store token-owners-key)
                 owner-key (ensure-owner-key kv-store owner->owner-key owner)]
             (update-kv kv-store owner-key (fn [v] (disj v token)))))
         ; Don't bother removing owner from token-owners, even if they have no tokens now
-        (log/info "Deleted token for" token))))
+        (log/info "deleted token for" token))))
 
   (defn refresh-token
     "Refresh the KV cache for a given token"
@@ -159,40 +167,42 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [synchronize-fn kv-store waiter-hostname can-run-as? make-peer-requests-fn validate-service-description-fn {:keys [request-method] :as req}]
+  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
+   {:keys [headers request-method] :as req}]
   ;;if post, validate that this is a valid job schema & that the user == the kerberos user, then sign & store in riak
   ;;  remember that we need an extra field in this schema, which is who is allowed to use this. Could be "*" or a string username
   ;;if get, return whatever data's in riak
   (case request-method
     :delete (try
-              (let [req-headers (:headers req)
-                    {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname req-headers req-headers waiter-hostname)
-                    current-user (get req :authorization/user)]
+              (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)
+                    authenticated-user (get req :authorization/user)
+                    request-params (:query-params (ring-params/params-request req))
+                    hard-delete (utils/request-flag request-params "hard-delete")]
                 (if token
-                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
+                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :include-deleted hard-delete)]
                     (if (and service-description-template (not-empty service-description-template))
                       (let [token-owner (get token-metadata "owner")]
-                        (when-not (can-run-as? current-user token-owner)
-                          (throw (ex-info "User not allowed to delete token"
-                                          {:existing-owner token-owner
-                                           :current-user current-user
-                                           :status 403})))
-                        (delete-service-description-for-token synchronize-fn kv-store token token-owner)
+                        (if hard-delete
+                          (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
+                            (throw (ex-info "Cannot hard-delete token" {:metadata token-metadata, :status 403, :user authenticated-user})))
+                          (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
+                            (throw (ex-info "User not allowed to delete token" {:owner token-owner, :status 403, :user authenticated-user}))))
+                        (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :hard-delete hard-delete)
                         ; notify peers of token delete and ask them to refresh their caches
                         (make-peer-requests-fn "tokens/refresh"
-                                               :method :post
-                                               :body (json/write-str {:token token
-                                                                      :owner token-owner}))
-                        (utils/map->json-response {:delete token, :success true}))
+                                               :body (json/write-str {:owner token-owner, :token token})
+                                               :method :post)
+                        (utils/map->json-response {:delete token, :hard-delete hard-delete, :success true}))
                       (utils/map->json-response {:message (str "token " token " does not exist!")} :status 404)))
                   (utils/map->json-response {:message "couldn't find token in request"} :status 400)))
               (catch Exception e
                 (log/error e "Token delete failed")
                 (utils/exception->json-response e)))
     :get (try
-           (let [req-headers (:headers req)
-                 {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname req-headers req-headers waiter-hostname)]
-             (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
+           (let [request-params (:query-params (ring-params/params-request req))
+                 include-deleted (utils/request-flag request-params "include-deleted")
+                 {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)]
+             (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :include-deleted include-deleted)]
                (if (and service-description-template (not-empty service-description-template))
                  ;;NB do not ever return the password to the user
                  (do
@@ -205,7 +215,8 @@
              (log/error e "token GET failed")
              (utils/exception->json-response e)))
     :post (try
-            (let [authenticated-user (get req :authorization/user)
+            (let [request-params (:query-params (ring-params/params-request req))
+                  authenticated-user (get req :authorization/user)
                   {:strs [token] :as new-token-description} (json/read-str (slurp (:body req)))
                   new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
                   {:strs [authentication permitted-user run-as-user] :as new-service-description-template}
@@ -219,7 +230,7 @@
               (when (= waiter-hostname token)
                 (throw (ex-info "Token name is reserved" {:token token})))
               (when-not (re-matches valid-token-re token)
-                (throw (ex-info "Token must match pattern." {:token token :pattern (str valid-token-re)})))
+                (throw (ex-info "Token must match pattern." {:token token, :pattern (str valid-token-re)})))
               (validate-service-description-fn new-service-description-template)
               (let [unknown-keys (set/difference (-> new-token-description keys set)
                                                  (set sd/token-description-keys)
@@ -235,24 +246,36 @@
                                   {:missing-parameters (->> sd/service-required-keys
                                                             (remove #(contains? new-service-description-template %1)) seq)
                                    :service-description new-service-description-template}))))
-              (when (and run-as-user (not= "*" run-as-user))
-                (when-not (can-run-as? authenticated-user run-as-user)
-                  (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user :run-as-user run-as-user}))))
-              (let [existing-service-description-owner (get existing-token-metadata "owner")]
-                (if-not (str/blank? existing-service-description-owner)
-                  (when-not (can-run-as? authenticated-user existing-service-description-owner)
-                    (throw (ex-info "Cannot change owner of token"
-                                    {:existing-owner existing-service-description-owner
-                                     :new-user owner})))
-                  (when-not (can-run-as? authenticated-user owner)
-                    (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user :owner owner})))))
+              (case (get request-params "update-mode")
+                "admin"
+                (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
+                  (throw (ex-info "Cannot administer token" {:status 403, :token-metadata new-token-metadata, :user authenticated-user})))
+
+                nil
+                (do
+                  (when (and run-as-user (not= "*" run-as-user))
+                    (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
+                      (throw (ex-info "Cannot run as user" {:authenticated-user authenticated-user, :run-as-user run-as-user, :status 403}))))
+                  (let [existing-service-description-owner (get existing-token-metadata "owner")]
+                    (if-not (str/blank? existing-service-description-owner)
+                      (when-not (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata)
+                        (throw (ex-info "Cannot change owner of token" {:existing-owner existing-service-description-owner, :new-user owner, :status 403})))
+                      (when-not (authz/run-as? entitlement-manager authenticated-user owner)
+                        (throw (ex-info "Cannot create token as user" {:authenticated-user authenticated-user, :owner owner, :status 403})))))
+                  (when (contains? new-token-metadata "last-update-time")
+                    (throw (ex-info "Cannot modify last-update-time token metadata" {:status 400, :token-metadata new-token-metadata}))))
+
+                (throw (ex-info "Invalid update-mode" {:mode (get request-params "update-mode"), :status 400})))
+
               ; Store the token
-              (store-service-description-for-token synchronize-fn kv-store token new-service-description-template {"owner" owner})
+              (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))
+                                               "owner" owner}
+                                              new-token-metadata)]
+                (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata))
               ; notify peers of token update
               (make-peer-requests-fn "tokens/refresh"
                                      :method :post
-                                     :body (json/write-str {:token token
-                                                            :owner owner}))
+                                     :body (json/write-str {:token token, :owner owner}))
               (utils/map->json-response {:message (str "Successfully created " token)
                                          :service-description new-service-description-template}))
             (catch Exception e
@@ -268,7 +291,7 @@
                  owners (if owner (set [owner]) (list-token-owners kv-store))]
              (->> owners
                   (map (fn [owner] (->> (list-tokens-for-owner kv-store owner)
-                                        (map (fn [v] {:token v :owner owner})))))
+                                        (map (fn [v] {:token v, :owner owner})))))
                   flatten
                   utils/map->streaming-json-response))
       (utils/map->json-response {:message "Only GET supported!" :request-method request-method} :status 405))
@@ -287,7 +310,7 @@
     (case request-method
       :get (let [owner->owner-ref (token-owners-map kv-store)]
              (utils/map->json-response owner->owner-ref))
-      (utils/map->json-response {:message "Only GET supported!" :request-method request-method} :status 405))
+      (utils/map->json-response {:message "Only GET supported!", :request-method request-method} :status 405))
     (catch Exception e
       (log/error e "Token list failed")
       (utils/exception->json-response e))))
@@ -297,7 +320,7 @@
   [kv-store src-router-id {:keys [body]}]
   (try
     (let [{:strs [token owner index] :as json-data} (json/read-str (slurp body))]
-      (log/info "Received token refresh request" json-data)
+      (log/info "received token refresh request" json-data)
       (when index
         (log/info src-router-id "is force refreshing the token index")
         (refresh-token-index kv-store))
@@ -318,6 +341,6 @@
                                                                   :method :post
                                                                   :body (json/write-str {:index true}))
                                            (utils/map->json-response {:message "Successfully re-indexed." :tokens (count tokens)}))
-      (utils/map->json-response {:message "Only POST supported!" :request-method request-method} :status 405))
+      (utils/map->json-response {:message "Only POST supported!", :request-method request-method} :status 405))
     (catch Exception e
       (utils/exception->json-response e))))

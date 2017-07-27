@@ -56,6 +56,20 @@
         entitlement-manager (TestEntitlementManager. assertion-fn)]
     (is (authz/manage-service? entitlement-manager test-user test-service-id test-service-description))))
 
+(deftest test-manage-token?
+  (let [test-user "test-user"
+        test-token "token-id-1"
+        test-token-metadata {"owner" "towner"}
+        assertion-fn (fn [[subject action resource]]
+                       (and (= test-user subject)
+                            (= :manage action)
+                            (= {:resource-type :token
+                                :token test-token
+                                :user "towner"}
+                               resource)))
+        entitlement-manager (TestEntitlementManager. assertion-fn)]
+    (is (authz/manage-token? entitlement-manager test-user test-token test-token-metadata))))
+
 (deftest test-run-as?
   (let [test-user-1 "test-user-1"
         test-user-2 "test-user-2"

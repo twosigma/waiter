@@ -1097,17 +1097,32 @@
           service-id (service-description->service-id service-id-prefix in-service-description)]
       ; prepare
       (kv/store kv-store token in-service-description)
+
       ; test
-      (testing "test:token->service-description-1"
+      (testing "retrieve-invalid-token"
+        (is (= {} (token->service-description-template kv-store "invalid-token" :error-on-missing false)))
+        (is (thrown? ExceptionInfo (token->service-description-template kv-store "invalid-token")))
         (is (nil? (kv/fetch kv-store service-id))))
+
       (testing "test:token->service-description-2"
         (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token)
               service-description-template-2 (token->service-description-template kv-store token)]
           (is (= service-description-template service-description-template-2))
           (is (= (select-keys in-service-description service-description-keys) service-description-template))
-          (is (= (select-keys in-service-description token-metadata-keys) token-metadata)))
-        (is (= {} (token->service-description-template kv-store "invalid-token" :error-on-missing false)))
-        (is (thrown? ExceptionInfo (token->service-description-template kv-store "invalid-token")))))))
+          (is (= (select-keys in-service-description token-metadata-keys) token-metadata))))
+
+      (testing "test:deleted:token->service-description-2"
+        (kv/store kv-store token (assoc in-service-description "deleted" true))
+        (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token)
+              service-description-template-2 (token->service-description-template kv-store token)]
+          (is (empty? service-description-template-2))
+          (is (empty? service-description-template))
+          (is (empty? token-metadata)))
+        (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token :include-deleted true)
+              service-description-template-2 (token->service-description-template kv-store token)]
+          (is (empty? service-description-template-2))
+          (is (= (select-keys in-service-description service-description-keys) service-description-template))
+          (is (= {"deleted" true, "owner" "tu3"} token-metadata)))))))
 
 (deftest test-service-suspend-resume
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
