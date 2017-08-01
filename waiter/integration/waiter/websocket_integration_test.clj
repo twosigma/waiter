@@ -30,6 +30,9 @@
   (-> request (.getCookies) (.add (HttpCookie. "x-waiter-auth" auth-cookie-value))))
 
 (let [websocket-client (WebSocketClient.)]
+  (doto (.getPolicy websocket-client)
+    (.setMaxBinaryMessageSize (* 1024 1024 128))
+    (.setMaxTextMessageSize (* 1024 1024 128)))
   (defn- websocket-client-factory [] websocket-client))
 
 (deftest ^:parallel ^:integration-fast test-request-auth-failure
@@ -171,13 +174,14 @@
                 (async/>! out "hello")
                 (async/<! in) ;; kitchen message
                 (async/<! in) ;; hello response
-                (async/>! out "chars-10000")
-                (let [backend-string (async/<! in)]
-                  (async/>! out (.getBytes (str backend-string) "utf-8"))
-                  (let [backend-bytes (async/<! in)
-                        bytes-string (-> backend-bytes (.array) (String. "utf-8"))]
-                    (reset! uncorrupted-data-streamed-atom
-                            (and (= 10000 (count backend-string)) (= backend-string bytes-string)))))
+                (let [message-length 1000000] ;; Jetty default is 65536 for max string message
+                  (async/>! out (str "chars-" message-length))
+                  (let [backend-string (async/<! in)]
+                    (async/>! out (.getBytes (str backend-string) "utf-8"))
+                    (let [backend-bytes (async/<! in)
+                          bytes-string (-> backend-bytes (.array) (String. "utf-8"))]
+                      (reset! uncorrupted-data-streamed-atom
+                              (and (= message-length (count backend-string)) (= backend-string bytes-string))))))
                 (deliver response-promise :done)
                 (async/close! out)))
             {:middleware (fn [_ ^UpgradeRequest request]
@@ -206,7 +210,7 @@
             (async/<! in) ;; kitchen message
             (async/<! in) ;; hello response
             (dotimes [n 5]
-              (let [data-size (+ 20000 (rand-int 20000))] ;; 65536 limit on string sends
+              (let [data-size (+ 20000 (rand-int 200000))]
                 (async/>! out (str "chars-" data-size))
                 (let [backend-string (async/<! in)]
                   (async/>! out (.getBytes (str backend-string) "utf-8"))

@@ -448,9 +448,14 @@
               (let [num-chars-str (subs in-data (count "chars-"))
                     num-chars-int (Integer/parseInt num-chars-str)
                     chars (map char (range 65 91))
-                    string-data (->> (repeatedly #(rand-nth chars))
-                                     (take num-chars-int)
-                                     (reduce str))]
+                    seed-string (->> (repeatedly #(rand-nth chars))
+                                     (take 256)
+                                     (reduce str))
+                    string-data (loop [result seed-string
+                                       remaining-chars (- num-chars-int (count seed-string))]
+                                  (if (pos? remaining-chars)
+                                    (recur (str result result) (- remaining-chars (count result)))
+                                    (subs result 0 num-chars-int)))]
                 (async/>! out string-data))
 
               (and (string? in-data) (str/starts-with? in-data "bytes-") (> (count in-data) (count "bytes-")))
@@ -544,7 +549,9 @@
                                                            correlation-id-middleware)
                                         :request-header-size 32768
                                         :websocket-handler (->> websocket-handler
-                                                                correlation-id-middleware)}
+                                                                correlation-id-middleware)
+                                        :ws-max-binary-message-size  (* 1024 1024 128)
+                                        :ws-max-text-message-size (* 1024 1024 128)}
                 server-options (if ssl
                                  (assoc partial-server-options
                                    :key-password keystore-password

@@ -118,6 +118,8 @@
                                        (s/required-key :publish-interval-ms) schema/positive-int
                                        (s/required-key :server) schema/non-empty-string})
    (s/required-key :thread-stack-state-refresh-interval-ms) schema/positive-int
+   (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
+                                       (s/required-key :ws-max-text-message-size) schema/positive-int}
    (s/required-key :work-stealing) {(s/required-key :offer-help-interval-ms) schema/positive-int
                                     (s/required-key :reserve-timeout-ms) schema/positive-int}
    (s/required-key :zookeeper) {(s/required-key :base-path) schema/non-empty-string
@@ -260,6 +262,8 @@
                                   "scale-up-factor" 0.1}
    :statsd :disabled
    :thread-stack-state-refresh-interval-ms 600000 ; 10 minutes
+   :websocket-config {:ws-max-binary-message-size  (* 1024 1024 128)
+                      :ws-max-text-message-size (* 1024 1024 128)}
    :work-stealing {:offer-help-interval-ms 100
                    :reserve-timeout-ms 1000}
    :zookeeper {:base-path "/waiter"
