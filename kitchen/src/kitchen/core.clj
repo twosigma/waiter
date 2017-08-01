@@ -502,7 +502,11 @@
         (let [response (handler request)]
           (if (map? response)
             (add-cid-into-response request response)
-            (async/go (add-cid-into-response request (async/<! response)))))))))
+            (async/go
+              (let [nested-response (async/<! response)]
+                (if (map? nested-response)
+                  (add-cid-into-response request nested-response)
+                  nested-response)))))))))
 
 (defn -main
   [& args]
