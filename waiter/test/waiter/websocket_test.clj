@@ -18,7 +18,7 @@
             [waiter.websocket :refer :all])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder)
            (java.util ArrayList Collection)
-           (org.eclipse.jetty.websocket.api UpgradeRequest)
+           (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)
            (org.eclipse.jetty.websocket.client ClientUpgradeRequest)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
@@ -309,7 +309,23 @@
         (ensure-test-timeout-fn request-close-promise-chan)
         (is (= [:test :socket-timeout exception nil] (async/<!! request-close-promise-chan)))
         (is (= :socket-timeout @reservation-status-promise))
-        (is (nil? @status-callback-atom))))
+        (is (= server-termination-on-unexpected-condition @status-callback-atom))))
+
+    (testing "message-too-large-error"
+      (let [request-name :test
+            ctrl-chan (async/chan 1)
+            ctrl-mult (async/mult ctrl-chan)
+            reservation-status-promise (promise)
+            request-close-promise-chan (async/promise-chan)
+            status-callback-atom (atom nil)
+            on-close-callback #(reset! status-callback-atom %1)
+            exception (MessageTooLargeException. "from test-watch-ctrl-chan")]
+        (watch-ctrl-chan request-name ctrl-mult reservation-status-promise request-close-promise-chan on-close-callback)
+        (async/>!! ctrl-chan [:qbits.jet.websocket/error exception])
+        (ensure-test-timeout-fn request-close-promise-chan)
+        (is (= [:test :generic-error exception nil] (async/<!! request-close-promise-chan)))
+        (is (= :generic-error @reservation-status-promise))
+        (is (= server-termination-on-unexpected-condition @status-callback-atom))))
 
     (testing "generic-error"
       (let [request-name :test-name
@@ -325,4 +341,4 @@
         (ensure-test-timeout-fn request-close-promise-chan)
         (is (= [:test-name :test-name-error exception nil] (async/<!! request-close-promise-chan)))
         (is (= :test-name-error @reservation-status-promise))
-        (is (nil? @status-callback-atom))))))
+        (is (= server-termination-on-unexpected-condition @status-callback-atom))))))

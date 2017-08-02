@@ -30,9 +30,12 @@
             [waiter.utils :as utils])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder URLEncoder)
            (java.nio ByteBuffer)
-           (org.eclipse.jetty.websocket.api UpgradeRequest)
+           (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)
            (org.eclipse.jetty.websocket.common WebSocketSession)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
+
+;; https://tools.ietf.org/html/rfc6455#section-7.4
+(def ^:const server-termination-on-unexpected-condition 1011)
 
 (defn request-authenticator
   "Authenticates the request using the x-waiter-auth cookie.
@@ -252,14 +255,18 @@
                       1003 "unsupported input data"
                       1006 "closed abnormally"
                       (str "status code " return-code-or-exception))))
-        (when (and (integer? return-code-or-exception) on-close-callback)
-          (on-close-callback return-code-or-exception))
+        (when on-close-callback
+          (if (integer? return-code-or-exception)
+            (on-close-callback return-code-or-exception)
+            (on-close-callback server-termination-on-unexpected-condition)))
         (let [close-code (condp = ctrl-code
                            nil :connection-closed
                            :qbits.jet.websocket/close :success
                            :qbits.jet.websocket/error
-                           (let [error-code (cond (instance? SocketTimeoutException return-code-or-exception) :socket-timeout
-                                                  :else (keyword (str (name source) "-error")))]
+                           (let [error-code (cond
+                                              (instance? MessageTooLargeException return-code-or-exception) :generic-error
+                                              (instance? SocketTimeoutException return-code-or-exception) :socket-timeout
+                                              :else (keyword (str (name source) "-error")))]
                              (deliver reservation-status-promise error-code)
                              (log/error return-code-or-exception "error from" (name source) "websocket request")
                              error-code)
@@ -298,24 +305,21 @@
         (timers/start-stop-time!
           stream
           (when-let [close-message (async/<! request-close-promise-chan)]
-            (let [[source close-code status-code close-message] close-message]
-              (log/info "websocket connections requested to be closed due to" close-code)
+            (let [[source close-code status-code-or-exception close-message] close-message]
+              (log/info "websocket connections requested to be closed due to" source close-code close-message)
               (counters/dec! requests-streaming)
               ;; explicitly close the client connection if backend triggered the close
-              (when (and (= :instance source) (integer? status-code))
+              (when (= :instance source)
                 (let [correlation-id (cid/get-correlation-id)]
                   (async/>!
                     (-> request :out)
                     (fn close-session [_]
                       (cid/with-correlation-id
                         correlation-id
-                        (let [server-termination-on-unexpected-condition 1011 ;; https://tools.ietf.org/html/rfc6455#section-7.4
-                              [status message]
-                              (if (integer? status-code)
-                                [status-code close-message]
-                                [server-termination-on-unexpected-condition (when (instance? Throwable status-code)
-                                                                              (.getMessage status-code))])]
-                          (close-client-session! request status message)))))))
+                        (if (integer? status-code-or-exception)
+                          (close-client-session! request status-code-or-exception close-message)
+                          (let [ex-message (.getMessage status-code-or-exception)]
+                            (close-client-session! request server-termination-on-unexpected-condition ex-message))))))))
               ;; close client and backend channels
               (close-requests! request response request-state-chan))))))
 
