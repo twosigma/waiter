@@ -25,7 +25,7 @@ minimesos {
 
             mem {
                 role = "*"
-                value = 2048
+                value = 3072
             }
 
             ports {
@@ -54,7 +54,7 @@ minimesos {
 
             mem {
                 role = "*"
-                value = 2048
+                value = 3072
             }
 
             ports {
@@ -83,7 +83,7 @@ minimesos {
 
             mem {
                 role = "*"
-                value = 2048
+                value = 3072
             }
 
             ports {
@@ -112,7 +112,7 @@ minimesos {
 
             mem {
                 role = "*"
-                value = 2048
+                value = 3072
             }
 
             ports {

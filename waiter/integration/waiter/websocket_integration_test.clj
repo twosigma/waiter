@@ -12,6 +12,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
@@ -31,6 +32,12 @@
 
 (let [websocket-client (WebSocketClient.)]
   (defn- websocket-client-factory [] websocket-client))
+
+(defn- update-max-message-sizes
+  [^WebSocketClient websocket-client ws-max-binary-message-size ws-max-text-message-size]
+  (doto (.getPolicy websocket-client)
+    (.setMaxBinaryMessageSize ws-max-binary-message-size)
+    (.setMaxTextMessageSize ws-max-text-message-size)))
 
 (deftest ^:parallel ^:integration-fast test-request-auth-failure
   (testing-using-waiter-url
@@ -153,6 +160,62 @@
         (finally
           (delete-service waiter-url waiter-headers))))))
 
+(deftest ^:parallel ^:integration-slow test-fail-to-stream-large-responses
+  (testing-using-waiter-url
+    (let [^WebSocketClient websocket-client (websocket-client-factory)
+          waiter-settings (waiter-settings waiter-url)
+          {:keys [ws-max-binary-message-size ws-max-text-message-size]} (:websocket-config waiter-settings)
+          ws-max-binary-message-size' (+ 2048 ws-max-binary-message-size)
+          ws-max-text-message-size' (+ 2048 ws-max-text-message-size)
+          auth-cookie-value (auth-cookie waiter-url)
+          waiter-headers (-> (kitchen-request-headers)
+                             (assoc :x-waiter-mem 1024
+                                    :x-waiter-metric-group "test-ws-support"
+                                    :x-waiter-name (rand-name))
+                             (update :x-waiter-cmd
+                                     (fn [cmd] (str cmd ;; on-the-fly doesn't support x-waiter-env
+                                                    " --mem 1024M"
+                                                    " --ws-max-binary-message-size " ws-max-binary-message-size'
+                                                    " --ws-max-text-message-size " ws-max-text-message-size'))))
+          middleware (fn middleware [_ ^UpgradeRequest request]
+                       (websocket/add-headers-to-upgrade-request! request waiter-headers)
+                       (add-auth-cookie request auth-cookie-value))]
+      (update-max-message-sizes websocket-client ws-max-binary-message-size' ws-max-text-message-size')
+      (is auth-cookie-value)
+      (try
+
+        ;; avoiding testing chars as it causes kitchen to run out of memory
+        (testing "large binary response"
+          (let [response-promise (promise)
+                backend-data-promise (promise)
+                ctrl-data-promise (promise)]
+            (ws-client/connect!
+              websocket-client
+              (ws-url waiter-url "/websocket-byte-stream")
+              (fn [{:keys [in out ctrl]}]
+                (async/go
+                  (async/>! out "first-message")
+                  (async/<! in) ;; kitchen message
+                  (async/<! in) ;; hello response
+                  (async/>! out (str "bytes-" (+ ws-max-text-message-size 1024)))
+                  (let [backend-response (async/<! in)]
+                    (deliver backend-data-promise backend-response))
+                  (async/close! out)
+                  (let [ctrl-data (async/<! ctrl)]
+                    (deliver ctrl-data-promise ctrl-data))
+                  (deliver response-promise :done)))
+              {:middleware middleware})
+
+            (is (= :done (deref response-promise (-> 3 t/minutes t/in-millis) :timed-out)))
+            (is (nil? (deref backend-data-promise 100 :timed-out)))
+            (let [[message-key close-code close-message] (deref ctrl-data-promise 100 [:timed-out])]
+              (is (= :qbits.jet.websocket/close message-key))
+              (is (= 1011 close-code))
+              (is (str/includes? (str close-message) "exceeds maximum size")))))
+
+        (finally
+          (delete-service waiter-url waiter-headers))))))
+
 (deftest ^:parallel ^:integration-fast test-request-stream-bytes-and-string
   (testing-using-waiter-url
     (let [auth-cookie-value (auth-cookie waiter-url)
@@ -166,9 +229,7 @@
               ^WebSocketClient websocket-client (websocket-client-factory)
               message-length 2000000 ;; jetty default is 65536
               max-message-length (+ 1024 message-length)]
-          (doto (.getPolicy websocket-client)
-            (.setMaxBinaryMessageSize max-message-length)
-            (.setMaxTextMessageSize max-message-length))
+          (update-max-message-sizes websocket-client max-message-length max-message-length)
           (ws-client/connect!
             websocket-client
             (ws-url waiter-url "/websocket-stream")
