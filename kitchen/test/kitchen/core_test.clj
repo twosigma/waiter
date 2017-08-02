@@ -199,9 +199,9 @@
 
     (testing "bytes-10000"
       (async/>!! in "bytes-10000")
-      (let [response-data (async/<!! out)
-            expected-data (byte-array (take 10000 (cycle (range 103))))]
-        (is (Arrays/equals ^bytes expected-data ^bytes response-data))))
+      (let [response-data (async/<!! out)]
+        (is (= (Class/forName "[B") (.getClass response-data)))
+        (is (= 10000 (count response-data)))))
 
     (testing "raw-bytes"
       (let [byte-data (byte-array (take 100000 (cycle (range 2121))))

@@ -30,9 +30,6 @@
   (-> request (.getCookies) (.add (HttpCookie. "x-waiter-auth" auth-cookie-value))))
 
 (let [websocket-client (WebSocketClient.)]
-  (doto (.getPolicy websocket-client)
-    (.setMaxBinaryMessageSize (* 1024 1024 128))
-    (.setMaxTextMessageSize (* 1024 1024 128)))
   (defn- websocket-client-factory [] websocket-client))
 
 (deftest ^:parallel ^:integration-fast test-request-auth-failure
@@ -165,23 +162,28 @@
                            "x-waiter-name" (rand-name))]
       (is auth-cookie-value)
       (try
-        (let [response-promise (promise)]
+        (let [response-promise (promise)
+              ^WebSocketClient websocket-client (websocket-client-factory)
+              message-length 2000000 ;; jetty default is 65536
+              max-message-length (+ 1024 message-length)]
+          (doto (.getPolicy websocket-client)
+            (.setMaxBinaryMessageSize max-message-length)
+            (.setMaxTextMessageSize max-message-length))
           (ws-client/connect!
-            (websocket-client-factory)
+            websocket-client
             (ws-url waiter-url "/websocket-stream")
             (fn [{:keys [in out]}]
               (async/go
                 (async/>! out "hello")
                 (async/<! in) ;; kitchen message
                 (async/<! in) ;; hello response
-                (let [message-length 1000000] ;; Jetty default is 65536 for max string message
-                  (async/>! out (str "chars-" message-length))
-                  (let [backend-string (async/<! in)]
-                    (async/>! out (.getBytes (str backend-string) "utf-8"))
-                    (let [backend-bytes (async/<! in)
-                          bytes-string (-> backend-bytes (.array) (String. "utf-8"))]
-                      (reset! uncorrupted-data-streamed-atom
-                              (and (= message-length (count backend-string)) (= backend-string bytes-string))))))
+                (async/>! out (str "chars-" message-length))
+                (let [backend-string (async/<! in)]
+                  (async/>! out (.getBytes (str backend-string) "utf-8"))
+                  (let [backend-bytes (async/<! in)
+                        bytes-string (-> backend-bytes (.array) (String. "utf-8"))]
+                    (reset! uncorrupted-data-streamed-atom
+                            (and (= message-length (count backend-string)) (= backend-string bytes-string)))))
                 (deliver response-promise :done)
                 (async/close! out)))
             {:middleware (fn [_ ^UpgradeRequest request]

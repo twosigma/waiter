@@ -262,8 +262,8 @@
                                   "scale-up-factor" 0.1}
    :statsd :disabled
    :thread-stack-state-refresh-interval-ms 600000 ; 10 minutes
-   :websocket-config {:ws-max-binary-message-size  (* 1024 1024 128)
-                      :ws-max-text-message-size (* 1024 1024 128)}
+   :websocket-config {:ws-max-binary-message-size  (* 1024 1024 40)
+                      :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:offer-help-interval-ms 100
                    :reserve-timeout-ms 1000}
    :zookeeper {:base-path "/waiter"
