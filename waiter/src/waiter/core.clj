@@ -157,7 +157,11 @@
               get-request-cid (fn get-request-cid [] request-cid)]
           (if (map? response)
             (cid/ensure-correlation-id response get-request-cid)
-            (async/go (cid/ensure-correlation-id (async/<! response) get-request-cid))))))))
+            (async/go
+              (let [nested-response (async/<! response)]
+                (if (map? nested-response) ;; websocket responses may be another channel
+                  (cid/ensure-correlation-id nested-response get-request-cid)
+                  nested-response)))))))))
 
 
 (defn- make-blacklist-request
