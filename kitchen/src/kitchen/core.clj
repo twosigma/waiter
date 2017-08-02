@@ -447,16 +447,13 @@
               (and (string? in-data) (str/starts-with? in-data "chars-") (> (count in-data) (count "chars-")))
               (let [num-chars-str (subs in-data (count "chars-"))
                     num-chars-int (Integer/parseInt num-chars-str)
-                    chars (map char (range 65 91))
-                    string-data (->> (repeatedly #(rand-nth chars))
-                                     (take num-chars-int)
-                                     (reduce str))]
+                    string-data (utils/generate-random-string num-chars-int)]
                 (async/>! out string-data))
 
               (and (string? in-data) (str/starts-with? in-data "bytes-") (> (count in-data) (count "bytes-")))
               (let [num-bytes-str (subs in-data (count "bytes-"))
                     num-bytes-int (Integer/parseInt num-bytes-str)
-                    byte-data (byte-array (take num-bytes-int (cycle (range 103))))]
+                    byte-data (utils/generate-random-byte-array num-bytes-int)]
                 (async/>! out byte-data))
 
               :else
@@ -518,10 +515,17 @@
                      [nil "--ssl" "Launch server in SSL mode"]
                      [nil "--start-up-sleep-ms MS" "Milliseconds to sleep before starting Jetty"
                       :parse-fn #(Integer/parseInt %)
-                      :default 0]]
+                      :default 0]
+                     [nil "--ws-max-binary-message-size SIZE" "The maximum binary message size"
+                      :parse-fn #(Integer/parseInt %)
+                      :default (* 1024 1024 128)]
+                     [nil "--ws-max-text-message-size SIZE" "The maximum text message size"
+                      :parse-fn #(Integer/parseInt %)
+                      :default (* 1024 1024 128)]]
         {:keys [options summary]} (cli/parse-opts args cli-options)
-        {:keys [help port ssl start-up-sleep-ms]} (cond-> options
-                                                          (-> options :port nil?) (assoc :port (if (:ssl options) 8443 8080)))
+        {:keys [help port ssl start-up-sleep-ms ws-max-binary-message-size ws-max-text-message-size]}
+        (cond-> options
+                (-> options :port nil?) (assoc :port (if (:ssl options) 8443 8080)))
         username (System/getenv "WAITER_USERNAME")
         password (System/getenv "WAITER_PASSWORD")
         keystore (System/getenv "KEYSTORE")
@@ -548,7 +552,9 @@
                                                            correlation-id-middleware)
                                         :request-header-size 32768
                                         :websocket-handler (->> websocket-handler
-                                                                correlation-id-middleware)}
+                                                                correlation-id-middleware)
+                                        :ws-max-binary-message-size  ws-max-binary-message-size
+                                        :ws-max-text-message-size ws-max-text-message-size}
                 server-options (if ssl
                                  (assoc partial-server-options
                                    :key-password keystore-password

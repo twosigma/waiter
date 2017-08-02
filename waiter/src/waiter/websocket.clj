@@ -190,6 +190,7 @@
         (loop [bytes-streamed 0]
           (if-let [in-data (async/<! src-chan)]
             (let [[bytes-read send-data] (process-incoming-data in-data)]
+              (log/info "received" bytes-read "bytes from" src-name)
               (notify-bytes-read-fn bytes-read)
               (if (timers/start-stop-time!
                     stream-onto-upload-chan-timer
@@ -279,7 +280,7 @@
 
 (defn process-response!
   "Processes a response resulting from a websocket request.
-   It includes asycnhronously streaming the content."
+   It includes asynchronously streaming the content."
   [instance-request-properties descriptor _ request _ _ reservation-status-promise confirm-live-connection-with-abort
    request-state-chan response]
   (let [{:keys [service-description service-id]} descriptor

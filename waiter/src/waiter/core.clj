@@ -137,7 +137,7 @@
   "Creates the handler for processing websocket requests.
    Websockets are currently used for inter-router metrics syncing."
   [{:keys [default-websocket-handler-fn router-metrics-handler-fn]}]
-  (fn websocket-handler [{:keys [headers uri] :as request}]
+  (fn websocket-handler [{:keys [uri] :as request}]
     (case uri
       "/waiter-router-metrics" (router-metrics-handler-fn request)
       (default-websocket-handler-fn request))))
@@ -458,8 +458,13 @@
                                atom))
    :task-threadpool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :thread-id->stack-state-atom (pc/fnk [] (atom {}))
-   :websocket-client (pc/fnk [http-client]
-                       (WebSocketClient. ^HttpClient http-client))})
+   :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
+                              http-client]
+                       (let [websocket-client (WebSocketClient. ^HttpClient http-client)]
+                         (doto (.getPolicy websocket-client)
+                           (.setMaxBinaryMessageSize ws-max-binary-message-size)
+                           (.setMaxTextMessageSize ws-max-text-message-size))
+                         websocket-client))})
 
 (def curator
   {:curator (pc/fnk [[:settings [:zookeeper [:curator-retry-policy base-sleep-time-ms max-retries max-sleep-time-ms] connect-string]]]

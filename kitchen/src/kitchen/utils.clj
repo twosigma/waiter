@@ -18,7 +18,7 @@
             [clojure.data.json :as json]
             [clojure.string :as str])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
-           java.util.UUID
+           (java.util Arrays UUID)
            java.util.regex.Pattern
            org.joda.time.DateTime))
 
@@ -70,3 +70,28 @@
   [input default]
   (let [proc-input (re-matches #"[\d]+" input)]
     (if proc-input (read-string proc-input) default)))
+
+(defn- randomly-populate-array
+  "Randomly updates elements in the array from a randomly chosen element from the seed-data."
+  [array-length result-array seed-data]
+  (loop [remaining-iters (min 4096 array-length)]
+    (when (pos? remaining-iters)
+      (aset result-array (rand-int array-length) (rand-nth seed-data))
+      (recur (dec remaining-iters)))))
+
+(defn generate-random-string
+  "Generates a random string of the specified length."
+  [string-length]
+  (let [result-chars (char-array string-length)
+        all-chars (vec (map char (range (-> \A int) (-> \Z int inc))))]
+    (Arrays/fill result-chars \A)
+    (randomly-populate-array string-length result-chars all-chars)
+    (String. ^chars result-chars)))
+
+(defn generate-random-byte-array
+  "Generates a random byte array of the specified length."
+  [array-length]
+  (let [result-bytes (byte-array array-length)
+        all-bytes (vec (map byte (range 0 128)))]
+    (randomly-populate-array array-length result-bytes all-bytes)
+    result-bytes))
