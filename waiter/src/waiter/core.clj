@@ -159,7 +159,7 @@
             (cid/ensure-correlation-id response get-request-cid)
             (async/go
               (let [nested-response (async/<! response)]
-                (if (map? nested-response)
+                (if (map? nested-response) ;; websocket responses may be another channel
                   (cid/ensure-correlation-id nested-response get-request-cid)
                   nested-response)))))))))
 

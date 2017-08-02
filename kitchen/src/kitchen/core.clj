@@ -504,7 +504,7 @@
             (add-cid-into-response request response)
             (async/go
               (let [nested-response (async/<! response)]
-                (if (map? nested-response)
+                (if (map? nested-response) ;; websocket responses may be another channel
                   (add-cid-into-response request nested-response)
                   nested-response)))))))))
 
