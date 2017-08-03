@@ -36,5 +36,5 @@ if [ ! -f ${JAR} ]; then
 fi
 
 JAVA_CMD="java -Xmx${KITCHEN_MEM} -jar ${JAR} "$@""
-echo ${JAVA_CMD}
+echo "Running ${JAVA_CMD}"
 ${JAVA_CMD}

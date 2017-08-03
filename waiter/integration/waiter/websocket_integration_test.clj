@@ -160,21 +160,23 @@
         (finally
           (delete-service waiter-url waiter-headers))))))
 
-(deftest ^:parallel ^:integration-slow test-fail-to-stream-large-responses
+(deftest ^:parallel ^:integration-slow test-message-size-received-from-backend-exceeds-supported-max
   (testing-using-waiter-url
     (let [^WebSocketClient websocket-client (websocket-client-factory)
           waiter-settings (waiter-settings waiter-url)
           {:keys [ws-max-binary-message-size ws-max-text-message-size]} (:websocket-config waiter-settings)
-          ws-max-binary-message-size' (+ 2048 ws-max-binary-message-size)
+          ws-max-binary-message-size' (+ 2048 ws-max-binary-message-size) ;; 2K larger than what Waiter supports
           ws-max-text-message-size' (+ 2048 ws-max-text-message-size)
           auth-cookie-value (auth-cookie waiter-url)
+          process-mem 1024
+          kitchen-mem (- process-mem 64)
           waiter-headers (-> (kitchen-request-headers)
-                             (assoc :x-waiter-mem 1024
+                             (assoc :x-waiter-mem process-mem
                                     :x-waiter-metric-group "test-ws-support"
                                     :x-waiter-name (rand-name))
                              (update :x-waiter-cmd
                                      (fn [cmd] (str cmd ;; on-the-fly doesn't support x-waiter-env
-                                                    " --mem 1024M"
+                                                    (str " --mem " kitchen-mem "M")
                                                     " --ws-max-binary-message-size " ws-max-binary-message-size'
                                                     " --ws-max-text-message-size " ws-max-text-message-size'))))
           middleware (fn middleware [_ ^UpgradeRequest request]
@@ -197,7 +199,7 @@
                   (async/>! out "first-message")
                   (async/<! in) ;; kitchen message
                   (async/<! in) ;; hello response
-                  (async/>! out (str "bytes-" (+ ws-max-text-message-size 1024)))
+                  (async/>! out (str "bytes-" (+ ws-max-text-message-size 1024))) ;; 1K larger than what Waiter supports
                   (let [backend-response (async/<! in)]
                     (deliver backend-data-promise backend-response))
                   (async/close! out)
