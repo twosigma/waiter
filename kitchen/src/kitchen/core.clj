@@ -415,50 +415,58 @@
       (log/error e "handler: encountered exception")
       (utils/exception->json-response e))))
 
-(defn websocket-handler
-  [{:keys [in out] :as request}]
-  (swap! total-ws-requests inc)
-  (printlog request "received websocket request:" request)
-  (swap! pending-ws-requests inc)
-  (async/go
-    (async/>! out "Connected to kitchen")
-    (loop []
-      (let [in-data (async/<! in)]
-        (printlog request "received data on websocket:" in-data)
-        (if (or (str/blank? (str in-data)) (= "exit" in-data))
-          (do
-            (async/>! out "bye")
-            (printlog request "closing connection.")
-            (async/close! out)
-            (swap! pending-ws-requests dec))
-          (do
-            (cond
-              (instance? ByteBuffer in-data)
-              (let [response-bytes (byte-array (.remaining in-data))]
-                (.get in-data response-bytes)
-                (async/>! out response-bytes))
+(defn websocket-handler-factory
+  [{:keys [ws-max-binary-message-size ws-max-text-message-size]}]
+  (fn websocket-handler
+    [{:keys [in out] :as request}]
+    (swap! total-ws-requests inc)
+    (printlog request "received websocket request:" request)
+    (swap! pending-ws-requests inc)
+    (async/go
+      (async/>! out "Connected to kitchen")
+      (loop []
+        (let [in-data (async/<! in)]
+          (printlog request "received data on websocket:" in-data)
+          (if (or (str/blank? (str in-data)) (= "exit" in-data))
+            (do
+              (async/>! out "bye")
+              (printlog request "closing connection.")
+              (async/close! out)
+              (swap! pending-ws-requests dec))
+            (do
+              (cond
+                (instance? ByteBuffer in-data)
+                (let [response-bytes (byte-array (.remaining in-data))]
+                  (.get in-data response-bytes)
+                  (async/>! out response-bytes))
 
-              (= "request-info" in-data)
-              (async/>! out (-> request request-info-handler :body))
+                (= "request-info" in-data)
+                (async/>! out (-> request request-info-handler :body))
 
-              (= "kitchen-state" in-data)
-              (async/>! out (-> request state-handler :body))
+                (= "kitchen-state" in-data)
+                (async/>! out (-> request state-handler :body))
 
-              (and (string? in-data) (str/starts-with? in-data "chars-") (> (count in-data) (count "chars-")))
-              (let [num-chars-str (subs in-data (count "chars-"))
-                    num-chars-int (Integer/parseInt num-chars-str)
-                    string-data (utils/generate-random-string num-chars-int)]
-                (async/>! out string-data))
+                (and (string? in-data) (str/starts-with? in-data "chars-") (> (count in-data) (count "chars-")))
+                (let [num-chars-str (subs in-data (count "chars-"))
+                      num-chars-int (Integer/parseInt num-chars-str)
+                      string-data (utils/generate-random-string num-chars-int)]
+                  (when (> num-chars-int ws-max-text-message-size)
+                    (printlog request "requested chars larger than ws-max-text-message-size(" ws-max-text-message-size ")"))
+                  (printlog request "sending" (count string-data) "chars")
+                  (async/>! out string-data))
 
-              (and (string? in-data) (str/starts-with? in-data "bytes-") (> (count in-data) (count "bytes-")))
-              (let [num-bytes-str (subs in-data (count "bytes-"))
-                    num-bytes-int (Integer/parseInt num-bytes-str)
-                    byte-data (utils/generate-random-byte-array num-bytes-int)]
-                (async/>! out byte-data))
+                (and (string? in-data) (str/starts-with? in-data "bytes-") (> (count in-data) (count "bytes-")))
+                (let [num-bytes-str (subs in-data (count "bytes-"))
+                      num-bytes-int (Integer/parseInt num-bytes-str)
+                      byte-data (utils/generate-random-byte-array num-bytes-int)]
+                  (when (> num-bytes-int ws-max-binary-message-size)
+                    (printlog request "requested bytes larger than ws-max-binary-message-size(" ws-max-binary-message-size ")"))
+                  (printlog request "sending" (count byte-data) "bytes")
+                  (async/>! out byte-data))
 
-              :else
-              (async/>! out in-data))
-            (recur)))))))
+                :else
+                (async/>! out in-data))
+              (recur))))))))
 
 (defn basic-auth-middleware
   "Adds support for basic authentication when both the provided username and password are not nil.
@@ -530,7 +538,9 @@
         password (System/getenv "WAITER_PASSWORD")
         keystore (System/getenv "KEYSTORE")
         keystore-password (System/getenv "KEYSTORE_PASSWORD")
-        keystore-type (System/getenv "KEYSTORE_TYPE")]
+        keystore-type (System/getenv "KEYSTORE_TYPE")
+        websocket-config {:ws-max-binary-message-size ws-max-binary-message-size
+                          :ws-max-text-message-size ws-max-text-message-size}]
     (try
       (if help
         (println summary)
@@ -544,17 +554,17 @@
               (throw (IllegalStateException. "Keystore type (in environment variable KEYSTORE_TYPE) is required when SSL is enabled")))
             (log/info "SSL config:" {:keystore keystore, :keystore-password "***", :keystore-type keystore-type}))
           (log/info "kitchen running on port" port (str (when ssl "in SSL mode")))
+          (log/info "websocket configured to use" websocket-config)
           (when (pos? start-up-sleep-ms)
             (log/info "sleeping for" start-up-sleep-ms "ms before starting server")
             (Thread/sleep start-up-sleep-ms))
-          (let [partial-server-options {:ring-handler (->> (params/wrap-params http-handler)
-                                                           (basic-auth-middleware username password)
-                                                           correlation-id-middleware)
-                                        :request-header-size 32768
-                                        :websocket-handler (->> websocket-handler
-                                                                correlation-id-middleware)
-                                        :ws-max-binary-message-size  ws-max-binary-message-size
-                                        :ws-max-text-message-size ws-max-text-message-size}
+          (let [partial-server-options (merge websocket-config
+                                              {:request-header-size 32768
+                                               :ring-handler (->> (params/wrap-params http-handler)
+                                                                  (basic-auth-middleware username password)
+                                                                  correlation-id-middleware)
+                                               :websocket-handler (->> (websocket-handler-factory websocket-config)
+                                                                       correlation-id-middleware)})
                 server-options (if ssl
                                  (assoc partial-server-options
                                    :key-password keystore-password
