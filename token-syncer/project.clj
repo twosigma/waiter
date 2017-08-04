@@ -31,7 +31,9 @@
                                             "git" "rev-parse" "HEAD")))})}]
   :main ^:skip-aot token-syncer.main
   :plugins [[lein-voom "0.1.0-20150115_230705-gd96d771"]]
-  :profiles {:test-repl {:jvm-opts
+  :profiles {:test-log {:jvm-opts
+                        ["-Dlog4j.configuration=log4j-test.properties"]}
+             :test-repl {:jvm-opts
                          ["-Dlog4j.configuration=log4j-repl.properties"
                           "-XX:+PrintGCDetails"
                           "-XX:+PrintGCTimeStamps"
@@ -42,4 +44,8 @@
              :uberjar {:aot :all}}
   :resource-paths ["resources"]
   :target-path "target/%s"
+  :test-paths ["test" "integration"]
+  :test-selectors {:default (every-pred (complement :dev) (complement :integration))
+                   :dev :dev
+                   :integration (every-pred :integration (complement :explicit))}
   :uberjar-name ~(System/getenv "UBERJAR_NAME"))

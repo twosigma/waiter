@@ -35,12 +35,12 @@
   [http-client {:keys [query-params]}]
   (let [cluster-url-param (get query-params "cluster-url")
         cluster-urls (if (string? cluster-url-param) [cluster-url-param] cluster-url-param)
-        _ (when-not (seq cluster-urls)
+        _ (when-not (seq cluster-urls) ;; TODO validate multiple urls
             (throw (ex-info "missing cluster-url parameter!" {:query-params query-params})))
         result (syncer/sync-tokens http-client cluster-urls)]
     (utils/map->json-response (into (sorted-map) result))))
 
-(defn- ^HttpClient http-client-factory
+(defn ^HttpClient http-client-factory
   "Creates an instance of HttpClient with the specified timeout."
   [{:keys [connection-timeout-ms idle-timeout-ms]}]
   (let [client (http/client {:connect-timeout connection-timeout-ms
