@@ -2,14 +2,14 @@ The token-syncer app is an HTTP server designed specifically for syncing tokens 
 
 # Implementation
 
-The token syncer communicates with Waiter routers on their respective `/token` endpoints to retrieve
+The token syncer communicates with Waiter clusters on their respective `/token` endpoints to retrieve
 and manage individual tokens.
-When requested to sync tokens across multiple routers (via the `/sync-tokens` endpoint), it first loads
-all tokens on each router (routers are specified as a query parameter).
+When requested to sync tokens across multiple clusters (via the `/sync-tokens` endpoint), it first loads
+all tokens on each cluster (clusters are specified as a query parameter).
 It then computes the latest version of the tokens using the `last-update-time` field in the token description.
 It then goes ahead to perform the sync operations using following cases:
-1. Updates the token description on the other routers if any of the routers do not agree on the token description.
-2. Hard-deletes a token if all the routers agree on the token description and the token has been soft-deleted.
+1. Updates the token description on the other clusters if any of the clusters do not agree on the token description.
+2. Hard-deletes a token if all the clusters agree on the token description and the token has been soft-deleted.
 
 # Configuration
 

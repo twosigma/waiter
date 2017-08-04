@@ -72,6 +72,6 @@
 
   (testing "Load invalid settings"
     (with-redefs [load-settings-file (fn [file-name]
-                                       {:router-id->url {"foo" (str "foo." file-name ".com")}})]
+                                       {:cluster-id->url {"foo" (str "foo." file-name ".com")}})]
       (is (thrown-with-msg? ExceptionInfo #"Value does not match schema"
                             (load-settings "some-config.edn" "some-git-version"))))))

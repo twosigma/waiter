@@ -33,11 +33,11 @@
 (defn sync-tokens-handler
   "The handler of token sync requests."
   [http-client {:keys [query-params]}]
-  (let [router-url-param (get query-params "router-url")
-        router-urls (if (string? router-url-param) [router-url-param] router-url-param)
-        _ (when-not (seq router-urls)
-            (throw (ex-info "missing router-url parameter!" {:query-params query-params})))
-        result (syncer/sync-tokens http-client router-urls)]
+  (let [cluster-url-param (get query-params "cluster-url")
+        cluster-urls (if (string? cluster-url-param) [cluster-url-param] cluster-url-param)
+        _ (when-not (seq cluster-urls)
+            (throw (ex-info "missing cluster-url parameter!" {:query-params query-params})))
+        result (syncer/sync-tokens http-client cluster-urls)]
     (utils/map->json-response (into (sorted-map) result))))
 
 (defn- ^HttpClient http-client-factory

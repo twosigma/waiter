@@ -43,7 +43,7 @@
         (do
           (log/info "using config file:" config)
           (let [use-spnego (get-in settings [:http-client-properties :use-spnego])]
-            (log/info (when-not use-spnego "NOT") "using SPNEGO auth while communicating with Waiter routers")
+            (log/info (when-not use-spnego "NOT") "using SPNEGO auth while communicating with Waiter clusters")
             (deliver waiter/use-spnego-promise use-spnego))
           (let [username (System/getenv "WAITER_USERNAME")
                 password (System/getenv "WAITER_PASSWORD")

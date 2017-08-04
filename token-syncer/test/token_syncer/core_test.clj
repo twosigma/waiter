@@ -35,31 +35,31 @@
 
 (deftest test-sync-handler
   (testing "routing to sync-handler"
-    (testing "successful response - single router-url"
+    (testing "successful response - single cluster-url"
       (let [sync-result {:sync-success true}]
-        (with-redefs [syncer/sync-tokens (fn sync-tokens [_ router-urls]
-                                           (is (= #{"a"} (set router-urls)))
+        (with-redefs [syncer/sync-tokens (fn sync-tokens [_ cluster-urls]
+                                           (is (= #{"a"} (set cluster-urls)))
                                            sync-result)]
           (let [http-handler (http-handler-factory {})]
             (is (= {:body (json/write-str sync-result)
                     :headers {"Content-Type" "application/json"}
                     :status 200}
-                   (http-handler {:query-params {"router-url" "a"}
+                   (http-handler {:query-params {"cluster-url" "a"}
                                   :uri "/sync-tokens"})))))))
 
-    (testing "successful response - multiple router-url"
+    (testing "successful response - multiple cluster-url"
       (let [sync-result {:sync-success true}]
-        (with-redefs [syncer/sync-tokens (fn sync-tokens [_ router-urls]
-                                           (is (= #{"a" "b"} (set router-urls)))
+        (with-redefs [syncer/sync-tokens (fn sync-tokens [_ cluster-urls]
+                                           (is (= #{"a" "b"} (set cluster-urls)))
                                            sync-result)]
           (let [http-handler (http-handler-factory {})]
             (is (= {:body (json/write-str sync-result)
                     :headers {"Content-Type" "application/json"}
                     :status 200}
-                   (http-handler {:query-params {"router-url" ["a" "b"]}
+                   (http-handler {:query-params {"cluster-url" ["a" "b"]}
                                   :uri "/sync-tokens"})))))))
 
-    (testing "exception in response -  missing router urls"
+    (testing "exception in response -  missing cluster urls"
       (let [http-handler (http-handler-factory {})
             response (http-handler {:uri "/sync-tokens"})]
         (is (= {:headers {"Content-Type" "application/json"}
@@ -71,7 +71,7 @@
         (with-redefs [syncer/sync-tokens (fn sync-tokens [_ _] (throw sync-exception))]
           (let [http-handler (http-handler-factory {})]
             (is (= (utils/exception->json-response sync-exception)
-                   (http-handler {:query-params {"router-url" "a"}
+                   (http-handler {:query-params {"cluster-url" "a"}
                                   :uri "/sync-tokens"})))))))))
 
 (deftest test-basic-auth

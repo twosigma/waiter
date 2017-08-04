@@ -48,19 +48,19 @@
 (deftest test-load-token-list
   (deliver use-spnego-promise false)
   (let [http-client (Object.)
-        test-router-url "http://www.test.com:1234"]
+        test-cluster-url "http://www.test.com:1234"]
 
     (testing "error in response"
       (let [error (Exception. "exception from test")]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (empty? in-options))
                                           (let [response-chan (async/promise-chan)]
                                             (async/put! response-chan {:error error})
                                             response-chan))]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (load-token-list http-client test-router-url))))))
+                                (load-token-list http-client test-cluster-url))))))
 
     (testing "successful response"
       (let [token-response (json/write-str [{:owner "test-1", :token "token-1"}
@@ -68,15 +68,15 @@
                                             {:owner "test-3", :token "token-3"}])]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (empty? in-options))
                                           (send-response token-response))]
           (is (= #{"token-1" "token-2" "token-3"}
-                 (load-token-list http-client test-router-url))))))))
+                 (load-token-list http-client test-cluster-url))))))))
 
-(deftest test-load-token-on-router
+(deftest test-load-token-on-cluster
   (let [http-client (Object.)
-        test-router-url "http://www.test.com:1234"
+        test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
         expected-options {:headers {"x-waiter-token" test-token}
                           :query-params {"include-deleted" "true"}}]
@@ -85,31 +85,31 @@
       (let [error (Exception. "exception from test")]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (let [response-chan (async/promise-chan)]
                                             (async/put! response-chan {:error error})
                                             response-chan))]
           (is (= {:error error}
-                 (load-token-on-router http-client test-router-url test-token))))))
+                 (load-token-on-cluster http-client test-cluster-url test-token))))))
 
     (testing "successful response"
       (let [token-response (json/write-str {:foo :bar
                                             :lorem :ipsum})]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 200))]
           (is (= {:description {"foo" "bar",
                                 "lorem" "ipsum"}
                   :status 200}
-                 (load-token-on-router http-client test-router-url test-token))))))))
+                 (load-token-on-cluster http-client test-cluster-url test-token))))))))
 
-(deftest test-store-token-on-router
+(deftest test-store-token-on-cluster
   (deliver use-spnego-promise false)
   (let [http-client (Object.)
-        test-router-url "http://www.test.com:1234"
+        test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
         test-description {"foo" "bar"
                           "lorem" "ipsum"}
@@ -121,38 +121,38 @@
       (let [error (Exception. "exception from test")]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (let [response-chan (async/promise-chan)]
                                             (async/put! response-chan {:error error})
                                             response-chan))]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (store-token-on-router http-client test-router-url test-token test-description))))))
+                                (store-token-on-cluster http-client test-cluster-url test-token test-description))))))
 
     (testing "error in status code"
       (let [token-response "token response"]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token store failed"
-                                (store-token-on-router http-client test-router-url test-token test-description))))))
+                                (store-token-on-cluster http-client test-cluster-url test-token test-description))))))
 
     (testing "successful response"
       (let [token-response "token response"]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 200))]
           (is (= {:body token-response, :status 200}
-                 (store-token-on-router http-client test-router-url test-token test-description))))))))
+                 (store-token-on-cluster http-client test-cluster-url test-token test-description))))))))
 
-(deftest test-hard-delete-token-on-router
+(deftest test-hard-delete-token-on-cluster
   (deliver use-spnego-promise false)
   (let [http-client (Object.)
-        test-router-url "http://www.test.com:1234"
+        test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
         expected-options {:headers {"x-waiter-token" test-token}
                           :method http/delete
@@ -162,30 +162,30 @@
       (let [error (Exception. "exception from test")]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (let [response-chan (async/promise-chan)]
                                             (async/put! response-chan {:error error})
                                             response-chan))]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (hard-delete-token-on-router http-client test-router-url test-token))))))
+                                (hard-delete-token-on-cluster http-client test-cluster-url test-token))))))
 
     (testing "error in status code"
       (let [token-response "token response"]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token hard-delete failed"
-                                (hard-delete-token-on-router http-client test-router-url test-token))))))
+                                (hard-delete-token-on-cluster http-client test-cluster-url test-token))))))
 
     (testing "successful response"
       (let [token-response "token response"]
         (with-redefs [make-http-request (fn [in-http-client in-endopint-url & in-options]
                                           (is (= http-client in-http-client))
-                                          (is (= (str test-router-url "/token")) in-endopint-url)
+                                          (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 200))]
           (is (= {:body token-response, :status 200}
-                 (hard-delete-token-on-router http-client test-router-url test-token))))))))
+                 (hard-delete-token-on-cluster http-client test-cluster-url test-token))))))))

@@ -41,12 +41,12 @@
                   (assoc :auth (spnego/spnego-authentication (URI. request-url))))))
 
 (defn load-token-list
-  "Loads the list of tokens on a specific router."
-  [^HttpClient http-client router-url]
-  (let [token-list-url (str router-url "/tokens")
+  "Loads the list of tokens on a specific cluster."
+  [^HttpClient http-client cluster-url]
+  (let [token-list-url (str cluster-url "/tokens")
         {:keys [body error]} (async/<!! (make-http-request http-client token-list-url))]
     (when error
-      (cid/error error "error in retrieving tokens from" router-url)
+      (cid/error error "error in retrieving tokens from" cluster-url)
       (throw error))
     (->> body
          (async/<!!)
@@ -55,16 +55,16 @@
          (map (fn entry->token [entry] (get entry "token")))
          set)))
 
-(defn load-token-on-router
-  "Loads the description of a token on a router."
-  [^HttpClient http-client router-url token]
+(defn load-token-on-cluster
+  "Loads the description of a token on a cluster."
+  [^HttpClient http-client cluster-url token]
   (try
-    (let [token-get-url (str router-url "/token")
+    (let [token-get-url (str cluster-url "/token")
           {:keys [body error status]} (async/<!! (make-http-request http-client token-get-url
                                                                     :headers {"x-waiter-token" token}
                                                                     :query-params {"include-deleted" "true"}))]
       (when error
-        (cid/error error "error in retrieving tokens from" router-url)
+        (cid/error error "error in retrieving tokens from" cluster-url)
         (throw error))
       {:description (if (= status 200)
                       (->> body
@@ -76,17 +76,17 @@
                            str))
        :status status})
     (catch Exception ex
-      (cid/error ex "unable to retrieve token" token "from" router-url)
+      (cid/error ex "unable to retrieve token" token "from" cluster-url)
       {:error ex})))
 
-(defn store-token-on-router
-  "Stores the token description on a specific router."
-  [^HttpClient http-client router-url token token-description]
-  (cid/info "storing token:" token-description ", soft-delete:" (true? (get token-description "deleted")) "on" router-url)
+(defn store-token-on-cluster
+  "Stores the token description on a specific cluster."
+  [^HttpClient http-client cluster-url token token-description]
+  (cid/info "storing token:" token-description ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
           (make-http-request http-client
-                             (str router-url "/token")
+                             (str cluster-url "/token")
                              :body (json/write-str (assoc token-description :token token))
                              :method http/post
                              :query-params {"update-mode" "admin"}))
@@ -102,14 +102,14 @@
     {:body body-data
      :status status}))
 
-(defn hard-delete-token-on-router
-  "Hard-delete a token on a specific router."
-  [^HttpClient http-client router-url token]
-  (cid/info "hard-delete" token "on" router-url)
+(defn hard-delete-token-on-cluster
+  "Hard-delete a token on a specific cluster."
+  [^HttpClient http-client cluster-url token]
+  (cid/info "hard-delete" token "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
           (make-http-request http-client
-                             (str router-url "/token")
+                             (str cluster-url "/token")
                              :headers {"x-waiter-token" token}
                              :method http/delete
                              :query-params {"hard-delete" "true"}))

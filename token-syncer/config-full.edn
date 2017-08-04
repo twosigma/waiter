@@ -11,5 +11,5 @@
                           ;; The HTTP idle timeout (milliseconds) for instance requests:
                           :idle-timeout-ms 30000
 
-                          ;; Whether the HTTP client should use SPNEGO while talking to the routers:
+                          ;; Whether the HTTP client should use SPNEGO while talking to the clusters:
                           :use-spnego false}}

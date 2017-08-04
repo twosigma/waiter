@@ -18,215 +18,215 @@
             [token-syncer.syncer :refer :all]
             [token-syncer.waiter :as waiter]))
 
-(deftest test-retrieve-token->router-url->token-data
+(deftest test-retrieve-token->cluster-url->token-data
   (let [http-client (Object.)
-        test-router-urls ["www.router-1.com" "www.router-2.com" "www.router-3.com"]
+        test-cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com"]
         test-tokens ["token-1" "token-2" "token-3" "token-4" "token-5"]]
-    (with-redefs [waiter/load-token-on-router (fn [_ router-url token] (str router-url ":" token))]
+    (with-redefs [waiter/load-token-on-cluster (fn [_ cluster-url token] (str cluster-url ":" token))]
       (is (= (pc/map-from-keys
                (fn [token]
                  (pc/map-from-keys
-                   (fn [router-url]
-                     (str router-url ":" token))
-                   test-router-urls))
+                   (fn [cluster-url]
+                     (str cluster-url ":" token))
+                   test-cluster-urls))
                test-tokens)
-             (retrieve-token->router-url->token-data http-client test-router-urls test-tokens))))))
+             (retrieve-token->cluster-url->token-data http-client test-cluster-urls test-tokens))))))
 
 (deftest test-retrieve-token->latest-description
   (testing "empty input"
     (is (= {} (retrieve-token->latest-description {}))))
 
   (testing "single empty entry"
-    (let [token->router-url->token-data {"token-1" {}}]
+    (let [token->cluster-url->token-data {"token-1" {}}]
       (is (= {"token-1" {}}
-             (retrieve-token->latest-description token->router-url->token-data)))))
+             (retrieve-token->latest-description token->cluster-url->token-data)))))
 
   (testing "single entry"
     (let [token-data {:description {"last-update-time" 1234}}
-          token->router-url->token-data {"token-1" {"router-1" token-data}}]
-      (is (= {"token-1" {:description {"last-update-time" 1234}, :router-url "router-1"}}
-             (retrieve-token->latest-description token->router-url->token-data)))))
+          token->cluster-url->token-data {"token-1" {"cluster-1" token-data}}]
+      (is (= {"token-1" {:description {"last-update-time" 1234}, :cluster-url "cluster-1"}}
+             (retrieve-token->latest-description token->cluster-url->token-data)))))
 
   (testing "single valid entry"
     (let [token-data {:description {"last-update-time" 1234}}
-          token->router-url->token-data {"token-1" {"router-1" token-data
-                                                    "router-2" {}}}]
-      (is (= {"token-1" {:description {"last-update-time" 1234}, :router-url "router-1"}}
-             (retrieve-token->latest-description token->router-url->token-data)))))
+          token->cluster-url->token-data {"token-1" {"cluster-1" token-data
+                                                    "cluster-2" {}}}]
+      (is (= {"token-1" {:description {"last-update-time" 1234}, :cluster-url "cluster-1"}}
+             (retrieve-token->latest-description token->cluster-url->token-data)))))
 
   (testing "single valid entry"
     (let [token-data-1 {:description {"last-update-time" 1234}}
           token-data-2 {:description {"last-update-time" 4567}}
           token-data-3 {:description {"last-update-time" 1267}}
-          token->router-url->token-data {"token-1" {"router-1" token-data-1
-                                                    "router-2" token-data-2
-                                                    "router-3" token-data-3}}]
-      (is (= {"token-1" {:description {"last-update-time" 4567}, :router-url "router-2"}}
-             (retrieve-token->latest-description token->router-url->token-data)))))
+          token->cluster-url->token-data {"token-1" {"cluster-1" token-data-1
+                                                    "cluster-2" token-data-2
+                                                    "cluster-3" token-data-3}}]
+      (is (= {"token-1" {:description {"last-update-time" 4567}, :cluster-url "cluster-2"}}
+             (retrieve-token->latest-description token->cluster-url->token-data)))))
 
   (testing "multiple-tokens"
     (let [token-data-1 {:description {"last-update-time" 1234}}
           token-data-2 {:description {"last-update-time" 4567}}
           token-data-3 {:description {"last-update-time" 1267}}
-          token->router-url->token-data {"token-A2" {"router-1" token-data-1
-                                                     "router-2" token-data-2
-                                                     "router-3" token-data-3}
+          token->cluster-url->token-data {"token-A2" {"cluster-1" token-data-1
+                                                     "cluster-2" token-data-2
+                                                     "cluster-3" token-data-3}
                                          "token-B" {}
-                                         "token-C1" {"router-1" token-data-2
-                                                     "router-2" token-data-1
-                                                     "router-3" token-data-3}
-                                         "token-D3" {"router-1" token-data-3
-                                                     "router-2" token-data-2
-                                                     "router-3" token-data-1}}]
-      (is (= {"token-A2" {:description {"last-update-time" 4567}, :router-url "router-2"}
+                                         "token-C1" {"cluster-1" token-data-2
+                                                     "cluster-2" token-data-1
+                                                     "cluster-3" token-data-3}
+                                         "token-D3" {"cluster-1" token-data-3
+                                                     "cluster-2" token-data-2
+                                                     "cluster-3" token-data-1}}]
+      (is (= {"token-A2" {:description {"last-update-time" 4567}, :cluster-url "cluster-2"}
               "token-B" {}
-              "token-C1" {:description {"last-update-time" 4567}, :router-url "router-1"}
-              "token-D3" {:description {"last-update-time" 4567}, :router-url "router-2"}}
-             (retrieve-token->latest-description token->router-url->token-data))))))
+              "token-C1" {:description {"last-update-time" 4567}, :cluster-url "cluster-1"}
+              "token-D3" {:description {"last-update-time" 4567}, :cluster-url "cluster-2"}}
+             (retrieve-token->latest-description token->cluster-url->token-data))))))
 
-(deftest test-hard-delete-token-on-all-routers
+(deftest test-hard-delete-token-on-all-clusters
   (let [http-client (Object.)
-        test-router-urls ["www.router-1.com" "www.router-2-error.com" "www.router-3.com"]
+        test-cluster-urls ["www.cluster-1.com" "www.cluster-2-error.com" "www.cluster-3.com"]
         test-token "token-1"]
-    (with-redefs [waiter/hard-delete-token-on-router
-                  (fn [_ router-url token]
-                    (if (str/includes? router-url "error")
+    (with-redefs [waiter/hard-delete-token-on-cluster
+                  (fn [_ cluster-url token]
+                    (if (str/includes? cluster-url "error")
                       (throw (Exception. "Error in hard-delete thrown from test"))
-                      (str router-url ":" token)))]
-      (is (= {"www.router-1.com" {:message :successfully-hard-deleted-token-on-cluster
-                                  :response "www.router-1.com:token-1"}
-              "www.router-2-error.com" {:cause "Error in hard-delete thrown from test"
+                      (str cluster-url ":" token)))]
+      (is (= {"www.cluster-1.com" {:message :successfully-hard-deleted-token-on-cluster
+                                  :response "www.cluster-1.com:token-1"}
+              "www.cluster-2-error.com" {:cause "Error in hard-delete thrown from test"
                                         :message :error-in-delete}
-              "www.router-3.com" {:message :successfully-hard-deleted-token-on-cluster
-                                  :response "www.router-3.com:token-1"}}
-             (hard-delete-token-on-all-routers http-client test-router-urls test-token))))))
+              "www.cluster-3.com" {:message :successfully-hard-deleted-token-on-cluster
+                                  :response "www.cluster-3.com:token-1"}}
+             (hard-delete-token-on-all-clusters http-client test-cluster-urls test-token))))))
 
-(deftest test-sync-token-on-routers
+(deftest test-sync-token-on-clusters
   (let [http-client (Object.)]
-    (with-redefs [waiter/store-token-on-router
-                  (fn [_ router-url token token-description]
-                    (if (str/includes? router-url "error")
+    (with-redefs [waiter/store-token-on-cluster
+                  (fn [_ cluster-url token token-description]
+                    (if (str/includes? cluster-url "error")
                       (throw (Exception. "Error in storing token thrown from test"))
-                      (assoc token-description :router-url router-url :token token)))]
+                      (assoc token-description :cluster-url cluster-url :token token)))]
 
-      (testing "sync router error while loading token"
-        (let [router-urls ["www.router-1.com" "www.router-2.com"]
+      (testing "sync cluster error while loading token"
+        (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
               test-token "test-token-1"
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
-              router-url->token-data {"www.router-1.com" {:description {"name" "test-name"
+              cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                         "owner" "test-user-1"}
                                                           :status 200}
-                                      "www.router-2.com" {:error (Exception. "router-2 data cannot be loaded")}}]
-          (is (= {"www.router-1.com" {:message :token-already-synced}
-                  "www.router-2.com" {:cause "router-2 data cannot be loaded"
+                                      "www.cluster-2.com" {:error (Exception. "cluster-2 data cannot be loaded")}}]
+          (is (= {"www.cluster-1.com" {:message :token-already-synced}
+                  "www.cluster-2.com" {:cause "cluster-2 data cannot be loaded"
                                       :message :unable-to-read-token-on-cluster}}
-                 (sync-token-on-routers http-client router-urls test-token token-description router-url->token-data)))))
+                 (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
-      (testing "sync router error while missing status"
-        (let [router-urls ["www.router-1.com" "www.router-2.com"]
+      (testing "sync cluster error while missing status"
+        (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
               test-token "test-token-1"
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
-              router-url->token-data {"www.router-1.com" {:description {"name" "test-name"
+              cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                         "owner" "test-user-1"}
                                                           :status 200}
-                                      "www.router-2.com" {}}]
-          (is (= {"www.router-1.com" {:message :token-already-synced}
-                  "www.router-2.com" {:cause "status missing from response"
+                                      "www.cluster-2.com" {}}]
+          (is (= {"www.cluster-1.com" {:message :token-already-synced}
+                  "www.cluster-2.com" {:cause "status missing from response"
                                       :message :unable-to-read-token-on-cluster}}
-                 (sync-token-on-routers http-client router-urls test-token token-description router-url->token-data)))))
+                 (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
-      (testing "sync router different owners"
-        (let [router-urls ["www.router-1.com" "www.router-2.com"]
+      (testing "sync cluster different owners"
+        (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
               test-token "test-token-1"
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
-              router-url->token-data {"www.router-1.com" {:description {"name" "test-name"
+              cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                         "owner" "test-user-1"}
                                                           :status 200}
-                                      "www.router-2.com" {:description {"owner" "test-user-2"}
+                                      "www.cluster-2.com" {:description {"owner" "test-user-2"}
                                                           :status 200}}]
-          (is (= {"www.router-1.com" {:message :token-already-synced}
-                  "www.router-2.com" {:latest-token-description token-description
+          (is (= {"www.cluster-1.com" {:message :token-already-synced}
+                  "www.cluster-2.com" {:latest-token-description token-description
                                       :message :token-owners-are-different
-                                      :router-data {"owner" "test-user-2"}}}
-                 (sync-token-on-routers http-client router-urls test-token token-description router-url->token-data)))))
+                                      :cluster-data {"owner" "test-user-2"}}}
+                 (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
-      (testing "sync router successfully"
-        (let [router-urls ["www.router-1.com" "www.router-2.com"]
+      (testing "sync cluster successfully"
+        (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
               test-token "test-token-1"
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
-              router-url->token-data {"www.router-1.com" {:description {"name" "test-name"
+              cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                         "owner" "test-user-1"}
                                                           :status 200}
-                                      "www.router-2.com" {:description {"owner" "test-user-1"}
+                                      "www.cluster-2.com" {:description {"owner" "test-user-1"}
                                                           :status 200}}]
-          (is (= {"www.router-1.com" {:message :token-already-synced}
-                  "www.router-2.com" {:message :sync-token-on-cluster
+          (is (= {"www.cluster-1.com" {:message :token-already-synced}
+                  "www.cluster-2.com" {:message :sync-token-on-cluster
                                       :response (assoc token-description
-                                                  :router-url "www.router-2.com"
+                                                  :cluster-url "www.cluster-2.com"
                                                   :token test-token)}}
-                 (sync-token-on-routers http-client router-urls test-token token-description router-url->token-data)))))
+                 (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
-      (testing "sync router error"
-        (let [router-urls ["www.router-1.com" "www.router-2-error.com"]
+      (testing "sync cluster error"
+        (let [cluster-urls ["www.cluster-1.com" "www.cluster-2-error.com"]
               test-token "test-token-1"
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
-              router-url->token-data {"www.router-1.com" {:description {"name" "test-name"
+              cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                         "owner" "test-user-1"}
                                                           :status 200}
-                                      "www.router-2-error.com" {:description {"owner" "test-user-1"}
+                                      "www.cluster-2-error.com" {:description {"owner" "test-user-1"}
                                                                 :status 200}}]
-          (is (= {"www.router-1.com" {:message :token-already-synced}
-                  "www.router-2-error.com" {:cause "Error in storing token thrown from test"
+          (is (= {"www.cluster-1.com" {:message :token-already-synced}
+                  "www.cluster-2-error.com" {:cause "Error in storing token thrown from test"
                                             :message :error-in-token-sync}}
-                 (sync-token-on-routers http-client router-urls test-token token-description router-url->token-data))))))))
+                 (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data))))))))
 
 (deftest test-sync-tokens
   (let [http-client (Object.)
-        router-urls ["www.router-1.com" "www.router-2.com" "www.router-3.com"]
-        router-url->tokens {"www.router-1.com" ["token-1" "token-2"]
-                            "www.router-2.com" ["token-2" "token-3" "token-4"]
-                            "www.router-3.com" ["token-1" "token-3"]}
+        cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com"]
+        cluster-url->tokens {"www.cluster-1.com" ["token-1" "token-2"]
+                            "www.cluster-2.com" ["token-2" "token-3" "token-4"]
+                            "www.cluster-3.com" ["token-1" "token-3"]}
         token-desc-1 {"name" "t1-all-synced"}
         token-desc-2 {"name" "t2-needs-sync"}
         token-desc-3 {"name" "t3-soft-delete"
                       "deleted" true}
         token-desc-4 {"name" "t4-hard-delete"
                       "deleted" true}
-        token->router-url->token-data {"token-1" {"www.router-1.com" {:description token-desc-1}
-                                                  "www.router-2.com" {:description (assoc token-desc-1 "cmd" "test")}
-                                                  "www.router-3.com" {:description token-desc-1}}
-                                       "token-2" {"www.router-1.com" {:description token-desc-2}
-                                                  "www.router-2.com" {:description token-desc-2}
-                                                  "www.router-3.com" {:description token-desc-2}}
-                                       "token-3" {"www.router-1.com" {:description (dissoc token-desc-3 "deleted")}
-                                                  "www.router-2.com" {:description token-desc-3}
-                                                  "www.router-3.com" {:description token-desc-3}}
-                                       "token-4" {"www.router-1.com" {:description token-desc-4}
-                                                  "www.router-2.com" {:description token-desc-4}
-                                                  "www.router-3.com" {:description token-desc-1}}}
+        token->cluster-url->token-data {"token-1" {"www.cluster-1.com" {:description token-desc-1}
+                                                  "www.cluster-2.com" {:description (assoc token-desc-1 "cmd" "test")}
+                                                  "www.cluster-3.com" {:description token-desc-1}}
+                                       "token-2" {"www.cluster-1.com" {:description token-desc-2}
+                                                  "www.cluster-2.com" {:description token-desc-2}
+                                                  "www.cluster-3.com" {:description token-desc-2}}
+                                       "token-3" {"www.cluster-1.com" {:description (dissoc token-desc-3 "deleted")}
+                                                  "www.cluster-2.com" {:description token-desc-3}
+                                                  "www.cluster-3.com" {:description token-desc-3}}
+                                       "token-4" {"www.cluster-1.com" {:description token-desc-4}
+                                                  "www.cluster-2.com" {:description token-desc-4}
+                                                  "www.cluster-3.com" {:description token-desc-1}}}
         token->latest-description {"token-1" token-desc-1
                                    "token-2" token-desc-2
                                    "token-3" token-desc-3
                                    "token-4" token-desc-4}]
-    (with-redefs [waiter/load-token-list (fn [_ router-url]
-                                           (router-url->tokens router-url))
-                  retrieve-token->router-url->token-data (fn [_ in-router-urls all-tokens]
-                                                           (is (= (set router-urls) in-router-urls))
+    (with-redefs [waiter/load-token-list (fn [_ cluster-url]
+                                           (cluster-url->tokens cluster-url))
+                  retrieve-token->cluster-url->token-data (fn [_ in-cluster-urls all-tokens]
+                                                           (is (= (set cluster-urls) in-cluster-urls))
                                                            (is (= #{"token-1" "token-2" "token-3" "token-4"}
                                                                   (set all-tokens)))
-                                                           token->router-url->token-data)
-                  retrieve-token->latest-description (fn [in-token->router-url->token-data]
-                                                       (is (= token->router-url->token-data in-token->router-url->token-data))
+                                                           token->cluster-url->token-data)
+                  retrieve-token->latest-description (fn [in-token->cluster-url->token-data]
+                                                       (is (= token->cluster-url->token-data in-token->cluster-url->token-data))
                                                        token->latest-description)
-                  hard-delete-token-on-all-routers (fn [_ router-urls token]
-                                                     (keyword (str token "-" (count router-urls) "-hard-delete")))
-                  sync-token-on-routers (fn [_ router-urls token _ _]
-                                          (keyword (str token "-" (count router-urls) "-sync-token")))]
+                  hard-delete-token-on-all-clusters (fn [_ cluster-urls token]
+                                                     (keyword (str token "-" (count cluster-urls) "-hard-delete")))
+                  sync-token-on-clusters (fn [_ cluster-urls token _ _]
+                                          (keyword (str token "-" (count cluster-urls) "-sync-token")))]
       (is (= {:num-tokens-processed 4,
               :result
               {"token-4"
@@ -241,7 +241,7 @@
                "token-1"
                {:description {"name" "t1-all-synced"},
                 :sync-result :token-1-3-sync-token}}}
-             (sync-tokens http-client router-urls))))))
+             (sync-tokens http-client cluster-urls))))))
 
 ;; TODO shams remove tests bdelow
 
@@ -273,5 +273,5 @@
                  (when error
                    (.printStackTrace error))
                  (cid/info status (async/<!! body) error)
-                 (cid/info (waiter/load-token-on-router http-client waiter-url token))
+                 (cid/info (waiter/load-token-on-cluster http-client waiter-url token))
                  (is (= 200 status) (str "Error: " body)))))))
