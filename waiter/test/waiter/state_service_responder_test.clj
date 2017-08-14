@@ -54,7 +54,7 @@
             check-fn (fn [item-key]
                        (let [expected (item-key expected-state)
                              actual (item-key actual-state)]
-                         (when (not (nil? expected))
+                         (when (contains? expected-state item-key)
                            (when (not= expected actual)
                              (let [sanitize-data-fn (fn [data]
                                                       (cond->> data
@@ -64,6 +64,7 @@
                                (println "Expected: " (sanitize-data-fn expected))
                                (println "Actual:   " (sanitize-data-fn actual))))
                            (is (= expected actual) (str "Checking: " (name item-key))))))]
+        (check-fn :deployment-error)
         (check-fn :id->instance)
         (check-fn :instance-id->blacklist-expiry-time)
         (check-fn :instance-id->request-id->use-reason-map)
@@ -208,6 +209,45 @@
                                                                 "testabcd.u1" "testabcd.u3" ; unhealthy
                                                                 ]
                                           :work-stealing-queue (make-queue [])})
+        (async/>!! exit-chan :exit)))
+
+    (deftest test-start-service-chan-responder-deployment-errors ; tests to make sure deployment errors are updated correctly
+      (let [{:keys [exit-chan query-state-chan reserve-instance-chan update-state-chan]}
+            (launch-service-chan-responder 0 {})]
+        (doseq [deployment-error [:authentication-required :bad-startup-command :health-check-misconfigured :not-enough-memory nil]]
+          ; update state and verify whether state changes are reflected correctly
+          (let [update-state {:deployment-error deployment-error
+                              :healthy-instances []
+                              :unhealthy-instances [{:id "testabcd.u1"}, {:id "testabcd.u2"}, {:id "testabcd.u3"}]
+                              :starting-instances []
+                              :expired-instances []
+                              :my-instance->slots {}}]
+            (async/>!! update-state-chan [update-state (t/now)]))
+          (check-state-fn query-state-chan {:deployment-error deployment-error
+                                            :instance-id->blacklist-expiry-time {}
+                                            :instance-id->request-id->use-reason-map {}
+                                            :instance-id->consecutive-failures {}
+                                            :instance-id->state (-> {}
+                                                                    (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
+                                                                    (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
+                                                                    (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy}))
+                                            :request-id->work-stealer {}
+                                            :sorted-instance-ids ["testabcd.u1" "testabcd.u2" "testabcd.u3"]
+                                            :work-stealing-queue (make-queue [])})
+          ; attempt to reserve an instances
+          (if deployment-error
+            (check-request-instance-fn reserve-instance-chan deployment-error) ; chanel should be open only when there are deployment errors
+            (check-request-instance-fn reserve-instance-chan :no-matching-instance-found :expect-deadlock true))
+          (check-state-fn query-state-chan {:deployment-error deployment-error
+                                            :instance-id->blacklist-expiry-time {}
+                                            :instance-id->request-id->use-reason-map {}
+                                            :instance-id->consecutive-failures {}
+                                            :instance-id->state (-> {}
+                                                                    (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
+                                                                    (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
+                                                                    (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy}))
+                                            :request-id->work-stealer {}
+                                            :work-stealing-queue (make-queue [])}))
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-exclude-expired-instance

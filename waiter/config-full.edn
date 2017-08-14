@@ -83,7 +83,7 @@
              ;; The path used for leader election:
              :leader-latch-relative-path "leader-latch"
 
-             ;; The timeout for acquiring a mutex 
+             ;; The timeout for acquiring a mutex
              :mutex-timeout-ms 1000}
 
  ;; Waiter starts a loop to query for the list of currently running routers:
@@ -467,11 +467,22 @@
  ; ---------- Miscellaneous ----------
 
  ;; Certain messages that Waiter returns can be customized:
- :messages {:prestashed-tickets-not-available "Lorem ipsum dolor sit amet"
-            :environment-variable-error-info "Consectetur adipiscing elit"
-            :metadata-error-info "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua"
-            :cannot-identify-service "Ut enim ad minim veniam"
-            :invalid-service-description "Quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo"}
+ :messages {:bad-startup-command "Invalid startup command"
+            :cannot-identify-service "Unable to identify service using waiter headers/token"
+            :environment-variable-error-info "Error in environment variables"
+            :health-check-requires-authentication "Health check requires authentication"
+            :invalid-service-description "Service description using waiter headers/token improperly configured"
+            :metadata-error-info "Error in metadata"
+            :not-enough-memory "Not enough memory allocated"
+            :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}
+
+ ;; Sets tolerance level for Waiter when declaring deployment errors
+ :deployment-error-config {
+                           ;; The number of instances that must fail in order to declare a deployment error:
+                           :min-failed-instances 2
+
+                           ;; The number of hosts on which health checks must fail in order to declare a deployment error:
+                           :min-hosts 2}
 
  ;; Waiter launches a loop that maintains the stacktraces for individual threads;
  ;; this value dictates how often (milliseconds) the stacktraces are refreshed:

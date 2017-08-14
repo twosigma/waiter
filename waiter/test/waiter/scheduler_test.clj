@@ -41,6 +41,9 @@
                         "service-id"
                         "2014-09-13T00:24:46.959Z"
                         true
+                        200
+                        #{}
+                        nil
                         "www.scheduler-test.example.com"
                         1234
                         []
@@ -52,6 +55,7 @@
       (is (= "service-id" (:service-id test-instance)))
       (is (= "2014-09-13T00:24:46.959Z" (:started-at test-instance)))
       (is (= true (:healthy? test-instance)))
+      (is (= 200 (:health-check-status test-instance)))
       (is (= "www.scheduler-test.example.com" (:host test-instance)))
       (is (= 1234 (:port test-instance)))
       (is (= "proto" (:protocol test-instance)))
@@ -219,17 +223,19 @@
         scheduler-syncer-interval-secs 1
         service-id->service-description-fn (fn [id] {"health-check-url" (str "/" id)})
         started-at "2014-09-14T002446.965Z"
-        instance1 (->ServiceInstance "1.1" "1" started-at nil "host" 123 [] "proto" "/log" "test")
-        instance2 (->ServiceInstance "1.2" "1" started-at true "host" 123 [] "proto" "/log" "test")
-        instance3 (->ServiceInstance "1.3" "1" started-at nil "host" 123 [] "proto" "/log" "test")
+        instance1 (->ServiceInstance "1.1" "1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
+        instance2 (->ServiceInstance "1.2" "1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
+        instance3 (->ServiceInstance "1.3" "1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
         scheduler (reify ServiceScheduler
                     (get-apps->instances [_]
                       {(->Service "1" {} {} {}) {:active-instances [instance1 instance2 instance3]
                                                  :failed-instances []}}))
         available? (fn [{:keys [id]} url _]
                      (async/go (cond
-                                 (and (= "1.1" id) (= "/1" url)) true
-                                 :else false)))
+                                 (and (= "1.1" id) (= "/1" url)) {:healthy? true
+                                                                  :status 200}
+                                 :else {:healthy? false
+                                        :status 400})))
         syncer-cancel (start-scheduler-syncer scheduler scheduler-state-chan
                                               scheduler-syncer-interval-secs service-id->service-description-fn available?
                                               {})]
@@ -239,7 +245,7 @@
       (is (= (list "1") (:available-apps update-apps)))
       (is (= :update-app-instances update-instances-msg))
       (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
-      (is (= [(assoc instance3 :healthy? false)] (:unhealthy-instances update-instances)))
+      (is (= [(assoc instance3 :healthy? false :health-check-status 400)] (:unhealthy-instances update-instances)))
       (is (= "1" (:service-id update-instances))))
     (syncer-cancel)))
 
@@ -248,7 +254,9 @@
         service {:id "s1"}
         available? (fn [instance _]
                      (async/go
-                       (= (:id instance) available-instance)))
+                       (let [healthy? (= (:id instance) available-instance)]
+                         {:healthy? healthy?
+                          :status (if healthy? 200 400)})))
         service->service-description-fn (constantly {:health-check-url "/health"})]
     (testing "Does not call available? for healthy apps"
       (let [service->service-instances {service {:active-instances [{:id "id1"
@@ -281,7 +289,9 @@
         service {:id "s1"}
         available? (fn [{:keys [id]} _]
                      (async/go
-                       (= id available-instance)))
+                       (let [healthy? (= id available-instance)]
+                         {:healthy? healthy?
+                          :status (if healthy? 200 400)})))
         service->service-description-fn (constantly {:health-check-url "/healthy"})
         service->service-instances {service {:active-instances [{:id available-instance}
                                                                 {:id "id2"

@@ -194,7 +194,7 @@
    slots-assigned-counter slots-available-counter slots-in-use-counter]
   (timers/start-stop-time!
     update-responder-state-timer
-    (when-let [[{:keys [healthy-instances unhealthy-instances my-instance->slots expired-instances starting-instances]} _] data]
+    (when-let [[{:keys [healthy-instances unhealthy-instances my-instance->slots expired-instances starting-instances deployment-error]} _] data]
       ; instances that are expired *might also* appear in healthy-instances, depending on whether
       ; or not this router has been assigned the expired instance
       ; stated differently, healthy-instances contains only instances that are both healthy
@@ -255,6 +255,7 @@
         (update-slots-metrics instance-id->state' slots-assigned-counter slots-available-counter slots-in-use-counter)
         (meters/mark! update-responder-state-meter)
         (assoc current-state
+          :deployment-error deployment-error
           :id->instance id->instance'
           :instance-id->state instance-id->state'
           :sorted-instance-ids sorted-instance-ids)))))
@@ -282,31 +283,35 @@
 
 (defn handle-reserve-instance-request
   "Handles a reserve request."
-  [{:keys [id->instance instance-id->state request-id->work-stealer sorted-instance-ids work-stealing-queue] :as current-state} 
+  [{:keys [deployment-error id->instance instance-id->state request-id->work-stealer sorted-instance-ids work-stealing-queue] :as current-state}
    service-id update-slot-state-fn [{:keys [cid request-id] :as reason-map} resp-chan exclude-ids-set _]]
-  (if-let [{:keys [instance router-id] :as work-stealer-data} (first work-stealing-queue)]
-    ; using instance offered via work-stealing
-    (let [instance-id (:id instance)]
-      (cid/cdebug (str cid "|" (:cid work-stealer-data)) "offering work-stealing instance" instance-id)
-      (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "accepts"))
-      {:current-state' (-> current-state
-                           (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
-                           (assoc :request-id->work-stealer (assoc request-id->work-stealer request-id work-stealer-data)
-                                  :work-stealing-queue (pop work-stealing-queue)))
-       :response-chan resp-chan
-       :response instance})
-    ; lookup available slots from router's pre-allocated instances
-    (let [{instance-id :id :as instance-to-offer}
-          (find-available-instance sorted-instance-ids id->instance instance-id->state #(not (contains? exclude-ids-set %)))]
-      (if instance-to-offer
+  (if deployment-error  ; if a deployment error is associated with the state, return the error immediately instead of an instance
+    {:current-state' current-state
+     :response-chan resp-chan
+     :response deployment-error}
+    (if-let [{:keys [instance router-id] :as work-stealer-data} (first work-stealing-queue)]
+      ; using instance offered via work-stealing
+      (let [instance-id (:id instance)]
+        (cid/cdebug (str cid "|" (:cid work-stealer-data)) "offering work-stealing instance" instance-id)
+        (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "accepts"))
         {:current-state' (-> current-state
                              (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
-                             (update-slot-state-fn instance-id #(inc %2)))
+                             (assoc :request-id->work-stealer (assoc request-id->work-stealer request-id work-stealer-data)
+                                    :work-stealing-queue (pop work-stealing-queue)))
          :response-chan resp-chan
-         :response instance-to-offer}
-        {:current-state' current-state
-         :response-chan resp-chan
-         :response :no-matching-instance-found}))))
+         :response instance})
+      ; lookup available slots from router's pre-allocated instances
+      (let [{instance-id :id :as instance-to-offer}
+            (find-available-instance sorted-instance-ids id->instance instance-id->state #(not (contains? exclude-ids-set %)))]
+        (if instance-to-offer
+          {:current-state' (-> current-state
+                               (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
+                               (update-slot-state-fn instance-id #(inc %2)))
+           :response-chan resp-chan
+           :response instance-to-offer}
+          {:current-state' current-state
+           :response-chan resp-chan
+           :response :no-matching-instance-found})))))
 
 (defn handle-kill-instance-request
   "Handles a kill request."
@@ -484,7 +489,8 @@
         ; :locked => instance has been locked and cannot be used to satify any other request (e.g. used for a kill request)
         ; :expired => instance has exceeded its age and is being prepared to be replaced
         ; :starting => instance is starting up and has the potential to be healthy
-        (loop [{:keys [id->instance
+        (loop [{:keys [deployment-error
+                       id->instance
                        instance-id->blacklist-expiry-time
                        instance-id->consecutive-failures
                        instance-id->request-id->use-reason-map
@@ -494,7 +500,8 @@
                        timer-context
                        work-stealing-queue]
                 :as current-state}
-               (merge {:id->instance {}
+               (merge {:deployment-error nil
+                       :id->instance {}
                        :instance-id->blacklist-expiry-time {}
                        :instance-id->consecutive-failures {}
                        :instance-id->request-id->use-reason-map {}
@@ -511,7 +518,7 @@
                          ; to be used preferentially. `exit-chan` and `query-state-chan` must be lowest priority
                          ; to facilitate unit testing.
                          chans (concat (cond-> [update-state-chan]
-                                         (or slots-available? (seq work-stealing-queue)) (conj reserve-instance-chan))
+                                         (or slots-available? (seq work-stealing-queue) deployment-error) (conj reserve-instance-chan))
                                        [release-instance-chan blacklist-instance-chan unblacklist-instance-chan kill-instance-chan
                                         work-stealing-chan query-state-chan exit-chan])
                          [data chan-selected] (async/alts! chans :priority true)]
@@ -682,7 +689,7 @@
                     (timers/start-stop-time!
                       update-state-timer
                       (let [{:keys [service-id->my-instance->slots service-id->unhealthy-instances service-id->expired-instances
-                                    service-id->starting-instances service-id->sorted-instance-ids time]} router-state
+                                    service-id->starting-instances service-id->sorted-instance-ids service-id->deployment-error time]} router-state
                             incoming-service-ids (set (keys service-id->my-instance->slots))
                             known-service-ids (set (keys service-id->channel-map))
                             new-service-ids (set/difference incoming-service-ids known-service-ids)
@@ -704,6 +711,7 @@
                                 sorted-instance-ids (get service-id->sorted-instance-ids service-id)
                                 expired-instances (get service-id->expired-instances service-id)
                                 starting-instances (get service-id->starting-instances service-id)
+                                deployment-error (get service-id->deployment-error service-id)
                                 update-state-chan (retrieve-channel (get service-id->channel-map'' service-id) :update-state)]
                             (if (or healthy-instances unhealthy-instances)
                               (async/put! update-state-chan
@@ -712,7 +720,8 @@
                                                               :expired-instances expired-instances
                                                               :starting-instances starting-instances
                                                               :sorted-instance-ids sorted-instance-ids
-                                                              :my-instance->slots my-instance->slots}]
+                                                              :my-instance->slots my-instance->slots
+                                                              :deployment-error deployment-error}]
                                             [update-state time]))
                               (async/put! update-state-chan [{} time]))))
                         [service-id->channel-map'' time])))
@@ -997,12 +1006,29 @@
                  :service-id->my-instance->slots service-id->my-instance->slots')
           update-router-instance-counts))))
 
+(defn get-deployment-error
+  "Returns appropriate deployment error for a service based on its instances, or nil if no such errors."
+  [healthy-instances unhealthy-instances failed-instances {:keys [min-failed-instances min-hosts]}]
+  (when (empty? healthy-instances)
+    (let [failed-instance-hosts (set (map :host failed-instances))
+          has-failed-instances (and (>= (count failed-instances) min-failed-instances)
+                                    (>= (count failed-instance-hosts) min-hosts)
+                                    (apply = (map :flags failed-instances))
+                                    (apply = (map :exit-code failed-instances)))
+          has-unhealthy-instances (and (not-empty unhealthy-instances)
+                                       (apply = (map :health-check-status unhealthy-instances)))
+          unhealthy-status (-> unhealthy-instances first :health-check-status)]
+      (cond
+        (and has-failed-instances (-> failed-instances first :flags :memory-limit-exceeded)) :not-enough-memory
+        (and has-failed-instances (-> failed-instances first :exit-code)) :bad-startup-command
+        (and has-unhealthy-instances (= unhealthy-status 401)) :health-check-requires-authentication))))
+
 (defn start-router-state-maintainer
   "Start the instance state maintainer.
    Maintains the state of the router as well as the state of marathon
    and the existence of other routers. Acts as the central access point
    for modifying this data for the router."
-  [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn]
+  [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config]
   (let [state-chan (async/chan)
         router-state-push-chan (au/latest-chan)]
     {:state-chan state-chan
@@ -1017,6 +1043,8 @@
                  :service-id->my-instance->slots {} ; updated in update-router-state
                  :service-id->expired-instances {}
                  :service-id->starting-instances {}
+                 :service-id->failed-instances {}
+                 :service-id->deployment-error {}
                  :iteration 0
                  :routers []
                  :time (t/now)}]
@@ -1033,7 +1061,8 @@
                      (cid/with-correlation-id
                        (str "router-state-maintainer-" iteration)
                        (loop [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->my-instance->slots
-                                      service-id->sorted-instance-ids service-id->expired-instances service-id->starting-instances] :as loop-state} current-state
+                                      service-id->sorted-instance-ids service-id->expired-instances service-id->starting-instances
+                                      service-id->failed-instances service-id->deployment-error] :as loop-state} current-state
                               [[message-type message-data] & remaining] scheduler-messages]
                          (log/trace "scheduler-state-chan received, type:" message-type)
                          (let [loop-state'
@@ -1041,20 +1070,15 @@
                                  :update-available-apps
                                  (let [{:keys [available-apps scheduler-sync-time]} message-data
                                        available-apps-set (into #{} available-apps)
-                                       service-id->healthy-instances' (utils/filterm
-                                                                        (fn [[service-id _]] (contains? available-apps-set service-id))
-                                                                        service-id->healthy-instances)
-                                       service-id->unhealthy-instances' (utils/filterm
-                                                                          (fn [[service-id _]] (contains? available-apps-set service-id))
-                                                                          service-id->unhealthy-instances)
-                                       service-id->sorted-instance-ids' (utils/filterm
-                                                                          (fn [[service-id _]] (contains? available-apps-set service-id))
-                                                                          service-id->sorted-instance-ids)
+                                       filter-fn (fn [[service-id _]] (contains? available-apps-set service-id))
+                                       service-id->healthy-instances' (utils/filterm filter-fn service-id->healthy-instances)
+                                       service-id->unhealthy-instances' (utils/filterm filter-fn service-id->unhealthy-instances)
+                                       service-id->sorted-instance-ids' (utils/filterm filter-fn service-id->sorted-instance-ids)
                                        services-without-instances (set/difference available-apps-set (set (keys service-id->my-instance->slots)))
-                                       service-id->expired-instances' (utils/filterm (fn [[service-id _]] (contains? available-apps-set service-id))
-                                                                                     service-id->expired-instances)
-                                       service-id->starting-instances' (utils/filterm (fn [[service-id _]] (contains? available-apps-set service-id))
-                                                                                      service-id->starting-instances)]
+                                       service-id->expired-instances' (utils/filterm filter-fn service-id->expired-instances)
+                                       service-id->starting-instances' (utils/filterm filter-fn service-id->starting-instances)
+                                       service-id->failed-instances' (utils/filterm filter-fn service-id->failed-instances)
+                                       service-id->deployment-error' (utils/filterm filter-fn service-id->deployment-error)]
                                    (when (or (not= service-id->healthy-instances service-id->healthy-instances')
                                              (not= service-id->unhealthy-instances service-id->unhealthy-instances')
                                              (seq services-without-instances))
@@ -1068,10 +1092,12 @@
                                      :service-id->sorted-instance-ids service-id->sorted-instance-ids'
                                      :service-id->expired-instances service-id->expired-instances'
                                      :service-id->starting-instances service-id->starting-instances'
+                                     :service-id->failed-instances service-id->failed-instances'
+                                     :service-id->deployment-error service-id->deployment-error'
                                      :time scheduler-sync-time))
 
                                  :update-app-instances
-                                 (let [{:keys [service-id sorted-instance-ids healthy-instances unhealthy-instances scheduler-sync-time]} message-data
+                                 (let [{:keys [service-id sorted-instance-ids healthy-instances unhealthy-instances failed-instances scheduler-sync-time]} message-data
                                        service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
                                        service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)
                                        service-id->sorted-instance-ids' (assoc service-id->sorted-instance-ids service-id sorted-instance-ids)
@@ -1082,7 +1108,12 @@
                                        expired-instances (filter #(utils/older-than? scheduler-sync-time expiry-mins %) healthy-instances)
                                        starting-instances (filter #(not (utils/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
                                        service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
-                                       service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)]
+                                       service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
+                                       service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
+                                       deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config)
+                                       service-id->deployment-error' (if deployment-error
+                                                                       (assoc service-id->deployment-error service-id deployment-error)
+                                                                       (dissoc service-id->deployment-error service-id))]
                                    (when (or (not= (get service-id->healthy-instances service-id) healthy-instances)
                                              (not= (get service-id->unhealthy-instances service-id) unhealthy-instances))
                                      (let [curr-instance-ids (set (map :id healthy-instances))
@@ -1102,6 +1133,8 @@
                                      :service-id->sorted-instance-ids service-id->sorted-instance-ids'
                                      :service-id->expired-instances service-id->expired-instances'
                                      :service-id->starting-instances service-id->starting-instances'
+                                     :service-id->failed-instances service-id->failed-instances'
+                                     :service-id->deployment-error service-id->deployment-error'
                                      :time scheduler-sync-time))
 
                                  ; default value
@@ -1111,9 +1144,11 @@
                            (if (nil? remaining)
                              (let [new-state (update-router-state router-id current-state loop-state' service-id->service-description-fn)]
                                (when (not= (select-keys current-state [:service-id->healthy-instances :service-id->unhealthy-instances
-                                                                       :service-id->expired-instances :service-id->starting-instances])
+                                                                       :service-id->expired-instances :service-id->starting-instances
+                                                                       :service-id->failed-instances :service-id->deployment-error])
                                            (select-keys new-state [:service-id->healthy-instances :service-id->unhealthy-instances
-                                                                   :service-id->expired-instances :service-id->starting-instances]))
+                                                                   :service-id->expired-instances :service-id->starting-instances
+                                                                   :service-id->failed-instances :service-id->deployment-error]))
                                  ; propagate along router-state-push-chan only when state changes
                                  (async/put! router-state-push-chan new-state))
                                new-state)

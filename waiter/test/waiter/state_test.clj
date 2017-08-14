@@ -839,6 +839,51 @@
         (distribute-slots-using-consistent-hash-distribution router-ids instances hash-fn concurrency-level "simple")
         (is (= "simple" @distribution-scheme-atom))))))
 
+(deftest test-get-deployment-error
+  (let [config {:grace-period-ms 10000
+                :min-failed-instances 2
+                :min-hosts 1
+                :using-marathon true}
+        alive-started-at (.toString (t/now))
+        expired-started-at (.toString (t/minus (t/now) (t/millis 10000)))
+        test-cases (list {:name "no-instances" :healthy-instances [] :unhealthy-instances [] :failed-instances [] :expected nil}
+                         {:name "no-deployment-errors" :healthy-instances [:instance-one] :unhealthy-instances [] :failed-instances [] :expected nil}
+                         {:name "healthy-and-unhealthy-instances" :healthy-instances [:instance-one]
+                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}] :failed-instances [] :expected nil}
+                         {:name "healthy-and-failed-instances" :healthy-instances [:instance-one]
+                          :unhealthy-instances [] :failed-instances [{:message "Command exited with status" :exit-code 1}] :expected nil}
+                         {:name "single-unhealthy-instance" :healthy-instances []
+                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}] :failed-instances [] :expected nil}
+                         {:name "single-failed-instance" :healthy-instances [] :unhealthy-instances []
+                          :failed-instances [{:message "Command exited with status" :exit-code 1}] :expected nil}
+                         {:name "multiple-different-unhealthy-instances" :healthy-instances []
+                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}
+                                                {:health-check-status 401 :started-at alive-started-at}]
+                          :failed-instances [] :expected nil}
+                         {:name "multiple-different-failed-instances" :healthy-instances [] :unhealthy-instances []
+                          :failed-instances [{:message "Command exited with status" :exit-code 1}
+                                             {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}]
+                          :expected nil}
+                         {:name "not-enough-memory" :healthy-instances [] :unhealthy-instances []
+                          :failed-instances [{:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
+                                             {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}]
+                          :expected :not-enough-memory}
+                         {:name "bad-startup-command" :healthy-instances [] :unhealthy-instances []
+                          :failed-instances [{:message "Command exited with status" :exit-code 1}
+                                             {:message "Command exited with status" :exit-code 1}]
+                          :expected :bad-startup-command}
+                         {:name "health-check-requires-authentication" :healthy-instances []
+                          :unhealthy-instances [{:health-check-status 401}] :failed-instances []
+                          :expected :health-check-requires-authentication}
+                         {:name "unhealthy-and-failed-instances" :healthy-instances []
+                          :unhealthy-instances [{:health-check-status 401}]
+                          :failed-instances [{:message "Command exited with status" :exit-code 1}
+                                             {:message "Command exited with status" :exit-code 1}]
+                          :expected :bad-startup-command})]
+    (doseq [{:keys [name healthy-instances unhealthy-instances failed-instances expected]} test-cases]
+      (testing (str "Test " name)
+        (is (= expected (get-deployment-error healthy-instances unhealthy-instances failed-instances config)))))))
+
 (deftest test-router-state-maintainer-scheduler-state
   (testing "router-state-maintainer-removes-expired-instances"
     (let [scheduler-state-chan (async/chan 1)
@@ -852,8 +897,10 @@
           service-id "service-1"
           instance {:id (str service-id ".1")
                     :started-at (f/unparse (f/formatters :date-time)
-                                           (t/minus (t/now) (t/minutes 2)))}]
-      (let [{:keys [router-state-push-mult]} (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn)]
+                                           (t/minus (t/now) (t/minutes 2)))}
+          deployment-error-config {:min-failed-instances 2
+                                   :min-hosts 2}]
+      (let [{:keys [router-state-push-mult]} (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
         (async/tap router-state-push-mult router-state-push-chan))
       (async/>!! router-chan {router-id (str "http://www." router-id ".com")})
       (async/>!! scheduler-state-chan [[:update-available-apps {:available-apps [service-id]
@@ -898,10 +945,12 @@
           service-id->service-description-fn (fn [id] (let [service-num (Integer/parseInt (str/replace id "service-" ""))]
                                                         {"concurrency-level" concurrency-level
                                                          "instance-expiry-mins" service-num
-                                                         "grace-period-secs" (* 60 service-num)}))]
+                                                         "grace-period-secs" (* 60 service-num)}))
+          deployment-error-config {:min-failed-instances 2
+                                   :min-hosts 2}]
       (with-redefs [distribute-slots-using-consistent-hash-distribution (fn [routers instances _ _ _] (slot-partition-fn routers instances))]
 
-        (let [{:keys [router-state-push-mult]} (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn)]
+        (let [{:keys [router-state-push-mult]} (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
           (async/tap router-state-push-mult router-state-push-chan))
 
 
@@ -917,7 +966,11 @@
               unhealthy-instances-fn (fn [service-id index]
                                        (vec (map (fn [x] {:id (str service-id "." x "1")
                                                           :started-at (f/unparse (f/formatters :date-time) start-time)})
-                                                 (range (if (zero? (mod index 2)) 1 0)))))]
+                                                 (range (if (zero? (mod index 2)) 1 0)))))
+              failed-instances-fn (fn [service-id index]
+                                    (vec (map (fn [x] {:id (str service-id "." x "1")
+                                                       :started-at (f/unparse (f/formatters :date-time) start-time)})
+                                              (range (if (zero? (mod index 2)) 1 0)))))]
           (dotimes [n num-message-iterations]
             (let [current-time (t/plus start-time (t/minutes n))]
               (let [services (services-fn n)]
@@ -927,6 +980,7 @@
                   (if (>= index (count services))
                     (async/>!! scheduler-state-chan scheduler-messages)
                     (let [service-id (str "service-" index)
+                          failed-instances (failed-instances-fn service-id index)
                           healthy-instances (healthy-instances-fn service-id index n)
                           unhealthy-instances (unhealthy-instances-fn service-id index)
                           sorted-instance-ids (sort (map :id (concat healthy-instances unhealthy-instances)))
@@ -935,6 +989,7 @@
                                                              :unhealthy-instances unhealthy-instances
                                                              :sorted-instance-ids sorted-instance-ids}
                                                        :service-id service-id
+                                                       :failed-instances failed-instances
                                                        :scheduler-sync-time current-time)]]
                       (recur (inc index) (conj scheduler-messages service-instances-message))))))
               (let [expected-services (services-fn n)
@@ -945,6 +1000,10 @@
                                       :service-id->unhealthy-instances
                                       (zipmap expected-services
                                               (map #(unhealthy-instances-fn % (index-fn %)) expected-services))
+                                      :service-id->failed-instances
+                                      (zipmap expected-services
+                                              (map #(failed-instances-fn % (index-fn %)) expected-services))
+                                      :service-id->deployment-error {} ; should be no deployment errors
                                       :service-id->sorted-instance-ids
                                       (zipmap expected-services
                                               (map (fn [service]
@@ -977,7 +1036,95 @@
                                       :time current-time})
                     state (async/<!! router-state-push-chan)
                     actual-state (dissoc state :iteration)]
-                (is (= expected-state actual-state)))))
+                (when (not= expected-state actual-state)
+                  (clojure.pprint/pprint (clojure.data/diff expected-state actual-state)))
+                (is (= expected-state actual-state) (str (clojure.data/diff expected-state actual-state))))))
+          (async/>!! exit-chan :exit)))))
+
+  (testing "router-state-maintainer-deployment-errors-updated"
+    (let [scheduler-state-chan (async/chan 1)
+          router-chan (async/chan 1)
+          num-message-iterations 20
+          router-state-push-chan (async/chan 1)
+          exit-chan (async/chan 1)
+          concurrency-level 1
+          slot-partition-fn (fn [routers instances]
+                              (pc/map-vals
+                                (fn [my-instances] (into {} (map (fn [instance] {instance concurrency-level}) my-instances)))
+                                (zipmap
+                                  routers
+                                  (let [instances-partition (partition (int (/ (inc (count instances)) (count routers))) instances)]
+                                    (map #(sort (:id (remove nil? %))) instances-partition)))))
+          router-id "router.0"
+          routers {router-id (str "http://www." router-id ".com")
+                   "router.1" (str "http://www.router.1.com")}
+          services-fn #(vec (map (fn [i] (str "service-" i)) (range (inc (if (> % (/ num-message-iterations 2)) (- % 5) %)))))
+          grace-period-secs 100
+          service-id->service-description-fn (fn [id] (let [service-num (Integer/parseInt (str/replace id "service-" ""))]
+                                                        {"concurrency-level" concurrency-level
+                                                         "instance-expiry-mins" service-num
+                                                         "grace-period-secs" grace-period-secs}))
+          deployment-error-config {:grace-period-ms (* grace-period-secs 1000)
+                                   :min-failed-instances 1
+                                   :min-hosts 1}]
+      (with-redefs [distribute-slots-using-consistent-hash-distribution (fn [routers instances _ _ _] (slot-partition-fn routers instances))]
+
+        (let [{:keys [router-state-push-mult]} (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
+          (async/tap router-state-push-mult router-state-push-chan))
+
+        (async/>!! router-chan routers)
+        (is (= routers (:routers (async/<!! router-state-push-chan))))
+
+        (let [start-time (t/now)
+              unhealthy-health-check-statuses [400 401 402 nil nil]
+              unhealthy-instances-fn (fn [service-id index]
+                                       (vec (map (fn [x] {:id (str service-id "." x "1")
+                                                          :health-check-status (get unhealthy-health-check-statuses (mod index (count unhealthy-health-check-statuses)))
+                                                          :started-at (f/unparse (f/formatters :date-time) start-time)})
+                                                 (range (if (zero? (mod index 2)) 1 0)))))
+              failed-messages [{:message nil} {:message nil} {:message nil} {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}} {:message "Command exited with status" :exit-code 1}]
+              failed-instances-fn (fn [service-id index]
+                                    (vec (map (fn [x] (merge (get failed-messages (mod index (count failed-messages)))
+                                                        {:id (str service-id "." x "1")
+                                                         :started-at (f/unparse (f/formatters :date-time) start-time)}))
+                                              (range (if (zero? (mod index 2)) 1 0)))))
+              deployment-error-fn (fn [service-id index]
+                                    (get-deployment-error [] (unhealthy-instances-fn service-id index) (failed-instances-fn service-id index) deployment-error-config))]
+          (dotimes [n num-message-iterations]
+            (let [current-time (t/plus start-time (t/minutes n))]
+              (let [services (services-fn n)]
+                (loop [index 0
+                       scheduler-messages [[:update-available-apps {:available-apps services
+                                                                    :scheduler-sync-time current-time}]]]
+                  (if (>= index (count services))
+                    (async/>!! scheduler-state-chan scheduler-messages)
+                    (let [service-id (str "service-" index)
+                          failed-instances (failed-instances-fn service-id index)
+                          unhealthy-instances (unhealthy-instances-fn service-id index)
+                          service-instances-message [:update-app-instances
+                                                     (assoc {:healthy-instances [] ; no healthy instances
+                                                             :unhealthy-instances unhealthy-instances}
+                                                       :service-id service-id
+                                                       :failed-instances failed-instances
+                                                       :scheduler-sync-time current-time)]]
+                      (recur (inc index) (conj scheduler-messages service-instances-message))))))
+              (let [expected-services (services-fn n)
+                    expected-state (let [index-fn #(Integer/parseInt (subs % (inc (.lastIndexOf ^String % "-"))))]
+                                     {:service-id->unhealthy-instances
+                                               (zipmap expected-services
+                                                       (map #(unhealthy-instances-fn % (index-fn %)) expected-services))
+                                      :service-id->failed-instances
+                                               (zipmap expected-services
+                                                       (map #(failed-instances-fn % (index-fn %)) expected-services))
+                                      :service-id->deployment-error
+                                               (into {} (filter second (zipmap expected-services
+                                                                               (map #(deployment-error-fn % (index-fn %)) expected-services))))})
+                    state (async/<!! router-state-push-chan)
+                    actual-state (dissoc state :iteration :service-id->healthy-instances :service-id->expired-instances :service-id->starting-instances
+                                         :service-id->sorted-instance-ids :service-id->my-instance->slots :routers :time)]
+                (when (not= expected-state actual-state)
+                  (clojure.pprint/pprint (clojure.data/diff expected-state actual-state)))
+                (is (= expected-state actual-state) (str (clojure.data/diff expected-state actual-state))))))
           (async/>!! exit-chan :exit))))))
 
 (deftest test-retrieve-peer-routers
@@ -1144,7 +1291,8 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-1.A" 11, "service-1.B" 12}
-                 :sorted-instance-ids ["service-1.A" "service-1.B"]}
+                 :sorted-instance-ids ["service-1.A" "service-1.B"]
+                 :deployment-error nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-1"} :update-state))))
         (is (= [{:healthy-instances ["service-3.A" "service-3.B"]
@@ -1152,7 +1300,8 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-3.A" 6, "service-3.B" 8}
-                 :sorted-instance-ids ["service-3.A" "service-3.B"]}
+                 :sorted-instance-ids ["service-3.A" "service-3.B"]
+                 :deployment-error nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-3"} :update-state))))
         (is (= [{:healthy-instances ["service-4.B"]
@@ -1160,7 +1309,8 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-4.B" 3}
-                 :sorted-instance-ids ["service-4.B"]}
+                 :sorted-instance-ids ["service-4.B"]
+                 :deployment-error nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-4"} :update-state))))
         (is (= [{:healthy-instances ["service-5.A"]
@@ -1168,7 +1318,8 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-5.A" 5}
-                 :sorted-instance-ids ["service-5.A"]}
+                 :sorted-instance-ids ["service-5.A"]
+                 :deployment-error nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-5"} :update-state))))
 

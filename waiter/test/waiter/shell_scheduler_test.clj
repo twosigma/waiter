@@ -31,12 +31,16 @@
 
 (defn- create-test-service
   "Creates a new (test) service with command `ls` and the given service-id"
-  [scheduler service-id]
-  (let [descriptor {:service-description {"backend-proto" "http"
-                                          "cmd" "ls"
-                                          "ports" 1}
-                    :service-id service-id}]
-    (scheduler/create-app-if-new scheduler (constantly "password") descriptor)))
+  ([scheduler service-id]
+   (create-test-service scheduler service-id {}))
+  ([scheduler service-id custom-service-description]
+   (let [descriptor {:service-description (merge {"backend-proto" "http"
+                                                  "cmd" "ls"
+                                                  "mem" 32
+                                                  "ports" 1}
+                                                 custom-service-description)
+                     :service-id service-id}]
+     (scheduler/create-app-if-new scheduler (constantly "password") descriptor))))
 
 (defn- task-stats
   "Gets the task-stats for the first service in the given scheduler"
@@ -47,19 +51,44 @@
       first
       :task-stats))
 
+(defn- agent-finished?
+  "Delivers a promise upon execution"
+  [id->service completion-promise]
+  (deliver completion-promise :finished)
+  id->service)
+
+(defn- ensure-agent-finished
+  "Sends the agent to a function that delivers a promise, letting us know that previous functions applied to agent have finished execution"
+  [{:keys [id->service-agent]}]
+  (let [completion-promise (promise)]
+    (send id->service-agent agent-finished? completion-promise)
+    (deref completion-promise)))
+
+(defn- force-update-service-health
+  "Forces a call to update-service-health"
+  [{:keys [id->service-agent port->reservation-atom] :as scheduler} {:keys [health-check-timeout-ms port-grace-period-ms]}]
+  (send id->service-agent update-service-health health-check-timeout-ms port->reservation-atom port-grace-period-ms)
+  (ensure-agent-finished scheduler))
+
+(defn- force-maintain-instance-scale
+  "Forces a call to maintain-instance-scale"
+  [{:keys [id->service-agent port->reservation-atom port-range] :as scheduler}]
+  (send id->service-agent maintain-instance-scale port->reservation-atom port-range)
+  (ensure-agent-finished scheduler))
+
 (deftest test-launch-instance
   (testing "Launching an instance"
     (testing "should throw if cmd is nil"
       (is (thrown-with-msg? ExceptionInfo #"The command to run was not supplied"
-                            (launch-instance "foo" (work-dir) nil "http" {} 1 nil nil))))
+                            (launch-instance "foo" {"backend-proto" "http" "ports" 1 "mem" 32} (work-dir) {} nil nil))))
 
     (testing "with https backend proto"
-      (let [{:keys [protocol]} (launch-instance "foo" "scheduler" "ls" "https" {} 1 (atom {}) [2000 3000])]
+      (let [{:keys [protocol]} (launch-instance "foo" {"backend-proto" "https" "cmd" "ls" "ports" 1 "mem" 32} "scheduler" {} (atom {}) [2000 3000])]
         (is (= "https" protocol))))
 
     (testing "should throw if enough ports aren't available"
       (is (thrown-with-msg? ExceptionInfo #"Unable to reserve 4 ports"
-                            (launch-instance "bar" (work-dir) "echo 1" "http" {} 4 (atom {}) [5100 5102]))))
+                            (launch-instance "bar" {"backend-proto" "http" "cmd" "echo 1" "ports" 4 "mem" 32} (work-dir) {} (atom {}) [5100 5102]))))
 
     (testing "with multiple ports"
       (let [num-ports 8
@@ -68,7 +97,7 @@
         (with-redefs [launch-process (fn [_ _ command environment]
                                        (is (= "dummy-command" command))
                                        (is (every? #(contains? environment (str "PORT" %)) (range num-ports))))]
-          (let [{:keys [extra-ports port]} (launch-instance "baz" (work-dir) "dummy-command" "http" {} num-ports (atom {}) port-range)]
+          (let [{:keys [extra-ports port]} (launch-instance "baz" {"backend-proto" "http" "cmd" "dummy-command" "ports" num-ports "mem" 32} (work-dir) {} (atom {}) port-range)]
             (is (= port-range-start port))
             (is (= (map #(+ % port-range-start) (range 1 num-ports)) extra-ports))))))))
 
@@ -84,9 +113,7 @@
     (is (= 2 (count content)))
     (is (some #(= "stdout" (:name %)) content))
     (is (some #(= "stderr" (:name %)) content))
-    (is (th/wait-for (fn []
-                       (= "Hello, World!\n" (slurp (:url (first (filter #(= "stdout" (:name %)) content))))))
-                     :interval 1))))
+    (is (= "Hello, World!\n" (slurp (:url (first (filter #(= "stdout" (:name %)) content))))))))
 
 (deftest test-pid
   (testing "Getting the pid of a Process"
@@ -100,27 +127,29 @@
 
 (deftest test-shell-scheduler
   (testing "Creating a new ShellScheduler"
-    (let [valid-config {:health-check-interval-ms 1
-                        :health-check-timeout-ms 1
+    (let [valid-config {:health-check-timeout-ms 1
                         :port-grace-period-ms 1
                         :port-range [10000 10000]
+                        :failed-instance-retry-interval-ms 500
+                        :health-check-interval-ms 500
                         :work-directory (work-dir)}]
 
       (testing "should work with valid configuration"
-        (is (instance? ShellScheduler (shell-scheduler valid-config))))
+        (is (instance? ShellScheduler (create-shell-scheduler valid-config))))
 
       (testing "should throw if port range is bogus"
-        (is (thrown? Throwable (shell-scheduler (assoc valid-config :port-range [nil nil]))))
-        (is (thrown? Throwable (shell-scheduler (assoc valid-config :port-range [0 nil]))))
-        (is (thrown? Throwable (shell-scheduler (assoc valid-config :port-range [10000 nil]))))
-        (is (thrown? Throwable (shell-scheduler (assoc valid-config :port-range [10000 0]))))
-        (is (thrown? Throwable (shell-scheduler (assoc valid-config :port-range [10000 9999])))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :port-range [nil nil]))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :port-range [0 nil]))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :port-range [10000 nil]))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :port-range [10000 0]))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :port-range [10000 9999])))))
 
       (testing "should throw if other config fields are bogus"
-        (is (thrown? Throwable (shell-scheduler (assoc valid-config :health-check-interval-ms 0))))
-        (is (thrown? Throwable (shell-scheduler (assoc valid-config :health-check-timeout-ms 0))))
-        (is (thrown? Throwable (shell-scheduler (assoc valid-config :port-grace-period-ms 0))))
-        (is (thrown? Throwable (shell-scheduler (assoc valid-config :work-directory ""))))))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :health-check-timeout-ms 0))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :port-grace-period-ms 0))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :failed-instance-retry-interval-ms 0))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :health-check-interval-ms 0))))
+        (is (thrown? Throwable (create-shell-scheduler (assoc valid-config :work-directory ""))))))))
 
 (deftest test-reserve-port!
   (testing "Reserving a port"
@@ -138,73 +167,89 @@
                @port->reservation-atom))))))
 
 (deftest test-create-app-if-new
-  (let [scheduler (shell-scheduler {:health-check-interval-ms 1
-                                    :health-check-timeout-ms 1
-                                    :port-grace-period-ms 1
-                                    :port-range [10000 11000]
-                                    :work-directory (work-dir)})]
+  (let [scheduler (create-shell-scheduler {:health-check-timeout-ms 1
+                                           :port-grace-period-ms 1
+                                           :port-range [10000 11000]
+                                           :failed-instance-retry-interval-ms 100
+                                           :health-check-interval-ms 100
+                                           :work-directory (work-dir)})]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))
     (is (= {:success false, :result :already-exists, :message "foo already exists!"}
-           (create-test-service scheduler "foo")))))
+           (create-test-service scheduler "foo")))
+    (is (= {:success true, :result :deleted, :message "Deleted foo"}
+           (scheduler/delete-app scheduler "foo")))))
 
 (deftest test-delete-app
-  (let [scheduler (shell-scheduler {:health-check-interval-ms 1
-                                    :health-check-timeout-ms 1
-                                    :port-grace-period-ms 1
-                                    :port-range [10000 11000]
-                                    :work-directory (work-dir)})]
+  (let [scheduler (create-shell-scheduler {:health-check-timeout-ms 1
+                                           :port-grace-period-ms 1
+                                           :port-range [10000 11000]
+                                           :failed-instance-retry-interval-ms 500
+                                           :health-check-interval-ms 500
+                                           :work-directory (work-dir)})]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))
-    (is (ct/wait-for #(scheduler/app-exists? scheduler "foo") :interval 1))
+    (ensure-agent-finished scheduler)
+    (is (scheduler/app-exists? scheduler "foo"))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
            (scheduler/delete-app scheduler "foo")))
-    (is (ct/wait-for #(not (scheduler/app-exists? scheduler "foo")) :interval 1))))
+    (ensure-agent-finished scheduler)
+    (is (not (scheduler/app-exists? scheduler "foo")))))
 
 (deftest test-scale-app
-  (let [scheduler (shell-scheduler {:work-directory (work-dir)
-                                    :port-grace-period-ms 1
-                                    :port-range [10000 11000]
-                                    :health-check-interval-ms 1
-                                    :health-check-timeout-ms 1})]
+  (let [scheduler-config {:health-check-timeout-ms 1
+                          :port-grace-period-ms 1
+                          :port-range [10000 11000]
+                          :failed-instance-retry-interval-ms 500
+                          :health-check-interval-ms 500
+                          :work-directory (work-dir)}
+        scheduler (create-shell-scheduler scheduler-config)]
     ;; Bogus service
     (is (= {:success false, :result :no-such-service-exists, :message "bar does not exist!"}
            (scheduler/scale-app scheduler "bar" 2)))
     (with-redefs [perform-health-check (constantly true)]
       ;; Create service, instances: 1
       (is (= {:success true, :result :created, :message "Created foo"}
-             (create-test-service scheduler "foo")))
-      (is (ct/wait-for #(true? (scheduler/app-exists? scheduler "foo")) :interval 0.1))
+             (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
+      (ensure-agent-finished scheduler)
+      (is (scheduler/app-exists? scheduler "foo"))
       ;; Scale up, instances: 2
       (is (= {:success true, :result :scaled, :message "Scaled foo"}
              (scheduler/scale-app scheduler "foo" 2)))
-      (is (ct/wait-for #(= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
-                           (task-stats scheduler))
-                       :interval 0.1))
+      (force-maintain-instance-scale scheduler)
+      (force-update-service-health scheduler scheduler-config)
+      (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
+             (task-stats scheduler)))
       ;; No need to scale down, instances: 2
       (is (= {:success false, :result :scaling-not-needed, :message "Unable to scale foo"}
              (scheduler/scale-app scheduler "foo" 1)))
-      ;; Kill one instance, instances: 1
+      ;; Successfully kill one instance, instances: 1
       (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
         (is (= {:success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance))))
-      (is (ct/wait-for #(= {:running 1, :healthy 1, :unhealthy 0, :staged 0}
-                           (task-stats scheduler))
-                       :interval 0.1
-                       :timeout 1))
-      ;; Scale up, instances: 2
+      (force-update-service-health scheduler scheduler-config)
+      (is (= {:running 1, :healthy 1, :unhealthy 0, :staged 0}
+             (task-stats scheduler)))
+      ;; Automatically relaunches killed instances, instances: 2
+      (force-maintain-instance-scale scheduler)
+      (force-update-service-health scheduler scheduler-config)
+      (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
+             (task-stats scheduler)))
+      ;; Scale up, instances: 3
       (is (= {:success true, :result :scaled, :message "Scaled foo"}
-             (scheduler/scale-app scheduler "foo" 2)))
-      (is (ct/wait-for #(= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
-                           (task-stats scheduler))
-                       :interval 0.1)))))
+             (scheduler/scale-app scheduler "foo" 3)))
+      (force-maintain-instance-scale scheduler)
+      (force-update-service-health scheduler scheduler-config)
+      (is (= {:running 3, :healthy 3, :unhealthy 0, :staged 0}
+             (task-stats scheduler))))))
 
 (deftest test-kill-instance
-  (let [scheduler (shell-scheduler {:health-check-interval-ms 1
-                                    :health-check-timeout-ms 1
-                                    :port-grace-period-ms 1
-                                    :port-range [10000 11000]
-                                    :work-directory (work-dir)})]
+  (let [scheduler (create-shell-scheduler {:health-check-timeout-ms 1
+                                           :port-grace-period-ms 1
+                                           :port-range [10000 11000]
+                                           :failed-instance-retry-interval-ms 500
+                                           :health-check-interval-ms 500
+                                           :work-directory (work-dir)})]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))
     (with-redefs [perform-health-check (constantly true)]
@@ -219,7 +264,7 @@
 (deftest test-kill-process
   (testing "Killing a process"
     (testing "should handle exceptions"
-      (let [instance (launch-instance "foo" (work-dir) "ls" "http" {} 1 (atom {}) [0 0])]
+      (let [instance (launch-instance "foo" {"backend-proto" "http" "cmd" "ls" "ports" 1 "mem" 32} (work-dir) {} (atom {}) [0 0])]
         (with-redefs [t/plus (fn [_ _] (throw (ex-info "ERROR!" {})))]
           (kill-process! instance (atom {}) 0))))
 
@@ -227,7 +272,7 @@
       (let [port-reservation-atom (atom {})
             num-ports 5
             port-range-start 2000
-            instance (launch-instance "bar" (work-dir) "ls" "http" {} num-ports port-reservation-atom [port-range-start 3000])]
+            instance (launch-instance "bar" {"backend-proto" "http" "cmd" "ls" "ports" num-ports "mem" 32} (work-dir) {} port-reservation-atom [port-range-start 3000])]
         (is (= num-ports (count @port-reservation-atom)))
         (is (every? #(= {:state :in-use, :expiry-time nil}
                         (get @port-reservation-atom %))
@@ -240,58 +285,71 @@
                             (get @port-reservation-atom %))
                         (range port-range-start (+ port-range-start num-ports))))))))))
 
-(deftest test-should-not-health-check-killed-instances
-  (let [scheduler (shell-scheduler {:health-check-interval-ms 1
-                                    :health-check-timeout-ms 1
-                                    :port-grace-period-ms 1
-                                    :port-range [10000 11000]
-                                    :work-directory (work-dir)})
+(deftest test-health-check-instances
+  (let [scheduler-config {:health-check-timeout-ms 1
+                          :port-grace-period-ms 1
+                          :port-range [10000 11000]
+                          :failed-instance-retry-interval-ms 500
+                          :health-check-interval-ms 500
+                          :work-directory (work-dir)}
+        scheduler (create-shell-scheduler scheduler-config)
         health-check-count-atom (atom 0)]
     (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo")))
+           (create-test-service scheduler "foo" {"cmd" "sleep 100000"})))
     (with-redefs [http/get (fn [_ _]
                              (swap! health-check-count-atom inc)
                              (let [c (async/chan)]
                                (async/go (async/>! c {:status 200}))
                                c))]
       (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
-        ;; We expect a health check to have occurred
+        ;; We force a health check to occur
+        (force-update-service-health scheduler scheduler-config)
         (is (= 1 @health-check-count-atom))
         ;; Kill the single instance of our service
         (is (= {:success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance))))
-      ;; Realize the lazy :killed-instances sequence to force a health check attempt
-      (dorun (:killed-instances (scheduler/get-instances scheduler "foo")))
+      (ensure-agent-finished scheduler)
+      ;; Force another health check attempt
+      (force-update-service-health scheduler scheduler-config)
       ;; But, the health check shouldn't happen because the instance is killed
       (is (= 1 @health-check-count-atom)))))
 
 (deftest test-should-update-task-stats-in-service
-  (let [scheduler (shell-scheduler {:health-check-interval-ms 1
-                                    :health-check-timeout-ms 1
-                                    :port-grace-period-ms 1
-                                    :port-range [10000 11000]
-                                    :work-directory (work-dir)})]
+  (let [scheduler-config {:health-check-timeout-ms 1
+                          :port-grace-period-ms 1
+                          :port-range [10000 11000]
+                          :failed-instance-retry-interval-ms 500
+                          :health-check-interval-ms 500
+                          :work-directory (work-dir)}
+        scheduler (create-shell-scheduler scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo")))
+           (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
     (with-redefs [perform-health-check (constantly true)]
+      (force-update-service-health scheduler scheduler-config)
       (is (= {:running 1, :healthy 1, :unhealthy 0, :staged 0}
              (task-stats scheduler))))
     (with-redefs [perform-health-check (constantly false)]
+      (force-update-service-health scheduler scheduler-config)
       (is (= {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-             (task-stats scheduler))))))
+             (task-stats scheduler))))
+    (is (= {:success true, :result :deleted, :message "Deleted foo"}
+           (scheduler/delete-app scheduler "foo")))))
 
 (deftest test-get-apps
-  (let [scheduler (shell-scheduler {:health-check-interval-ms 1
-                                    :health-check-timeout-ms 1
-                                    :port-grace-period-ms 1
-                                    :port-range [10000 11000]
-                                    :work-directory (work-dir)})]
+  (let [scheduler-config {:health-check-timeout-ms 1
+                          :port-grace-period-ms 1
+                          :port-range [10000 11000]
+                          :failed-instance-retry-interval-ms 1000
+                          :health-check-interval-ms 1000
+                          :work-directory (work-dir)}
+        scheduler (create-shell-scheduler scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo")))
+           (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
     (is (= {:success true, :result :created, :message "Created bar"}
-           (create-test-service scheduler "bar")))
+           (create-test-service scheduler "bar" {"cmd" "sleep 10000"})))
     (is (= {:success true, :result :created, :message "Created baz"}
-           (create-test-service scheduler "baz")))
+           (create-test-service scheduler "baz" {"cmd" "sleep 10000"})))
+    (ensure-agent-finished scheduler)
     (is (= (map scheduler/map->Service
                 [{:id "foo"
                   :instances 1
@@ -303,8 +361,10 @@
                                 "LOGNAME" nil
                                 "USER" nil}
                   :service-description {"backend-proto" "http"
-                                        "cmd" "ls"
-                                        "ports" 1}}
+                                        "cmd" "sleep 10000"
+                                        "mem" 32
+                                        "ports" 1}
+                  :shell-scheduler/mem 32}
                  {:id "bar"
                   :instances 1
                   :task-count 1
@@ -315,8 +375,10 @@
                                 "LOGNAME" nil
                                 "USER" nil}
                   :service-description {"backend-proto" "http"
-                                        "cmd" "ls"
-                                        "ports" 1}}
+                                        "cmd" "sleep 10000"
+                                        "mem" 32
+                                        "ports" 1}
+                  :shell-scheduler/mem 32}
                  {:id "baz"
                   :instances 1
                   :task-count 1
@@ -327,16 +389,25 @@
                                 "LOGNAME" nil
                                 "USER" nil}
                   :service-description {"backend-proto" "http"
-                                        "cmd" "ls"
-                                        "ports" 1}}])
-           (scheduler/get-apps scheduler)))))
+                                        "cmd" "sleep 10000"
+                                        "mem" 32
+                                        "ports" 1}
+                  :shell-scheduler/mem 32}])
+           (scheduler/get-apps scheduler)))
+    (is (= {:success true, :result :deleted, :message "Deleted foo"}
+           (scheduler/delete-app scheduler "foo")))
+    (is (= {:success true, :result :deleted, :message "Deleted bar"}
+           (scheduler/delete-app scheduler "bar")))
+    (is (= {:success true, :result :deleted, :message "Deleted baz"}
+           (scheduler/delete-app scheduler "baz")))))
 
 (deftest test-service-id->state
-  (let [scheduler (shell-scheduler {:health-check-interval-ms 1
-                                    :health-check-timeout-ms 1
-                                    :port-grace-period-ms 1
-                                    :port-range [10000 10000]
-                                    :work-directory (work-dir)})
+  (let [scheduler (create-shell-scheduler {:health-check-timeout-ms 1
+                                           :port-grace-period-ms 1
+                                           :port-range [10000 10000]
+                                           :failed-instance-retry-interval-ms 500
+                                           :health-check-interval-ms 500
+                                           :work-directory (work-dir)})
         instance-id "bar"
         fake-pid 1234
         started-at (t/now)
@@ -354,33 +425,36 @@
                                                   "USER" nil}
                                     :service-description {"backend-proto" "http"
                                                           "cmd" "ls"
-                                                          "ports" 1}})
+                                                          "mem" 32
+                                                          "ports" 1}
+                                    :shell-scheduler/mem 32})
                         :id->instance {"foo.bar"
                                        (scheduler/make-ServiceInstance
                                          {:id "foo.bar"
                                           :service-id "foo"
                                           :started-at (utils/date-to-str started-at (f/formatters :date-time))
-                                          :healthy? nil
-                                          :host "localhost"
                                           :port port
                                           :protocol "http"
                                           :log-directory instance-dir
-                                          :message nil
                                           :shell-scheduler/working-directory instance-dir
-                                          :shell-scheduler/last-health-check-time (t/epoch)
                                           :shell-scheduler/pid fake-pid})}}
-        process-keys [:id->instance "foo.bar" :shell-scheduler/process]]
+        process-keys [:id->instance "foo.bar" :shell-scheduler/process]
+        host-keys [:id->instance "foo.bar" :host]]
     (with-redefs [pid (constantly fake-pid)
                   utils/unique-identifier (constantly instance-id)
                   t/now (constantly started-at)
                   reserve-port! (constantly port)]
       (is (= {:success true, :result :created, :message "Created foo"}
              (create-test-service scheduler "foo"))))
-    (is (th/wait-for (fn []
-                       (let [result (scheduler/service-id->state scheduler "foo")]
-                         (log/debug "service state:" result)
-                         (= (assoc-in expected-state process-keys (get-in result process-keys))
-                            result)))))))
+    (ensure-agent-finished scheduler)
+    (let [result (scheduler/service-id->state scheduler "foo")]
+      (log/debug "service state:" result)
+      (is (= (-> expected-state
+                 (assoc-in process-keys (get-in result process-keys))
+                 (assoc-in host-keys (get-in result host-keys)))
+             result)))
+    (is (= {:success true, :result :deleted, :message "Deleted foo"}
+           (scheduler/delete-app scheduler "foo")))))
 
 (deftest test-port-reserved?
   (let [port->reservation-atom (atom {})
@@ -411,3 +485,25 @@
           (let [ex-data (ex-data ex)]
             (is (= {:num-reserved-ports 11} ex-data))
             (is (= "Unable to reserve 20 ports" (.getMessage ex)))))))))
+
+(deftest test-retry-failed-instances
+  (let [scheduler-config {:health-check-timeout-ms 1
+                          :port-grace-period-ms 1
+                          :port-range [10000 11000]
+                          :failed-instance-retry-interval-ms 500
+                          :health-check-interval-ms 500
+                          :work-directory (work-dir)}
+        scheduler (create-shell-scheduler scheduler-config)]
+    (is (= {:success true, :result :created, :message "Created foo"}
+           (create-test-service scheduler "foo" {"cmd" "sleep 10000" "mem" 0.1})))
+    ;; Instance should get marked as failed
+    (force-update-service-health scheduler scheduler-config)
+    (let [instances (scheduler/get-instances scheduler "foo")]
+      (is (= 1 (count (:failed-instances instances)))))
+    ;; Loop should continue to launch additional instances after initial failure
+    (force-maintain-instance-scale scheduler)
+    (force-update-service-health scheduler scheduler-config)
+    (let [instances (scheduler/get-instances scheduler "foo")]
+      (is (= 2 (count (:failed-instances instances)))))
+    (is (= {:success true, :result :deleted, :message "Deleted foo"}
+           (scheduler/delete-app scheduler "foo")))))

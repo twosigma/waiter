@@ -48,6 +48,7 @@
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.settings :as settings]
+            [waiter.shell-scheduler :as shell-scheduler]
             [waiter.simulator :as simulator]
             [waiter.state :as state]
             [waiter.statsd :as statsd]
@@ -761,13 +762,14 @@
                                                                                 inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms
                                                                                 websocket-client bytes-encryptor websocket-request-auth-cookie-attacher)}))
    :router-state-maintainer (pc/fnk [[:routines service-id->service-description-fn]
+                                     [:settings deployment-error-config]
                                      [:state router-id]
                                      router-list-maintainer scheduler-maintainer]
                               (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
                                     exit-chan (async/chan)
                                     router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))
                                     maintainer-chan (state/start-router-state-maintainer
-                                                      scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn)]
+                                                      scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
                                 {:exit-chan exit-chan
                                  :maintainer-chans maintainer-chan}))
    :scheduler-broken-services-gc (pc/fnk [[:curator leader?-fn read-gc-state-fn write-gc-state-fn]

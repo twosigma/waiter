@@ -57,7 +57,8 @@
       (time-it (str service-id ":" parallelism "x" requests-per-thread)
                (parallelize-requests parallelism requests-per-thread #(request-fn) :verbose true))
       (is (< (* 2 (count (routers waiter-url))) (num-instances waiter-url service-id)))
-      (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180))))
+      (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180)
+      (delete-service waiter-url service-id))))
 
 ; Marked explicit due to:
 ; FAIL in (test-blacklisted-instance-not-reserved) (killed_instance_test.clj)

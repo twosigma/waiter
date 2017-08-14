@@ -113,7 +113,12 @@
                                         (and slave-directory framework-id slaveId)
                                         (assoc :log-directory log-directory)
                                         message
-                                        (assoc :message (str/trim message)))))
+                                        (assoc :message (str/trim message))
+                                        (str/includes? (str message) "Memory limit exceeded:")
+                                        (assoc :flags #{:memory-limit-exceeded})
+                                        (str/includes? (str message) "Command exited with status")
+                                        (assoc :exit-code (try (-> message (str/split #"\s+") last Integer/parseInt)
+                                                               (catch Throwable e))))))
         healthy?-fn #(let [health-checks (:healthCheckResults %)]
                        (and
                          (and (seq health-checks)
@@ -181,7 +186,7 @@
   "Makes a call with hardcoded embed parameters.
   marathonclj.rest.apps cannot handle duplicate query params."
   [is-waiter-app?-fn]
-  (let [apps (mc/get (mc/url-with-path "v2" "apps?embed=apps.tasks&embed=lastTaskFailure"))]
+  (let [apps (mc/get (mc/url-with-path "v2" "apps?embed=apps.tasks&embed=apps.lastTaskFailure"))]
     (filter #(is-waiter-app?-fn (app->waiter-service-id %)) (:apps apps))))
 
 (defn marathon-descriptor
@@ -225,7 +230,7 @@
     log-directory))
 
 (defn retrieve-directory-content-from-host
-  "Retrieve the content of the directory for the given isntance on the specified host"
+  "Retrieve the content of the directory for the given instance on the specified host"
   [http-options mesos-slave-port service-id instance-id host directory]
   (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {})))
   (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))

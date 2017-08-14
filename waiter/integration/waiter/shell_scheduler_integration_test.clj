@@ -16,7 +16,10 @@
                      .toAbsolutePath
                      .toString)
         port->reservation-atom (atom {})
-        {:keys [shell-scheduler/pid] :as instance} (launch-instance "abc" working-dir test-cmd "http" {} 1
+        service-description {"backend-proto" "http"
+                             "cmd" test-cmd
+                             "ports" 1}
+        {:keys [shell-scheduler/pid] :as instance} (launch-instance "abc" service-description working-dir {}
                                                                     port->reservation-atom [40000 50000])]
     ; There are 4 processes spawned by the instance:
     ; 1. The wrapper process launched by the scheduler

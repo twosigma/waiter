@@ -136,7 +136,7 @@
 
     (testing "should support partial configuration of :kind implementations"
       (let [defaults {:scheduler-config {:kind :marathon
-                                         :marathon {:factory-fn waiter.marathon/marathon-scheduler
+                                         :marathon {:factory-fn 'waiter.marathon/marathon-scheduler
                                                     :home-path-prefix "/home/"
                                                     :http-options {:conn-timeout 10000
                                                                    :socket-timeout 10000}
@@ -145,7 +145,7 @@
             configured {:scheduler-config {:kind :marathon
                                            :marathon {:url "http://marathon.example.com:8080"}}}]
         (is (= {:scheduler-config {:kind :marathon
-                                   :marathon {:factory-fn waiter.marathon/marathon-scheduler
+                                   :marathon {:factory-fn 'waiter.marathon/marathon-scheduler
                                               :home-path-prefix "/home/"
                                               :http-options {:conn-timeout 10000
                                                              :socket-timeout 10000}

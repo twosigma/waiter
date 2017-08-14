@@ -145,6 +145,7 @@
   (async/go
     (try
       (log/debug "retrieving instance for" service-id "using" (dissoc reason-map :cid :time))
+      (add-debug-header-into-response! "X-Waiter-Service-Id" service-id)
       (let [correlation-id (cid/get-correlation-id)
             instance (<? (service/get-available-instance
                            instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group add-debug-header-into-response!))]
