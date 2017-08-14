@@ -658,11 +658,13 @@
 
         (testing "backend request headers"
           (let [{:keys [body] :as response} (make-request waiter-url "/request-info" :headers request-headers :spnego-auth false)
-                {:strs [headers]} (json/read-str (str body))]
+                {:strs [headers]} (json/read-str (str body))
+                service-id (retrieve-service-id waiter-url (:request-headers response))]
             (assert-response-status response 200)
             (is (not (contains? headers "x-waiter-auth-principal")))
             (is (not (contains? headers "x-waiter-authenticated-principal")))
-            (is (contains? headers "x-cid"))))
+            (is (contains? headers "x-cid"))
+            (delete-service waiter-url service-id)))
 
         (finally
           (delete-token-and-assert waiter-url token))))))

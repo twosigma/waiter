@@ -44,6 +44,9 @@
    ^String service-id
    ^String started-at ; must be formatted to allow string comparisons
    healthy?
+   health-check-status
+   flags
+   exit-code
    ^String host
    port
    extra-ports
@@ -52,7 +55,7 @@
    ^String message])
 
 (defn make-ServiceInstance [value-map]
-  (map->ServiceInstance (merge {:extra-ports [] :log-directory nil :message nil :protocol nil} value-map)))
+  (map->ServiceInstance (merge {:extra-ports [] :flags #{}} value-map)))
 
 (defprotocol ServiceScheduler
 
@@ -194,7 +197,7 @@
                                                        :service instance-health-check-url}))))
 
 (defn available?
-  "Async go block which returns true if a health check can be completed successfully
+  "Async go block which returns the status code and success of a health check.
   Returns false if such a connection cannot be established."
   [{:keys [port] :as service-instance} health-check-path http-client]
   (async/go
@@ -202,9 +205,9 @@
       (let [instance-health-check-url (health-check-url service-instance health-check-path)
             {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))]
         (log-health-check-issues service-instance instance-health-check-url status error)
-        (and (not error)
-             (<= 200 status 299)))
-      false)))
+        {:healthy? (and (not error) (<= 200 status 299))
+         :status status})
+      {:healthy? false})))
 
 (defn instance-comparator
   "The comparison order is: service-id, started-at, and finally id."
@@ -361,11 +364,16 @@
       service->service-instances'
       (let [{:strs [health-check-url]} (service-id->service-description-fn (:id service))
             health-check-refs (map (fn [instance]
-                                     (let [chan (async/promise-chan)] (if (:healthy? instance)
-                                                                        (async/put! chan instance)
-                                                                        (async/pipeline 1 chan (map #(assoc instance :healthy? %))
-                                                                                        (available? instance health-check-url)))
-                                                                      chan))
+                                     (let [chan (async/promise-chan)]
+                                       (if (:healthy? instance)
+                                         (async/put! chan instance)
+                                         (async/pipeline 1 chan (map (fn [{:keys [healthy? status]}]
+                                                                       (if healthy?
+                                                                         (assoc instance :healthy? true)
+                                                                         (assoc instance :healthy? false
+                                                                                         :health-check-status status))))
+                                                         (available? instance health-check-url)))
+                                       chan))
                                    active-instances)]
         (recur rest (assoc service->service-instances' service
                                                        (assoc instances :active-instances health-check-refs)))))))
@@ -424,7 +432,9 @@
                                                        :failed-instances failed-instances
                                                        :scheduler-sync-time request-instances-time)])
                                               scheduler-messages)]
-                    (metrics/reset-counter (metrics/service-counter service-id "instance-counts" "failed") (count failed-instances))
+                    (metrics/reset-counter
+                      (metrics/service-counter service-id "instance-counts" "failed")
+                      (count failed-instances))
                     (recur scheduler-messages' remaining))
                   (async/>!! scheduler-state-chan scheduler-messages)))
               (log/info (timing-message-fn) "for" (count service->service-instances) "services."))

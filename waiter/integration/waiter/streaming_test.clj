@@ -107,8 +107,8 @@
                 (assertion-fn bytes-read-so-far data-size-in-bytes)))))
         (log/info "Done reading from request")
         (finally
-          (.close input-stream)))
-      (delete-service waiter-url service-id))))
+          (.close input-stream)
+          (delete-service waiter-url service-id))))))
 
 (deftest ^:parallel ^:integration-slow test-streaming-timeout-on-default-settings
   (testing-using-waiter-url

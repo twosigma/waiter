@@ -23,7 +23,9 @@
             [waiter.scheduler :as scheduler]
             [waiter.schema :as schema]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils])
+            [waiter.utils :as utils]
+            [metrics.timers :as timers]
+            [waiter.metrics :as metrics])
   (:import java.io.File
            java.lang.UNIXProcess
            java.net.ServerSocket
@@ -147,42 +149,42 @@
 
 (defn launch-instance
   "Launches a new process for the given service-id"
-  [service-id working-dir-base-path command backend-protocol environment num-ports port->reservation-atom port-range]
-  (when-not command
+  [service-id {:strs [backend-proto cmd ports]} working-dir-base-path environment port->reservation-atom port-range]
+  (when-not cmd
     (throw (ex-info "The command to run was not supplied" {:service-id service-id})))
-  (let [reserved-ports (reserve-ports! num-ports port->reservation-atom port-range)
+  (let [reserved-ports (reserve-ports! ports port->reservation-atom port-range)
         process-environment (into environment
                                   (map (fn build-port-environment [index port]
                                          [(str "PORT" index) (str port)])
                                        (range 0 (-> reserved-ports count inc))
                                        reserved-ports))
         {:keys [instance-id process started-at working-directory]}
-        (launch-process service-id working-dir-base-path command process-environment)]
+        (launch-process service-id working-dir-base-path cmd process-environment)]
     (scheduler/make-ServiceInstance
       {:id instance-id
        :service-id service-id
        :started-at started-at
        :healthy? nil
-       :host "localhost"
+       :host (str "127.0.0." (inc (rand-int 254)))
        :port (-> reserved-ports first)
        :extra-ports (-> reserved-ports rest vec)
-       :protocol backend-protocol
+       :protocol backend-proto
        :log-directory working-directory
        :shell-scheduler/process process
        :shell-scheduler/working-directory working-directory
-       :shell-scheduler/last-health-check-time (t/epoch)
        :shell-scheduler/pid (pid process)})))
 
 (defn launch-service
   "Creates a new service and launches a single new instance for this service"
-  [service-id {:strs [backend-proto cmd ports] :as service-description} service-id->password-fn
+  [service-id {:strs [mem] :as service-description} service-id->password-fn
    working-dir-base-path port->reservation-atom port-range]
   (let [environment (scheduler/environment service-id service-description service-id->password-fn working-dir-base-path)
-        instance (launch-instance service-id working-dir-base-path cmd backend-proto environment ports port->reservation-atom port-range)
+        instance (launch-instance service-id service-description working-dir-base-path environment port->reservation-atom port-range)
         service (scheduler/make-Service {:id service-id
                                          :instances 1
                                          :environment environment
                                          :service-description service-description
+                                         :shell-scheduler/mem mem
                                          :task-count 1
                                          :task-stats {:running 1
                                                       :healthy 0
@@ -214,6 +216,34 @@
       (deliver completion-promise :failed)
       id->service)))
 
+(defn- kill-instance
+  "Deletes the instance corresponding to service-id/instance-id and returns the updated id->service map"
+  [id->service service-id instance-id port->reservation-atom port-grace-period-ms completion-promise]
+  (try
+    (if (contains? id->service service-id)
+      (let [{:keys [id->instance]} (get id->service service-id)
+            {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)]
+        (if instance
+          (do
+            (log/info "deleting instance" instance-id "process" process)
+            (kill-process! instance port->reservation-atom port-grace-period-ms)
+            (deliver completion-promise :deleted)
+            (-> id->service
+                (assoc-in [service-id :id->instance instance-id :killed] true)
+                (assoc-in [service-id :id->instance instance-id :shell-scheduler/process] nil)))
+          (do
+            (log/info "instance" instance-id "does not exist")
+            (deliver completion-promise :no-such-instance-exists)
+            id->service)))
+      (do
+        (log/info "service" service-id "does not exist")
+        (deliver completion-promise :no-such-service-exists)
+        id->service))
+    (catch Throwable e
+      (log/error e "error attempting to delete instance" instance-id)
+      (deliver completion-promise :failed)
+      id->service)))
+
 (defn- delete-service
   "Deletes the service corresponding to service-id and returns the updated id->service map"
   [id->service service-id port->reservation-atom port-grace-period-ms completion-promise]
@@ -240,9 +270,9 @@
   (not (:killed instance)))
 
 (defn- healthy?
-  "Returns true if the given instance is healthy"
+  "Returns true if the given instance is healthy (and active)"
   [instance]
-  (:healthy? instance))
+  (and (active? instance) (:healthy? instance)))
 
 (defn- unhealthy?
   "Returns true if the given instance is unhealthy (but active)"
@@ -261,71 +291,104 @@
     false))
 
 (defn- update-instance-health
-  "Runs a health check against instance if enough time has passed since the last one"
-  [{:keys [:shell-scheduler/last-health-check-time] :as instance} health-check-url http-client health-check-interval-ms]
-  (if (and (active? instance)
-           (t/after? (t/now) (t/plus last-health-check-time (t/millis health-check-interval-ms))))
-    (-> instance
-        (assoc :healthy? (perform-health-check instance health-check-url http-client))
-        (assoc :shell-scheduler/last-health-check-time (t/now)))
+  "Runs a health check against instance"
+  [instance health-check-url http-client]
+  (if (active? instance)
+    (assoc instance :healthy? (perform-health-check instance health-check-url http-client))
     instance))
 
-(defn- update-service-health
-  "Runs health checks against all instances of service and returns the updated service-entry"
-  [{:keys [id->instance service] :as service-entry} health-check-timeout-ms health-check-interval-ms]
-  (let [{:strs [health-check-url]} (:service-description service)
-        http-client (http/client {:connect-timeout health-check-timeout-ms
-                                  :idle-timeout health-check-timeout-ms})
-        health-check #(update-instance-health % health-check-url http-client health-check-interval-ms)
-        id->instance' (pc/map-vals health-check id->instance)]
-    (-> service-entry
-        (assoc :id->instance id->instance')
-        (assoc-in [:service :task-stats :healthy] (->> id->instance' vals (filter healthy?) count))
-        (assoc-in [:service :task-stats :unhealthy] (->> id->instance' vals (filter unhealthy?) count))
-        (assoc-in [:service :task-stats :running] (->> id->instance' vals (filter active?) count)))))
+(defn- associate-exit-codes
+  "Associates exit codes with exited instances"
+  [{:keys [:shell-scheduler/process] :as instance}]
+  (if (and (active? instance) (not (.isAlive process)))
+    (let [exit-value (.exitValue process)]
+      (log/info "instance exited with value" {:instance instance :exit-value exit-value})
+      (assoc instance :healthy? false
+                      :failed (if (zero? exit-value) false true)
+                      :killed true                          ; does not actually mean killed -- using this to mark inactive
+                      :exit-code exit-value))
+    instance))
 
-(defn- service-entry->instances
-  "Converts the given service-entry to a map of shape:
+(defn- enforce-instance-limits
+  "Kills processes that exceed allocated memory usage"
+  [{:keys [:shell-scheduler/process :shell-scheduler/pid] :as instance} mem pid->memory port->reservation-atom port-grace-period-ms]
+  (if (and (active? instance) (.isAlive process))
+    (let [memory-allocated (* mem 1000)
+          memory-used (get pid->memory pid)]
+      (if (and memory-used (> memory-used memory-allocated))
+        (do (log/info "instance exceeds memory limit, killing instance" {:instance instance :memory-limit memory-allocated :memory-used memory-used})
+            (kill-process! instance port->reservation-atom port-grace-period-ms)
+            (assoc instance :healthy? false
+                            :failed true
+                            :killed true
+                            :flags #{:memory-limit-exceeded}
+                            :shell-scheduler/process nil))
+        instance))
+    instance))
 
-    {:active-instances [...]
-     :failed-instances [...]
-     :killed-instances [...]}
+(defn- get-pid->memory
+  "Issues and parses the results of a ps shell command and returns a new pid->memory map"
+  []
+  (try
+    (let [ps-output (-> (sh/sh "ps" "-eo" "pid,pgid,rss") :out (str/split #"\n") rest)
+          pid->pgid (map #(-> % str/trim (str/split #"\s+") butlast
+                              ((fn [[a b]] [(Integer/parseInt a) (Integer/parseInt b)])))
+                         ps-output)
+          pgid->rss (apply merge-with +
+                           (map #(-> % str/trim (str/split #"\s+") rest
+                                     ((fn [[a b]] {(Integer/parseInt a) (Integer/parseInt b)})))
+                                ps-output))]
+      (into {} (for [[pid pgid] pid->pgid] [pid (get pgid->rss pgid)])))
+    (catch Throwable e
+      (log/error e "error attempting to issue ps command")
+      {})))
 
-  after running health checks on all instances of the service."
-  [service-entry health-check-timeout-ms health-check-interval-ms]
-  (let [{:keys [service id->instance]}
-        (update-service-health service-entry health-check-timeout-ms health-check-interval-ms)]
-    [service
-     {:active-instances (filter active? (vals id->instance))
-      :failed-instances (filter :failed (vals id->instance))
-      :killed-instances (filter :killed (vals id->instance))}]))
+(defn update-service-health
+  "Runs health checks against all active instances of service and returns the updated service-entry"
+  [id->service health-check-timeout-ms port->reservation-atom port-grace-period-ms]
+  (timers/start-stop-time!
+    (metrics/waiter-timer "shell-scheduler" "update-health")
+    (let [pid->memory (get-pid->memory)
+          http-client (http/client {:connect-timeout health-check-timeout-ms
+                                    :idle-timeout health-check-timeout-ms})
+          exit-codes-check #(associate-exit-codes %)]
+      (loop [remaining-service-entries (vals id->service)
+             id->service' {}]
+        (if-let [{:keys [service id->instance] :as service-entry} (first remaining-service-entries)]
+          (let [{:strs [health-check-url]} (:service-description service)
+                health-check #(update-instance-health % health-check-url http-client)
+                limits-check #(enforce-instance-limits % (:shell-scheduler/mem service) pid->memory port->reservation-atom port-grace-period-ms)
+                id->instance' (pc/map-vals (comp health-check limits-check exit-codes-check) id->instance)
+                service-entry' (-> service-entry
+                                   (assoc :id->instance id->instance')
+                                   (assoc-in [:service :task-stats :healthy] (->> id->instance' vals (filter healthy?) count))
+                                   (assoc-in [:service :task-stats :unhealthy] (->> id->instance' vals (filter unhealthy?) count))
+                                   (assoc-in [:service :task-stats :running] (->> id->instance' vals (filter active?) count)))]
+            (recur (rest remaining-service-entries) (assoc id->service' (:id service) service-entry')))
+          id->service')))))
 
-(defn- scale-service
-  "Given the current id->service map, scales the service-id to the
+(defn- start-updating-health
+  "Runs health checks against all active instances of all services in a loop"
+  [id->service-agent health-check-timeout-ms port->reservation-atom port-grace-period-ms timeout-ms]
+  (log/info "starting update-health")
+  (utils/start-timer-task
+    (t/millis timeout-ms)
+    (fn []
+      (send id->service-agent update-service-health health-check-timeout-ms port->reservation-atom port-grace-period-ms))))
+
+(defn- set-service-scale
+  "Given the current id->service map, sets the scale of the service-id to the
   requested number of instances and returns a new id->service map"
-  [id->service service-id scale-to-instances port->reservation-atom port-range completion-promise]
+  [id->service service-id scale-to-instances completion-promise]
   (try
     (if (contains? id->service service-id)
-      (let [{:keys [id->instance service] :as service-entry} (get id->service service-id)
-            {:keys [environment service-description]} service
-            work-directory (get environment "HOME")
-            {:strs [backend-proto cmd ports]} service-description
-            current-instances (->> id->instance vals (filter active?) count)
-            to-launch (- scale-to-instances current-instances)
-            launch-new
-            #(let [instance (launch-instance service-id work-directory cmd backend-proto environment ports port->reservation-atom port-range)]
-               [(:id instance) instance])]
-        (if (pos? to-launch)
+      (let [{:keys [id->instance]} (get id->service service-id)
+            current-instances (->> id->instance vals (filter active?) count)]
+        (if (> scale-to-instances current-instances)
           (do
-            (log/info "scaling" service-id "to" scale-to-instances "instances from" current-instances)
+            (log/info "setting scale of" service-id "to" scale-to-instances "instances from" current-instances)
             (deliver completion-promise :scaled)
-            (assoc id->service
-              service-id
-              (-> service-entry
-                  (assoc :id->instance (merge id->instance (into {} (repeatedly to-launch launch-new))))
-                  (assoc-in [:service :instances] scale-to-instances)
-                  (assoc-in [:service :task-count] scale-to-instances)
-                  (assoc-in [:service :task-stats :running] scale-to-instances))))
+            (assoc-in id->service [service-id :service :instances] scale-to-instances))
           (do
             (log/info "received scale-app call, but current (" current-instances ") >= target (" scale-to-instances ")")
             (deliver completion-promise :scaling-not-needed)
@@ -339,33 +402,52 @@
       (deliver completion-promise :failed)
       id->service)))
 
-(defn- delete-instance
-  "Deletes the instance corresponding to service-id/instance-id and returns the updated id->service map"
-  [id->service service-id instance-id port->reservation-atom port-grace-period-ms completion-promise]
-  (try
-    (if (contains? id->service service-id)
-      (let [{:keys [id->instance]} (get id->service service-id)
-            instance (get id->instance instance-id)]
-        (if instance
-          (do
-            (log/info "deleting instance" instance-id)
-            (kill-process! instance port->reservation-atom port-grace-period-ms)
-            (deliver completion-promise :deleted)
-            (assoc-in id->service
-                      [service-id :id->instance instance-id :killed]
-                      true))
-          (do
-            (log/info "instance" instance-id "does not exist")
-            (deliver completion-promise :no-such-instance-exists)
-            id->service)))
-      (do
-        (log/info "service" service-id "does not exist")
-        (deliver completion-promise :no-such-service-exists)
-        id->service))
-    (catch Throwable e
-      (log/error e "error attempting to delete instance" instance-id)
-      (deliver completion-promise :failed)
-      id->service)))
+(defn maintain-instance-scale
+  "Relaunches failed instances or otherwise ensures scale"
+  [id->service port->reservation-atom port-range]
+  (timers/start-stop-time!
+    (metrics/waiter-timer "shell-scheduler" "retry-failed-instances")
+    (loop [remaining-service-entries (vals id->service)
+           id->service' {}]
+      (if-let [{:keys [service id->instance] :as service-entry} (first remaining-service-entries)]
+        (let [{:keys [id environment service-description]} service
+              active-instances (->> id->instance vals (filter active?) count)
+              scale-to-instances (:instances service)
+              to-launch (- scale-to-instances active-instances)
+              launch-new #(let [instance (launch-instance id service-description (get environment "HOME") environment port->reservation-atom port-range)]
+                            [(:id instance) instance])
+              service-entry' (if (pos? to-launch)
+                               (do (log/info "launching new instances to ensure scale" {:current-count active-instances, :target-count scale-to-instances})
+                                   (-> service-entry
+                                       (assoc :id->instance (merge id->instance (into {} (repeatedly to-launch launch-new))))
+                                       (assoc-in [:service :task-count] scale-to-instances)
+                                       (assoc-in [:service :task-stats :running] scale-to-instances)))
+                               service-entry)]
+          (recur (rest remaining-service-entries) (assoc id->service' id service-entry')))
+        id->service'))))
+
+(defn- start-retry-failed-instances
+  "Relaunches failed instances in a loop"
+  [id->service-agent port->reservation-atom port-range timeout-ms]
+  (log/info "starting retry-failed-instances")
+  (utils/start-timer-task
+    (t/millis timeout-ms)
+    (fn []
+      (send id->service-agent maintain-instance-scale port->reservation-atom port-range))))
+
+(defn- service-entry->instances
+  "Converts the given service-entry to a map of shape:
+
+    {:active-instances [...]
+     :failed-instances [...]
+     :killed-instances [...]}
+
+  after running health checks on all instances of the service."
+  [{:keys [service id->instance]}]
+  [service
+   {:active-instances (filter active? (vals id->instance))
+    :failed-instances (filter :failed (vals id->instance))
+    :killed-instances (filter :killed (vals id->instance))}])
 
 (defn directory-content
   "Returns a sequence of entries, where each entry represents an
@@ -397,21 +479,19 @@
 ; waiter.scheduler/ServiceInstance record, with some ShellScheduler-specific
 ; metadata fields added using keywords namespaced with :shell-scheduler/*:
 ;
+;   :shell-scheduler/mem
 ;   :shell-scheduler/process
 ;   :shell-scheduler/working-directory
-;   :shell-scheduler/last-health-check-time
 ;   :shell-scheduler/pid
 ;
-(defrecord ShellScheduler [work-directory id->service-agent health-check-timeout-ms health-check-interval-ms
-                           port->reservation-atom port-grace-period-ms port-range]
+(defrecord ShellScheduler [work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range]
   scheduler/ServiceScheduler
 
   (get-apps->instances [_]
     (let [id->service @id->service-agent]
-      (into {}
-            (map (fn [[_ service-entry]]
-                   (service-entry->instances service-entry health-check-timeout-ms health-check-interval-ms))
-                 id->service))))
+      (into {} (map (fn [[_ service-entry]]
+                      (service-entry->instances service-entry))
+                    id->service))))
 
   (get-apps [_]
     (let [id->service @id->service-agent]
@@ -420,12 +500,12 @@
   (get-instances [_ service-id]
     (let [id->service @id->service-agent
           service-entry (get id->service service-id)]
-      (second (service-entry->instances service-entry health-check-timeout-ms health-check-interval-ms))))
+      (second (service-entry->instances service-entry))))
 
   (kill-instance [this {:keys [id service-id] :as instance}]
     (if (scheduler/app-exists? this service-id)
       (let [completion-promise (promise)]
-        (send id->service-agent delete-instance service-id id
+        (send id->service-agent kill-instance service-id id
               port->reservation-atom port-grace-period-ms
               completion-promise)
         (let [result (deref completion-promise)
@@ -474,11 +554,10 @@
        :result :no-such-service-exists
        :message (str service-id " does not exist!")}))
 
-  (scale-app [this service-id instances]
+  (scale-app [this service-id scale-to-instances]
     (if (scheduler/app-exists? this service-id)
       (let [completion-promise (promise)]
-        (send id->service-agent scale-service service-id instances
-              port->reservation-atom port-range completion-promise)
+        (send id->service-agent set-service-scale service-id scale-to-instances completion-promise)
         (let [result (deref completion-promise)
               success (= result :scaled)]
           {:success success
@@ -504,23 +583,32 @@
     {:id->service @id->service-agent
      :port->reservation @port->reservation-atom}))
 
-(s/defn ^:always-validate shell-scheduler
+(s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the
   configuration against shell-scheduler-schema and throws if it's not valid."
-  [{:keys [health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range work-directory]}]
-  {:pre [(utils/pos-int? health-check-interval-ms)
+  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range work-directory]}]
+  {:pre [(utils/pos-int? failed-instance-retry-interval-ms)
+         (utils/pos-int? health-check-interval-ms)
          (utils/pos-int? health-check-timeout-ms)
          (utils/pos-int? port-grace-period-ms)
          (and (every? utils/pos-int? port-range)
               (= 2 (count port-range))
               (<= (first port-range) (second port-range)))
          (not (str/blank? work-directory))]}
-  (->ShellScheduler (-> work-directory
-                        io/file
-                        (.getCanonicalPath))
-                    (agent {})
-                    health-check-timeout-ms
-                    health-check-interval-ms
-                    (atom {})
-                    port-grace-period-ms
-                    port-range))
+  (let [id->service-agent (agent {})
+        port->reservation-atom (atom {})]
+    (->ShellScheduler (-> work-directory
+                          io/file
+                          (.getCanonicalPath))
+                      id->service-agent
+                      port->reservation-atom
+                      port-grace-period-ms
+                      port-range)))
+
+(defn shell-scheduler
+  "Creates and starts shell scheduler with loops"
+  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range work-directory] :as config}]
+  (let [{:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler config)]
+    (start-updating-health id->service-agent health-check-timeout-ms port->reservation-atom port-grace-period-ms health-check-interval-ms)
+    (start-retry-failed-instances id->service-agent port->reservation-atom port-range failed-instance-retry-interval-ms)
+    scheduler))

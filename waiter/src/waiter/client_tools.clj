@@ -39,7 +39,7 @@
 (def ^:const WAITER-PORT 9091)
 (def ^:const HTTP-SCHEME "http://")
 
-(def ^:const use-spnego (-> (System/getenv "USE_SPNEGO") str Boolean/parseBoolean))
+(def use-spnego (-> (System/getenv "USE_SPNEGO") str Boolean/parseBoolean))
 
 (def ^:const ANSI-YELLOW "\033[1m\033[33m")
 (def ^:const ANSI-CYAN "\033[36m")
@@ -352,7 +352,7 @@
     service-id))
 
 (defn waiter-settings [waiter-url]
-  (let [settings-result (make-request waiter-url "/settings")
+  (let [settings-result (make-request waiter-url "/settings" :verbose true)
         settings-json (json/read-str (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 

@@ -32,6 +32,8 @@
    (s/required-key :cluster-config) {(s/required-key :min-routers) schema/positive-int
                                      (s/required-key :name) schema/non-empty-string}
    (s/required-key :consent-expiry-days) schema/positive-int
+   (s/required-key :deployment-error-config) {(s/required-key :min-failed-instances) schema/positive-int
+                                              (s/required-key :min-hosts) schema/positive-int}
    (s/required-key :entitlement-config) (s/constrained
                                           {:kind s/Keyword
                                            (s/optional-key :cache) {(s/required-key :threshold) schema/positive-int
@@ -178,6 +180,8 @@
    :cluster-config {:min-routers 1
                     :name "waiter"}
    :consent-expiry-days 90
+   :deployment-error-config {:min-failed-instances 2
+                             :min-hosts 2}
    :entitlement-config {:kind :simple
                         :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}}
    :health-check-timeout-ms 200
@@ -197,8 +201,11 @@
                        :ttl 60}
                :encrypt true
                :relative-path "tokens"}
-   :messages {:cannot-identify-service "Unable to identify service using waiter headers/token"
+   :messages {:bad-startup-command "Invalid startup command"
+              :cannot-identify-service "Unable to identify service using waiter headers/token"
+              :health-check-requires-authentication "Health check requires authentication"
               :invalid-service-description "Service description using waiter headers/token improperly configured"
+              :not-enough-memory "Not enough memory allocated"
               :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}
    :metric-group-mappings []
    :metrics-config {:inter-router-metrics-idle-timeout-ms 2000
@@ -225,7 +232,8 @@
                                  :force-kill-after-ms 60000
                                  :framework-id-ttl 900000}
                       :shell {:factory-fn 'waiter.shell-scheduler/shell-scheduler
-                              :health-check-interval-ms 10000
+                              :failed-instance-retry-interval-ms 5000
+                              :health-check-interval-ms 5000
                               :health-check-timeout-ms 200
                               :port-grace-period-ms 120000
                               :port-range [10000 10999]
