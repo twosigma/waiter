@@ -48,14 +48,5 @@
       (is (not (nil? service-id)))
       (assert-response-status response 503)
       (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :bad-startup-command))))
-      (delete-service waiter-url service-id))
-
-    (let [headers {:x-waiter-name (rand-name "test-bad-startup-command")
-                   ; port number reserved, kitchen exits immediately ($PORT0 --> 90)
-                   :x-waiter-cmd (kitchen-cmd "-p 90")}
-          {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
-          service-id (get headers "x-waiter-service-id")]
-      (is (not (nil? service-id)))
-      (assert-response-status response 503)
-      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :bad-startup-command))))
       (delete-service waiter-url service-id))))
+

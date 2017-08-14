@@ -22,6 +22,7 @@
             [waiter.test-helpers :as th]
             [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
+           java.util.concurrent.TimeUnit
            waiter.shell_scheduler.ShellScheduler))
 
 (defn work-dir
@@ -108,8 +109,9 @@
         id->service (create-service {} "foo" service-description (constantly "password")
                                     (work-dir) (atom {}) [0 0] (promise))
         service-entry (get id->service "foo")
-        instance-id (-> service-entry :id->instance keys first)
+        [instance-id instance] (-> service-entry :id->instance first)
         content (directory-content service-entry instance-id "")]
+    (.waitFor (:shell-scheduler/process instance) 100 TimeUnit/MILLISECONDS)
     (is (= 2 (count content)))
     (is (some #(= "stdout" (:name %)) content))
     (is (some #(= "stderr" (:name %)) content))
