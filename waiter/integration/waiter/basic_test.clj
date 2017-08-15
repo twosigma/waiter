@@ -476,5 +476,5 @@
    (is (= 1 (->> (routers waiter-url)
                  vals
                  (map #(:git-version (waiter-settings %)))
-                 (reduce conj #{})
+                 set
                  count)))))
