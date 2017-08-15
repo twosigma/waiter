@@ -237,7 +237,7 @@
                                  :else {:healthy? false
                                         :status 400})))
         {:keys [exit-chan]} (start-scheduler-syncer scheduler scheduler-state-chan scheduler-syncer-interval-secs
-                                                    service-id->service-description-fn available? {})]
+                                                    service-id->service-description-fn available? {} 5)]
     (Thread/sleep (* 1000 scheduler-syncer-interval-secs))
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-apps update-apps-msg))

@@ -18,8 +18,7 @@
 (deftest ^:parallel ^:integration-fast test-health-check-misconfigured
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name "test-bad-startup-command")
-                   ; incorrect (but reservable) port ($PORT0 --> 1234)
-                   :x-waiter-cmd (kitchen-cmd "-p 1234")}
+                   :x-waiter-health-check-url "/status-402"}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))

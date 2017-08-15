@@ -396,7 +396,7 @@
   "Starts loop to query marathon for the app and instance statuses and sends
   the data to the router state maintainer."
   [scheduler scheduler-state-chan scheduler-syncer-interval-secs
-   service-id->service-description-fn available? http-client]
+   service-id->service-description-fn available? http-client max-failed-health-checks]
   (log/info "Starting scheduler syncer")
   (let [exit-chan (async/chan 1)
         state-query-chan (async/chan 32)
@@ -447,8 +447,7 @@
                                    scheduler-messages [[:update-available-apps {:available-apps available-service-ids :scheduler-sync-time request-apps-time}]]
                                    [[service {:keys [active-instances failed-instances]}] & remaining] (seq service->service-instances)]
                               (if service
-                                (let [max-failed-health-checks 5 ; TODO PUSH TO CONFIG
-                                      request-instances-time (t/now)
+                                (let [request-instances-time (t/now)
                                       service-id (:id service)
                                       last-unhealthy-instance-ids (get service-id->unhealthy-instance-ids service-id)
                                       service-instance-info (retrieve-instances-for-app service-id active-instances)

@@ -41,7 +41,8 @@
                                            s/Keyword schema/require-symbol-factory-fn}
                                           schema/contains-kind-sub-map?)
    (s/optional-key :git-version) s/Any
-   (s/required-key :health-check-timeout-ms) schema/positive-int
+   (s/required-key :health-check-config) {(s/required-key :health-check-timeout-ms) schema/positive-int
+                                          (s/required-key :max-failed-health-checks) schema/positive-int}
    (s/required-key :host) schema/non-empty-string
    (s/required-key :hostname) schema/non-empty-string
    (s/required-key :instance-request-properties) {(s/required-key :async-check-interval-ms) schema/positive-int
@@ -184,7 +185,8 @@
                              :min-hosts 2}
    :entitlement-config {:kind :simple
                         :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}}
-   :health-check-timeout-ms 200
+   :health-check-config {:health-check-timeout-ms 200
+                         :max-failed-health-checks 5}
    :host "0.0.0.0"
    :hostname "localhost"
    :instance-request-properties {:async-check-interval-ms 3000
