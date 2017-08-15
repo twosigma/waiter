@@ -1020,6 +1020,7 @@
           unhealthy-status (-> unhealthy-instances first :health-check-status)]
       (cond
         (and has-failed-instances (-> failed-instances first :flags :memory-limit-exceeded)) :not-enough-memory
+        (and has-failed-instances (-> failed-instances first :flags :never-passed-health-checks)) :health-check-misconfigured
         (and has-failed-instances (-> failed-instances first :exit-code)) :bad-startup-command
         (and has-unhealthy-instances (= unhealthy-status 401)) :health-check-requires-authentication))))
 

@@ -203,6 +203,7 @@
                :relative-path "tokens"}
    :messages {:bad-startup-command "Invalid startup command"
               :cannot-identify-service "Unable to identify service using waiter headers/token"
+              :health-check-misconfigured "Health check is misconfigured"
               :health-check-requires-authentication "Health check requires authentication"
               :invalid-service-description "Service description using waiter headers/token improperly configured"
               :not-enough-memory "Not enough memory allocated"

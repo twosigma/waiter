@@ -15,6 +15,18 @@
             [waiter.client-tools :refer :all]
             [waiter.settings :as settings]))
 
+(deftest ^:parallel ^:integration-fast test-health-check-misconfigured
+  (testing-using-waiter-url
+    (let [headers {:x-waiter-name (rand-name "test-bad-startup-command")
+                   ; incorrect (but reservable) port ($PORT0 --> 1234)
+                   :x-waiter-cmd (kitchen-cmd "-p 1234")}
+          {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+          service-id (get headers "x-waiter-service-id")]
+      (is (not (nil? service-id)))
+      (assert-response-status response 503)
+      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-misconfigured))))
+      (delete-service waiter-url service-id))))
+
 (deftest ^:parallel ^:integration-fast test-health-check-requires-authentication
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name "test-health-check-requires-authentication")

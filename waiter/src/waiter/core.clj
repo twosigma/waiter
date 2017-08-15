@@ -786,10 +786,10 @@
                                  scheduler-state-mult-chan (async/mult scheduler-state-chan)
                                  http-client (http/client {:connect-timeout health-check-timeout-ms
                                                            :idle-timeout health-check-timeout-ms})]
-                             (scheduler/start-scheduler-syncer
-                               scheduler scheduler-state-chan scheduler-syncer-interval-secs
-                               service-id->service-description-fn scheduler/available? http-client)
-                             {:scheduler-state-mult-chan scheduler-state-mult-chan}))
+                             (merge (scheduler/start-scheduler-syncer
+                                      scheduler scheduler-state-chan scheduler-syncer-interval-secs
+                                      service-id->service-description-fn scheduler/available? http-client)
+                                    {:scheduler-state-mult-chan scheduler-state-mult-chan})))
    :scheduler-services-gc (pc/fnk [[:curator leader?-fn read-gc-state-fn write-gc-state-fn]
                                    [:routines router-metrics-helpers service-id->service-description-fn]
                                    [:settings scheduler-gc-config]
@@ -832,20 +832,14 @@
                                 (state/start-service-chan-maintainer
                                   {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
    :state-query-chans (pc/fnk [[:state query-app-maintainer-chan scheduler]
-                               autoscaler autoscaling-multiplexer gc-for-transient-metrics scheduler-broken-services-gc scheduler-services-gc]
-                        (let [scheduler-state-query-chan (async/chan 32)]
-                          (async/go-loop []
-                            (let [{:keys [response-chan service-id]} (async/<! scheduler-state-query-chan)]
-                              (when-let [scheduler-state (scheduler/service-id->state scheduler service-id)]
-                                (async/>! response-chan scheduler-state)))
-                            (recur))
-                          {:app-maintainer-state query-app-maintainer-chan
-                           :autoscaler-state (:query autoscaler)
-                           :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
-                           :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
-                           :scheduler-services-gc-state (:query scheduler-services-gc)
-                           :scheduler-state scheduler-state-query-chan
-                           :transient-metrics-gc-state (:query gc-for-transient-metrics)}))
+                               autoscaler autoscaling-multiplexer gc-for-transient-metrics scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
+                        {:app-maintainer-state query-app-maintainer-chan
+                         :autoscaler-state (:query autoscaler)
+                         :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
+                         :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
+                         :scheduler-services-gc-state (:query scheduler-services-gc)
+                         :scheduler-state (:query-chan scheduler-maintainer)
+                         :transient-metrics-gc-state (:query gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
                     scheduler-maintainer]

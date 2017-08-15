@@ -236,9 +236,8 @@
                                                                   :status 200}
                                  :else {:healthy? false
                                         :status 400})))
-        syncer-cancel (start-scheduler-syncer scheduler scheduler-state-chan
-                                              scheduler-syncer-interval-secs service-id->service-description-fn available?
-                                              {})]
+        {:keys [exit-chan]} (start-scheduler-syncer scheduler scheduler-state-chan scheduler-syncer-interval-secs
+                                                    service-id->service-description-fn available? {})]
     (Thread/sleep (* 1000 scheduler-syncer-interval-secs))
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-apps update-apps-msg))
@@ -247,7 +246,7 @@
       (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
       (is (= [(assoc instance3 :healthy? false :health-check-status 400)] (:unhealthy-instances update-instances)))
       (is (= "1" (:service-id update-instances))))
-    (syncer-cancel)))
+    (async/>!! exit-chan :exit)))
 
 (deftest test-start-health-checks
   (let [available-instance "id1"
