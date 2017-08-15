@@ -470,3 +470,11 @@
                       extra-ports)
                  (every? true?))))
       (delete-service waiter-url service-id))))
+
+(deftest ^:parallel ^:integration-fast test-identical-version
+  (testing-using-waiter-url
+   (is (= 1 (->> (routers waiter-url)
+                 vals
+                 (map #(:git-version (waiter-settings %)))
+                 (reduce conj #{})
+                 count)))))
