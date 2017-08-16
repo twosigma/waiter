@@ -21,8 +21,6 @@
                    :x-waiter-health-check-url "/status-402"}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
-      (clojure.pprint/pprint "RESPONSE" response)
-      (log/info "RESPONSE" response)
       (is (not (nil? service-id)))
       (assert-response-status response 503)
       (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-misconfigured))))
