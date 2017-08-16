@@ -132,7 +132,7 @@
 (defn generate-friendly-environment-variable-error-message
   "If the provided metadata was invalid, attempt to generate a friendly error message. Return nil for unknown error."
   [issue]
-  (when-let [env-var-error (map-validation-helper issue "env")]
+  (when-let [env-var-error (map-validation-helper issue "env")]`
     (when-not (empty? env-var-error)
       (str
         (let [bad-keys (group-by #(= 'reserved-environment-variable (:pred-name (.schema %))) (get env-var-error :bad-keys))

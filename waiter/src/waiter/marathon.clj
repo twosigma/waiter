@@ -209,7 +209,7 @@
                      :intervalSeconds 10
                      :portIndex 0
                      :timeoutSeconds 20
-                     :maxConsecutiveFailures 20}]
+                     :maxConsecutiveFailures 5}]
      :backoffFactor restart-backoff-factor
      :labels {:source "waiter"
               :user run-as-user}}))
