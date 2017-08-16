@@ -419,8 +419,14 @@
 
                   state-query-chan
                   ([{:keys [response-chan service-id]}]
-                    (when-let [scheduler-state (service-id->state scheduler service-id)]
-                      (async/>! response-chan (conj scheduler-state current-state)))  ; TODO use service-id to filter!
+                    (if service-id
+                      (let [scheduler-state (service-id->state scheduler service-id)
+                            unhealthy-instances (get service-id->unhealthy-instances service-id)
+                            selected-current-state {:unhealthy-instances unhealthy-instances
+                                                    :tracked-failed-instances (get service-id->tracked-failed-instances service-id)
+                                                    :instance-id->failed-health-checks (filter #(contains? (set unhealthy-instances) (key %)) instance-id->failed-health-checks)}]
+                        (async/>! response-chan (merge selected-current-state scheduler-state)))
+                      (async/>! response-chan (merge current-state (state scheduler))))
                     current-state)
 
                   timeout-chan

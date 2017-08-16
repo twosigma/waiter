@@ -492,18 +492,24 @@
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [state-chan router-metrics-state-fn kv-store leader?-fn scheduler]
+  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler]
   (try
     (let [timeout-ms 30000
           current-state (async/alt!!
                           state-chan ([state-data] state-data)
                           (async/timeout timeout-ms) ([_] {:message "Request timed out!"})
-                          :priority true)]
+                          :priority true)
+          scheduler-state (let [response-chan (async/promise-chan)]
+                            (async/>!! scheduler-chan {:response-chan response-chan})
+                            (async/alt!!
+                              response-chan ([state] state)
+                              (async/timeout timeout-ms) ([_] {:message "Request timed out!"})
+                              :priority true))]
       (-> current-state
           (assoc :leader (leader?-fn)
                  :kv-store (kv/state kv-store)
                  :router-metrics-state (router-metrics-state-fn)
-                 :scheduler (scheduler/state scheduler)
+                 :scheduler scheduler-state
                  :statsd (statsd/state))
           (utils/map->streaming-json-response)))
     (catch Exception e
