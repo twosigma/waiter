@@ -11,7 +11,7 @@
 (ns waiter.scheduler
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
-            [clojure.data :as data]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
@@ -451,11 +451,11 @@
                                       service-id (:id service)
                                       last-unhealthy-instance-ids (get service-id->unhealthy-instance-ids service-id)
                                       service-instance-info (retrieve-instances-for-app service-id active-instances)
-                                      unhealthy-instance-ids (map :id (:unhealthy-instances service-instance-info))
-                                      failed-instances (if-let [possible-failed-ids (first (data/diff last-unhealthy-instance-ids unhealthy-instance-ids))]
-                                                         (conj failed-instances
+                                      unhealthy-instance-ids (set (map :id (:unhealthy-instances service-instance-info)))
+                                      failed-instances (if-let [possible-failed-ids (set/difference last-unhealthy-instance-ids unhealthy-instance-ids)]
+                                                         (conj failed-instances ; TODO we are only keeping track of the instance ids -- we need the actual instances too
                                                                (map #(assoc % :flags #{:never-passed-health-checks}) ; TODO ?? (also see marathon / shell locations)
-                                                                    (filter #(> (get instance-id->failed-health-checks %) max-failed-health-checks) possible-failed-ids)))
+                                                                    (filter #(> (get instance-id->failed-health-checks %) max-failed-health-checks) possible-failed-ids))) ; TODO compare against active instances
                                                          failed-instances)
                                       scheduler-messages' (if service-instance-info
                                                             ; Assume nil service-instance-info means there was a failure in invoking marathon
@@ -475,7 +475,7 @@
                                          scheduler-messages' remaining))
                                 (do (async/>!! scheduler-state-chan scheduler-messages)
                                     (log/info (timing-message-fn) "for" (count service->service-instances) "services.")
-                                    {:service-id->unhealthy-instances-ids service-id->unhealthy-instance-ids'
+                                    {:service-id->unhealthy-instance-ids service-id->unhealthy-instance-ids'
                                      :instance-id->failed-health-checks instance-id->failed-health-checks'}))))
                           (do (log/info (timing-message-fn))
                               current-state)))))

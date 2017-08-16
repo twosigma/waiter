@@ -37,6 +37,7 @@
   ([scheduler service-id custom-service-description]
    (let [descriptor {:service-description (merge {"backend-proto" "http"
                                                   "cmd" "ls"
+                                                  "grace-period-secs" 10
                                                   "mem" 32
                                                   "ports" 1}
                                                  custom-service-description)
@@ -364,6 +365,7 @@
                                 "USER" nil}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
+                                        "grace-period-secs" 10
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}
@@ -378,6 +380,7 @@
                                 "USER" nil}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
+                                        "grace-period-secs" 10
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}
@@ -392,6 +395,7 @@
                                 "USER" nil}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
+                                        "grace-period-secs" 10
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}])
@@ -427,6 +431,7 @@
                                                   "USER" nil}
                                     :service-description {"backend-proto" "http"
                                                           "cmd" "ls"
+                                                          "grace-period-secs" 10
                                                           "mem" 32
                                                           "ports" 1}
                                     :shell-scheduler/mem 32})

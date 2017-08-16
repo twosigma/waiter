@@ -309,6 +309,19 @@
                       :exit-code exit-value))
     instance))
 
+(defn- enforce-grace-period
+  "Kills processes for unhealthy instances exceeding their grace period" ; TODO currently waits twice the grace period; document or explain
+  [{:keys [:shell-scheduler/process started-at] :as instance} grace-period-secs port->reservation-atom port-grace-period-ms]
+  (if (and (unhealthy? instance) (.isAlive process))
+    (let [start (clj-time.coerce/from-string started-at)]
+      (if (and (t/before? start (t/now)) (>= (t/in-seconds (t/interval start (t/now))) grace-period-secs))
+        (do (log/info "unhealthy instance exceeds its grace period, killing instance" {:instance instance :grace-period-secs grace-period-secs})
+            (kill-process! instance port->reservation-atom port-grace-period-ms)
+            (assoc instance :killed true                    ; not marking as failed because Waiter should detect this
+                            :shell-scheduler/process nil))
+        instance))
+    instance))
+
 (defn- enforce-instance-limits
   "Kills processes that exceed allocated memory usage"
   [{:keys [:shell-scheduler/process :shell-scheduler/pid] :as instance} mem pid->memory port->reservation-atom port-grace-period-ms]
@@ -355,10 +368,12 @@
       (loop [remaining-service-entries (vals id->service)
              id->service' {}]
         (if-let [{:keys [service id->instance] :as service-entry} (first remaining-service-entries)]
-          (let [{:strs [health-check-url]} (:service-description service)
+          (let [{:strs [health-check-url grace-period-secs]} (:service-description service)
+                _ (log/info "service-description" (:service-description service))
                 health-check #(update-instance-health % health-check-url http-client)
                 limits-check #(enforce-instance-limits % (:shell-scheduler/mem service) pid->memory port->reservation-atom port-grace-period-ms)
-                id->instance' (pc/map-vals (comp health-check limits-check exit-codes-check) id->instance)
+                grace-period-check #(enforce-grace-period % grace-period-secs port->reservation-atom port-grace-period-ms)
+                id->instance' (pc/map-vals (comp grace-period-check health-check limits-check exit-codes-check) id->instance)
                 service-entry' (-> service-entry
                                    (assoc :id->instance id->instance')
                                    (assoc-in [:service :task-stats :healthy] (->> id->instance' vals (filter healthy?) count))
