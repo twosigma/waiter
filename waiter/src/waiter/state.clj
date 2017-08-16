@@ -1101,7 +1101,6 @@
                                  (let [{:keys [service-id sorted-instance-ids healthy-instances unhealthy-instances failed-instances scheduler-sync-time]} message-data
                                        service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
                                        service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)
-                                       _ (log/info "service-id->unhealthy-instances'" service-id->unhealthy-instances')
                                        service-id->sorted-instance-ids' (assoc service-id->sorted-instance-ids service-id sorted-instance-ids)
                                        service-description (service-id->service-description-fn service-id)
                                        expiry-mins-str (get service-description "instance-expiry-mins")

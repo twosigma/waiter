@@ -461,15 +461,19 @@
                                       last-unhealthy-instances (get service-id->unhealthy-instances service-id)
                                       service-instance-info (retrieve-instances-for-app service-id active-instances)
                                       unhealthy-instances (:unhealthy-instances service-instance-info)
+                                      instance-id->instance-fn (fn [id instances] (first (filter #(= id (:id %)) instances)))
                                       instances->ids-fn (fn [instances] (set (map :id instances)))
-                                      id->instance-fn (fn [instance-id] (first (filter #(= instance-id (:id %)) last-unhealthy-instances)))
-                                      tracked-failed-instances (let [last-tracked-instances (get service-id->tracked-failed-instances service-id)
-                                                                     possible-failed-ids (set/difference (instances->ids-fn last-unhealthy-instances) (instances->ids-fn unhealthy-instances))]
-                                                                 (reduce conj last-tracked-instances
-                                                                         (map #(update-in (id->instance-fn %) [:flags] conj :never-passed-health-checks)
-                                                                              (filter #(and (> (get instance-id->failed-health-checks %) max-failed-health-checks)
-                                                                                            (not (get (instances->ids-fn active-instances) %)))
-                                                                                      possible-failed-ids))))
+                                      tracked-failed-instances (reduce conj (get service-id->tracked-failed-instances service-id)
+                                                                       (for [possible-id (set/difference (instances->ids-fn last-unhealthy-instances) (instances->ids-fn unhealthy-instances))
+                                                                             :let [failed-instance (instance-id->instance-fn possible-id failed-instances)
+                                                                                   instance (cond
+                                                                                              (-> failed-instance :flags :never-passed-health-checks)
+                                                                                              failed-instance
+                                                                                              (and (not (instance-id->instance-fn possible-id active-instances))
+                                                                                                   (> (get instance-id->failed-health-checks possible-id) max-failed-health-checks))
+                                                                                              (update-in (instance-id->instance-fn possible-id last-unhealthy-instances) [:flags] conj :never-passed-health-checks))]
+                                                                             :when instance]
+                                                                         instance))
                                       scheduler-messages' (if service-instance-info
                                                             ; Assume nil service-instance-info means there was a failure in invoking marathon
                                                             (conj scheduler-messages
