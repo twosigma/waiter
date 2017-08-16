@@ -1101,6 +1101,7 @@
                                  (let [{:keys [service-id sorted-instance-ids healthy-instances unhealthy-instances failed-instances scheduler-sync-time]} message-data
                                        service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
                                        service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)
+                                       _ (log/info "service-id->unhealthy-instances'" service-id->unhealthy-instances')
                                        service-id->sorted-instance-ids' (assoc service-id->sorted-instance-ids service-id sorted-instance-ids)
                                        service-description (service-id->service-description-fn service-id)
                                        expiry-mins-str (get service-description "instance-expiry-mins")
@@ -1111,6 +1112,7 @@
                                        service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
                                        service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
                                        service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
+                                       _ (log/info "service-id->failed-instances'" service-id->failed-instances')
                                        deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config)
                                        service-id->deployment-error' (if deployment-error
                                                                        (assoc service-id->deployment-error service-id deployment-error)

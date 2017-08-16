@@ -409,6 +409,7 @@
                {:service-id->unhealthy-instances {}
                 :service-id->tracked-failed-instances {}
                 :instance-id->failed-health-checks {}}]
+          (log/info "scheduler-syncer current-state" current-state)
           (let [new-state
                 (async/alt!
                   exit-chan
