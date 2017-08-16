@@ -514,3 +514,19 @@
       (is (= 2 (count (:failed-instances instances)))))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
            (scheduler/delete-app scheduler "foo")))))
+
+(deftest test-enforce-grace-period
+  (let [scheduler-config {:health-check-timeout-ms 1
+                          :port-grace-period-ms 1
+                          :port-range [10000 11000]
+                          :failed-instance-retry-interval-ms 500
+                          :health-check-interval-ms 500
+                          :work-directory (work-dir)}
+        scheduler (create-shell-scheduler scheduler-config)]
+    (is (= {:success true, :result :created, :message "Created foo"}
+           (create-test-service scheduler "foo" {"cmd" "sleep 10000" "grace-period-secs" 0})))
+    ;; Instance should be marked as unhealthy and killed without being placed in failed instances
+    (force-update-service-health scheduler scheduler-config)
+    (let [instances (scheduler/get-instances scheduler "foo")]
+      (is (= 0 (count (:active-instances instances))))
+      (is (= 0 (count (:failed-instances instances)))))))

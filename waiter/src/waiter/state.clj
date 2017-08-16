@@ -1111,7 +1111,6 @@
                                        service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
                                        service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
                                        service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
-                                       _ (log/info "service-id->failed-instances'" service-id->failed-instances')
                                        deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config)
                                        service-id->deployment-error' (if deployment-error
                                                                        (assoc service-id->deployment-error service-id deployment-error)

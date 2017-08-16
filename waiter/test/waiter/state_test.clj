@@ -869,7 +869,7 @@
                                              {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}]
                           :expected :not-enough-memory}
                          {:name "health-check-misconfigured" :healthy-instances [] :unhealthy-instances []
-                          :failed-instances [{:message nil :flags #{:never-passed-health-checks}}
+                          :failed-instances [{:message "Task was killed" :flags #{:never-passed-health-checks}}
                                              {:message nil :flags #{:never-passed-health-checks}}]
                           :expected :health-check-misconfigured}
                          {:name "bad-startup-command" :healthy-instances [] :unhealthy-instances []

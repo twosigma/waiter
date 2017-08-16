@@ -310,7 +310,7 @@
     instance))
 
 (defn- enforce-grace-period
-  "Kills processes for unhealthy instances exceeding their grace period" ; TODO currently waits twice the grace period; document or explain
+  "Kills processes for unhealthy instances exceeding their grace period"
   [{:keys [:shell-scheduler/process started-at] :as instance} grace-period-secs port->reservation-atom port-grace-period-ms]
   (if (and (unhealthy? instance) (.isAlive process))
     (let [start (clj-time.coerce/from-string started-at)]
