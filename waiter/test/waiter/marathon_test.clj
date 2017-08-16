@@ -535,7 +535,7 @@
                                       :intervalSeconds 10
                                       :portIndex 0
                                       :timeoutSeconds 20
-                                      :maxConsecutiveFailures 20}]
+                                      :maxConsecutiveFailures 5}]
                       :backoffFactor 2
                       :ports [0 0]
                       :user "test-user"}

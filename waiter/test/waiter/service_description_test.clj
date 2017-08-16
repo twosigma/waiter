@@ -1218,6 +1218,7 @@
         (is false "Exception should have been thrown for invalid service description")
         (catch ExceptionInfo ex
           (let [friendly-message (get-in (ex-data ex) [:friendly-error-message :env])]
+            (println friendly-message)
             (is (str/includes? friendly-message "values must be strings") friendly-message)
             (is (str/includes? friendly-message "did not have string values: ABC: 1.") friendly-message)))))
 
