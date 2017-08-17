@@ -473,8 +473,9 @@
 
 (deftest ^:parallel ^:integration-fast test-identical-version
   (testing-using-waiter-url
-   (is (= 1 (->> (routers waiter-url)
-                 vals
-                 (map #(:git-version (waiter-settings %)))
-                 set
-                 count)))))
+   (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
+     (is (= 1 (->> (routers waiter-url)
+                   vals
+                   (map #(:git-version (waiter-settings % :cookies cookies)))
+                   set
+                   count))))))
