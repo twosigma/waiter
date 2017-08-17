@@ -37,7 +37,7 @@
       (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-requires-authentication))))
       (delete-service waiter-url service-id))))
 
-; Marked explicit because PROD1 servers always allocate enough memory (this error is not reproducible on Jenkins)
+; Marked explicit because not all servers use cgroups to limit memory (this error is not reproducible on testing platforms)
 (deftest ^:parallel ^:integration-fast ^:explicit test-not-enough-memory
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name "test-not-enough-memory")
