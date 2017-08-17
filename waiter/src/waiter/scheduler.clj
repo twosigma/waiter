@@ -400,7 +400,6 @@
         timing-message-fn (fn [] (let [^DateTime now (t/now)]
                                    (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-apps-time)) " ms")))]
     (log/trace "scheduler-syncer: querying scheduler")
-    (log/info "service-id->health-check-context" service-id->health-check-context)
     (if-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "app->available-tasks")
                                           (do-health-checks (request-available-waiter-apps scheduler)
@@ -425,17 +424,16 @@
                   service-instance-info (retrieve-instances-for-app service-id active-instances)
                   instance-id->unhealthy-instance' (into {} (map #(vector (:id %) %)
                                                                  (:unhealthy-instances service-instance-info)))
-                  contained-in? (fn [id instances] (some #(= id (:id %)) instances))
-                  instance-id->tracked-failed-instance' (into instance-id->tracked-failed-instance
-                                                              (map #(vector % (get instance-id->unhealthy-instance %))
-                                                                   (filter #(and (not (contained-in? % active-instances))
-                                                                                 (> (get instance-id->failed-health-check-count %) max-failed-health-checks))
-                                                                           (keys instance-id->unhealthy-instance))))
+                  not-in? (fn [id instances] (not (some #(= id (:id %)) instances)))
+                  instance-id->tracked-failed-instance' ((fnil into {}) instance-id->tracked-failed-instance
+                                                          (map #(vector % (get instance-id->unhealthy-instance %))
+                                                               (filter #(and (not-in? % active-instances)
+                                                                             (> (get instance-id->failed-health-check-count %) max-failed-health-checks))
+                                                                       (keys instance-id->unhealthy-instance))))
                   failed-instances (into failed-instances
                                          (map #(update-in (get instance-id->tracked-failed-instance' %) [:flags] conj :never-passed-health-checks)
-                                              (filter #(contained-in? % failed-instances)
+                                              (filter #(not-in? % failed-instances)
                                                       (keys instance-id->tracked-failed-instance'))))
-                  _ (log/info "scheduler-syncer failed-instances" failed-instances)
                   scheduler-messages' (if service-instance-info
                                         ; Assume nil service-instance-info means there was a failure in invoking marathon
                                         (conj scheduler-messages

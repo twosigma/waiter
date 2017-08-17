@@ -17,8 +17,19 @@
 
 (deftest ^:parallel ^:integration-fast test-health-check-misconfigured
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-health-check-misconfigured")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-health-check-url "/status-402"}
+          {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+          service-id (get headers "x-waiter-service-id")]
+      (is (not (nil? service-id)))
+      (assert-response-status response 503)
+      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-misconfigured))))
+      (delete-service waiter-url service-id)))
+
+  (testing-using-waiter-url
+    (let [headers {:x-waiter-name (rand-name)
+                   ; listening on invalid port ($PORT0 --> 2020)
+                   :x-waiter-cmd (kitchen-cmd "-p 2020")}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
@@ -28,7 +39,7 @@
 
 (deftest ^:parallel ^:integration-fast test-health-check-requires-authentication
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-health-check-requires-authentication")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-health-check-url "/status-401"}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
@@ -40,7 +51,7 @@
 ; Marked explicit because not all servers use cgroups to limit memory (this error is not reproducible on testing platforms)
 (deftest ^:parallel ^:integration-fast ^:explicit test-not-enough-memory
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-not-enough-memory")
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-mem 1}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
@@ -51,7 +62,7 @@
 
 (deftest ^:parallel ^:integration-fast test-bad-startup-command
   (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name "test-bad-startup-command")
+    (let [headers {:x-waiter-name (rand-name)
                    ; misspelled command (invalid prefix asdf)
                    :x-waiter-cmd (str "asdf" (kitchen-cmd "-p $PORT0"))}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
