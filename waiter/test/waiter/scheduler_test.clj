@@ -256,21 +256,19 @@
           response (async/alt!!
                      response-chan ([state] state)
                      (async/timeout 10000) ([_] {:message "Request timed out!"}))]
-      (doseq [required-key [:state
-                            :service-id->unhealthy-instances
-                            :service-id->tracked-failed-instances
-                            :instance-id->failed-health-checks]]
+      (doseq [required-key [:service-id->health-check-context
+                            :state]]
         (is (contains? response required-key))))
     ;; Retrieves scheduler state with service-id
     (let [response-chan (async/promise-chan)
-          _ (async/>!! query-chan {:response-chan response-chan :service-id "id"})
+          _ (async/>!! query-chan {:response-chan response-chan :service-id "1"})
           response (async/alt!!
                      response-chan ([state] state)
                      (async/timeout 10000) ([_] {:message "Request timed out!"}))]
-      (doseq [required-key [:instance-id->failed-health-checks
-                            :service-specific-state
-                            :tracked-failed-instances
-                            :unhealthy-instances]]
+      (doseq [required-key [:instance-id->failed-health-check-count
+                            :instance-id->tracked-failed-instance
+                            :instance-id->unhealthy-instance
+                            :service-specific-state]]
         (is (contains? response required-key))))
     (async/>!! exit-chan :exit)))
 

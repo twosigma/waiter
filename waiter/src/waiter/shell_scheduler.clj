@@ -312,12 +312,14 @@
 (defn- enforce-grace-period
   "Kills processes for unhealthy instances exceeding their grace period"
   [{:keys [:shell-scheduler/process started-at] :as instance} grace-period-secs port->reservation-atom port-grace-period-ms]
-  (if (and (unhealthy? instance) (.isAlive process))
-    (let [start (clj-time.coerce/from-string started-at)]
-      (if (and (t/before? start (t/now)) (>= (t/in-seconds (t/interval start (t/now))) grace-period-secs))
-        (do (log/info "unhealthy instance exceeds its grace period, killing instance" {:instance instance :grace-period-secs grace-period-secs})
+  (if (unhealthy? instance)
+    (let [start-time (clj-time.coerce/from-string started-at)
+          current-time (t/now)]
+      (if (>= (t/in-seconds (t/interval start-time current-time)) grace-period-secs)
+        (do (log/info "unhealthy instance exceeds its grace period, killing instance"
+                      {:instance instance :start-time start-time :current-time current-time :grace-period-secs grace-period-secs})
             (kill-process! instance port->reservation-atom port-grace-period-ms)
-            (assoc instance :killed true                    ; not marking as failed because Waiter should detect this
+            (assoc instance :killed true                    ; choosing not to mark as failed because Waiter should detect this
                             :shell-scheduler/process nil))
         instance))
     instance))
