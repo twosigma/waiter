@@ -351,8 +351,8 @@
       (log/info "service id: " service-id))
     service-id))
 
-(defn waiter-settings [waiter-url]
-  (let [settings-result (make-request waiter-url "/settings" :verbose true)
+(defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
+  (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies)
         settings-json (json/read-str (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 
