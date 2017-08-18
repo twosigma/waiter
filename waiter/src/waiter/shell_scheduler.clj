@@ -316,7 +316,7 @@
     (let [start-time (f/parse (f/formatters :date-time) started-at)
           current-time (t/now)]
       (if (>= (t/in-seconds (t/interval start-time current-time)) grace-period-secs)
-        (do (log/info "unhealthy instance exceeds its grace period, killing instance"
+        (do (log/info "unhealthy instance exceeded its grace period, killing instance"
                       {:instance instance :start-time start-time :current-time current-time :grace-period-secs grace-period-secs})
             (kill-process! instance port->reservation-atom port-grace-period-ms)
             (assoc instance :failed true
@@ -373,7 +373,6 @@
              id->service' {}]
         (if-let [{:keys [service id->instance] :as service-entry} (first remaining-service-entries)]
           (let [{:strs [health-check-url grace-period-secs]} (:service-description service)
-                _ (log/info "service-description" (:service-description service))
                 health-check #(update-instance-health % health-check-url http-client)
                 limits-check #(enforce-instance-limits % (:shell-scheduler/mem service) pid->memory port->reservation-atom port-grace-period-ms)
                 grace-period-check #(enforce-grace-period % grace-period-secs port->reservation-atom port-grace-period-ms)

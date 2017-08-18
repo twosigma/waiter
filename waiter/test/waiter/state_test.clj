@@ -846,43 +846,43 @@
                 :using-marathon true}
         alive-started-at (.toString (t/now))
         expired-started-at (.toString (t/minus (t/now) (t/millis 10000)))
-        test-cases (list {:name "no-instances" :healthy-instances [] :unhealthy-instances [] :failed-instances [] :expected nil}
-                         {:name "no-deployment-errors" :healthy-instances [:instance-one] :unhealthy-instances [] :failed-instances [] :expected nil}
-                         {:name "healthy-and-unhealthy-instances" :healthy-instances [:instance-one]
-                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}] :failed-instances [] :expected nil}
-                         {:name "healthy-and-failed-instances" :healthy-instances [:instance-one]
-                          :unhealthy-instances [] :failed-instances [{:message "Command exited with status" :exit-code 1}] :expected nil}
-                         {:name "single-unhealthy-instance" :healthy-instances []
-                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}] :failed-instances [] :expected nil}
-                         {:name "single-failed-instance" :healthy-instances [] :unhealthy-instances []
-                          :failed-instances [{:message "Command exited with status" :exit-code 1}] :expected nil}
-                         {:name "multiple-different-unhealthy-instances" :healthy-instances []
+        test-cases (list {:name "no-instances", :healthy-instances [], :unhealthy-instances [], :failed-instances [], :expected nil}
+                         {:name "no-deployment-errors", :healthy-instances [:instance-one], :unhealthy-instances [], :failed-instances [], :expected nil}
+                         {:name "healthy-and-unhealthy-instances", :healthy-instances [:instance-one],
+                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}], :failed-instances [], :expected nil}
+                         {:name "healthy-and-failed-instances", :healthy-instances [:instance-one],
+                          :unhealthy-instances [], :failed-instances [{:message "Command exited with status" :exit-code 1}], :expected nil}
+                         {:name "single-unhealthy-instance", :healthy-instances [],
+                          :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}], :failed-instances [], :expected nil}
+                         {:name "single-failed-instance", :healthy-instances [], :unhealthy-instances [],
+                          :failed-instances [{:message "Command exited with status" :exit-code 1}], :expected nil}
+                         {:name "multiple-different-unhealthy-instances", :healthy-instances [],
                           :unhealthy-instances [{:health-check-status 400 :started-at alive-started-at}
-                                                {:health-check-status 401 :started-at alive-started-at}]
-                          :failed-instances [] :expected nil}
-                         {:name "multiple-different-failed-instances" :healthy-instances [] :unhealthy-instances []
+                                                {:health-check-status 401 :started-at alive-started-at}],
+                          :failed-instances [], :expected nil}
+                         {:name "multiple-different-failed-instances", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Command exited with status" :exit-code 1}
-                                             {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}]
+                                             {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
                           :expected nil}
-                         {:name "not-enough-memory" :healthy-instances [] :unhealthy-instances []
+                         {:name "not-enough-memory", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
-                                             {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}]
+                                             {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
                           :expected :not-enough-memory}
-                         {:name "health-check-misconfigured" :healthy-instances [] :unhealthy-instances []
+                         {:name "health-check-misconfigured", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Task was killed" :flags #{:never-passed-health-checks}}
-                                             {:message nil :flags #{:never-passed-health-checks}}]
+                                             {:message nil :flags #{:never-passed-health-checks}}],
                           :expected :health-check-misconfigured}
-                         {:name "bad-startup-command" :healthy-instances [] :unhealthy-instances []
+                         {:name "bad-startup-command", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Command exited with status" :exit-code 1}
-                                             {:message "Command exited with status" :exit-code 1}]
+                                             {:message "Command exited with status" :exit-code 1}],
                           :expected :bad-startup-command}
-                         {:name "health-check-requires-authentication" :healthy-instances []
-                          :unhealthy-instances [{:health-check-status 401}] :failed-instances []
+                         {:name "health-check-requires-authentication", :healthy-instances [],
+                          :unhealthy-instances [{:health-check-status 401}], :failed-instances [],
                           :expected :health-check-requires-authentication}
-                         {:name "unhealthy-and-failed-instances" :healthy-instances []
-                          :unhealthy-instances [{:health-check-status 401}]
+                         {:name "unhealthy-and-failed-instances", :healthy-instances [],
+                          :unhealthy-instances [{:health-check-status 401}],
                           :failed-instances [{:message "Command exited with status" :exit-code 1}
-                                             {:message "Command exited with status" :exit-code 1}]
+                                             {:message "Command exited with status" :exit-code 1}],
                           :expected :bad-startup-command})]
     (doseq [{:keys [name healthy-instances unhealthy-instances failed-instances expected]} test-cases]
       (testing (str "Test " name)

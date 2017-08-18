@@ -112,12 +112,16 @@
                                          :host host}
                                         (and slave-directory framework-id slaveId)
                                         (assoc :log-directory log-directory)
+
                                         message
                                         (assoc :message (str/trim message))
+
                                         (str/includes? (str message) "Memory limit exceeded:")
                                         (assoc :flags #{:memory-limit-exceeded})
+
                                         (str/includes? (str message) "Task was killed since health check failed")
                                         (assoc :flags #{:never-passed-health-checks})
+
                                         (str/includes? (str message) "Command exited with status")
                                         (assoc :exit-code (try (-> message (str/split #"\s+") last Integer/parseInt)
                                                                (catch Throwable e))))))

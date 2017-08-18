@@ -18,14 +18,16 @@
 (deftest ^:parallel ^:integration-fast test-health-check-misconfigured
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
+                   ; health check endpoint always returns status 402
                    :x-waiter-health-check-url "/status-402"}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
       (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-misconfigured))))
-      (delete-service waiter-url service-id)))
+      (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-not-listening
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; listening on invalid port ($PORT0 --> 2020)

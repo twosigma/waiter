@@ -481,7 +481,6 @@
                            ;; The number of hosts on which health checks must fail in order to declare a deployment error:
                            :min-hosts 2}
 
- ;; Sets tolerance level for Waiter regarding health checks
  :health-check-config {
                        ;; The HTTP connect timeout and idle timeout (milliseconds) for instance health checks:
                        :health-check-timeout-ms 200

@@ -786,10 +786,10 @@
                                  scheduler-state-mult-chan (async/mult scheduler-state-chan)
                                  http-client (http/client {:connect-timeout health-check-timeout-ms
                                                            :idle-timeout health-check-timeout-ms})]
-                             (merge (scheduler/start-scheduler-syncer
+                             (assoc (scheduler/start-scheduler-syncer
                                       scheduler scheduler-state-chan scheduler-syncer-interval-secs
                                       service-id->service-description-fn scheduler/available? http-client max-failed-health-checks)
-                                    {:scheduler-state-mult-chan scheduler-state-mult-chan})))
+                               :scheduler-state-mult-chan scheduler-state-mult-chan)))
    :scheduler-services-gc (pc/fnk [[:curator leader?-fn read-gc-state-fn write-gc-state-fn]
                                    [:routines router-metrics-helpers service-id->service-description-fn]
                                    [:settings scheduler-gc-config]
