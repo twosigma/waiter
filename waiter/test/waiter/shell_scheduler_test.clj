@@ -525,8 +525,8 @@
         scheduler (create-shell-scheduler scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo" {"cmd" "sleep 10000" "grace-period-secs" 0})))
-    ;; Instance should be marked as unhealthy and killed without being placed in failed instances
+    ;; Instance should be marked as unhealthy and failed
     (force-update-service-health scheduler scheduler-config)
     (let [instances (scheduler/get-instances scheduler "foo")]
       (is (= 0 (count (:active-instances instances))))
-      (is (= 0 (count (:failed-instances instances)))))))
+      (is (= 1 (count (:failed-instances instances)))))))

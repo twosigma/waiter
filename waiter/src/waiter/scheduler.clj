@@ -392,7 +392,7 @@
                         service
                         (assoc instances :active-instances active-instances))))))))
 
-(defn update-scheduler-state
+(defn- update-scheduler-state
   "Queries marathon, sends data on app and instance statuses to router state maintainer, and returns scheduler state"
   [scheduler scheduler-state-chan service-id->service-description-fn available?
    http-client max-failed-health-checks service-id->health-check-context]
