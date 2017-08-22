@@ -31,8 +31,12 @@
 (deftest sleep-handler-test
   (testing "sleep handler"
     (testing "should sleep for intended number of milliseconds"
-      (let [{:keys [body]} (http-handler {:uri "/sleep-3"})]
-        (is (= "Slept for 3000 ms" body))))))
+      (let [{:keys [body status]} (http-handler {:uri "/sleep-3"})]
+        (is (= 400 status))
+        (is (= "Slept for 3 seconds" body)))
+      (let [{:keys [body status]} (http-handler {:uri "/sleep-2-403"})]
+        (is (= 403 status))
+        (is (= "Slept for 2 seconds" body))))))
 
 (deftest default-handler-test
   (testing "Default handler"
