@@ -43,7 +43,7 @@
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; health check endpoint sleeps for 300 seconds (= 5 minutes)
-                   :x-waiter-health-check-url "/sleep-300"}
+                   :x-waiter-health-check-url "/sleep-300-400"}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
