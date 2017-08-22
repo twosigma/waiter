@@ -15,7 +15,7 @@
             [waiter.client-tools :refer :all]
             [waiter.settings :as settings]))
 
-(deftest ^:parallel ^:integration-fast test-health-check-misconfigured
+(deftest ^:parallel ^:integration-fast test-invalid-health-check-response
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; health check endpoint always returns status 402
@@ -24,10 +24,10 @@
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
-      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-misconfigured))))
+      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :invalid-health-check-response))))
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-fast test-not-listening
+(deftest ^:parallel ^:integration-fast test-cannot-connect
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; listening on invalid port ($PORT0 --> 2020)
@@ -36,7 +36,19 @@
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
-      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-misconfigured))))
+      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :cannot-connect))))
+      (delete-service waiter-url service-id))))
+
+(deftest ^:parallel ^:integration-fast test-health-check-timed-out
+  (testing-using-waiter-url
+    (let [headers {:x-waiter-name (rand-name)
+                   ; health check endpoint sleeps for 300 seconds (= 5 minutes)
+                   :x-waiter-health-check-url "/sleep-300"}
+          {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+          service-id (get headers "x-waiter-service-id")]
+      (is (not (nil? service-id)))
+      (assert-response-status response 503)
+      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-timed-out))))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-health-check-requires-authentication

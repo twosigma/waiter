@@ -205,10 +205,15 @@
   (async/go
     (if (pos? port)
       (let [instance-health-check-url (health-check-url service-instance health-check-path)
-            {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))]
+            {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
+            error-flag (cond
+                         (instance? ConnectException error) #{:connect-exception}
+                         (instance? SocketTimeoutException error) #{:timeout-exception}
+                         (instance? TimeoutException error) #{:timeout-exception})]
         (log-health-check-issues service-instance instance-health-check-url status error)
         {:healthy? (and (not error) (<= 200 status 299))
-         :status status})
+         :status status
+         :error error-flag})
       {:healthy? false})))
 
 (defn instance-comparator
@@ -369,12 +374,15 @@
                                      (let [chan (async/promise-chan)]
                                        (if (:healthy? instance)
                                          (async/put! chan instance)
-                                         (async/pipeline 1 chan (map (fn [{:keys [healthy? status]}]
-                                                                       (if healthy?
-                                                                         (assoc instance :healthy? true)
-                                                                         (assoc instance :healthy? false
-                                                                                         :health-check-status status))))
-                                                         (available? instance health-check-url)))
+                                         (async/pipeline
+                                           1 chan (map (fn [{:keys [healthy? status error]}]
+                                                         (if healthy?
+                                                           (assoc instance :healthy? true)
+                                                           (-> instance
+                                                               (assoc :healthy? false)
+                                                               (assoc :health-check-status status)
+                                                               (update-in [:flags] into error)))))
+                                           (available? instance health-check-url)))
                                        chan))
                                    active-instances)]
         (recur rest (assoc service->service-instances' service
@@ -418,7 +426,6 @@
           (if id
             (let [request-instances-time (t/now)
                   active-instance-ids (->> active-instances (map :id) set)
-                  failed-instance-ids (->> failed-instances (map :id) set)
                   {:keys [instance-id->unhealthy-instance
                           instance-id->tracked-failed-instance
                           instance-id->failed-health-check-count]} (get service-id->health-check-context id)
@@ -429,11 +436,12 @@
                                                                              (pos? (compare (get instance-id->failed-health-check-count instance-id) max-failed-health-checks)))
                                                                     [instance-id (update-in unhealthy-instance [:flags] conj :never-passed-health-checks)]))
                                                                 instance-id->unhealthy-instance))
-                  all-failed-instances (into failed-instances (keep (fn [[instance-id tracked-instance]]
-                                                                      (when (not (contains? failed-instance-ids instance-id))
-                                                                        tracked-instance))
-                                                                    instance-id->tracked-failed-instance'))
-                  _ (log/info "scheduler-syncer all-failed-instances" all-failed-instances) ; TODO inserted for travis logs, will remove
+                  all-failed-instances (vals (merge-with (fn [failed-instance tracked-instance]
+                                                           (-> failed-instance
+                                                               (update-in [:flags] into (:flags tracked-instance))
+                                                               (assoc :health-check-status (:health-check-status tracked-instance))))
+                                                         (pc/map-from-vals :id failed-instances)
+                                                         instance-id->tracked-failed-instance'))
                   scheduler-messages' (if service-instance-info
                                         ; Assume nil service-instance-info means there was a failure in invoking marathon
                                         (conj scheduler-messages

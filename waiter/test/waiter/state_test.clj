@@ -868,10 +868,18 @@
                           :failed-instances [{:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
                                              {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
                           :expected :not-enough-memory}
-                         {:name "health-check-misconfigured", :healthy-instances [], :unhealthy-instances [],
+                         {:name "invalid-health-check-response", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Task was killed" :flags #{:never-passed-health-checks}}
                                              {:message nil :flags #{:never-passed-health-checks}}],
-                          :expected :health-check-misconfigured}
+                          :expected :invalid-health-check-response}
+                         {:name "health-check-timed-out", :healthy-instances [], :unhealthy-instances [],
+                          :failed-instances [{:message "Task was killed" :flags #{:timeout-exception :never-passed-health-checks}}
+                                             {:message nil :flags #{:never-passed-health-checks :timeout-exception}}],
+                          :expected :health-check-timed-out}
+                         {:name "cannot-connect", :healthy-instances [], :unhealthy-instances [],
+                          :failed-instances [{:message "Task was killed" :flags #{:connect-exception :never-passed-health-checks}}
+                                             {:message nil :flags #{:connect-exception :never-passed-health-checks}}],
+                          :expected :cannot-connect}
                          {:name "bad-startup-command", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Command exited with status" :exit-code 1}
                                              {:message "Command exited with status" :exit-code 1}],
@@ -1080,14 +1088,15 @@
         (is (= routers (:routers (async/<!! router-state-push-chan))))
 
         (let [start-time (t/now)
-              unhealthy-health-check-statuses [400 401 402 nil nil nil]
+              unhealthy-health-check-statuses [400 401 402]
               unhealthy-instances-fn (fn [service-id index]
                                        (vec (map (fn [x] {:id (str service-id "." x "1")
                                                           :health-check-status (get unhealthy-health-check-statuses (mod index (count unhealthy-health-check-statuses)))
                                                           :started-at (f/unparse (f/formatters :date-time) start-time)})
                                                  (range (if (zero? (mod index 2)) 1 0)))))
               failed-messages [{:message nil} {:message nil} {:message nil} {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
-                               {:message nil :flags #{:never-passed-health-checks}} {:message "Command exited with status" :exit-code 1}]
+                               {:message nil :flags #{:never-passed-health-checks}} {:message "Command exited with status" :exit-code 1}
+                               {:message nil :flags #{:connect-exception}} {:flags #{:timeout-exception :never-passed-health-checks}}]
               failed-instances-fn (fn [service-id index]
                                     (vec (map (fn [x] (merge (get failed-messages (mod index (count failed-messages)))
                                                         {:id (str service-id "." x "1")

@@ -1015,12 +1015,15 @@
                                     (>= (count failed-instance-hosts) min-hosts)
                                     (apply = (map :flags failed-instances))
                                     (apply = (map :exit-code failed-instances)))
+          failed-instance-flags (-> failed-instances first :flags)
           has-unhealthy-instances (and (not-empty unhealthy-instances)
                                        (apply = (map :health-check-status unhealthy-instances)))
           unhealthy-status (-> unhealthy-instances first :health-check-status)]
       (cond
-        (and has-failed-instances (-> failed-instances first :flags :memory-limit-exceeded)) :not-enough-memory
-        (and has-failed-instances (-> failed-instances first :flags :never-passed-health-checks)) :health-check-misconfigured
+        (and has-failed-instances (:memory-limit-exceeded failed-instance-flags)) :not-enough-memory
+        (and has-failed-instances (:timeout-exception failed-instance-flags)) :health-check-timed-out
+        (and has-failed-instances (:connect-exception failed-instance-flags)) :cannot-connect
+        (and has-failed-instances (:never-passed-health-checks failed-instance-flags)) :invalid-health-check-response
         (and has-failed-instances (-> failed-instances first :exit-code)) :bad-startup-command
         (and has-unhealthy-instances (= unhealthy-status 401)) :health-check-requires-authentication))))
 

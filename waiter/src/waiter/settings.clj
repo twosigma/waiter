@@ -204,9 +204,11 @@
                :encrypt true
                :relative-path "tokens"}
    :messages {:bad-startup-command "Invalid startup command"
+              :cannot-connect "Unable to connect to run health checks"
               :cannot-identify-service "Unable to identify service using waiter headers/token"
-              :health-check-misconfigured "Health check is misconfigured"
               :health-check-requires-authentication "Health check requires authentication"
+              :health-check-timed-out "Health check timed out"
+              :invalid-health-check-response "Health check returned an invalid response"
               :invalid-service-description "Service description using waiter headers/token improperly configured"
               :not-enough-memory "Not enough memory allocated"
               :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}

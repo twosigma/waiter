@@ -215,7 +215,7 @@
                      :intervalSeconds 10
                      :portIndex 0
                      :timeoutSeconds 20
-                     :maxConsecutiveFailures 5}]
+                     :maxConsecutiveFailures 5}]            ; decreased max to expedite feedback loop
      :backoffFactor restart-backoff-factor
      :labels {:source "waiter"
               :user run-as-user}}))

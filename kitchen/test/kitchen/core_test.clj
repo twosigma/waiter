@@ -28,6 +28,12 @@
       (let [{:keys [status]} (http-handler {:uri "/status-402"})]
         (is (= 402 status)))))))
 
+(deftest sleep-handler-test
+  (testing "sleep handler"
+    (testing "should sleep for intended number of milliseconds"
+      (let [{:keys [body]} (http-handler {:uri "/sleep-3"})]
+        (is (= "Slept for 3000 ms" body))))))
+
 (deftest default-handler-test
   (testing "Default handler"
     (testing "should echo request body when x-kitchen-echo is present"
@@ -236,6 +242,11 @@
       (is (= {:status 200} (handler {:uri "/status-400"})))
       (is (= {:status 200} (handler {:uri "/status-401"})))
       (is (= {:status 200} (handler {:uri "/status-402"}))))
+
+    (testing "Do not authenticate any endpoint beginning with /sleep-"
+      (is (= {:status 200} (handler {:uri "/sleep-3"})))
+      (is (= {:status 200} (handler {:uri "/sleep-10"})))
+      (is (= {:status 200} (handler {:uri "/sleep-xxx"}))))
 
     (testing "Return 401 on missing auth"
       (is (= 401 (:status (handler {:uri "/handler", :headers {}})))))

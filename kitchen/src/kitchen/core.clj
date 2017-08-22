@@ -262,6 +262,13 @@
   {:status intended-status
    :body "Health check returned bad status"})
 
+(defn sleep-handler
+  "Sleeps for given number of milliseconds"
+  [sleep-ms]
+  (Thread/sleep sleep-ms)
+  {:status 400
+   :body (str "Slept for " sleep-ms " ms")})
+
 (defn- gzip-handler
   "Handles requests that may potentially fail, uses unchunked response."
   [{:keys [headers] :as request}]
@@ -405,6 +412,8 @@
                      "/kitchen-state" (state-handler request)
                      "/pi" (pi-handler request)
                      "/request-info" (request-info-handler request)
+                     "/sleep-3" (sleep-handler 3000)        ; TODO parse for number seconds instead
+                     "/sleep-300" (sleep-handler 300000)
                      "/status-400" (bad-status-handler 400)
                      "/status-401" (bad-status-handler 401)
                      "/status-402" (bad-status-handler 402)
@@ -482,6 +491,7 @@
         (= "/status-400" uri) (handler request)
         (= "/status-401" uri) (handler request)
         (= "/status-402" uri) (handler request)
+        (str/starts-with? uri "/sleep-") (handler request)
         :else ((basic-authentication/wrap-basic-authentication
                  handler
                  (fn [u p]
