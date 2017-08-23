@@ -258,18 +258,20 @@
 
 (defn bad-status-handler
   "Simulates health check that returns an intended status."
-  [intended-status]
-  {:status intended-status
+  [{:keys [query-params]}]
+  {:status (Integer/parseInt (get query-params "status"))
    :body "Health check returned bad status"})
 
 (defn sleep-handler
   "Sleeps for given number of milliseconds"
-  ([sleep-seconds]
-    (sleep-handler sleep-seconds 400))
-  ([sleep-seconds intended-status]
-   (Thread/sleep (* 1000 sleep-seconds))
-   {:status intended-status
-    :body (str "Slept for " sleep-seconds " seconds")}))
+  [{:keys [query-params]}]
+  (let [sleep-ms (Integer/parseInt (get query-params "sleep-ms"))
+        status-str (get query-params "status")
+        status (if status-str (Integer/parseInt status-str) 400)]
+    (println "status" status)
+    (Thread/sleep sleep-ms)
+    {:status status
+     :body (str "Slept for " sleep-ms " ms")}))
 
 (defn- gzip-handler
   "Handles requests that may potentially fail, uses unchunked response."
@@ -403,24 +405,21 @@
   [{:keys [uri] :as request}]
   (try
     (swap! total-http-requests inc)
-    (let [response (cond
-                     (= "/async/request" uri) (async-request-handler request)
-                     (= "/async/result" uri) (async-result-handler request)
-                     (= "/async/status" uri) (async-status-handler request)
-                     (= "/chunked" uri) (chunked-handler request)
-                     (= "/die" uri) (die-handler request)
-                     (= "/environment" uri) (environment-handler request)
-                     (= "/gzip" uri) (gzip-handler request)
-                     (= "/kitchen-state" uri) (state-handler request)
-                     (= "/pi" uri) (pi-handler request)
-                     (= "/request-info" uri) (request-info-handler request)
-                     (= "/unchunked" uri) (unchunked-handler request)
-                     (str/starts-with? uri "/sleep-") (let [uri-params (map #(Integer/parseInt %) (rest (str/split uri #"-")))]
-                                                        (if (= 2 (count uri-params))
-                                                          (sleep-handler (first uri-params) (second uri-params))
-                                                          (sleep-handler (first uri-params))))
-                     (str/starts-with? uri "/status-") (bad-status-handler (-> uri (str/split #"-") second Integer/parseInt))
-                     :else (default-handler request))]
+    (let [response (case uri
+                     "/async/request" (async-request-handler request)
+                     "/async/result" (async-result-handler request)
+                     "/async/status" (async-status-handler request)
+                     "/bad-status" (bad-status-handler request)
+                     "/chunked" (chunked-handler request)
+                     "/die" (die-handler request)
+                     "/environment" (environment-handler request)
+                     "/gzip" (gzip-handler request)
+                     "/kitchen-state" (state-handler request)
+                     "/pi" (pi-handler request)
+                     "/request-info" (request-info-handler request)
+                     "/sleep" (sleep-handler request)
+                     "/unchunked" (unchunked-handler request)
+                     (default-handler request))]
       (update-in response [:headers "x-cid"] (fn [cid] (or cid (request->cid request)))))
     (catch Exception e
       (log/error e "handler: encountered exception")
@@ -490,8 +489,8 @@
     (fn basic-auth-middleware-fn [{:keys [uri] :as request}]
       (cond
         (= "/status" uri) (handler request)
-        (str/starts-with? uri "/status-") (handler request)
-        (str/starts-with? uri "/sleep-") (handler request)
+        (= "/bad-status" uri) (handler request)
+        (= "/sleep" uri) (handler request)
         :else ((basic-authentication/wrap-basic-authentication
                  handler
                  (fn [u p]

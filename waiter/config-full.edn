@@ -490,7 +490,7 @@
 
                        ;; Number of allowed health check failures before unhealthy instances are
                        ;; flagged as never-passed-health-checks upon failure
-                       :max-failed-health-checks 5}
+                       :failed-check-threshold 5}
 
  ;; Waiter launches a loop that maintains the stacktraces for individual threads;
  ;; this value dictates how often (milliseconds) the stacktraces are refreshed:

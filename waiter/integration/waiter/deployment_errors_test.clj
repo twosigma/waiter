@@ -19,7 +19,7 @@
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; health check endpoint always returns status 402
-                   :x-waiter-health-check-url "/status-402"}
+                   :x-waiter-health-check-url "/bad-status?status=402"}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
@@ -42,8 +42,8 @@
 (deftest ^:parallel ^:integration-fast test-health-check-timed-out
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
-                   ; health check endpoint sleeps for 300 seconds (= 5 minutes)
-                   :x-waiter-health-check-url "/sleep-300-400"}
+                   ; health check endpoint sleeps for 300000 ms (= 5 minutes)
+                   :x-waiter-health-check-url "/sleep?sleep-ms=300000&status=400"}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
@@ -54,7 +54,7 @@
 (deftest ^:parallel ^:integration-fast test-health-check-requires-authentication
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
-                   :x-waiter-health-check-url "/status-401"}
+                   :x-waiter-health-check-url "/bad-status?status=401"}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))

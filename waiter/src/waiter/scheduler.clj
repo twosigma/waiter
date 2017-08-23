@@ -403,7 +403,7 @@
 
 (defn- update-scheduler-state
   "Queries marathon, sends data on app and instance statuses to router state maintainer, and returns scheduler state"
-  [scheduler service-id->service-description-fn available? http-client max-failed-health-checks service-id->health-check-context]
+  [scheduler service-id->service-description-fn available? http-client failed-check-threshold service-id->health-check-context]
   (let [^DateTime request-apps-time (t/now)
         timing-message-fn (fn [] (let [^DateTime now (t/now)]
                                    (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-apps-time)) " ms")))]
@@ -433,7 +433,7 @@
                   instance-id->tracked-failed-instance' ((fnil into {}) instance-id->tracked-failed-instance
                                                           (keep (fn [[instance-id unhealthy-instance]]
                                                                   (when (and (not (contains? active-instance-ids instance-id))
-                                                                             (pos? (compare (get instance-id->failed-health-check-count instance-id) max-failed-health-checks)))
+                                                                             (>= (or (get instance-id->failed-health-check-count instance-id) 0) failed-check-threshold))
                                                                     [instance-id (update-in unhealthy-instance [:flags] conj :never-passed-health-checks)]))
                                                                 instance-id->unhealthy-instance))
                   all-failed-instances (vals (merge-with (fn [failed-instance tracked-instance]
@@ -478,7 +478,7 @@
 
   and sends the data to the router state maintainer."
   [scheduler scheduler-state-chan scheduler-syncer-interval-secs
-   service-id->service-description-fn available? http-client max-failed-health-checks]
+   service-id->service-description-fn available? http-client failed-check-threshold]
   (log/info "Starting scheduler syncer")
   (let [exit-chan (async/chan 1)
         state-query-chan (async/chan 32)
@@ -509,7 +509,7 @@
                            (metrics/waiter-timer "state" "scheduler-sync")
                            (let [{:keys [service-id->health-check-context scheduler-messages]}
                                  (update-scheduler-state scheduler service-id->service-description-fn available?
-                                                         http-client max-failed-health-checks current-state)]
+                                                         http-client failed-check-threshold current-state)]
                              (when scheduler-messages
                                (async/>! scheduler-state-chan scheduler-messages))
                              service-id->health-check-context)))

@@ -21,22 +21,27 @@
 (deftest bad-status-handler-test
   (testing "bad status handler"
     (testing "should return intended status code"
-      (let [{:keys [status]} (http-handler {:uri "/status-400"})]
+      (let [{:keys [status]} (http-handler {:query-params {"status" "400"}
+                                            :uri "/bad-status"})]
         (is (= 400 status))
-      (let [{:keys [status]} (http-handler {:uri "/status-401"})]
+      (let [{:keys [status]} (http-handler {:query-params {"status" "401"}
+                                            :uri "/bad-status"})]
         (is (= 401 status)))
-      (let [{:keys [status]} (http-handler {:uri "/status-402"})]
+      (let [{:keys [status]} (http-handler {:query-params {"status" "402"}
+                                            :uri "/bad-status"})]
         (is (= 402 status)))))))
 
 (deftest sleep-handler-test
   (testing "sleep handler"
     (testing "should sleep for intended number of milliseconds"
-      (let [{:keys [body status]} (http-handler {:uri "/sleep-3"})]
+      (let [{:keys [body status]} (http-handler {:query-params {"sleep-ms" "500"}
+                                                 :uri "/sleep"})]
         (is (= 400 status))
-        (is (= "Slept for 3 seconds" body)))
-      (let [{:keys [body status]} (http-handler {:uri "/sleep-2-403"})]
+        (is (= "Slept for 500 ms" body)))
+      (let [{:keys [body status]} (http-handler {:query-params {"sleep-ms" "300" "status" "403"}
+                                                 :uri "/sleep"})]
         (is (= 403 status))
-        (is (= "Slept for 2 seconds" body))))))
+        (is (= "Slept for 300 ms" body))))))
 
 (deftest default-handler-test
   (testing "Default handler"
@@ -239,18 +244,10 @@
         auth (str "Basic " (String. (Base64/encodeBase64 (.getBytes "waiter:test"))))
         bad-auth (str "Basic " (String. (Base64/encodeBase64 (.getBytes "waiter:badtest"))))]
 
-    (testing "Do not authenticate /status"
-      (is (= {:status 200} (handler {:uri "/status"}))))
-
-    (testing "Do not authenticate designated endpoints (/status-400, /status-401, /status-402)"
-      (is (= {:status 200} (handler {:uri "/status-400"})))
-      (is (= {:status 200} (handler {:uri "/status-401"})))
-      (is (= {:status 200} (handler {:uri "/status-402"}))))
-
-    (testing "Do not authenticate any endpoint beginning with /sleep-"
-      (is (= {:status 200} (handler {:uri "/sleep-3"})))
-      (is (= {:status 200} (handler {:uri "/sleep-10"})))
-      (is (= {:status 200} (handler {:uri "/sleep-xxx"}))))
+    (testing "Do not authenticate /status, /bad-status, or /sleep"
+      (is (= {:status 200} (handler {:uri "/status"})))
+      (is (= {:status 200} (handler {:uri "/bad-status"})))
+      (is (= {:status 200} (handler {:uri "/sleep"}))))
 
     (testing "Return 401 on missing auth"
       (is (= 401 (:status (handler {:uri "/handler", :headers {}})))))
