@@ -780,16 +780,16 @@
                                          service-gc-go-routine (partial service-gc-go-routine read-gc-state-fn write-gc-state-fn leader?-fn clock)]
                                      (scheduler/scheduler-broken-services-gc scheduler scheduler-state-chan scheduler-gc-config service-gc-go-routine)))
    :scheduler-maintainer (pc/fnk [[:routines service-id->service-description-fn]
-                                  [:settings health-check-timeout-ms scheduler-syncer-interval-secs]
+                                  [:settings [:health-check-config health-check-timeout-ms failed-check-threshold] scheduler-syncer-interval-secs]
                                   [:state scheduler]]
                            (let [scheduler-state-chan (au/latest-chan)
                                  scheduler-state-mult-chan (async/mult scheduler-state-chan)
                                  http-client (http/client {:connect-timeout health-check-timeout-ms
                                                            :idle-timeout health-check-timeout-ms})]
-                             (scheduler/start-scheduler-syncer
-                               scheduler scheduler-state-chan scheduler-syncer-interval-secs
-                               service-id->service-description-fn scheduler/available? http-client)
-                             {:scheduler-state-mult-chan scheduler-state-mult-chan}))
+                             (assoc (scheduler/start-scheduler-syncer
+                                      scheduler scheduler-state-chan scheduler-syncer-interval-secs
+                                      service-id->service-description-fn scheduler/available? http-client failed-check-threshold)
+                               :scheduler-state-mult-chan scheduler-state-mult-chan)))
    :scheduler-services-gc (pc/fnk [[:curator leader?-fn read-gc-state-fn write-gc-state-fn]
                                    [:routines router-metrics-helpers service-id->service-description-fn]
                                    [:settings scheduler-gc-config]
@@ -832,20 +832,14 @@
                                 (state/start-service-chan-maintainer
                                   {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
    :state-query-chans (pc/fnk [[:state query-app-maintainer-chan scheduler]
-                               autoscaler autoscaling-multiplexer gc-for-transient-metrics scheduler-broken-services-gc scheduler-services-gc]
-                        (let [scheduler-state-query-chan (async/chan 32)]
-                          (async/go-loop []
-                            (let [{:keys [response-chan service-id]} (async/<! scheduler-state-query-chan)]
-                              (when-let [scheduler-state (scheduler/service-id->state scheduler service-id)]
-                                (async/>! response-chan scheduler-state)))
-                            (recur))
-                          {:app-maintainer-state query-app-maintainer-chan
-                           :autoscaler-state (:query autoscaler)
-                           :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
-                           :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
-                           :scheduler-services-gc-state (:query scheduler-services-gc)
-                           :scheduler-state scheduler-state-query-chan
-                           :transient-metrics-gc-state (:query gc-for-transient-metrics)}))
+                               autoscaler autoscaling-multiplexer gc-for-transient-metrics scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
+                        {:app-maintainer-state query-app-maintainer-chan
+                         :autoscaler-state (:query autoscaler)
+                         :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
+                         :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
+                         :scheduler-services-gc-state (:query scheduler-services-gc)
+                         :scheduler-state (:query-chan scheduler-maintainer)
+                         :transient-metrics-gc-state (:query gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
                     scheduler-maintainer]
@@ -920,16 +914,17 @@
                                         (settings/display-settings settings))
                                       request)))
    :display-state-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
-                                      [:daemons router-state-maintainer]
+                                      [:daemons router-state-maintainer scheduler-maintainer]
                                       [:routines router-metrics-helpers]
                                       [:state scheduler]
                                       handle-secure-request-fn]
                                (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
+                                     scheduler-query-chan (:query-chan scheduler-maintainer)
                                      router-metrics-state-fn (:router-metrics-state-fn router-metrics-helpers)]
                                  (fn display-state-handler-fn [request]
                                    (handle-secure-request-fn
                                      (fn inner-display-state-handler-fn [_]
-                                       (handler/get-router-state state-chan router-metrics-state-fn kv-store leader?-fn scheduler))
+                                       (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn kv-store leader?-fn scheduler))
                                      request))))
    :favicon-handler-fn (pc/fnk []
                          (fn favicon-handler-fn [_]

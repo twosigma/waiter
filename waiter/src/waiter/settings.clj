@@ -41,7 +41,8 @@
                                            s/Keyword schema/require-symbol-factory-fn}
                                           schema/contains-kind-sub-map?)
    (s/optional-key :git-version) s/Any
-   (s/required-key :health-check-timeout-ms) schema/positive-int
+   (s/required-key :health-check-config) {(s/required-key :health-check-timeout-ms) schema/positive-int
+                                          (s/required-key :failed-check-threshold) schema/positive-int}
    (s/required-key :host) schema/non-empty-string
    (s/required-key :hostname) schema/non-empty-string
    (s/required-key :instance-request-properties) {(s/required-key :async-check-interval-ms) schema/positive-int
@@ -184,7 +185,8 @@
                              :min-hosts 2}
    :entitlement-config {:kind :simple
                         :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}}
-   :health-check-timeout-ms 200
+   :health-check-config {:health-check-timeout-ms 200
+                         :failed-check-threshold 5}
    :host "0.0.0.0"
    :hostname "localhost"
    :instance-request-properties {:async-check-interval-ms 3000
@@ -202,8 +204,11 @@
                :encrypt true
                :relative-path "tokens"}
    :messages {:bad-startup-command "Invalid startup command"
+              :cannot-connect "Unable to connect to run health checks"
               :cannot-identify-service "Unable to identify service using waiter headers/token"
               :health-check-requires-authentication "Health check requires authentication"
+              :health-check-timed-out "Health check timed out"
+              :invalid-health-check-response "Health check returned an invalid response"
               :invalid-service-description "Service description using waiter headers/token improperly configured"
               :not-enough-memory "Not enough memory allocated"
               :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}

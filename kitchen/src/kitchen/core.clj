@@ -258,9 +258,20 @@
 
 (defn bad-status-handler
   "Simulates health check that returns an intended status."
-  [intended-status]
-  {:status intended-status
+  [{:keys [query-params]}]
+  {:status (Integer/parseInt (get query-params "status"))
    :body "Health check returned bad status"})
+
+(defn sleep-handler
+  "Sleeps for given number of milliseconds"
+  [{:keys [query-params]}]
+  (let [sleep-ms (Integer/parseInt (get query-params "sleep-ms"))
+        status-str (get query-params "status")
+        status (if status-str (Integer/parseInt status-str) 400)]
+    (println "status" status)
+    (Thread/sleep sleep-ms)
+    {:status status
+     :body (str "Slept for " sleep-ms " ms")}))
 
 (defn- gzip-handler
   "Handles requests that may potentially fail, uses unchunked response."
@@ -398,6 +409,7 @@
                      "/async/request" (async-request-handler request)
                      "/async/result" (async-result-handler request)
                      "/async/status" (async-status-handler request)
+                     "/bad-status" (bad-status-handler request)
                      "/chunked" (chunked-handler request)
                      "/die" (die-handler request)
                      "/environment" (environment-handler request)
@@ -405,9 +417,7 @@
                      "/kitchen-state" (state-handler request)
                      "/pi" (pi-handler request)
                      "/request-info" (request-info-handler request)
-                     "/status-400" (bad-status-handler 400)
-                     "/status-401" (bad-status-handler 401)
-                     "/status-402" (bad-status-handler 402)
+                     "/sleep" (sleep-handler request)
                      "/unchunked" (unchunked-handler request)
                      (default-handler request))]
       (update-in response [:headers "x-cid"] (fn [cid] (or cid (request->cid request)))))
@@ -479,9 +489,8 @@
     (fn basic-auth-middleware-fn [{:keys [uri] :as request}]
       (cond
         (= "/status" uri) (handler request)
-        (= "/status-400" uri) (handler request)
-        (= "/status-401" uri) (handler request)
-        (= "/status-402" uri) (handler request)
+        (= "/bad-status" uri) (handler request)
+        (= "/sleep" uri) (handler request)
         :else ((basic-authentication/wrap-basic-authentication
                  handler
                  (fn [u p]

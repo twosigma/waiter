@@ -631,23 +631,31 @@
     (testing "Getting router state"
       (testing "should handle exceptions gracefully"
         (let [state-chan (async/chan)
+              scheduler-chan (async/chan)
               router-metrics-state-fn (fn [] {})
               kv-store (kv/new-local-kv-store {})
               leader?-fn (constantly true)
               scheduler (reify ServiceScheduler (state [_] nil))]
           (async/put! state-chan []) ; vector instead of a map to trigger an error
-          (let [{:keys [status body]} (get-router-state state-chan router-metrics-state-fn kv-store leader?-fn scheduler)]
+          (async/go
+            (let [{:keys [response-chan]} (async/<! scheduler-chan)]
+              (async/>! response-chan [])))
+          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler)]
             (is (str/includes? (str body) "clojure.lang.APersistentVector.assoc"))
             (is (= 500 status)))))
 
       (testing "display router state"
         (let [state-chan (async/chan)
+              scheduler-chan (async/chan)
               router-metrics-state-fn (fn [] {})
               kv-store (kv/new-local-kv-store {})
               leader?-fn (constantly true)
               scheduler (reify ServiceScheduler (state [_] nil))]
           (async/put! state-chan {:state-data []}) ; vector instead of a map to trigger an error
-          (let [{:keys [status body]} (get-router-state state-chan router-metrics-state-fn kv-store leader?-fn scheduler)]
+          (async/go
+            (let [{:keys [response-chan]} (async/<! scheduler-chan)]
+              (async/>! response-chan {:state []})))
+          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler)]
             (is (every? #(str/includes? (str body) %1) ["state-data", "leader", "kv-store", "router-metrics-state", "statsd"]))
             (is (= 200 status))))))))
 

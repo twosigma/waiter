@@ -355,9 +355,6 @@
                     ;; Killed instances are blacklisted for max-blacklist-time-ms (milliseconds):
                     :max-blacklist-time-ms 300000}
 
- ;; The HTTP connect timeout and idle timeout (milliseconds) for instance health checks:
- :health-check-timeout-ms 200
-
  :instance-request-properties {
                                ;; Waiter monitors the state of an async request at specified intervals.
                                ;; It makes calls to the backend instance and inspects the responses to
@@ -468,9 +465,12 @@
 
  ;; Certain messages that Waiter returns can be customized:
  :messages {:bad-startup-command "Invalid startup command"
+            :cannot-connect "Unable to connect to run health checks"
             :cannot-identify-service "Unable to identify service using waiter headers/token"
             :environment-variable-error-info "Error in environment variables"
             :health-check-requires-authentication "Health check requires authentication"
+            :health-check-timed-out "Health check timed out"
+            :invalid-health-check-response "Health check returned an invalid response"
             :invalid-service-description "Service description using waiter headers/token improperly configured"
             :metadata-error-info "Error in metadata"
             :not-enough-memory "Not enough memory allocated"
@@ -483,6 +483,14 @@
 
                            ;; The number of hosts on which health checks must fail in order to declare a deployment error:
                            :min-hosts 2}
+
+ :health-check-config {
+                       ;; The HTTP connect timeout and idle timeout (milliseconds) for instance health checks:
+                       :health-check-timeout-ms 200
+
+                       ;; Number of allowed health check failures before unhealthy instances are
+                       ;; flagged as never-passed-health-checks upon failure
+                       :failed-check-threshold 5}
 
  ;; Waiter launches a loop that maintains the stacktraces for individual threads;
  ;; this value dictates how often (milliseconds) the stacktraces are refreshed:

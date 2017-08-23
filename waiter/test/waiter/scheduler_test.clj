@@ -229,16 +229,19 @@
         scheduler (reify ServiceScheduler
                     (get-apps->instances [_]
                       {(->Service "1" {} {} {}) {:active-instances [instance1 instance2 instance3]
-                                                 :failed-instances []}}))
+                                                 :failed-instances []}})
+                    (service-id->state [_ _]
+                      {:service-specific-state []})
+                    (state [_]
+                      {:state []}))
         available? (fn [{:keys [id]} url _]
                      (async/go (cond
                                  (and (= "1.1" id) (= "/1" url)) {:healthy? true
                                                                   :status 200}
                                  :else {:healthy? false
                                         :status 400})))
-        syncer-cancel (start-scheduler-syncer scheduler scheduler-state-chan
-                                              scheduler-syncer-interval-secs service-id->service-description-fn available?
-                                              {})]
+        {:keys [exit-chan query-chan]} (start-scheduler-syncer scheduler scheduler-state-chan scheduler-syncer-interval-secs
+                                                               service-id->service-description-fn available? {} 5)]
     (Thread/sleep (* 1000 scheduler-syncer-interval-secs))
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-apps update-apps-msg))
@@ -247,7 +250,27 @@
       (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
       (is (= [(assoc instance3 :healthy? false :health-check-status 400)] (:unhealthy-instances update-instances)))
       (is (= "1" (:service-id update-instances))))
-    (syncer-cancel)))
+    ;; Retrieves scheduler state without service-id
+    (let [response-chan (async/promise-chan)
+          _ (async/>!! query-chan {:response-chan response-chan})
+          response (async/alt!!
+                     response-chan ([state] state)
+                     (async/timeout 10000) ([_] {:message "Request timed out!"}))]
+      (doseq [required-key [:service-id->health-check-context
+                            :state]]
+        (is (contains? response required-key))))
+    ;; Retrieves scheduler state with service-id
+    (let [response-chan (async/promise-chan)
+          _ (async/>!! query-chan {:response-chan response-chan :service-id "1"})
+          response (async/alt!!
+                     response-chan ([state] state)
+                     (async/timeout 10000) ([_] {:message "Request timed out!"}))]
+      (doseq [required-key [:instance-id->failed-health-check-count
+                            :instance-id->tracked-failed-instance
+                            :instance-id->unhealthy-instance
+                            :service-specific-state]]
+        (is (contains? response required-key))))
+    (async/>!! exit-chan :exit)))
 
 (deftest test-start-health-checks
   (let [available-instance "id1"
