@@ -30,8 +30,8 @@
 (deftest ^:parallel ^:integration-fast test-cannot-connect
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
-                   ; listening on invalid port ($PORT0 --> 2020)
-                   :x-waiter-cmd (kitchen-cmd "-p 2020")}
+                   ; no kitchen to connect to
+                   :x-waiter-cmd "sleep 3600"}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
