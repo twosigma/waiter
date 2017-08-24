@@ -20,7 +20,6 @@
     (let [headers {:x-waiter-name (rand-name)
                    ; health check endpoint always returns status 402
                    :x-waiter-health-check-url "/bad-status?status=402"
-                   :x-waiter-grace-period-secs 5
                    :x-waiter-queue-timeout 600000}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
@@ -34,7 +33,6 @@
     (let [headers {:x-waiter-name (rand-name)
                    ; nothing to connect to
                    :x-waiter-cmd "sleep 3600"
-                   :x-waiter-grace-period-secs 5
                    :x-waiter-queue-timeout 600000}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
@@ -48,7 +46,6 @@
     (let [headers {:x-waiter-name (rand-name)
                    ; health check endpoint sleeps for 300000 ms (= 5 minutes)
                    :x-waiter-health-check-url "/sleep?sleep-ms=300000&status=400"
-                   :x-waiter-grace-period-secs 5
                    :x-waiter-queue-timeout 600000}
           {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
