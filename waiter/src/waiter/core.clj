@@ -48,7 +48,6 @@
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.settings :as settings]
-            [waiter.shell-scheduler :as shell-scheduler]
             [waiter.simulator :as simulator]
             [waiter.state :as state]
             [waiter.statsd :as statsd]
