@@ -165,7 +165,7 @@
        :service-id service-id
        :started-at started-at
        :healthy? nil
-       :host (str "127.0.0." (inc (rand-int 254)))
+       :host (str "127.0.0." (inc (rand-int 10)))
        :port (-> reserved-ports first)
        :extra-ports (-> reserved-ports rest vec)
        :protocol backend-proto
