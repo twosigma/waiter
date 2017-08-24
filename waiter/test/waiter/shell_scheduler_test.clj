@@ -54,7 +54,7 @@
       :task-stats))
 
 (defn- ensure-agent-finished
-  "Sends the agent to a function that delivers a promise, letting us know that previous functions applied to agent have finished execution"
+  "Awaits the scheduler's agent"
   [{:keys [id->service-agent]}]
   (await id->service-agent))
 
