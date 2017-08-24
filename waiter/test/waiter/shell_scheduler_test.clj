@@ -53,23 +53,15 @@
       first
       :task-stats))
 
-(defn- agent-finished?
-  "Delivers a promise upon execution"
-  [id->service completion-promise]
-  (deliver completion-promise :finished)
-  id->service)
-
 (defn- ensure-agent-finished
   "Sends the agent to a function that delivers a promise, letting us know that previous functions applied to agent have finished execution"
   [{:keys [id->service-agent]}]
-  (let [completion-promise (promise)]
-    (send id->service-agent agent-finished? completion-promise)
-    (deref completion-promise)))
+  (await id->service-agent))
 
 (defn- force-update-service-health
   "Forces a call to update-service-health"
-  [{:keys [id->service-agent port->reservation-atom] :as scheduler} {:keys [health-check-timeout-ms port-grace-period-ms]}]
-  (send id->service-agent update-service-health health-check-timeout-ms port->reservation-atom port-grace-period-ms)
+  [{:keys [id->service-agent port->reservation-atom] :as scheduler} {:keys [port-grace-period-ms]}]
+  (send id->service-agent update-service-health port->reservation-atom port-grace-period-ms nil)
   (ensure-agent-finished scheduler))
 
 (defn- force-maintain-instance-scale
@@ -526,7 +518,8 @@
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo" {"cmd" "sleep 10000" "grace-period-secs" 0})))
     ;; Instance should be marked as unhealthy and failed
-    (force-update-service-health scheduler scheduler-config)
+    (with-redefs [perform-health-check (constantly false)]
+     (force-update-service-health scheduler scheduler-config))
     (let [instances (scheduler/get-instances scheduler "foo")]
       (is (= 0 (count (:active-instances instances))))
       (is (= 1 (count (:failed-instances instances)))))))
