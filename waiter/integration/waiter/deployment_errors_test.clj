@@ -30,9 +30,9 @@
 (deftest ^:parallel ^:integration-fast test-cannot-connect
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
-                   ; no kitchen to connect to
+                   ; nothing to connect to
                    :x-waiter-cmd "sleep 3600"}
-          {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+          {:keys [headers body] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
