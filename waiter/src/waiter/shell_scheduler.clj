@@ -362,12 +362,10 @@
 
 (defn update-service-health
   "Runs health checks against all active instances of service and returns the updated service-entry"
-  [id->service health-check-timeout-ms port->reservation-atom port-grace-period-ms]
+  [id->service port->reservation-atom port-grace-period-ms http-client]
   (timers/start-stop-time!
     (metrics/waiter-timer "shell-scheduler" "update-health")
     (let [pid->memory (get-pid->memory)
-          http-client (http/client {:connect-timeout health-check-timeout-ms
-                                    :idle-timeout health-check-timeout-ms})
           exit-codes-check #(associate-exit-codes %)]
       (loop [remaining-service-entries (vals id->service)
              id->service' {}]
@@ -387,12 +385,12 @@
 
 (defn- start-updating-health
   "Runs health checks against all active instances of all services in a loop"
-  [id->service-agent health-check-timeout-ms port->reservation-atom port-grace-period-ms timeout-ms]
+  [id->service-agent port->reservation-atom port-grace-period-ms timeout-ms http-client]
   (log/info "starting update-health")
   (utils/start-timer-task
     (t/millis timeout-ms)
     (fn []
-      (send id->service-agent update-service-health health-check-timeout-ms port->reservation-atom port-grace-period-ms))))
+      (send id->service-agent update-service-health port->reservation-atom port-grace-period-ms http-client))))
 
 (defn- set-service-scale
   "Given the current id->service map, sets the scale of the service-id to the
@@ -626,7 +624,9 @@
 (defn shell-scheduler
   "Creates and starts shell scheduler with loops"
   [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range work-directory] :as config}]
-  (let [{:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler config)]
-    (start-updating-health id->service-agent health-check-timeout-ms port->reservation-atom port-grace-period-ms health-check-interval-ms)
+  (let [{:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler config)
+        http-client (http/client {:connect-timeout health-check-timeout-ms
+                                  :idle-timeout health-check-timeout-ms})]
+    (start-updating-health id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)
     (start-retry-failed-instances id->service-agent port->reservation-atom port-range failed-instance-retry-interval-ms)
     scheduler))
