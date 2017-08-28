@@ -782,7 +782,7 @@
                                                                    "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
                                                                                   "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
                                                                                   "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}}
-                         :instance-id->consecutive-failures {"testabcd.u1" 1, "testabcd.u2" 1}
+                         :instance-id->consecutive-failures {}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -797,7 +797,7 @@
                         {:instance-id->blacklist-expiry-time {}
                          :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}}
                                                                    "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}}}
-                         :instance-id->consecutive-failures {"testabcd.u1" 1, "testabcd.u2" 1}
+                         :instance-id->consecutive-failures {}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -817,7 +817,7 @@
                                                                    "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}}
                                                                    "testabcd.h4" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :kill-instance}}
                                                                    "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.u1" 1, "testabcd.u2" 1}
+                         :instance-id->consecutive-failures {}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
                                                  (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy, :locked})
@@ -987,7 +987,6 @@
                          :instance-id->blacklist-expiry-time {}
                          :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}}
                          :instance-id->consecutive-failures {"testabcd.u2" 1
-                                                             "testabcd.u1" 1
                                                              "testabcd.h1" 1
                                                              "testabcd.u3" 1}
                          :instance-id->state (-> {}
@@ -1019,7 +1018,7 @@
                                                                    "testabcd.h3" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :kill-instance}}
                                                                    "testabcd.h1" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}
                                                                    }
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1227,7 +1226,7 @@
                          :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
                                                                    "testabcd.h2" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
                                                                    "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 0 1 #{})
                                                  (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1326,7 +1325,11 @@
                                                                                          "testabcd.h3" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}
                                                                                                         "req-17" {:cid "cid-17", :request-id "req-17", :reason :serve-request}}
                                                                                          "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1
+                                                                                   "testabcd.u1" 1
+                                                                                   "testabcd.u2" 1
+                                                                                   "testabcd.u3" 1
+                                                                                   "testabcd.z1" 1} ; testabcd.z1 should be removed
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
                                                                        (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1353,7 +1356,10 @@
                                                                    "testabcd.h3" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}
                                                                                   "req-17" {:cid "cid-17", :request-id "req-17", :reason :serve-request}}
                                                                    "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1
+                                                             "testabcd.u1" 1
+                                                             "testabcd.u2" 1
+                                                             "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 0 0 #{:locked})
                                                  (update-slot-state-fn "testabcd.h2" 1 1)
