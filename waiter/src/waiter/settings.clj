@@ -135,8 +135,12 @@
                                 (s/required-key :leader-latch-relative-path) schema/non-empty-string
                                 (s/required-key :mutex-timeout-ms) schema/positive-int}})
 
-(defn env [name]
-  (System/getenv name))
+(defn env [var-name config-file-path]
+  (let [value (System/getenv var-name)]
+    (when-not value
+      (throw (ex-info (format "Environment variable '%s' referenced in config file '%s' is not set." var-name config-file-path)
+                      {:var-name var-name :config-file-path config-file-path})))
+    value))
 
 (defn load-settings-file
   "Loads the edn config in the specified file, it relies on having the filename being a path to the file."
@@ -147,8 +151,8 @@
       (do
         (log/info "reading settings from file:" config-file-path)
         (let [edn-readers {:readers {'config/regex (fn [expr] (re-pattern expr))
-                                     'config/env #(env %)
-                                     'config/env-int #(Integer/parseInt (env %))}}
+                                     'config/env #(env % config-file-path)
+                                     'config/env-int #(Integer/parseInt (env % config-file-path))}}
               settings (edn/read-string edn-readers (slurp config-file-path))]
           (log/info "configured settings:\n" (with-out-str (clojure.pprint/pprint settings)))
           settings))

@@ -221,7 +221,7 @@
           marathon "bar"
           minimesos-network-gateway "baz"
           zk-connect-string "qux"]
-      (with-redefs [env (fn [name]
+      (with-redefs [env (fn [name _]
                           (case name
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
@@ -241,7 +241,7 @@
   (testing "Test validating shell scheduler settings"
     (let [port 12345
           run-as-user "foo"]
-      (with-redefs [env (fn [name]
+      (with-redefs [env (fn [name _]
                           (case name
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
