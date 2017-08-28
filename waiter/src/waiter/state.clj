@@ -693,7 +693,7 @@
                     (timers/start-stop-time!
                       update-state-timer
                       (let [{:keys [service-id->my-instance->slots service-id->unhealthy-instances service-id->expired-instances
-                                    service-id->starting-instances service-id->sorted-instance-ids service-id->deployment-error time]} router-state
+                                    service-id->starting-instances service-id->deployment-error time]} router-state
                             incoming-service-ids (set (keys service-id->my-instance->slots))
                             known-service-ids (set (keys service-id->channel-map))
                             new-service-ids (set/difference incoming-service-ids known-service-ids)
@@ -712,7 +712,6 @@
                           (let [my-instance->slots (get service-id->my-instance->slots service-id)
                                 healthy-instances (keys my-instance->slots)
                                 unhealthy-instances (get service-id->unhealthy-instances service-id)
-                                sorted-instance-ids (get service-id->sorted-instance-ids service-id)
                                 expired-instances (get service-id->expired-instances service-id)
                                 starting-instances (get service-id->starting-instances service-id)
                                 deployment-error (get service-id->deployment-error service-id)
@@ -723,7 +722,6 @@
                                                               :unhealthy-instances unhealthy-instances
                                                               :expired-instances expired-instances
                                                               :starting-instances starting-instances
-                                                              :sorted-instance-ids sorted-instance-ids
                                                               :my-instance->slots my-instance->slots
                                                               :deployment-error deployment-error}]
                                             [update-state time]))
@@ -1047,7 +1045,6 @@
          (loop [{:keys [iteration routers] :as current-state}
                 {:service-id->healthy-instances {}
                  :service-id->unhealthy-instances {}
-                 :service-id->sorted-instance-ids {}
                  :service-id->my-instance->slots {} ; updated in update-router-state
                  :service-id->expired-instances {}
                  :service-id->starting-instances {}
@@ -1069,8 +1066,8 @@
                      (cid/with-correlation-id
                        (str "router-state-maintainer-" iteration)
                        (loop [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->my-instance->slots
-                                      service-id->sorted-instance-ids service-id->expired-instances service-id->starting-instances
-                                      service-id->failed-instances service-id->deployment-error] :as loop-state} current-state
+                                      service-id->expired-instances service-id->starting-instances service-id->failed-instances
+                                      service-id->deployment-error] :as loop-state} current-state
                               [[message-type message-data] & remaining] scheduler-messages]
                          (log/trace "scheduler-state-chan received, type:" message-type)
                          (let [loop-state'
@@ -1081,7 +1078,6 @@
                                        filter-fn (fn [[service-id _]] (contains? available-apps-set service-id))
                                        service-id->healthy-instances' (utils/filterm filter-fn service-id->healthy-instances)
                                        service-id->unhealthy-instances' (utils/filterm filter-fn service-id->unhealthy-instances)
-                                       service-id->sorted-instance-ids' (utils/filterm filter-fn service-id->sorted-instance-ids)
                                        services-without-instances (set/difference available-apps-set (set (keys service-id->my-instance->slots)))
                                        service-id->expired-instances' (utils/filterm filter-fn service-id->expired-instances)
                                        service-id->starting-instances' (utils/filterm filter-fn service-id->starting-instances)
@@ -1097,7 +1093,6 @@
                                    (assoc loop-state
                                      :service-id->healthy-instances service-id->healthy-instances'
                                      :service-id->unhealthy-instances service-id->unhealthy-instances'
-                                     :service-id->sorted-instance-ids service-id->sorted-instance-ids'
                                      :service-id->expired-instances service-id->expired-instances'
                                      :service-id->starting-instances service-id->starting-instances'
                                      :service-id->failed-instances service-id->failed-instances'
@@ -1105,10 +1100,9 @@
                                      :time scheduler-sync-time))
 
                                  :update-app-instances
-                                 (let [{:keys [service-id sorted-instance-ids healthy-instances unhealthy-instances failed-instances scheduler-sync-time]} message-data
+                                 (let [{:keys [service-id healthy-instances unhealthy-instances failed-instances scheduler-sync-time]} message-data
                                        service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
                                        service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)
-                                       service-id->sorted-instance-ids' (assoc service-id->sorted-instance-ids service-id sorted-instance-ids)
                                        service-description (service-id->service-description-fn service-id)
                                        expiry-mins-str (get service-description "instance-expiry-mins")
                                        expiry-mins (when expiry-mins-str (t/minutes (int expiry-mins-str)))
@@ -1138,7 +1132,6 @@
                                    (assoc loop-state
                                      :service-id->healthy-instances service-id->healthy-instances'
                                      :service-id->unhealthy-instances service-id->unhealthy-instances'
-                                     :service-id->sorted-instance-ids service-id->sorted-instance-ids'
                                      :service-id->expired-instances service-id->expired-instances'
                                      :service-id->starting-instances service-id->starting-instances'
                                      :service-id->failed-instances service-id->failed-instances'
