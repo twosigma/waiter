@@ -190,8 +190,8 @@
     (metrics/reset-counter slots-in-use-counter slots-used)))
 
 (defn- handle-update-state-request
-  [{:keys [instance-id->state] :as current-state} data update-responder-state-timer update-responder-state-meter
-   slots-assigned-counter slots-available-counter slots-in-use-counter]
+  [{:keys [instance-id->state instance-id->consecutive-failures] :as current-state} data update-responder-state-timer
+   update-responder-state-meter slots-assigned-counter slots-available-counter slots-in-use-counter]
   (timers/start-stop-time!
     update-responder-state-timer
     (when-let [[{:keys [healthy-instances unhealthy-instances my-instance->slots expired-instances starting-instances deployment-error]} _] data]
@@ -251,13 +251,17 @@
                               (fn [acc {:keys [id] :as instance}]
                                 (assoc! acc id instance))
                               (transient {})
-                              (concat healthy-instances unhealthy-instances expired-instances)))]
+                              (concat healthy-instances unhealthy-instances expired-instances)))
+            instance-id->consecutive-failures' (into {} (filter (fn [[instance-id _]]
+                                                                  (contains? all-instance-ids instance-id))
+                                                                instance-id->consecutive-failures))]
         (update-slots-metrics instance-id->state' slots-assigned-counter slots-available-counter slots-in-use-counter)
         (meters/mark! update-responder-state-meter)
         (assoc current-state
           :deployment-error deployment-error
           :id->instance id->instance'
           :instance-id->state instance-id->state'
+          :instance-id->consecutive-failures instance-id->consecutive-failures'
           :sorted-instance-ids sorted-instance-ids)))))
 
 (defn handle-work-stealing-offer
