@@ -559,7 +559,7 @@
                                                 "service-id" service-id})]
                   (reset! cookies-atom cookies)
                   (is (= "Added cookie x-waiter-consent" body))
-                  (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
+                  (is (= (set (map :name cookies)) #{"x-waiter-auth" "x-waiter-consent"}))
                   (assert-response-status response 200)))
 
               (testing "auto run-as-user population on expected service-id"
@@ -573,7 +573,8 @@
                           {:keys [run-as-user permitted-user]} service-description]
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
-                      (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
+                      ; x-waiter-consent should not be re-emitted Waiter
+                      (is (= (set (map :name cookies)) #{"x-waiter-auth"}))
                       (is (= expected-service-id service-id))
                       (is (not (str/blank? permitted-user)))
                       (is (= run-as-user permitted-user))
@@ -608,7 +609,7 @@
                   (is (not= @cookies-atom cookies))
                   (reset! cookies-atom cookies)
                   (is (= "Added cookie x-waiter-consent" body))
-                  (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
+                  (is (= (set (map :name cookies)) #{"x-waiter-auth" "x-waiter-consent"}))
                   (assert-response-status response 200)))
 
               (testing "auto run-as-user population on approved token"
@@ -620,7 +621,8 @@
                                                         #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))]
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
-                      (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
+                      ; x-waiter-consent should not be re-emitted Waiter
+                      (is (= (set (map :name cookies)) #{"x-waiter-auth"}))
                       (is (not= previous-service-id service-id))
                       (assert-response-status response 200))
                     (finally
