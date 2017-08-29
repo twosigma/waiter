@@ -995,11 +995,9 @@
                           failed-instances (failed-instances-fn service-id index)
                           healthy-instances (healthy-instances-fn service-id index n)
                           unhealthy-instances (unhealthy-instances-fn service-id index)
-                          sorted-instance-ids (sort (map :id (concat healthy-instances unhealthy-instances)))
                           service-instances-message [:update-app-instances
                                                      (assoc {:healthy-instances healthy-instances
-                                                             :unhealthy-instances unhealthy-instances
-                                                             :sorted-instance-ids sorted-instance-ids}
+                                                             :unhealthy-instances unhealthy-instances}
                                                        :service-id service-id
                                                        :failed-instances failed-instances
                                                        :scheduler-sync-time current-time)]]
@@ -1016,13 +1014,6 @@
                                       (zipmap expected-services
                                               (map #(failed-instances-fn % (index-fn %)) expected-services))
                                       :service-id->deployment-error {} ; should be no deployment errors
-                                      :service-id->sorted-instance-ids
-                                      (zipmap expected-services
-                                              (map (fn [service]
-                                                     (let [healthy-instances (healthy-instances-fn service (index-fn service) n)
-                                                           unhealthy-instances (unhealthy-instances-fn service (index-fn service))]
-                                                       (sort (map :id (concat healthy-instances unhealthy-instances)))))
-                                                   expected-services))
                                       :service-id->expired-instances
                                       (zipmap expected-services
                                               (map (fn [service]
@@ -1135,7 +1126,7 @@
                                                                                (map #(deployment-error-fn % (index-fn %)) expected-services))))})
                     state (async/<!! router-state-push-chan)
                     actual-state (dissoc state :iteration :service-id->healthy-instances :service-id->expired-instances :service-id->starting-instances
-                                         :service-id->sorted-instance-ids :service-id->my-instance->slots :routers :time)]
+                                         :service-id->my-instance->slots :routers :time)]
                 (when (not= expected-state actual-state)
                   (clojure.pprint/pprint (clojure.data/diff expected-state actual-state)))
                 (is (= expected-state actual-state) (str (clojure.data/diff expected-state actual-state))))))
@@ -1285,10 +1276,6 @@
                          :service-id->unhealthy-instances {}
                          :service-id->expired-instances {}
                          :service-id->starting-instances {}
-                         :service-id->sorted-instance-ids {"service-1" ["service-1.A" "service-1.B"]
-                                                           "service-3" ["service-3.A" "service-3.B"]
-                                                           "service-4" ["service-4.B"]
-                                                           "service-5" ["service-5.A"]}
                          :time current-time}]
           (async/>!! state-source-chan state-map))
 
@@ -1305,7 +1292,6 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-1.A" 11, "service-1.B" 12}
-                 :sorted-instance-ids ["service-1.A" "service-1.B"]
                  :deployment-error nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-1"} :update-state))))
@@ -1314,7 +1300,6 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-3.A" 6, "service-3.B" 8}
-                 :sorted-instance-ids ["service-3.A" "service-3.B"]
                  :deployment-error nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-3"} :update-state))))
@@ -1323,7 +1308,6 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-4.B" 3}
-                 :sorted-instance-ids ["service-4.B"]
                  :deployment-error nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-4"} :update-state))))
@@ -1332,7 +1316,6 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-5.A" 5}
-                 :sorted-instance-ids ["service-5.A"]
                  :deployment-error nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-5"} :update-state))))
