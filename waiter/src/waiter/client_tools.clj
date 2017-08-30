@@ -20,14 +20,13 @@
             [marathonclj.common :as mc]
             [marathonclj.rest.apps :as apps]
             [plumbing.core :as pc]
-            [qbits.jet.client.cookies :as cookies]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as authentication]
             [waiter.auth.spnego :as spnego]
             [waiter.correlation-id :as cid]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
-  (:import (java.net URI)
+  (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
            (marathonclj.common Connection)
            (org.apache.http.client CookieStore)
@@ -197,10 +196,10 @@
 
 (defn parse-set-cookie-string
   "Parse the value of a single Set-Cookie header."
-  [string-value]
-  (when string-value
-    (let [cookie-list (java.net.HttpCookie/parse string-value)]
-      (map (fn [^java.net.HttpCookie cookie]
+  [^String value]
+  (when value
+    (let [cookie-list (HttpCookie/parse value)]
+      (map (fn [^HttpCookie cookie]
              {:name (.getName cookie)
               :value (.getValue cookie)}) cookie-list))))
 
