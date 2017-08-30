@@ -140,7 +140,7 @@
      (time-it ~name ~@body)))
 
 (defn make-http-client
-  "Instantiates and returns a new HttpClient with a cookie store"
+  "Instantiates and returns a new HttpClient without a cookie store"
   []
   (let [client (http/client)]
     (.setCookieStore client (HttpCookieStore$Empty.))
