@@ -20,19 +20,18 @@
             [marathonclj.common :as mc]
             [marathonclj.rest.apps :as apps]
             [plumbing.core :as pc]
-            [qbits.jet.client.cookies :as cookies]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as authentication]
             [waiter.auth.spnego :as spnego]
             [waiter.correlation-id :as cid]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
-  (:import (java.net URI)
+  (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
            (marathonclj.common Connection)
            (org.apache.http.client CookieStore)
            (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.util HttpCookieStore)
+           (org.eclipse.jetty.util HttpCookieStore HttpCookieStore$Empty)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
 
@@ -141,11 +140,10 @@
      (time-it ~name ~@body)))
 
 (defn make-http-client
-  "Instantiates and returns a new HttpClient with a cookie store"
+  "Instantiates and returns a new HttpClient without a cookie store"
   []
-  (let [client (http/client)
-        cookie-store (HttpCookieStore.)
-        _ (.setCookieStore ^HttpClient client cookie-store)]
+  (let [client (http/client)]
+    (.setCookieStore client (HttpCookieStore$Empty.))
     client))
 
 (defmacro testing-using-waiter-url
@@ -191,16 +189,26 @@
             (log/warn (RuntimeException.))))
         (assoc request-headers "x-cid" new-cid)))))
 
-(defn- add-cookies
-  [waiter-url cookies ^CookieStore cs]
-  {:pre [(not (str/blank? waiter-url))]}
-  (doseq [cookie cookies]
-    (cookies/add-cookie! cs (str HTTP-SCHEME waiter-url) cookie)))
-
 (defn strip-trailing-slash
   "If s ends with /, returns s with the / stripped"
   [s]
   (cond-> s (str/ends-with? s "/") (subs 0 (- (count s) 1))))
+
+(defn parse-set-cookie-string
+  "Parse the value of a single Set-Cookie header."
+  [^String value]
+  (when value
+    (let [cookie-list (HttpCookie/parse value)]
+      (map (fn [^HttpCookie cookie]
+             {:name (.getName cookie)
+              :value (.getValue cookie)}) cookie-list))))
+
+(defn parse-cookies
+  "Create a list of cookies from response headers."
+  [set-cookie-header-value]
+  (when set-cookie-header-value
+    (vec (cond (coll? set-cookie-header-value) (mapcat parse-set-cookie-string set-cookie-header-value)
+               (string? set-cookie-header-value) (parse-set-cookie-string set-cookie-header-value)))))
 
 (defn make-request
   ([waiter-url path &
@@ -240,7 +248,7 @@
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:request-headers request-headers
-          :cookies (cookies/get-cookies (.getCookieStore client))
+          :cookies (parse-cookies (get headers "set-cookie"))
           :status status
           :headers headers
           :body response-body})

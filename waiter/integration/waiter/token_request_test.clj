@@ -559,7 +559,8 @@
                                                 "service-id" service-id})]
                   (reset! cookies-atom cookies)
                   (is (= "Added cookie x-waiter-consent" body))
-                  (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
+                  ; x-waiter-consent should be emitted Waiter
+                  (is (contains? (set (map :name cookies)) "x-waiter-consent"))
                   (assert-response-status response 200)))
 
               (testing "auto run-as-user population on expected service-id"
@@ -573,7 +574,8 @@
                           {:keys [run-as-user permitted-user]} service-description]
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
-                      (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
+                      ; x-waiter-consent should not be re-emitted Waiter
+                      (is (not (contains? (set (map :name cookies)) "x-waiter-consent")))
                       (is (= expected-service-id service-id))
                       (is (not (str/blank? permitted-user)))
                       (is (= run-as-user permitted-user))
@@ -605,10 +607,10 @@
                                               "x-requested-with" "XMLHttpRequest"}
                                     :http-method-fn http/post
                                     :multipart {"mode" "token"})]
-                  (is (not= @cookies-atom cookies))
                   (reset! cookies-atom cookies)
                   (is (= "Added cookie x-waiter-consent" body))
-                  (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
+                  ; x-waiter-consent should be emitted Waiter
+                  (is (contains? (set (map :name cookies)) "x-waiter-consent"))
                   (assert-response-status response 200)))
 
               (testing "auto run-as-user population on approved token"
@@ -620,7 +622,8 @@
                                                         #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))]
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
-                      (is (every? (fn [h] (some #(= h (:name %1)) cookies)) ["x-waiter-auth" "x-waiter-consent"]))
+                      ; x-waiter-consent should not be re-emitted Waiter
+                      (is (not (contains? (set (map :name cookies)) "x-waiter-consent")))
                       (is (not= previous-service-id service-id))
                       (assert-response-status response 200))
                     (finally
