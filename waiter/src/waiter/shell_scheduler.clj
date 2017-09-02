@@ -244,6 +244,11 @@
       (deliver completion-promise :failed)
       id->service)))
 
+(defn active?
+  "Returns true if the given instance is considered active"
+  [instance]
+  (not (:killed instance)))
+
 (defn- delete-service
   "Deletes the service corresponding to service-id and returns the updated id->service map"
   [id->service service-id port->reservation-atom port-grace-period-ms completion-promise]
@@ -252,7 +257,9 @@
       (do
         (log/info "deleting service" service-id)
         (let [{:keys [id->instance]} (get id->service service-id)]
-          (dorun (pc/map-vals #(kill-process! % port->reservation-atom port-grace-period-ms) id->instance)))
+          (doseq [[_ instance] id->instance]
+            (when (active? instance)
+              (kill-process! instance port->reservation-atom port-grace-period-ms))))
         (deliver completion-promise :deleted)
         (dissoc id->service service-id))
       (do
@@ -263,11 +270,6 @@
       (log/error e "error attempting to delete service" service-id)
       (deliver completion-promise :failed)
       id->service)))
-
-(defn active?
-  "Returns true if the given instance is considered active"
-  [instance]
-  (not (:killed instance)))
 
 (defn- healthy?
   "Returns true if the given instance is healthy (and active)"
