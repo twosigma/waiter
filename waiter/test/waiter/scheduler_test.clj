@@ -248,7 +248,10 @@
       (is (= (list "1") (:available-apps update-apps)))
       (is (= :update-app-instances update-instances-msg))
       (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
-      (is (= [(assoc instance3 :healthy? false :health-check-status 400)] (:unhealthy-instances update-instances)))
+      (is (= [(assoc instance3 
+                     :healthy? false 
+                     :health-check-status 400
+                     :flags #{:has-responded :has-connected})] (:unhealthy-instances update-instances)))
       (is (= "1" (:service-id update-instances))))
     ;; Retrieves scheduler state without service-id
     (let [response-chan (async/promise-chan)

@@ -207,9 +207,9 @@
       (let [instance-health-check-url (health-check-url service-instance health-check-path)
             {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
             error-flag (cond
-                         (instance? ConnectException error) #{:connect-exception}
-                         (instance? SocketTimeoutException error) #{:timeout-exception}
-                         (instance? TimeoutException error) #{:timeout-exception})]
+                         (instance? ConnectException error) :connect-exception
+                         (instance? SocketTimeoutException error) :timeout-exception
+                         (instance? TimeoutException error) :timeout-exception)]
         (log-health-check-issues service-instance instance-health-check-url status error)
         {:healthy? (and (not error) (<= 200 status 299))
          :status status
@@ -370,6 +370,16 @@
     (if-not service
       service->service-instances'
       (let [{:strs [health-check-url]} (service-id->service-description-fn (:id service))
+            update-flags (fn [instance error] 
+                           (update-in instance [:flags] 
+                                      (fn [flags]
+                                        (cond-> flags
+                                          (not= error :connect-exception)
+                                          (conj :has-connected)
+
+                                          (and (not= error :connect-exception)
+                                               (not= error :timeout-exception))
+                                          (conj :has-responded)))))
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
                                        (if (:healthy? instance)
@@ -381,7 +391,7 @@
                                                            (-> instance
                                                                (assoc :healthy? false)
                                                                (assoc :health-check-status status)
-                                                               (update-in [:flags] into error)))))
+                                                               (update-flags error)))))
                                            (available? instance health-check-url)))
                                        chan))
                                    active-instances)]
@@ -451,7 +461,10 @@
                                                  :failed-instances all-failed-instances
                                                  :scheduler-sync-time request-instances-time)])
                                         scheduler-messages)
-                  instance-id->unhealthy-instance' (pc/map-from-vals :id unhealthy-instances)
+                  instance-id->unhealthy-instance' (into {} (map (fn [{:keys [id] :as instance}]
+                                                                   (let [{:keys [flags]} (get instance-id->unhealthy-instance id)]
+                                                                     [id (update-in instance [:flags] into flags)]))
+                                                                 unhealthy-instances))
                   instance-id->failed-health-check-count' (pc/map-from-keys #((fnil inc 0) (get instance-id->failed-health-check-count %))
                                                                             (keys instance-id->unhealthy-instance'))]
               (metrics/reset-counter

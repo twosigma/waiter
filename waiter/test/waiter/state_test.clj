@@ -862,23 +862,23 @@
                           :failed-instances [], :expected nil}
                          {:name "multiple-different-failed-instances", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Command exited with status" :exit-code 1}
-                                             {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
+                                             {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded :has-connected :has-responded}}],
                           :expected nil}
                          {:name "not-enough-memory", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
                                              {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
                           :expected :not-enough-memory}
                          {:name "invalid-health-check-response", :healthy-instances [], :unhealthy-instances [],
-                          :failed-instances [{:message "Task was killed" :flags #{:never-passed-health-checks}}
-                                             {:message nil :flags #{:never-passed-health-checks}}],
+                          :failed-instances [{:message "Task was killed" :flags #{:never-passed-health-checks :has-connected :has-responded}}
+                                             {:message nil :flags #{:never-passed-health-checks :has-connected :has-responded}}],
                           :expected :invalid-health-check-response}
                          {:name "health-check-timed-out", :healthy-instances [], :unhealthy-instances [],
-                          :failed-instances [{:message "Task was killed" :flags #{:timeout-exception :never-passed-health-checks}}
-                                             {:message nil :flags #{:never-passed-health-checks :timeout-exception}}],
+                          :failed-instances [{:message "Task was killed" :flags #{:never-passed-health-checks :has-connected}}
+                                             {:message nil :flags #{:never-passed-health-checks :has-connected}}],
                           :expected :health-check-timed-out}
                          {:name "cannot-connect", :healthy-instances [], :unhealthy-instances [],
-                          :failed-instances [{:message "Task was killed" :flags #{:connect-exception :never-passed-health-checks}}
-                                             {:message nil :flags #{:connect-exception :never-passed-health-checks}}],
+                          :failed-instances [{:message "Task was killed" :flags #{:never-passed-health-checks}}
+                                             {:message nil :flags #{:never-passed-health-checks}}],
                           :expected :cannot-connect}
                          {:name "bad-startup-command", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Command exited with status" :exit-code 1}
