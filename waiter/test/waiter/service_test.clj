@@ -249,7 +249,7 @@
         (.get ^Future start-app-result)
         (is @start-called-atom)))
     (testing "app-already-starting"
-      (let [cache-atom (make-cache-fn 100 20)
+      (let [cache-atom (make-cache-fn 100 1000)
             start-called-atom (atom false)
             start-fn (fn [] (reset! start-called-atom (not @start-called-atom)))]
         (let [start-app-result-1 (start-new-service scheduler service-id->password-fn descriptor cache-atom start-app-threadpool :start-fn start-fn)]
