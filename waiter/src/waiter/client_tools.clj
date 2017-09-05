@@ -71,9 +71,19 @@
       (str username "." machine-name))
     "127.0.0.1"))
 
+(defn sanitize-waiter-url
+  "Be kind to the tester, extracting the host:port of the URL if passed in as
+  a URL instead of host:port."
+  [waiter-uri]
+  (if (and waiter-uri (str/starts-with? waiter-uri "http://"))
+    (-> (URI. waiter-uri)
+        (.getAuthority))
+    waiter-uri))
+
 (defn retrieve-waiter-url []
   {:post [%]}
-  (let [waiter-uri (System/getenv "WAITER_URI")]
+  (let [waiter-uri (-> (System/getenv "WAITER_URI")
+                       sanitize-waiter-url)]
     (if waiter-uri
       (do
         (log/debug "using WAITER_URI from environment:" waiter-uri)
