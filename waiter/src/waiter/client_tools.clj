@@ -76,14 +76,12 @@
   a URL instead of host:port."
   [waiter-uri]
   (if (and waiter-uri (str/starts-with? waiter-uri "http://"))
-    (-> (URI. waiter-uri)
-        (.getAuthority))
+    (-> waiter-uri URI. .getAuthority)
     waiter-uri))
 
 (defn retrieve-waiter-url []
   {:post [%]}
-  (let [waiter-uri (-> (System/getenv "WAITER_URI")
-                       sanitize-waiter-url)]
+  (let [waiter-uri (-> "WAITER_URI" System/getenv sanitize-waiter-url)]
     (if waiter-uri
       (do
         (log/debug "using WAITER_URI from environment:" waiter-uri)
