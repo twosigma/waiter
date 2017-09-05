@@ -20,107 +20,97 @@
             [waiter.service-description :as sd])
   (:import java.io.ByteArrayInputStream))
 
-(deftest ^:parallel ^:integration-fast test-basic-secrun
+(deftest ^:parallel ^:integration-fast test-basic-functionality
   (testing-using-waiter-url
-    (log/info (str "Basic test using endpoint: /secrun"))
-    (let [{:keys [body service-id] :as response}
+    (let [{:keys [service-id request-headers]}
           (make-request-with-debug-info
             {:x-waiter-name (rand-name)}
-            #(make-kitchen-request waiter-url % :path "/secrun"))]
-      (assert-response-status response 200)
-      (is (= "Hello World" body))
-      (delete-service waiter-url service-id))))
+            #(make-kitchen-request waiter-url % :path "/hello"))]
 
-(deftest ^:parallel ^:integration-fast test-basic-no-content
-  (testing-using-waiter-url
-    (log/info "Basic test for empty body in request")
-    (let [{:keys [body service-id]} (make-request-with-debug-info
-                                      {:x-waiter-name (rand-name)
-                                       :accept "text/plain"}
-                                      #(make-kitchen-request waiter-url % :path "/request-info"))
-          body-json (json/read-str (str body))]
-      (is (get-in body-json ["headers" "authorization"]) (str body))
-      (is (get-in body-json ["headers" "x-waiter-auth-principal"]) (str body))
-      (is (get-in body-json ["headers" "x-cid"]) (str body))
-      (is (nil? (get-in body-json ["headers" "content-type"])) (str body))
-      (is (= "0" (get-in body-json ["headers" "content-length"])) (str body))
-      (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body))
-      (delete-service waiter-url service-id))))
-
-(deftest ^:parallel ^:integration-fast test-basic-http-methods-support
-  (testing-using-waiter-url
-    (log/info "Basic test for empty body in request")
-    (let [{:keys [request-headers service-id]} (make-request-with-debug-info
-                                                 {:x-waiter-name (rand-name)
-                                                  :accept "text/plain"}
-                                                 #(make-kitchen-request waiter-url % :path "/hello"))
-          http-method-helper (fn http-method-helper [http-method]
-                               (fn inner-http-method-helper [client url & [req]]
-                                 (http/request client (merge req {:method http-method :url url}))))]
-      (testing "verifying whether request method HEAD works"
-        (let [response (make-kitchen-request waiter-url request-headers
-                                             :http-method-fn (http-method-helper :head)
-                                             :path "/request-info")]
+      (testing "secrun"
+        (log/info (str "Basic test using endpoint: /secrun"))
+        (let [{:keys [body] :as response}
+              (make-kitchen-request waiter-url request-headers :path "/secrun")]
           (assert-response-status response 200)
-          (is (str/blank? (:body response)))))
-      (doseq [request-method [:delete :copy :get :move :patch :post :put]]
-        (testing (str "verifying whether request method " (-> request-method name str/upper-case) " works")
-          (let [{:keys [body] :as response} (make-kitchen-request waiter-url request-headers
-                                                                  :http-method-fn (http-method-helper request-method)
-                                                                  :path "/request-info")
-                body-json (json/read-str (str body))]
-            (assert-response-status response 200)
-            (is (= (name request-method) (get body-json "request-method"))))))
-      (delete-service waiter-url service-id))))
+          (is (= "Hello World" body))))
 
-(deftest ^:parallel ^:integration-fast test-request-content-headers
-  (testing-using-waiter-url
-    (let [request-length 100000
-          long-request (apply str (repeat request-length "a"))
-          headers {:x-waiter-name (rand-name)}
-          {:keys [service-id cookies] :as plain-resp} (make-request-with-debug-info
-                                                        headers
-                                                        #(make-kitchen-request waiter-url % :path "/request-info" :body long-request))
-          chunked-resp (make-request-with-debug-info
-                         headers
-                         #(make-kitchen-request waiter-url % :path "/request-info"
-                                                ; force a chunked request
-                                                :body (ByteArrayInputStream. (.getBytes long-request))
-                                                :cookies cookies))
-          plain-body-json (json/read-str (str (:body plain-resp)))
-          chunked-body-json (json/read-str (str (:body chunked-resp)))]
-      (is (= (str request-length) (get-in plain-body-json ["headers" "content-length"])))
-      (is (nil? (get-in plain-body-json ["headers" "transfer-encoding"])))
-      (is (= "chunked" (get-in chunked-body-json ["headers" "transfer-encoding"])))
-      (is (nil? (get-in chunked-body-json ["headers" "content-length"])))
-      (delete-service waiter-url service-id))))
+      (testing "empty-body"
+        (log/info "Basic test for empty body in request")
+        (let [{:keys [body]} (make-kitchen-request 
+                               waiter-url 
+                               (assoc request-headers 
+                                      :accept "text/plain")
+                               :path "/request-info") 
+              body-json (json/read-str (str body))]
+          (is (get-in body-json ["headers" "authorization"]) (str body))
+          (is (get-in body-json ["headers" "x-waiter-auth-principal"]) (str body))
+          (is (get-in body-json ["headers" "x-cid"]) (str body))
+          (is (nil? (get-in body-json ["headers" "content-type"])) (str body))
+          (is (= "0" (get-in body-json ["headers" "content-length"])) (str body))
+          (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body))))
 
-(deftest ^:parallel ^:integration-fast test-large-header
-  (testing-using-waiter-url
-    (log/info (str "Basic test using endpoint: /secrun"))
-    (let [service-name (rand-name)
-          request-headers {:x-waiter-name service-name}
-          canary-response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/secrun"))
-          all-chars (map char (range 33 127))
-          random-string (fn [n] (reduce str (take n (repeatedly #(rand-nth all-chars)))))
-          make-request (fn [header-size]
-                         (log/info "making request with header size" header-size)
-                         (make-kitchen-request waiter-url
-                                               (assoc request-headers :x-kitchen-long-string
-                                                                      (random-string header-size))))]
-      (let [response (make-request 2000)]
-        (assert-response-status response 200))
-      (let [response (make-request 4000)]
-        (assert-response-status response 200))
-      (let [response (make-request 8000)]
-        (assert-response-status response 200))
-      (let [response (make-request 16000)]
-        (assert-response-status response 200))
-      (let [response (make-request 20000)]
-        (assert-response-status response 200))
-      (let [response (make-request 24000)]
-        (assert-response-status response 200))
-      (delete-service waiter-url (:service-id canary-response)))))
+      (testing "http methods"
+        (log/info "Basic test for empty body in request")
+        (let [http-method-helper (fn http-method-helper [http-method]
+                                   (fn inner-http-method-helper [client url & [req]]
+                                     (http/request client (merge req {:method http-method :url url}))))]
+          (testing "http method: HEAD"
+            (let [response (make-kitchen-request waiter-url request-headers
+                                                 :http-method-fn (http-method-helper :head)
+                                                 :path "/request-info")]
+              (assert-response-status response 200)
+              (is (str/blank? (:body response)))))
+          (doseq [request-method [:delete :copy :get :move :patch :post :put]]
+            (testing (str "http method: " (-> request-method name str/upper-case))
+              (let [{:keys [body] :as response} (make-kitchen-request waiter-url request-headers
+                                                                      :http-method-fn (http-method-helper request-method)
+                                                                      :path "/request-info")
+                    body-json (json/read-str (str body))]
+                (assert-response-status response 200)
+                (is (= (name request-method) (get body-json "request-method"))))))))
+
+      (testing "content headers"
+        (let [request-length 100000
+              long-request (apply str (repeat request-length "a"))
+              plain-resp (make-kitchen-request
+                           waiter-url request-headers
+                           :path "/request-info"
+                           :body long-request)
+              chunked-resp (make-kitchen-request 
+                             waiter-url
+                             request-headers
+                             :path "/request-info"
+                             ; force a chunked request
+                             :body (ByteArrayInputStream. (.getBytes long-request))) 
+              plain-body-json (json/read-str (str (:body plain-resp)))
+              chunked-body-json (json/read-str (str (:body chunked-resp)))]
+          (is (= (str request-length) (get-in plain-body-json ["headers" "content-length"])))
+          (is (nil? (get-in plain-body-json ["headers" "transfer-encoding"])))
+          (is (= "chunked" (get-in chunked-body-json ["headers" "transfer-encoding"])))
+          (is (nil? (get-in chunked-body-json ["headers" "content-length"])))))
+
+      (testing "large header"
+        (let [all-chars (map char (range 33 127))
+              random-string (fn [n] (reduce str (take n (repeatedly #(rand-nth all-chars)))))
+              make-request (fn [header-size]
+                             (log/info "making request with header size" header-size)
+                             (make-kitchen-request waiter-url
+                                                   (assoc request-headers :x-kitchen-long-string
+                                                          (random-string header-size))))]
+          (let [response (make-request 2000)]
+            (assert-response-status response 200))
+          (let [response (make-request 4000)]
+            (assert-response-status response 200))
+          (let [response (make-request 8000)]
+            (assert-response-status response 200))
+          (let [response (make-request 16000)]
+            (assert-response-status response 200))
+          (let [response (make-request 20000)]
+            (assert-response-status response 200))
+          (let [response (make-request 24000)]
+            (assert-response-status response 200))))
+
+      (delete-service waiter-url service-id))))
 
 ; Marked explicit due to:
 ; FAIL in (test-basic-logs)
