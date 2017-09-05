@@ -1018,9 +1018,10 @@
           has-unhealthy-instances? (not-empty unhealthy-instances) 
           first-unhealthy-status (-> unhealthy-instances first :health-check-status)
           first-exit-code (-> failed-instances first :exit-code)
-          all-instances-flagged-with? (fn [flag] (every? (fn [{:keys [flags]}] (contains? flags flag)) failed-instances))
-          no-instances-flagged-with? (fn [flag] (every? (fn [{:keys [flags]}] (not (contains? flags flag))) failed-instances))
-          all-instances-exited-similarly? (and first-exit-code (every? (fn [{:keys [exit-code]}] (= exit-code first-exit-code)) failed-instances))]
+          failed-instance-flags (map :flags failed-instances)
+          all-instances-flagged-with? (fn [flag] (every? #(contains? % flag) failed-instance-flags))
+          no-instances-flagged-with? (fn [flag] (every? #(not (contains? % flag)) failed-instance-flags))
+          all-instances-exited-similarly? (and first-exit-code (every? #(= first-exit-code %) (map :exit-code failed-instances)))]
       (cond
         (and has-failed-instances? all-instances-exited-similarly?) :bad-startup-command
         (and has-failed-instances? (all-instances-flagged-with? :memory-limit-exceeded)) :not-enough-memory
