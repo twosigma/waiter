@@ -251,7 +251,7 @@
       (is (= [(assoc instance3 
                      :healthy? false 
                      :health-check-status 400
-                     :flags #{:has-responded :has-connected})] (:unhealthy-instances update-instances)))
+                     :flags #{:has-connected :has-responded})] (:unhealthy-instances update-instances)))
       (is (= "1" (:service-id update-instances))))
     ;; Retrieves scheduler state without service-id
     (let [response-chan (async/promise-chan)
