@@ -301,10 +301,11 @@
 
 (defn- associate-exit-codes
   "Associates exit codes with exited instances"
-  [{:keys [:shell-scheduler/process] :as instance}]
+  [{:keys [:shell-scheduler/process port] :as instance} port->reservation-atom port-grace-period-ms]
   (if (and (active? instance) (not (.isAlive process)))
     (let [exit-value (.exitValue process)]
       (log/info "instance exited with value" {:instance instance :exit-value exit-value})
+      (release-port! port->reservation-atom port port-grace-period-ms)
       (assoc instance :healthy? false
                       :failed (if (zero? exit-value) false true)
                       :killed true                          ; does not actually mean killed -- using this to mark inactive
@@ -368,7 +369,7 @@
   (timers/start-stop-time!
     (metrics/waiter-timer "shell-scheduler" "update-health")
     (let [pid->memory (get-pid->memory)
-          exit-codes-check #(associate-exit-codes %)]
+          exit-codes-check #(associate-exit-codes % port->reservation-atom port-grace-period-ms)]
       (loop [remaining-service-entries (vals id->service)
              id->service' {}]
         (if-let [{:keys [service id->instance] :as service-entry} (first remaining-service-entries)]
