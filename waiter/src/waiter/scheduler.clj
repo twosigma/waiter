@@ -374,15 +374,15 @@
                                         (-> instance
                                             (assoc :healthy? false
                                                    :health-check-status status)
-                                            (update-in [:flags] 
-                                                       (fn [flags]
-                                                         (cond-> flags
-                                                           (not= error :connect-exception)
-                                                           (conj :has-connected)
+                                            (update :flags 
+                                                    (fn [flags]
+                                                      (cond-> flags
+                                                        (not= error :connect-exception)
+                                                        (conj :has-connected)
 
-                                                           (and (not= error :connect-exception)
-                                                                (not= error :timeout-exception))
-                                                           (conj :has-responded))))))
+                                                        (and (not= error :connect-exception)
+                                                             (not= error :timeout-exception))
+                                                        (conj :has-responded))))))
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
                                        (if (:healthy? instance)
@@ -461,10 +461,11 @@
                                                  :failed-instances all-failed-instances
                                                  :scheduler-sync-time request-instances-time)])
                                         scheduler-messages)
-                  instance-id->unhealthy-instance' (into {} (map (fn [{:keys [id] :as instance}]
-                                                                   (let [{:keys [flags]} (get instance-id->unhealthy-instance id)]
-                                                                     [id (update-in instance [:flags] into flags)]))
-                                                                 unhealthy-instances))
+                  instance-id->unhealthy-instance' (->> unhealthy-instances
+                                                        (map (fn [{:keys [id] :as instance}]
+                                                               (let [flags (get-in instance-id->unhealthy-instance [id :flags])]
+                                                                 (update instance :flags into flags))))
+                                                        (pc/map-from-vals :id))
                   instance-id->failed-health-check-count' (pc/map-from-keys #((fnil inc 0) (get instance-id->failed-health-check-count %))
                                                                             (keys instance-id->unhealthy-instance'))]
               (metrics/reset-counter
