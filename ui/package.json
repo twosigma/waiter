@@ -1,0 +1,49 @@
+{
+  "name": "waiter-ui",
+  "version": "1.0.0",
+  "description": "Waiter UI",
+  "scripts": {
+    "start": "webpack-dev-server",
+    "prebuild": "rimraf dist",
+    "build": "cross-env NODE_ENV=production webpack -p --config webpack.config.production.js",
+    "postbuild": "copyfiles index.html dist"
+  },
+  "author": "David Medina <dmed256@gmail.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "babel-core": "^6.26.0",
+    "babel-loader": "^7.1.2",
+    "babel-preset-es2015": "^6.24.1",
+    "babel-preset-react": "^6.24.1",
+    "babel-preset-stage-2": "^6.24.1",
+    "copy-webpack-plugin": "^4.0.1",
+    "copyfiles": "^1.2.0",
+    "cross-env": "^5.0.5",
+    "css-loader": "^0.28.5",
+    "file-loader": "^0.11.2",
+    "react-hot-loader": "^3.0.0-beta.6",
+    "redux-logger": "^3.0.6",
+    "rimraf": "^2.6.1",
+    "style-loader": "^0.18.2",
+    "url-loader": "^0.5.9",
+    "webpack": "^3.5.5",
+    "webpack-dev-server": "^2.7.1"
+  },
+  "dependencies": {
+    "color": "^2.0.0",
+    "immutable": "^3.8.1",
+    "material-ui": "^1.0.0-beta.7",
+    "material-ui-icons": "^1.0.0-beta.5",
+    "material-ui-search-bar": "^1.0.0-beta.3",
+    "prop-types": "^15.5.10",
+    "react": "^15.6.1",
+    "react-ace": "^5.2.0",
+    "react-autosuggest": "^9.3.2",
+    "react-dom": "^15.6.1",
+    "react-redux": "^5.0.6",
+    "react-router-dom": "^4.2.2",
+    "react-swipeable-views": "^0.12.8",
+    "redux": "^3.7.2",
+    "redux-thunk": "^2.2.0"
+  }
+}
