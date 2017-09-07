@@ -32,3 +32,5 @@ cache:
     - $HOME/.voom-repos
 before_script: ($LEIN_GET && $LEIN_CHMOD && export PATH=$(pwd):$PATH && yes | $LEIN_DOWN && cd $TEST_DIR && $DEPS_CMD)
 script: cd $TEST_DIR && $TEST_CMD
+addons:
+    artifacts: true
