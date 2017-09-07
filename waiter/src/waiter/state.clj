@@ -1013,21 +1013,22 @@
   [healthy-instances unhealthy-instances failed-instances {:keys [min-failed-instances min-hosts]}]
   (when (empty? healthy-instances)
     (let [failed-instance-hosts (set (map :host failed-instances))
-          has-failed-instances (and (>= (count failed-instances) min-failed-instances)
-                                    (>= (count failed-instance-hosts) min-hosts)
-                                    (apply = (map :flags failed-instances))
-                                    (apply = (map :exit-code failed-instances)))
-          failed-instance-flags (-> failed-instances first :flags)
-          has-unhealthy-instances (and (not-empty unhealthy-instances)
-                                       (apply = (map :health-check-status unhealthy-instances)))
-          unhealthy-status (-> unhealthy-instances first :health-check-status)]
+          has-failed-instances? (and (>= (count failed-instances) min-failed-instances)
+                                     (>= (count failed-instance-hosts) min-hosts))
+          has-unhealthy-instances? (not-empty unhealthy-instances) 
+          first-unhealthy-status (-> unhealthy-instances first :health-check-status)
+          first-exit-code (-> failed-instances first :exit-code)
+          failed-instance-flags (map :flags failed-instances)
+          all-instances-flagged-with? (fn [flag] (every? #(contains? % flag) failed-instance-flags))
+          no-instances-flagged-with? (fn [flag] (every? #(not (contains? % flag)) failed-instance-flags))
+          all-instances-exited-similarly? (and first-exit-code (every? #(= first-exit-code %) (map :exit-code failed-instances)))]
       (cond
-        (and has-failed-instances (:memory-limit-exceeded failed-instance-flags)) :not-enough-memory
-        (and has-failed-instances (:timeout-exception failed-instance-flags)) :health-check-timed-out
-        (and has-failed-instances (:connect-exception failed-instance-flags)) :cannot-connect
-        (and has-failed-instances (:never-passed-health-checks failed-instance-flags)) :invalid-health-check-response
-        (and has-failed-instances (-> failed-instances first :exit-code)) :bad-startup-command
-        (and has-unhealthy-instances (= unhealthy-status 401)) :health-check-requires-authentication))))
+        (and has-failed-instances? all-instances-exited-similarly?) :bad-startup-command
+        (and has-failed-instances? (all-instances-flagged-with? :memory-limit-exceeded)) :not-enough-memory
+        (and has-failed-instances? (no-instances-flagged-with? :has-connected)) :cannot-connect
+        (and has-failed-instances? (no-instances-flagged-with? :has-responded)) :health-check-timed-out
+        (and has-failed-instances? (all-instances-flagged-with? :never-passed-health-checks)) :invalid-health-check-response
+        (and has-unhealthy-instances? (= first-unhealthy-status 401)) :health-check-requires-authentication))))
 
 (defn start-router-state-maintainer
   "Start the instance state maintainer.
