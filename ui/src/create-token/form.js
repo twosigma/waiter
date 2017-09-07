@@ -18,6 +18,66 @@ const Indicator = ({ tabIndex, classes }) => (
   </div>
 );
 
+const fields = [
+  {
+    tab: 'General',
+    fields: [
+      'Cluster',
+      'Owner',
+      'Token', 'Name', 'Version',
+      'CPUs', 'Memory (MB)',
+      'Command',
+    ],
+  },
+  {
+    tab: 'Permissions',
+    fields: [
+      'Run as user',
+      'Permitted user(s)',
+      'Metric group',
+      'Authentication'
+    ],
+  },
+  {
+    tab: 'Health check',
+    fields: [
+      'Protocol',
+      'Path',
+      'Grace period (seconds)',
+      'Idle timeout (minutes)',
+      'Blacklist on 503'
+    ],
+  },
+  {
+    tab: 'Environment Variables',
+    fields: [
+    ],
+  },
+  {
+    tab: 'Metadata',
+    fields: [
+    ],
+  },
+  {
+    tab: 'Advanced',
+    fields: [
+      'Concurrency',
+      'Distribution scheme',
+      'Expired instance restart rate',
+      'Instance expiration (minutes)',
+      'Jitter threshold',
+      'Minimum instances',
+      'Maximum instances',
+      'Maximum queue length',
+      'Ports',
+      'Restart backoff factor',
+      'Scale factor',
+      'Scale-down factor',
+      'Scale-up factor',
+    ],
+  },
+];
+
 class Form extends Component {
   constructor(props) {
     super(props);
@@ -40,13 +100,24 @@ class Form extends Component {
           className={classes.list}
         >
           {
-            ['A', 'B', 'C', 'D'].map((label, tabIndex) => (
+            fields.map(({ tab, fields }, tabIndex) => (
               <ListItem
-                key={label}
+                key={tab}
                 button
                 onClick={() => this.setState({ tabIndex })}
+                classes={{
+                  button: classes.onTabHover,
+                }}
               >
-                <ListItemText primary={label} />
+                <ListItemText
+                  primary={tab}
+                  classes={{
+                    root: classes.tabLabelRoot,
+                    text: ((this.state.tabIndex === tabIndex) ?
+                           classes.activeTabLabel :
+                           classes.tabLabels),
+                  }}
+                />
               </ListItem>
             ))
           }
@@ -65,12 +136,27 @@ class Form extends Component {
 
 export default withStyles((theme) => ({
   list: {
-    width: 150,
+    width: 170,
+  },
+  onTabHover: {
+    '&:hover': {
+      backgroundColor: 'transparent',
+    },
+  },
+  tabLabelRoot: {
+    padding: 0,
+  },
+  tabLabels: {
+    fontSize: 13,
+  },
+  activeTabLabel: {
+    fontSize: 13,
+    color: theme.palette.primary[500],
   },
   indicator: {
     position: 'absolute',
     zIndex: 2,
-    left: 150,
+    left: 170,
     height: 48,
     width: 2,
     backgroundColor: theme.palette.primary[500],
@@ -80,7 +166,7 @@ export default withStyles((theme) => ({
     position: 'absolute',
     zIndex: 1,
     top: 0,
-    left: 150,
+    left: 170,
     height: '100%',
     width: 2,
     backgroundColor: theme.palette.grey[200],

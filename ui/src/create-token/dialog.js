@@ -102,8 +102,8 @@ class TokenDialog extends Component {
 
 export default withStyles({
   paper: {
-    width: 600,
-    minWidth: 600,
+    width: 740,
+    minWidth: 530,
     height: '80%',
     maxHeight: 800,
   },
