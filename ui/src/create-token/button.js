@@ -21,7 +21,7 @@ class TokenPopupButton  extends Component {
           onClick={() => this.setState({ open: true })}
           className={this.props.classes.button}
         >
-          <AddIcon />{'\u00a0'}Create Token
+          <AddIcon />&nbsp;Create Token
         </Button>
         <TokenDialog
           open={this.state.open}

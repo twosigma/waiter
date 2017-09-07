@@ -1,6 +1,5 @@
 import React, { Component } from 'react';
 import { BrowserRouter, Redirect, Route, Switch } from 'react-router-dom';
-import { withStyles } from 'material-ui';
 import SwipeableViews from 'react-swipeable-views';
 
 
@@ -34,7 +33,6 @@ class App extends Component {
   }
 
   render() {
-    const { classes } = this.props;
     const { tabIndex } = this.state;
     return (
       <Provider store={store}>
@@ -46,9 +44,6 @@ class App extends Component {
                 tabIndex={tabIndex}
                 onTabChange={(tabIndex) => {
                   this.setState({ tabIndex });
-                }}
-                classes={{
-                  appbar: classes.appbar,
                 }}
               />
               <Switch>
@@ -93,13 +88,4 @@ class App extends Component {
   }
 };
 
-export default withStyles((theme) => ({
-  '@global': {
-    html: {
-      background: theme.palette.background.default,
-    },
-    body: {
-      margin: 0,
-    },
-  },
-}))(App);
+export default App;

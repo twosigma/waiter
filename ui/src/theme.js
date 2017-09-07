@@ -1,6 +1,6 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
-import { MuiThemeProvider, colors, createMuiTheme } from 'material-ui';
+import { MuiThemeProvider, colors, createMuiTheme, withStyles } from 'material-ui';
 
 const getTheme = (theme) => (
   createMuiTheme({
@@ -23,6 +23,23 @@ const getTheme = (theme) => (
   })
 );
 
+const styles = (theme) => ({
+  '@global': {
+    html: {
+      background: theme.palette.background.default,
+      fontFamily: theme.typography.fontFamily,
+      color: theme.typography.title.color,
+    },
+    body: {
+      margin: 0,
+    },
+  },
+});
+
+const ThemeContainer = withStyles(styles)(({ children }) => (
+  children
+));
+
 class Theme extends Component {
   constructor(props) {
     super(props);
@@ -42,7 +59,9 @@ class Theme extends Component {
   render() {
     return (
       <MuiThemeProvider theme={this.state.theme}>
-        {this.props.children}
+        <ThemeContainer>
+          {this.props.children}
+        </ThemeContainer>
       </MuiThemeProvider>
     );
   }

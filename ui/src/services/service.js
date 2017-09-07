@@ -1,17 +1,64 @@
 import React, { Component } from 'react';
-import { Paper, Toolbar } from 'material-ui';
+import { Icon, Paper, Toolbar, withStyles } from 'material-ui';
 
-const Service = ({ id }) => (
+import ServiceDescription from './serviceDescription';
+import InstanceTable  from './instanceTable';
+
+const Service = ({ id, classes }) => (
   <div>
-    <Toolbar>
+    <Toolbar classes={{
+      root: classes.toolbar,
+    }}>
+      clusterA
+      <Icon classes={{
+        root: classes.chevronIcon,
+      }}>
+        chevron_right
+      </Icon>
+      waiter-service-id
     </Toolbar>
-    <Paper>
-      Description
-    </Paper>
-    <Paper>
-      Instances
-    </Paper>
+    <div
+      className={classes.container}
+    >
+      <Paper classes={{
+        root: classes.descriptionContainer,
+      }}>
+        <ServiceDescription
+          id={id}
+        />
+      </Paper>
+      <Paper classes={{
+        root: classes.instanceTableContainer,
+      }}>
+        <InstanceTable
+          id={id}
+        />
+      </Paper>
+    </div>
   </div>
 );
 
-export default Service;
+export default withStyles((theme) => ({
+  toolbar: {
+    position: 'fixed',
+    width: '100%',
+    top: 0,
+  },
+  chevronIcon: {
+    fontSize: '1.2em !important',
+    color: theme.palette.primary[800],
+    margin: '0px 7px',
+  },
+  container: {
+    margin: '0 20px',
+    marginTop: 64,
+  },
+  descriptionContainer: {
+    marginBottom: 20,
+    padding: 10,
+  },
+  instanceTableContainer: {
+    padding: 10,
+    paddingTop: 0,
+  },
+}))(Service);

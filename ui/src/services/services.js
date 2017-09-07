@@ -14,13 +14,13 @@ const fields = [
     numeric: false,
   },
   {
-    id: 'cluster',
-    label: 'Cluster',
+    id: 'runAs',
+    label: 'Run As',
     numeric: false,
   },
   {
-    id: 'runAs',
-    label: 'Run As',
+    id: 'cluster',
+    label: 'Cluster',
     numeric: false,
   },
   {
@@ -32,6 +32,11 @@ const fields = [
     id: 'memory',
     label: 'Memory',
     numeric: true,
+  },
+  {
+    id: 'version',
+    label: 'Version',
+    numeric: false,
   },
   {
     id: 'status',
@@ -47,6 +52,7 @@ const services_ = [
     runAs: 'david',
     cpus: 10,
     memory: '10 MB',
+    version: 'A',
     status: 'A',
   },
   {
@@ -55,6 +61,7 @@ const services_ = [
     runAs: 'david',
     cpus: 10,
     memory: '10 MB',
+    version: 'A',
     status: 'A',
   },
   {
@@ -63,6 +70,7 @@ const services_ = [
     runAs: 'david',
     cpus: 10,
     memory: '10 MB',
+    version: 'A',
     status: 'A',
   },
   {
@@ -71,6 +79,7 @@ const services_ = [
     runAs: 'david medina',
     cpus: 10,
     memory: '10 MB',
+    version: 'A',
     status: 'A',
   },
 ];
