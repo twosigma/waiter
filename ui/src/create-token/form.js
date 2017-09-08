@@ -6,18 +6,6 @@ import {
   withStyles
 } from 'material-ui';
 
-const Indicator = ({ tabIndex, classes }) => (
-  <div>
-    <div
-      className={classes.indicator}
-      style={{
-        top: (48 * tabIndex),
-      }}
-    />
-    <div className={classes.bar} />
-  </div>
-);
-
 const fields = [
   {
     tab: 'General',
@@ -78,6 +66,36 @@ const fields = [
   },
 ];
 
+const FormTab = ({ tab, tabIndex, active, classes, onClick }) => (
+  <ListItem
+    button
+    onClick={onClick}
+    classes={{
+      button: classes.onTabHover,
+    }}
+  >
+    <ListItemText
+      primary={tab}
+      classes={{
+        root: classes.tabLabelRoot,
+        text: classes[active ? 'activeTabLabel' : 'tabLabels'],
+      }}
+    />
+  </ListItem>
+);
+
+const Indicator = ({ tabIndex, classes }) => (
+  <div>
+    <div
+      className={classes.indicator}
+      style={{
+        top: (48 * tabIndex),
+      }}
+    />
+    <div className={classes.bar} />
+  </div>
+);
+
 class Form extends Component {
   constructor(props) {
     super(props);
@@ -101,24 +119,13 @@ class Form extends Component {
         >
           {
             fields.map(({ tab, fields }, tabIndex) => (
-              <ListItem
+              <FormTab
                 key={tab}
-                button
+                tabIndex={tabIndex}
+                active={this.state.tabIndex === tabIndex}
                 onClick={() => this.setState({ tabIndex })}
-                classes={{
-                  button: classes.onTabHover,
-                }}
-              >
-                <ListItemText
-                  primary={tab}
-                  classes={{
-                    root: classes.tabLabelRoot,
-                    text: ((this.state.tabIndex === tabIndex) ?
-                           classes.activeTabLabel :
-                           classes.tabLabels),
-                  }}
-                />
-              </ListItem>
+                classes={classes}
+              />
             ))
           }
         </List>
@@ -169,6 +176,6 @@ export default withStyles((theme) => ({
     left: 170,
     height: '100%',
     width: 2,
-    backgroundColor: theme.palette.grey[200],
+    backgroundColor: theme.palette.grey[300],
   },
 }))(Form);
