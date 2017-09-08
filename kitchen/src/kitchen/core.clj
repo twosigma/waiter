@@ -238,7 +238,9 @@
             (when (< bytes-sent response-size-in-bytes)
               (let [bytes-to-send-this-iteration (min chunk-size-in-bytes (- response-size-in-bytes bytes-sent))]
                 (printlog request "chunked-handler: streaming" bytes-to-send-this-iteration "bytes")
-                (async/>! resp-chan (byte-array bytes-to-send-this-iteration chunk-data-bytes))
+                (async/>! resp-chan (if (= bytes-to-send-this-iteration chunk-size-in-bytes)
+                                      chunk-data-bytes
+                                      (byte-array bytes-to-send-this-iteration chunk-data-bytes)))
                 (when (pos? delay)
                   ; sleep before next chunk
                   (Thread/sleep delay))
