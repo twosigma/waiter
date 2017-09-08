@@ -5,7 +5,7 @@ import SwipeableViews from 'react-swipeable-views';
 import { TabRoute } from '../common';
 
 import Services from './services';
-import Service from './service';
+import Service from '../service/page';
 
 class Page extends Component {
   constructor(props) {

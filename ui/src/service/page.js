@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
 import { Icon, Paper, Toolbar, withStyles } from 'material-ui';
 
-import ServiceDescription from './serviceDescription';
+import ServiceDescription from './description';
 import InstanceTable  from './instanceTable';
 
 const Service = ({ id, classes }) => (
