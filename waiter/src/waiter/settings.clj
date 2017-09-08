@@ -72,6 +72,10 @@
                                              schema/contains-kind-sub-map?)
    (s/required-key :port) schema/positive-int
    (s/required-key :router-id-prefix) s/Str
+   (s/required-key :route-mapper-config) (s/constrained
+                                           {:kind s/Keyword
+                                            s/Keyword schema/require-symbol-factory-fn}
+                                           schema/contains-kind-sub-map?)
    (s/required-key :router-syncer) {(s/required-key :delay-ms) schema/positive-int
                                     (s/required-key :interval-ms) schema/positive-int}
    (s/required-key :scaling) {(s/required-key :autoscaler-interval-ms) schema/positive-int
@@ -227,6 +231,8 @@
                                         :passwords ["open-sesame"]}}
    :port 9091
    :router-id-prefix ""
+   :route-mapper-config {:kind :standard
+                         :standard {:factory-fn 'waiter.core/standard-route-mapper}}
    :router-syncer {:delay-ms 750
                    :interval-ms 1500}
    :scaling {:autoscaler-interval-ms 1000
@@ -279,7 +285,7 @@
                                   "scale-up-factor" 0.1}
    :statsd :disabled
    :thread-stack-state-refresh-interval-ms 600000 ; 10 minutes
-   :websocket-config {:ws-max-binary-message-size  (* 1024 1024 40)
+   :websocket-config {:ws-max-binary-message-size (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:offer-help-interval-ms 100
                    :reserve-timeout-ms 1000}

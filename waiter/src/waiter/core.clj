@@ -67,71 +67,101 @@
            org.eclipse.jetty.util.HttpCookieStore$Empty
            org.eclipse.jetty.websocket.client.WebSocketClient))
 
-(defn routes-mapper
+(defprotocol RouteMapper
+
+  (routes [this]
+    "Returns the routes supported by the Waiter server.")
+
+  (route-key->handler [this route-key default-handler]
+    "Returns the handler function for the specified route key.")
+
+  (backend-request-key [this]
+    "Returns the key used to represent processing a backend request."))
+
+(defrecord StandardRouteMapper [handler-map]
+
+  RouteMapper
+
+  (routes [_]
+    ["/" {"app-name" :app-name-handler-fn
+          "apps" {"" :service-list-handler-fn
+                  ["/" :service-id] :service-handler-fn
+                  ["/" :service-id "/logs"] :service-view-logs-handler-fn
+                  ["/" :service-id "/override"] :service-override-handler-fn
+                  ["/" :service-id "/refresh"] :service-refresh-handler-fn
+                  ["/" :service-id "/resume"] :service-resume-handler-fn
+                  ["/" :service-id "/suspend"] :service-suspend-handler-fn}
+          "blacklist" {"" :blacklist-instance-handler-fn
+                       ["/" :service-id] :blacklisted-instances-list-handler-fn}
+          "favicon.ico" :favicon-handler-fn
+          "metrics" :metrics-request-handler-fn
+          "secrun" :process-request-fn
+          "service-id" :service-id-handler-fn
+          "settings" :display-settings-handler-fn
+          "sim" :sim-request-handler
+          "state" {"" :display-state-handler-fn
+                   ["/" :service-id] :service-state-handler-fn}
+          "status" :status-handler-fn
+          "token" :token-handler-fn
+          "tokens" { "" :token-list-handler-fn
+                    "/owners" :token-owners-handler-fn
+                    "/refresh":token-refresh-handler-fn
+                    "/reindex" :token-reindex-handler-fn}
+          "waiter-async" {["/complete/" :request-id "/" :service-id] :async-complete-handler-fn
+                          ["/result/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
+                          :async-result-handler-fn
+                          ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
+                          :async-status-handler-fn}
+          "waiter-auth" :waiter-auth-handler-fn
+          "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
+                            ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
+          "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
+          "work-stealing" :work-stealing-handler-fn}])
+
+  (route-key->handler [_ route-key default-handler]
+    (get handler-map route-key default-handler))
+
+  (backend-request-key [_]
+    :process-request-fn))
+
+(defn standard-route-mapper
+  "Factory function for creating instances of StandardRouteMapper."
+  [{:keys [handlers]}]
+  (->StandardRouteMapper handlers))
+
+(defn match-route
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
   ;; Please include/update a corresponding unit test anytime the routes data structure is modified
-  [{:keys [uri]}]
-  (let [routes ["/" {"app-name" :app-name-handler-fn
-                     "apps" {"" :service-list-handler-fn
-                             ["/" :service-id] :service-handler-fn
-                             ["/" :service-id "/logs"] :service-view-logs-handler-fn
-                             ["/" :service-id "/override"] :service-override-handler-fn
-                             ["/" :service-id "/refresh"] :service-refresh-handler-fn
-                             ["/" :service-id "/resume"] :service-resume-handler-fn
-                             ["/" :service-id "/suspend"] :service-suspend-handler-fn}
-                     "blacklist" {"" :blacklist-instance-handler-fn
-                                  ["/" :service-id] :blacklisted-instances-list-handler-fn}
-                     "favicon.ico" :favicon-handler-fn
-                     "metrics" :metrics-request-handler-fn
-                     "secrun" :process-request-fn
-                     "service-id" :service-id-handler-fn
-                     "settings" :display-settings-handler-fn
-                     "sim" :sim-request-handler
-                     "state" {"" :display-state-handler-fn
-                              ["/" :service-id] :service-state-handler-fn}
-                     "status" :status-handler-fn
-                     "token" :token-handler-fn   
-                     "tokens" { "" :token-list-handler-fn   
-                               "/owners" :token-owners-handler-fn
-                               "/refresh":token-refresh-handler-fn 
-                               "/reindex" :token-reindex-handler-fn}
-                     "waiter-async" {["/complete/" :request-id "/" :service-id] :async-complete-handler-fn
-                                     ["/result/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
-                                     :async-result-handler-fn
-                                     ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
-                                     :async-status-handler-fn}
-                     "waiter-auth" :waiter-auth-handler-fn
-                     "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
-                                       ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
-                     "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
-                     "work-stealing" :work-stealing-handler-fn}]]
-    (or (bidi/match-route routes uri)
-        {:handler :process-request-fn})))
+  [routes uri]
+  (bidi/match-route routes uri))
 
 (defn ring-handler-factory
   "Creates the handler for processing http requests."
-  [waiter-request?-fn {:keys [cors-preflight-handler-fn process-request-fn] :as handlers}]
-  (fn http-handler [{:keys [uri] :as request}]
-    (cond
-      (cors/preflight-request? request)
-      (do
-        (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
-        (cors-preflight-handler-fn request))
+  [route-mapper-config waiter-request?-fn {:keys [cors-preflight-handler-fn] :as handlers}]
+  (let [route-mapper (utils/create-component route-mapper-config :context {:handlers handlers})
+        process-request-key (backend-request-key route-mapper)
+        process-request-fn (route-key->handler route-mapper process-request-key nil)]
+    (fn http-handler [{:keys [uri] :as request}]
+      (cond
+        (cors/preflight-request? request)
+        (do
+          (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
+          (cors-preflight-handler-fn request))
 
-      (not (waiter-request?-fn request))
-      (do
-        (counters/inc! (metrics/waiter-counter "requests" "service-request"))
-        (process-request-fn request))
+        (not (waiter-request?-fn request))
+        (do
+          (counters/inc! (metrics/waiter-counter "requests" "service-request"))
+          (process-request-fn request))
 
-      :else
-      (let [{:keys [handler route-params]} (routes-mapper request)
-            request (assoc request :route-params (or route-params {}))
-            handler-fn (get handlers handler process-request-fn)]
-        (when (and (not= handler :process-request-fn) (= handler-fn process-request-fn))
-          (log/warn "using default handler as no mapping found for" handler "at uri" uri))
-        (when handler
-          (counters/inc! (metrics/waiter-counter "requests" (name handler))))
-        (handler-fn request)))))
+        :else
+        (let [{:keys [handler route-params]} (match-route (routes route-mapper) uri)
+              handler-fn (route-key->handler route-mapper handler process-request-fn)]
+          (when (and (not= handler process-request-key) (= handler-fn process-request-fn))
+            (log/warn "using default handler as no mapping found for" handler "at uri" uri))
+          (when handler
+            (counters/inc! (metrics/waiter-counter "requests" (name handler))))
+          (let [request (assoc request :route-params (or route-params {}))]
+            (handler-fn request)))))))
 
 (defn websocket-handler-factory
   "Creates the handler for processing websocket requests.

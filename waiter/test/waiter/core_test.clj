@@ -161,10 +161,17 @@
             (service-gc-block service-data-atom num-times)
             (is (= (set (keys expected-service-data)) (set (keys @service-data-atom))))))))))
 
+(defn- create-ring-handler
+  [& {:keys [handlers waiter-request?-fn]
+      :or {handlers []
+           waiter-request?-fn (fn [_] true)}}]
+  (let [route-mapper-config {:kind :standard
+                             :standard {:factory-fn 'waiter.core/standard-route-mapper}}]
+    (ring-handler-factory route-mapper-config waiter-request?-fn handlers)))
+
 (deftest test-suspend-or-resume-service-handler
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
-        waiter-request?-fn (fn [_] true)
         entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
         allowed-to-manage-service? (fn [service-id auth-user]
@@ -183,32 +190,31 @@
       (let [user "tu1"
             request {:uri (str "/apps/" test-service-id "/suspend")
                      :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+            {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
         (is (= 200 status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "suspend"])))
       (let [user "tu1"
             request {:uri (str "/apps/" test-service-id "/resume")
                      :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+            {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
         (is (= 200 status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "resume"])))
       (let [user "tu2"
             request {:uri (str "/apps/" test-service-id "/suspend")
                      :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+            {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
         (is (= 403 status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id])))
       (let [user "tu2"
             request {:uri (str "/apps/" test-service-id "/resume")
                      :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+            {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
         (is (= 403 status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id]))))))
 
 (deftest test-override-service-handler
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
-        waiter-request?-fn (fn [_] true)
         entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
         allowed-to-manage-service? (fn [service-id auth-user]
@@ -228,7 +234,7 @@
                      :request-method :post
                      :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
                      :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+            {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
         (is (= 200 status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "success"]))
         (is (= {"scale-factor" 0.3} (:overrides (sd/service-id->overrides kv-store test-service-id)))))
@@ -237,7 +243,7 @@
                      :request-method :delete
                      :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
                      :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+            {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
         (is (= 200 status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "success"]))
         (is (= {} (:overrides (sd/service-id->overrides kv-store test-service-id)))))
@@ -245,14 +251,14 @@
             request {:uri (str "/apps/" test-service-id "/override")
                      :request-method :post
                      :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+            {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
         (is (= 403 status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id])))
       (let [user "tu2"
             request {:uri (str "/apps/" test-service-id "/override")
                      :request-method :delete
                      :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+            {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
         (is (= 403 status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id]))))))
 
@@ -263,7 +269,6 @@
                        :routines {:prepend-waiter-url identity}
                        :state {:scheduler scheduler}}
         handlers {:service-view-logs-handler-fn ((:service-view-logs-handler-fn request-handlers) configuration)}
-        waiter-request?-fn (fn [_] true)
         test-service-id "test-service-id"
         user "test-user"]
     (with-redefs [clj-http.client/get (fn [_ _] {:body "{}"})]
@@ -272,7 +277,7 @@
                        :request-method :get
                        :query-string ""
                        :authorization/user user}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
           (is (= status 500))
           (is (str/includes? body "Instance id is missing!"))))
       (testing "Missing host"
@@ -280,7 +285,7 @@
                        :request-method :get
                        :query-string "instance-id=instance-id-1"
                        :authorization/user user}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
           (is (= status 500))
           (is (str/includes? body "Host is missing!"))))
       (testing "Missing directory"
@@ -288,7 +293,7 @@
                        :request-method :get
                        :query-string "instance-id=instance-id-1&host=test.host.com"
                        :authorization/user user}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
           (is (= status 500))
           (is (str/includes? body "No directory found for instance!")))))
     (with-redefs [clj-http.client/get (fn [url _]
@@ -320,7 +325,7 @@
                        :request-method :get
                        :query-string "instance-id=instance-id-1&host=test.host.com"
                        :authorization/user user}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
           (is (= status 500))
           (is (str/includes? body "No directory found for instance!"))))
       (testing "Valid response"
@@ -328,7 +333,7 @@
                        :request-method :get
                        :query-string "instance-id=service-id-1.instance-id-2&host=test.host.com"
                        :authorization/user user}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [status body]} ((create-ring-handler :handlers handlers) request)]
           (is (= status 200))
           (is (every? #(str/includes? body %) ["test.host.com" "5051" "file" "directory" "name" "url" "download"])))))))
 
@@ -336,7 +341,6 @@
   (let [user "test-user"
         service-id "test-service-1"
         kv-store (kv/->LocalKeyValueStore (atom {}))
-        waiter-request?-fn (fn [_] true)
         entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
         allowed-to-manage-service? (fn [service-id auth-user]
@@ -353,7 +357,7 @@
       (with-redefs [scheduler/delete-app (fn [_ service-id] {:result :deleted, :service-id service-id})
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} ((create-ring-handler :handlers handlers) request)]
           (is (= 200 status))
           (is (= {"Content-Type" "application/json"} headers))
           (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
@@ -361,7 +365,7 @@
       (with-redefs [scheduler/delete-app (fn [_ _] nil)
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} ((create-ring-handler :handlers handlers) request)]
           (is (= 400 status))
           (is (= {"Content-Type" "application/json"} headers))
           (is (= {"success" false, "service-id" service-id} (json/read-str body))))))
@@ -369,7 +373,7 @@
       (with-redefs [scheduler/delete-app (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" (str "another-" user), "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} ((create-ring-handler :handlers handlers) request)]
           (is (= 403 status))
           (is (= {"Content-Type" "application/json"} headers))
           (is (str/includes? body "User not allowed to delete service")))))
@@ -377,7 +381,7 @@
       (with-redefs [scheduler/delete-app (fn [_ _] {:result :no-such-service-exists})
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} ((create-ring-handler :handlers handlers) request)]
           (is (= 404 status))
           (is (= {"Content-Type" "application/json"} headers))
           (is (= {"result" "no-such-service-exists", "service-id" service-id, "success" false} (json/read-str body))))))
@@ -385,7 +389,7 @@
       (with-redefs [scheduler/delete-app (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
                     sd/fetch-core (fn [_ _ & _] {})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} ((create-ring-handler :handlers handlers) request)]
           (is (= 404 status))
           (is (= {"Content-Type" "application/json"} headers))
           (is (= {"message" "No service description found: test-service-1"} (json/read-str body))))))
@@ -393,7 +397,7 @@
       (with-redefs [scheduler/delete-app (fn [_ _] (throw (RuntimeException. "Error in deleting service")))
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} ((create-ring-handler :handlers handlers) request)]
           (is (= 400 status))
           (is (= {"Content-Type" "application/json"} headers))
           (is (str/includes? body "Error in deleting service")))))))
@@ -401,7 +405,6 @@
 (deftest test-apps-handler-get
   (let [user "waiter-user"
         service-id "test-service-1"
-        waiter-request?-fn (fn [_] true)
         configuration {:curator {:kv-store nil}
                        :handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:allowed-to-manage-service?-fn (constantly true)
@@ -410,7 +413,7 @@
                        :state {:router-id "router-id"
                                :scheduler (Object.)}}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
-        ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
+        ring-handler (wrap-handler-json-response (create-ring-handler :handlers handlers))]
     (testing "service-handler:get-missing-service-description"
       (with-redefs [sd/fetch-core (constantly nil)]
         (let [request {:request-method :get, :uri (str "/apps/" service-id), :authorization/user user}
@@ -617,10 +620,9 @@
 (deftest test-health-check-handler-handler
   (testing "health-check-handler:status-ok"
     (let [request {:request-method :get, :uri "/status"}
-          waiter-request?-fn (fn [_] true)
           handlers {:status-handler-fn ((:status-handler-fn request-handlers) {})
                     :waiter-request?-fn (constantly true)}
-          {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+          {:keys [body headers status]} ((create-ring-handler :handlers handlers) request)]
       (is (= 200 status))
       (is (= {} headers))
       (is (= "ok" (str body))))))
@@ -671,8 +673,7 @@
 
 (deftest test-metrics-request-handler
   (let [handlers {:metrics-request-handler-fn ((:metrics-request-handler-fn request-handlers) {})}
-        waiter-request?-fn (fn [_] true)
-        ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
+        ring-handler (wrap-handler-json-response (create-ring-handler :handlers handlers))]
     (testing "metrics-request-handler:all-metrics"
       (with-redefs [metrics/get-metrics (fn get-metrics [] {:data "metrics-from-get-metrics"})]
         (let [request {:request-method :get, :uri "/metrics"}
@@ -684,7 +685,7 @@
     (testing "metrics-request-handler:all-metrics:error"
       (with-redefs [metrics/get-metrics (fn get-metrics [] (throw (Exception. "get-metrics")))]
         (let [request {:request-method :get, :uri "/metrics"}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} ((create-ring-handler :handlers handlers) request)]
           (is (= 500 status))
           (is (= {"Content-Type" "application/json"} headers))
           (is (str/includes? (str body) "get-metrics")))))
@@ -708,7 +709,7 @@
     (testing "metrics-request-handler:service-metrics:error"
       (with-redefs [metrics/get-service-metrics (fn get-service-metrics [_] (throw (Exception. "get-service-metrics")))]
         (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} ((create-ring-handler :handlers handlers) request)]
           (is (= 500 status))
           (is (= {"Content-Type" "application/json"} headers))
           (is (str/includes? (str body) "get-service-metrics")))))))
@@ -720,7 +721,6 @@
                      :request-method :get
                      :uri "/waiter-async/result/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location"}
             response-map {:source :async-result-handler-fn}
-            waiter-request?-fn (fn [_] true)
             handlers {:async-result-handler-fn
                       (fn [in-request]
                         (is (= request (select-keys in-request (keys request))))
@@ -730,7 +730,7 @@
                                                    :state {:authenticator (auth/one-user-authenticator {})
                                                            :cors-validator []
                                                            :passwords []}})}]
-        (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
+        (is (= response-map ((create-ring-handler :handlers handlers) request)))))))
 
 (deftest test-async-status-handler-call
   (testing "test-async-status-handler-call"
@@ -739,7 +739,6 @@
                      :request-method :get
                      :uri "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location"}
             response-map {:source :async-status-handler-fn}
-            waiter-request?-fn (fn [_] true)
             handlers {:async-status-handler-fn
                       (fn [in-request]
                         (is (= request (select-keys in-request (keys request))))
@@ -749,7 +748,7 @@
                                                    :state {:authenticator (auth/one-user-authenticator {})
                                                            :cors-validator []
                                                            :passwords []}})}]
-        (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
+        (is (= response-map ((create-ring-handler :handlers handlers) request)))))))
 
 (deftest test-async-complete-handler-call
   (testing "test-async-complete-handler-call"
@@ -764,71 +763,68 @@
                       (is (= "router-id" src-router-id))
                       (is (= request (select-keys in-request (keys request))))
                       response-map)]
-        (let [waiter-request?-fn (fn [_] true)
-              configuration {:routines {:async-request-terminate-fn async-request-terminate-fn}
+        (let [configuration {:routines {:async-request-terminate-fn async-request-terminate-fn}
                              :handle-inter-router-request-fn (fn [handler request] (handler "router-id" request))}
               async-complete-handler-fn ((:async-complete-handler-fn request-handlers) configuration)
               handlers {:async-complete-handler-fn async-complete-handler-fn}]
-          (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request))))))))
+          (is (= response-map ((create-ring-handler :handlers handlers) request))))))))
 
-(deftest test-routes-mapper
-  (let [exec-routes-mapper (fn [uri] (routes-mapper {:uri uri}))]
+(deftest test-standard-match-route
+  (let [route-mapper (->StandardRouteMapper {})
+        exec-match-route (fn [uri] (match-route (routes route-mapper) uri))]
     (is (= {:handler :app-name-handler-fn}
-           (exec-routes-mapper "/app-name")))
+           (exec-match-route "/app-name")))
     (is (= {:handler :service-list-handler-fn}
-           (exec-routes-mapper "/apps")))
+           (exec-match-route "/apps")))
     (is (= {:handler :service-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/apps/test-service")))
+           (exec-match-route "/apps/test-service")))
     (is (= {:handler :service-view-logs-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/apps/test-service/logs")))
+           (exec-match-route "/apps/test-service/logs")))
     (is (= {:handler :service-override-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/apps/test-service/override")))
+           (exec-match-route "/apps/test-service/override")))
     (is (= {:handler :service-refresh-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/apps/test-service/refresh")))
+           (exec-match-route "/apps/test-service/refresh")))
     (is (= {:handler :service-resume-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/apps/test-service/resume")))
+           (exec-match-route "/apps/test-service/resume")))
     (is (= {:handler :service-suspend-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/apps/test-service/suspend")))
+           (exec-match-route "/apps/test-service/suspend")))
     (is (= {:handler :blacklist-instance-handler-fn}
-           (exec-routes-mapper "/blacklist")))
+           (exec-match-route "/blacklist")))
     (is (= {:handler :blacklisted-instances-list-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/blacklist/test-service")))
+           (exec-match-route "/blacklist/test-service")))
     (is (= {:handler :favicon-handler-fn}
-           (exec-routes-mapper "/favicon.ico")))
-    (is (= {:handler :process-request-fn} ;; outdated mapping
-           (exec-routes-mapper "/kill-instance")))
+           (exec-match-route "/favicon.ico")))
+    (is (nil? (exec-match-route "/kill-instance"))) ;; outdated mapping
     (is (= {:handler :metrics-request-handler-fn}
-           (exec-routes-mapper "/metrics")))
+           (exec-match-route "/metrics")))
     (is (= {:handler :process-request-fn}
-           (exec-routes-mapper "/secrun")))
+           (exec-match-route "/secrun")))
     (is (= {:handler :service-id-handler-fn}
-           (exec-routes-mapper "/service-id")))
+           (exec-match-route "/service-id")))
     (is (= {:handler :display-settings-handler-fn}
-           (exec-routes-mapper "/settings")))
+           (exec-match-route "/settings")))
     (is (= {:handler :sim-request-handler}
-           (exec-routes-mapper "/sim")))
+           (exec-match-route "/sim")))
     (is (= {:handler :display-state-handler-fn}
-           (exec-routes-mapper "/state")))
+           (exec-match-route "/state")))
     (is (= {:handler :service-state-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/state/test-service")))
-    (is (= {:handler :process-request-fn}
-           (exec-routes-mapper "/stats")))
+           (exec-match-route "/state/test-service")))
+    (is (nil? (exec-match-route "/stats"))) ;; outdated mapping
     (is (= {:handler :status-handler-fn}
-           (exec-routes-mapper "/status")))
+           (exec-match-route "/status")))
     (is (= {:handler :token-handler-fn}
-           (exec-routes-mapper "/token")))
+           (exec-match-route "/token")))
     (is (= {:handler :token-list-handler-fn}
-           (exec-routes-mapper "/tokens")))
+           (exec-match-route "/tokens")))
     (is (= {:handler :token-owners-handler-fn}
-           (exec-routes-mapper "/tokens/owners")))
+           (exec-match-route "/tokens/owners")))
     (is (= {:handler :token-refresh-handler-fn}
-           (exec-routes-mapper "/tokens/refresh")))
+           (exec-match-route "/tokens/refresh")))
     (is (= {:handler :token-reindex-handler-fn}
-           (exec-routes-mapper "/tokens/reindex")))
-    (is (= {:handler :process-request-fn}
-           (exec-routes-mapper "/through-to-backend")))
+           (exec-match-route "/tokens/reindex")))
+    (is (nil? (exec-match-route "/through-to-backend"))) ;; outdated mapping
     (is (= {:handler :async-complete-handler-fn, :route-params {:request-id "test-request-id", :service-id "test-service-id"}}
-           (exec-routes-mapper "/waiter-async/complete/test-request-id/test-service-id")))
+           (exec-match-route "/waiter-async/complete/test-request-id/test-service-id")))
     (is (= {:handler :async-result-handler-fn
             :route-params {:host "test-host"
                            :location "some/test/location"
@@ -836,7 +832,7 @@
                            :request-id "test-request-id"
                            :router-id "test-router-id"
                            :service-id "test-service-id"}}
-           (exec-routes-mapper "/waiter-async/result/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location?a=b")))
+           (exec-match-route "/waiter-async/result/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location?a=b")))
     (is (= {:handler :async-status-handler-fn
             :route-params {:host "test-host"
                            :location "some/test/location"
@@ -844,30 +840,30 @@
                            :request-id "test-request-id"
                            :router-id "test-router-id"
                            :service-id "test-service-id"}}
-           (exec-routes-mapper "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location?a=b")))
+           (exec-match-route "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location?a=b")))
     (is (= {:handler :waiter-auth-handler-fn}
-           (exec-routes-mapper "/waiter-auth")))
+           (exec-match-route "/waiter-auth")))
     (is (= {:handler :waiter-acknowledge-consent-handler-fn}
-           (exec-routes-mapper "/waiter-consent")))
+           (exec-match-route "/waiter-consent")))
     (is (= {:handler :waiter-request-consent-handler-fn
             :route-params {:path ""}}
-           (exec-routes-mapper "/waiter-consent/")))
+           (exec-match-route "/waiter-consent/")))
     (is (= {:handler :waiter-request-consent-handler-fn
             :route-params {:path "simple-path"}}
-           (exec-routes-mapper "/waiter-consent/simple-path")))
+           (exec-match-route "/waiter-consent/simple-path")))
     (is (= {:handler :waiter-request-consent-handler-fn
             :route-params {:path "simple-path"}}
-           (exec-routes-mapper "/waiter-consent/simple-path?with=params")))
+           (exec-match-route "/waiter-consent/simple-path?with=params")))
     (is (= {:handler :waiter-request-consent-handler-fn
             :route-params {:path "nested/path/example"}}
-           (exec-routes-mapper "/waiter-consent/nested/path/example")))
+           (exec-match-route "/waiter-consent/nested/path/example")))
     (is (= {:handler :waiter-request-consent-handler-fn
             :route-params {:path "nested/path/example"}}
-           (exec-routes-mapper "/waiter-consent/nested/path/example?with=params")))
+           (exec-match-route "/waiter-consent/nested/path/example?with=params")))
     (is (= {:handler :kill-instance-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/waiter-kill-instance/test-service")))
+           (exec-match-route "/waiter-kill-instance/test-service")))
     (is (= {:handler :work-stealing-handler-fn}
-           (exec-routes-mapper "/work-stealing")))))
+           (exec-match-route "/work-stealing")))))
 
 (deftest test-delegate-instance-kill-request
   (let [service-id "service-id"]
