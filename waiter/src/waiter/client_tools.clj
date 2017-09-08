@@ -290,7 +290,7 @@
 (defn kitchen-params
   []
   {:cpus 0.1
-   :mem 256
+   :mem 384
    :cmd-type "shell"
    :version "version-does-not-matter"
    :cmd (kitchen-cmd "-p $PORT0")
@@ -313,7 +313,7 @@
          debug true}}]
   (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
-                       :x-waiter-mem 256
+                       :x-waiter-mem 384
                        :x-waiter-health-check-url "/status"
                        :x-waiter-idle-timeout-mins 10}
                       (merge custom-headers)
