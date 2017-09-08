@@ -163,7 +163,6 @@
                   (cid/ensure-correlation-id nested-response get-request-cid)
                   nested-response)))))))))
 
-
 (defn- make-blacklist-request
   [make-inter-router-requests-fn blacklist-period-ms dest-router-id dest-endpoint {:keys [id] :as instance} reason]
   (log/info "peer communication requesting" dest-router-id "to blacklist" id "via endpoint" dest-endpoint)
@@ -690,6 +689,10 @@
    :token->token-description (pc/fnk [[:curator kv-store]]
                                (fn token->token-description [token]
                                  (sd/token->token-description kv-store token)))
+   :token-store (pc/fnk [[:curator kv-store]
+                         [:state clock]
+                         synchronize-fn]
+                  (token/->KeyValueTokenStore clock synchronize-fn kv-store))
    :validate-service-description-fn (pc/fnk [[:state service-description-builder]]
                                       (fn validate-service-description [service-description]
                                         (sd/validate service-description-builder service-description {})))
@@ -830,7 +833,7 @@
                                 (async/tap state-chan-mult state-chan)
                                 (state/start-service-chan-maintainer
                                   {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
-   :state-query-chans (pc/fnk [[:state query-app-maintainer-chan scheduler]
+   :state-query-chans (pc/fnk [[:state query-app-maintainer-chan]
                                autoscaler autoscaling-multiplexer gc-for-transient-metrics scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
                         {:app-maintainer-state query-app-maintainer-chan
                          :autoscaler-state (:query autoscaler)
@@ -1112,16 +1115,15 @@
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
    :status-handler-fn (pc/fnk []
                         (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
-   :token-handler-fn (pc/fnk [[:curator kv-store]
-                              [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
+   :token-handler-fn (pc/fnk [[:routines make-inter-router-requests-sync-fn token-store validate-service-description-fn]
                               [:settings hostname]
-                              [:state clock entitlement-manager]
+                              [:state entitlement-manager]
                               handle-secure-request-fn]
                        (fn token-handler-fn [request]
                          (handle-secure-request-fn
                            (fn inner-token-handler-fn [request]
                              (token/handle-token-request
-                               clock synchronize-fn kv-store hostname entitlement-manager make-inter-router-requests-sync-fn
+                               token-store hostname entitlement-manager make-inter-router-requests-sync-fn
                                validate-service-description-fn request))
                            request)))
    :token-list-handler-fn (pc/fnk [[:curator kv-store]

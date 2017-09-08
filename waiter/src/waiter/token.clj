@@ -23,6 +23,18 @@
 (def ^:const ANY-USER "*")
 (def ^:const valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+")
 
+;; A token store interface to manage CRUD operations on tokens.
+(defprotocol TokenStore
+
+  (fetch [this token include-deleted?]
+    "Fetches the specified token.")
+
+  (store [this token service-description-template token-metadata]
+    "Creates/Updates a token with the specified token description.")
+
+  (delete [this token hard-delete?]
+    "Deletes the specified token. It assumes the token exists when it is invoked."))
+
 ;; We'd like to maintain an index of tokens by their owner.
 ;; We'll store an index in the key "^TOKEN_OWNERS" that maintains
 ;; a map of owner to another key, in which we'll store the tokens
@@ -157,6 +169,25 @@
                   token-set (->> tokens (map :token) set)]
               (kv/store kv-store owner-key token-set))))))))
 
+;; A token store which is backed by a key-value store.
+(defrecord KeyValueTokenStore [clock synchronize-fn kv-store]
+
+  TokenStore
+
+  (fetch [_ token include-deleted?]
+    (sd/token->token-description kv-store token :include-deleted include-deleted?))
+
+  (store [_ token service-description-template token-metadata]
+    ;; insert the last-update-time if it doesn't exist
+    (let [token-metadata' (merge {"last-update-time" (.getMillis ^DateTime (clock))} token-metadata)]
+      (store-service-description-for-token synchronize-fn kv-store token service-description-template token-metadata')))
+
+  (delete [this token hard-delete?]
+    (let [{:keys [token-metadata]} (fetch this token hard-delete?)]
+      (if-let [owner (get token-metadata "owner")]
+        (delete-service-description-for-token clock synchronize-fn kv-store token owner :hard-delete hard-delete?)
+        (throw (ex-info "Token not found!" {:token token}))))))
+
 (defn handle-token-request
   "Ring handler for dealing with tokens.
 
@@ -167,7 +198,7 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
+  [token-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
    {:keys [headers request-method] :as req}]
   ;;if post, validate that this is a valid job schema & that the user == the kerberos user, then sign & store in riak
   ;;  remember that we need an extra field in this schema, which is who is allowed to use this. Could be "*" or a string username
@@ -179,7 +210,7 @@
                     request-params (:query-params (ring-params/params-request req))
                     hard-delete (utils/request-flag request-params "hard-delete")]
                 (if token
-                  (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :include-deleted hard-delete)]
+                  (let [{:keys [service-description-template token-metadata]} (fetch token-store token hard-delete)]
                     (if (and service-description-template (not-empty service-description-template))
                       (let [token-owner (get token-metadata "owner")]
                         (if hard-delete
@@ -187,7 +218,7 @@
                             (throw (ex-info "Cannot hard-delete token" {:metadata token-metadata, :status 403, :user authenticated-user})))
                           (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
                             (throw (ex-info "User not allowed to delete token" {:owner token-owner, :status 403, :user authenticated-user}))))
-                        (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :hard-delete hard-delete)
+                        (delete token-store token hard-delete)
                         ; notify peers of token delete and ask them to refresh their caches
                         (make-peer-requests-fn "tokens/refresh"
                                                :body (json/write-str {:owner token-owner, :token token})
@@ -202,7 +233,7 @@
            (let [request-params (:query-params (ring-params/params-request req))
                  include-deleted (utils/request-flag request-params "include-deleted")
                  {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)]
-             (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token :include-deleted include-deleted)]
+             (let [{:keys [service-description-template token-metadata]} (fetch token-store token include-deleted)]
                (if (and service-description-template (not-empty service-description-template))
                  ;;NB do not ever return the password to the user
                  (do
@@ -221,7 +252,7 @@
                   new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
                   {:strs [authentication permitted-user run-as-user] :as new-service-description-template}
                   (select-keys new-token-description sd/service-description-keys)
-                  {existing-token-metadata :token-metadata} (sd/token->token-description kv-store token)
+                  {existing-token-metadata :token-metadata} (fetch token-store token false)
                   owner (or (get new-token-metadata "owner")
                             (get existing-token-metadata "owner")
                             authenticated-user)]
@@ -268,10 +299,8 @@
                 (throw (ex-info "Invalid update-mode" {:mode (get request-params "update-mode"), :status 400})))
 
               ; Store the token
-              (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))
-                                               "owner" owner}
-                                              new-token-metadata)]
-                (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata))
+              (let [new-token-metadata (merge {"owner" owner} new-token-metadata)]
+                (store token-store token new-service-description-template new-token-metadata))
               ; notify peers of token update
               (make-peer-requests-fn "tokens/refresh"
                                      :method :post
