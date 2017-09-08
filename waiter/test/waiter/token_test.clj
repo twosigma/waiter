@@ -40,8 +40,9 @@
 
 (defn- run-handle-token-request
   [kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn request]
-  (handle-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn
-                        validate-service-description-fn request))
+  (let [create-token-infrastructure (constantly nil)]
+    (handle-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn
+                          validate-service-description-fn create-token-infrastructure request)))
 
 (deftest test-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]

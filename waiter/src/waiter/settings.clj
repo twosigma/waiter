@@ -121,6 +121,10 @@
                                        (s/required-key :publish-interval-ms) schema/positive-int
                                        (s/required-key :server) schema/non-empty-string})
    (s/required-key :thread-stack-state-refresh-interval-ms) schema/positive-int
+   (s/required-key :token-infrastructure-config) (s/constrained
+                                                   {:kind s/Keyword
+                                                    s/Keyword schema/require-symbol-factory-fn}
+                                                   schema/contains-kind-sub-map?)
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
    (s/required-key :work-stealing) {(s/required-key :offer-help-interval-ms) schema/positive-int
@@ -279,6 +283,8 @@
                                   "scale-up-factor" 0.1}
    :statsd :disabled
    :thread-stack-state-refresh-interval-ms 600000 ; 10 minutes
+   :token-infrastructure-config {:kind :none
+                                 :none {:factory-fn 'waiter.token.noop-token-infrastructure-function}}
    :websocket-config {:ws-max-binary-message-size  (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:offer-help-interval-ms 100

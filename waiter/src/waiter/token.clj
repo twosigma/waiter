@@ -167,7 +167,8 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
+  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn
+   validate-service-description-fn create-token-infrastructure-fn
    {:keys [headers request-method] :as req}]
   ;;if post, validate that this is a valid job schema & that the user == the kerberos user, then sign & store in riak
   ;;  remember that we need an extra field in this schema, which is who is allowed to use this. Could be "*" or a string username
@@ -216,6 +217,7 @@
              (utils/exception->json-response e)))
     :post (try
             (let [request-params (:query-params (ring-params/params-request req))
+                  update-mode (get request-params "update-mode")
                   authenticated-user (get req :authorization/user)
                   {:strs [token] :as new-token-description} (json/read-str (slurp (:body req)))
                   new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
@@ -246,7 +248,7 @@
                                   {:missing-parameters (->> sd/service-required-keys
                                                             (remove #(contains? new-service-description-template %1)) seq)
                                    :service-description new-service-description-template}))))
-              (case (get request-params "update-mode")
+              (case update-mode
                 "admin"
                 (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
                   (throw (ex-info "Cannot administer token" {:status 403, :token-metadata new-token-metadata, :user authenticated-user})))
@@ -265,13 +267,15 @@
                   (when (contains? new-token-metadata "last-update-time")
                     (throw (ex-info "Cannot modify last-update-time token metadata" {:status 400, :token-metadata new-token-metadata}))))
 
-                (throw (ex-info "Invalid update-mode" {:mode (get request-params "update-mode"), :status 400})))
+                (throw (ex-info "Invalid update-mode" {:mode update-mode, :status 400})))
 
               ; Store the token
               (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))
                                                "owner" owner}
                                               new-token-metadata)]
-                (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata))
+                (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata)
+                (when-not (= update-mode "admin")
+                  (create-token-infrastructure-fn token new-token-metadata)))
               ; notify peers of token update
               (make-peer-requests-fn "tokens/refresh"
                                      :method :post
@@ -344,3 +348,8 @@
       (utils/map->json-response {:message "Only POST supported!", :request-method request-method} :status 405))
     (catch Exception e
       (utils/exception->json-response e))))
+
+(defn noop-token-infrastructure-function
+  "Returns a function with an empty body to satisfy the token infrastructure support."
+  [_]
+  (constantly nil))
