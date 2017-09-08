@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import { Toolbar, Tab, Tabs } from 'material-ui';
 import SwipeableViews from 'react-swipeable-views';
+import ServiceDescription from './description';
 
 class InstanceTable extends Component {
   constructor(props) {
@@ -12,7 +13,7 @@ class InstanceTable extends Component {
 
   render() {
     const { tabIndex } = this.state;
-    const { id } = this.props;
+    const { description, id } = this.props;
     return (
       <div>
         <Toolbar disableGutters>
@@ -44,7 +45,10 @@ class InstanceTable extends Component {
               minHeight: '100%',
             }}
         >
-          <div>Description</div>
+          <ServiceDescription
+            id={id}
+            description={description}
+          />
           <div>Instances</div>
           <div>Failed Instances</div>
           <div>Killed Instances</div>

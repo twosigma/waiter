@@ -4,6 +4,27 @@ import { Icon, Paper, Toolbar, withStyles } from 'material-ui';
 import ServiceDescription from './description';
 import InstanceTable  from './instanceTable';
 
+const description = {
+    "metric-group": "waiter_kitchen",
+    "name": "testheadermetadatadsm5754536",
+    "metadata": {
+        "begindate": "null",
+        "timestamp": "20160713201333949",
+        "foo": "bar",
+        "enddate": "null",
+        "baz": "quux"
+    },
+    "run-as-user": "dsm5",
+    "idle-timeout-mins": 10,
+    "version": "version-does-not-matter",
+    "cmd-type": "shell",
+    "mem": 256,
+    "cmd": "/Users/dsm5/git/waiter/kitchen/bin/run.sh -p $PORT0",
+    "health-check-url": "/status",
+    "cpus": 0.1,
+    "permitted-user": "dsm5"
+};
+
 const Service = ({ id, classes }) => (
   <div>
     <Toolbar classes={{
@@ -23,15 +44,14 @@ const Service = ({ id, classes }) => (
       <Paper classes={{
         root: classes.descriptionContainer,
       }}>
-        <ServiceDescription
-          id={id}
-        />
+      <div />
       </Paper>
       <Paper classes={{
         root: classes.instanceTableContainer,
       }}>
         <InstanceTable
           id={id}
+          description={description}
         />
       </Paper>
     </div>
