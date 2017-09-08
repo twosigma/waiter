@@ -463,6 +463,14 @@
 
  ; ---------- Miscellaneous ----------
 
+ ;; The route mapping used by Waiter to handle requests.
+ ;; This allows Waiter to intercept certain urls and provide custom processing for those endpoints.
+ :route-mapper-config {;; :kind :standard invokes the StandardRouteMapper
+                       :kind :standard
+                       :standard {;; Custom implementations should specify a :factory-fn that
+                                  ;; returns an instance of waiter.core.RouteMapper:
+                                  :factory-fn 'waiter.core/standard-route-mapper}}
+
  ;; Certain messages that Waiter returns can be customized:
  :messages {:bad-startup-command "Invalid startup command"
             :cannot-connect "Unable to connect to run health checks"
