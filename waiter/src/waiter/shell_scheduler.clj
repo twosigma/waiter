@@ -216,6 +216,11 @@
       (deliver completion-promise :failed)
       id->service)))
 
+(defn active?
+  "Returns true if the given instance is considered active"
+  [instance]
+  (not (:killed instance)))
+
 (defn- kill-instance
   "Deletes the instance corresponding to service-id/instance-id and returns the updated id->service map"
   [id->service service-id instance-id port->reservation-atom port-grace-period-ms completion-promise]
@@ -223,7 +228,7 @@
     (if (contains? id->service service-id)
       (let [{:keys [id->instance]} (get id->service service-id)
             {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)]
-        (if instance
+        (if (and instance (active? instance))
           (do
             (log/info "deleting instance" instance-id "process" process)
             (kill-process! instance port->reservation-atom port-grace-period-ms)
@@ -243,11 +248,6 @@
       (log/error e "error attempting to delete instance" instance-id)
       (deliver completion-promise :failed)
       id->service)))
-
-(defn active?
-  "Returns true if the given instance is considered active"
-  [instance]
-  (not (:killed instance)))
 
 (defn- delete-service
   "Deletes the service corresponding to service-id and returns the updated id->service map"
