@@ -15,7 +15,7 @@
             [waiter.client-tools :refer :all]
             [waiter.settings :as settings]))
 
-(deftest ^:parallel ^:integration-fast test-invalid-health-check-response
+(deftest ^:parallel ^:integration-slow test-invalid-health-check-response
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; health check endpoint always returns status 402
@@ -28,7 +28,7 @@
       (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :invalid-health-check-response))))
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-fast test-cannot-connect
+(deftest ^:parallel ^:integration-slow test-cannot-connect
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; nothing to connect to
@@ -41,7 +41,7 @@
       (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :cannot-connect))))
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-fast test-health-check-timed-out
+(deftest ^:parallel ^:integration-slow test-health-check-timed-out
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; health check endpoint sleeps for 300000 ms (= 5 minutes)
