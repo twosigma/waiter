@@ -234,6 +234,7 @@
             (kill-process! instance port->reservation-atom port-grace-period-ms)
             (deliver completion-promise :deleted)
             (-> id->service
+                (update-in [service-id :service :instances] dec)
                 (assoc-in [service-id :id->instance instance-id :killed] true)
                 (assoc-in [service-id :id->instance instance-id :shell-scheduler/process] nil)))
           (do
@@ -529,7 +530,8 @@
               completion-promise)
         (let [result (deref completion-promise)
               success (= result :deleted)]
-          {:success success
+          {:killed? true
+           :success success
            :result result
            :message (if success
                       (str "Deleted " id)

@@ -21,7 +21,7 @@
                                  (loop [i 1
                                         tasks-running 0]
                                    (if (< i (* 5 4 requests-per-thread))
-                                     (let [tasks-running (num-tasks-running waiter-url service-id :prev-tasks-running tasks-running)]
+                                     (let [tasks-running (num-instances waiter-url service-id)]
                                        (when (not (pred tasks-running))
                                          (Thread/sleep 1000)
                                          (recur (inc i) (int tasks-running))))

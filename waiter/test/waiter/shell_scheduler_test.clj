@@ -220,22 +220,17 @@
              (scheduler/scale-app scheduler "foo" 1)))
       ;; Successfully kill one instance, instances: 1
       (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
-        (is (= {:success true, :result :deleted, :message (str "Deleted " (:id instance))}
+        (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance))))
       (force-update-service-health scheduler scheduler-config)
       (is (= {:running 1, :healthy 1, :unhealthy 0, :staged 0}
              (task-stats scheduler)))
-      ;; Automatically relaunches killed instances, instances: 2
+      ;; Scale up, instances: 2
+      (is (= {:success true, :result :scaled, :message "Scaled foo"}
+             (scheduler/scale-app scheduler "foo" 2)))
       (force-maintain-instance-scale scheduler)
       (force-update-service-health scheduler scheduler-config)
       (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
-             (task-stats scheduler)))
-      ;; Scale up, instances: 3
-      (is (= {:success true, :result :scaled, :message "Scaled foo"}
-             (scheduler/scale-app scheduler "foo" 3)))
-      (force-maintain-instance-scale scheduler)
-      (force-update-service-health scheduler scheduler-config)
-      (is (= {:running 3, :healthy 3, :unhealthy 0, :staged 0}
              (task-stats scheduler))))))
 
 (deftest test-kill-instance
@@ -249,7 +244,7 @@
            (create-test-service scheduler "foo")))
     (with-redefs [perform-health-check (constantly true)]
       (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
-        (is (= {:success true, :result :deleted, :message (str "Deleted " (:id instance))}
+        (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance)))
         (is (= {:success true, :result :deleted, :message "Deleted foo"}
                (scheduler/delete-app scheduler "foo")))
@@ -301,7 +296,7 @@
         (force-update-service-health scheduler scheduler-config)
         (is (= 1 @health-check-count-atom))
         ;; Kill the single instance of our service
-        (is (= {:success true, :result :deleted, :message (str "Deleted " (:id instance))}
+        (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance))))
       (ensure-agent-finished scheduler)
       ;; Force another health check attempt
