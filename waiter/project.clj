@@ -115,6 +115,8 @@
                      {:type :bytes :path "git-log"
                       :bytes (.trim (:out (clojure.java.shell/sh
                                             "git" "rev-parse" "HEAD")))})}]
+  :parallel-test {:pools {:serial (constantly 1)
+                          :parallel (fn [] (max 4 (-> (Runtime/getRuntime) .availableProcessors)))}}
   :profiles {:debug {:jvm-opts
                      ;; enable remote debugger to connect on port 5005
                      ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]}
