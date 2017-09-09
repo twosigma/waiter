@@ -12,6 +12,7 @@ env:
     - LEIN_GET='wget https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein'
     - LEIN_CHMOD='chmod +x ./lein'
     - LEIN_DOWN='lein downgrade 2.6.1'
+    - _JAVA_OPTIONS=''
   matrix:
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=kitchen TEST_CMD='lein test'
