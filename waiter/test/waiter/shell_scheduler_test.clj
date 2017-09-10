@@ -70,6 +70,42 @@
   (send id->service-agent maintain-instance-scale port->reservation-atom port-range)
   (ensure-agent-finished scheduler))
 
+(deftest test-update-task-stats
+  (testing "1 healthy"
+    (let [{:keys [service id->instance]} (update-task-stats {:service {}
+                                                             :id->instance {"foo" {:healthy? true}}})]
+      (is (= {:healthy 1
+              :unhealthy 0
+              :running 1
+              :staged 0} (:task-stats service)))
+      (is (= 1 (:task-count service)))))
+  (testing "1 unhealthy"
+    (let [{:keys [service id->instance]} (update-task-stats {:service {}
+                                                             :id->instance {"foo" {:healthy? false}}})]
+      (is (= {:healthy 0
+              :unhealthy 1
+              :running 1
+              :staged 0} (:task-stats service)))
+      (is (= 1 (:task-count service)))))
+  (testing "1 healthy, 1 unhealthy"
+    (let [{:keys [service id->instance]} (update-task-stats {:service {}
+                                                             :id->instance {"foo" {:healthy? true}
+                                                                            "bar" {:healthy? false}}})]
+      (is (= {:healthy 1
+              :unhealthy 1
+              :running 2
+              :staged 0} (:task-stats service)))
+   (testing "1 healthy, 1 unhealthy, 1 killed"
+    (let [{:keys [service id->instance]} (update-task-stats {:service {}
+                                                             :id->instance {"foo" {:healthy? true}
+                                                                            "bar" {:healthy? false}
+                                                                            "baz" {:healthy? false :killed? true}}})]
+      (is (= {:healthy 1
+              :unhealthy 1
+              :running 2
+              :staged 0} (:task-stats service)))
+      (is (= 2 (:task-count service)))))   (is (= 2 (:task-count service))))))
+
 (deftest test-launch-instance
   (testing "Launching an instance"
     (testing "should throw if cmd is nil"
@@ -344,7 +380,7 @@
                 [{:id "foo"
                   :instances 1
                   :task-count 1
-                  :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                  :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
                   :environment {"WAITER_USERNAME" "waiter"
                                 "WAITER_PASSWORD" "password"
                                 "HOME" (work-dir)
@@ -359,7 +395,7 @@
                  {:id "bar"
                   :instances 1
                   :task-count 1
-                  :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                  :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
                   :environment {"WAITER_USERNAME" "waiter"
                                 "WAITER_PASSWORD" "password"
                                 "HOME" (work-dir)
@@ -374,7 +410,7 @@
                  {:id "baz"
                   :instances 1
                   :task-count 1
-                  :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                  :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
                   :environment {"WAITER_USERNAME" "waiter"
                                 "WAITER_PASSWORD" "password"
                                 "HOME" (work-dir)
@@ -410,7 +446,7 @@
                                    {:id "foo"
                                     :instances 1
                                     :task-count 1
-                                    :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                                    :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
                                     :environment {"WAITER_USERNAME" "waiter"
                                                   "WAITER_PASSWORD" "password"
                                                   "HOME" (work-dir)
