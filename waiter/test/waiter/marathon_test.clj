@@ -561,10 +561,11 @@
         instance-id "service-1.A"
         make-marathon-scheduler #(->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
                                                       (atom {}) %1 %2 (constantly true))
-        successful-kill-result {:instance-id instance-id :killed? true :service-id service-id}]
+        successful-kill-result {:instance-id instance-id :killed? true :service-id service-id}
+        failed-kill-result {:instance-id instance-id :killed? false :service-id service-id}]
     (with-redefs [t/now (fn [] current-time)]
 
-      (testing "first-instance-kill"
+      (testing "normal-kill"
         (let [service-id->kill-info-store (atom {})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
           (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
@@ -573,35 +574,32 @@
                                                         (is (= {:force false, :scale true} params))
                                                         successful-kill-result)]
             (is (= successful-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
-            (is (= {service-id {:last-kill-request current-time, :successful-kill current-time}} @service-id->kill-info-store)))))
+            (is (= {} @service-id->kill-info-store)))))
 
-      (testing "instance-kill-without-force-no-intervening-kill-calls"
-        (let [service-id->kill-info-store (atom {service-id {:last-kill-request (t/minus current-time (t/millis 1500))
-                                                             :successful-kill (t/minus current-time (t/millis 1500))}})
+      (testing "failed-kill"
+        (let [service-id->kill-info-store (atom {})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
           (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
                                                         (is (= {:force false, :scale true} params))
-                                                        successful-kill-result)]
-            (is (= successful-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
-            (is (= {service-id {:last-kill-request current-time, :successful-kill current-time}} @service-id->kill-info-store)))))
+                                                        failed-kill-result)]
+            (is (= failed-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
+            (is (= {service-id {:kill-failing-since current-time}} @service-id->kill-info-store)))))
 
-      (testing "instance-kill-without-force-with-intervening-kill-calls"
-        (let [service-id->kill-info-store (atom {service-id {:last-kill-request (t/minus current-time (t/millis 500))
-                                                             :successful-kill (t/minus current-time (t/millis 500))}})
+      (testing "not-yet-forced"
+        (let [service-id->kill-info-store (atom {service-id {:kill-failing-since (t/minus current-time (t/millis 500))}})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
           (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
                                                         (is (= {:force false, :scale true} params))
-                                                        successful-kill-result)]
-            (is (= successful-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
-            (is (= {service-id {:last-kill-request current-time, :successful-kill current-time}} @service-id->kill-info-store)))))
+                                                        failed-kill-result)]
+            (is (= failed-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
+            (is (= {service-id {:kill-failing-since (t/minus current-time (t/millis 500))}} @service-id->kill-info-store)))))
 
-      (testing "instance-kill-with-force"
-        (let [service-id->kill-info-store (atom {service-id {:last-kill-request (t/minus current-time (t/millis 500))
-                                                             :successful-kill (t/minus current-time (t/millis 1500))}})
+      (testing "forced-kill"
+        (let [service-id->kill-info-store (atom {service-id {:kill-failing-since (t/minus current-time (t/millis 1500))}})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
           (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
@@ -609,20 +607,7 @@
                                                         (is (= {:force true, :scale true} params))
                                                         successful-kill-result)]
             (is (= successful-kill-result (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
-            (is (= {service-id {:last-kill-request current-time, :successful-kill current-time}} @service-id->kill-info-store)))))
-
-      (testing "instance-kill-exception"
-        (let [service-id->kill-info-store (atom {service-id {:last-kill-request (t/minus current-time (t/millis 500))
-                                                             :successful-kill (t/minus current-time (t/millis 1500))}})
-              marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
-                                                        (is (= service-id in-service-id))
-                                                        (is (= instance-id in-instance-id))
-                                                        (is (= {:force true, :scale true} params))
-                                                        (throw (Exception. "thrown-from-test")))]
-            (is (thrown-with-msg? Exception #"thrown-from-test"
-                                  (scheduler/kill-instance marathon-scheduler {:id instance-id, :service-id service-id})))
-            (is (= {service-id {:last-kill-request current-time, :successful-kill (t/minus current-time (t/millis 1500))}} @service-id->kill-info-store))))))))
+            (is (= {} @service-id->kill-info-store))))))))
 
 (deftest test-service-id->state
   (let [service-id "service-id"
