@@ -480,3 +480,28 @@
         (let [{:keys [status] :as response} (make-request waiter-url "/state"
                                                           :headers {"origin" "example.com"})]
           (is (= 200 status) response))))))
+
+(deftest ^:parallel ^:integration-fast test-error-content-negotiation
+  (testing-using-waiter-url
+    (testing "text/plain"
+      (let [{:keys [body headers status]} (make-request waiter-url "/")] 
+        (is (= 400 status))
+        (is (= "text/plain" (get headers "content-type")))
+        (is (str/includes? body "Waiter Error 400"))
+        (is (str/includes? body "================"))))
+    (testing "text/html"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"Accept" "text/html"})] 
+        (is (= 400 status))
+        (is (= "text/html" (get headers "content-type")))
+        (is (str/includes? body "Waiter Error 400"))
+        (is (str/includes? body "<html>"))))
+    (testing "application/json"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"Accept" "application/json"})
+            {:strs [waiter-error]} (try (json/read-str body)
+                                        (catch Throwable e
+                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
+        (is (= 400 status))
+        (is (= "application/json" (get headers "content-type")))
+        (is waiter-error (str "Could not find waiter-error element in body " body))
+        (let [{:strs [status]} waiter-error]
+          (is (= 400 status)))))))

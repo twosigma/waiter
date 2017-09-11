@@ -14,8 +14,8 @@
             [clj-time.format :as f]
             [clojure.core.cache :as cache]
             [clojure.data.json :as json]
-            [clojure.pprint :as pprint]
             [clojure.java.io :as io]
+            [clojure.pprint :as pprint]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
@@ -207,7 +207,7 @@
   (let [padded-format (fn [f v] (format "%16s: %s\n" f v))]
     (str "\n" 
          "  Waiter Error " status "\n" 
-         "  ===========\n\n"
+         "  ================\n\n"
          "    " message "\n\n"
          "  Request Info\n" 
          "  ============\n\n"
@@ -259,7 +259,8 @@
                (json/write-str {:waiter-error error-context} :escape-slash false)
                "text/html"
                (template/eval (slurp (io/resource "web/error.html"))
-                              (-> error-context (update :message #(urls->html-links %))
+                              (-> error-context 
+                                  (update :message #(urls->html-links %))
                                   (update :details #(with-out-str (pprint/pprint %)))))
                "text/plain"
                (error-context->text error-context))
