@@ -180,11 +180,12 @@
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
+                   :x-waiter-version "1"
+                   :x-waiter-cmd "false"
                    :x-waiter-cmd-type "fakecommand"}
           {:keys [body status]} (make-light-request waiter-url headers)]
       (is (= 400 status))
-      (is (str/includes? body "fakecommand"))
-      (is (str/includes? body "cmd-type")))))
+      (is (str/includes? body "Command type fakecommand is not supported")))))
 
 (deftest ^:parallel ^:integration-fast test-header-metadata
   (testing-using-waiter-url

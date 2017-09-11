@@ -25,7 +25,7 @@
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
-      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :invalid-health-check-response))))
+      (is (str/includes? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :invalid-health-check-response))))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-slow test-cannot-connect
@@ -38,7 +38,7 @@
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
-      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :cannot-connect))))
+      (is (str/includes? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :cannot-connect))))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-slow test-health-check-timed-out
@@ -51,7 +51,7 @@
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
-      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-timed-out))))
+      (is (str/includes? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-timed-out))))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-health-check-requires-authentication
@@ -62,7 +62,7 @@
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
-      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-requires-authentication))))
+      (is (str/includes? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :health-check-requires-authentication))))
       (delete-service waiter-url service-id))))
 
 ; Marked explicit because not all servers use cgroups to limit memory (this error is not reproducible on testing platforms)
@@ -74,7 +74,7 @@
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
-      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :not-enough-memory))))
+      (is (str/includes? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :not-enough-memory))))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-bad-startup-command
@@ -86,6 +86,6 @@
           service-id (get headers "x-waiter-service-id")]
       (is (not (nil? service-id)))
       (assert-response-status response 503)
-      (is (str/starts-with? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :bad-startup-command))))
+      (is (str/includes? body (str "Deployment error: " (-> (waiter-settings waiter-url) :messages :bad-startup-command))))
       (delete-service waiter-url service-id))))
 

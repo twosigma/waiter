@@ -14,9 +14,12 @@
             [clj-time.format :as f]
             [clojure.core.cache :as cache]
             [clojure.data.json :as json]
+            [clojure.pprint :as pprint]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [comb.template :as template]
             [digest]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression])
@@ -183,22 +186,90 @@
   [ex & {:keys [status]}]
   (:status (ex-data ex) (or status 400)))
 
+(defn urls->html-links
+  "Converts any URLs in a string to HTML links."
+  [message]
+  (when message 
+    (str/replace message #"(https?://[^\s]+)" "<a href=\"$1\">$1</a>")))
+
+(defn request->content-type
+  "Determines best Content-Type for a response given a request."
+  [{:keys [headers]}]
+  (let [accept (or (get headers "accept") "text/plain")]
+    (cond
+      (str/includes? accept "application/json") "application/json"
+      (str/includes? accept "text/html") "text/html"
+      :else "text/plain")))
+
+(defn error-context->text
+  "Formats an error context for a text response."
+  [{:keys [cid details host message query-string request-method status timestamp uri]}]
+  (let [padded-format (fn [f v] (format "%16s: %s\n" f v))]
+    (str "\n" 
+         "  Waiter Error " status "\n" 
+         "  ===========\n\n"
+         "    " message "\n\n"
+         "  Request Info\n" 
+         "  ============\n\n"
+         (when host (padded-format "Host" host))
+         (padded-format "Path" uri)
+         (when query-string (padded-format "Query String" query-string))
+         (padded-format "Method" request-method)
+         (padded-format "CID" cid)
+         (padded-format "Time" timestamp)
+         (when (seq details) 
+           (str "\n"
+                "  Additional Info\n" 
+                "  ===============\n\n   "
+                (-> (with-out-str 
+                      (pprint/pprint details))
+                    (str/replace #"\n" "\n    ")) 
+                "\n\n")))))
+
 (defn exception->response
-  "Converts an exception into a 400 plain text response with the stack trace."
-  [log-message ^Exception e & {:keys [headers status] :or {headers {}}}]
+  "Converts an exception into a 400 response with an error message."
+  [request log-message ^Exception e & {:keys [headers status] :or {headers {}}}]
   (let [processed-headers (into {} (for [[k v] headers] [(name k) (str v)]))
         ex-data (ex-data e)]
     (when-not (:suppress-logging ex-data)
       (log/error e log-message processed-headers))
-    {:body (:message ex-data (str/join (System/lineSeparator) (exception->strs e)))
-     :status (exception->status e :status status)
-     :headers (merge {"Content-Type" "text/plain"} processed-headers)}))
+    (let [message (or (:friendly-error-message ex-data)
+                      (:message ex-data)
+                      (.getMessage e))
+          content-type (request->content-type request)
+          timestamp (date-to-str (t/now))
+          cid (-> request :headers (get "x-cid"))
+          host (-> request :headers (get "host"))
+          request-method (-> request :request-method (or "") name str/upper-case)
+          query-string (-> request :query-string)
+          uri (-> request :uri)
+          status (or status (exception->status e))
+          error-context {:cid cid 
+                         :details ex-data
+                         :host host
+                         :message message 
+                         :query-string query-string
+                         :request-method request-method
+                         :status status
+                         :timestamp timestamp
+                         :uri uri}]
+      {:status status
+       :body (case content-type
+               "application/json"
+               (json/write-str {:waiter-error error-context} :escape-slash false)
+               "text/html"
+               (template/eval (slurp (io/resource "web/error.html"))
+                              (-> error-context (update :message #(urls->html-links %))
+                                  (update :details #(with-out-str (pprint/pprint %)))))
+               "text/plain"
+               (error-context->text error-context))
+       :headers (merge {"Content-Type" content-type} processed-headers)})))
 
 (defn exception->json-response
   "Convert the input data into a json response."
   [^Exception e & {:keys [status]}]
   (log/error e "Generating JSON exception response")
-  {:body (json/write-str {:exception (exception->strs e)} :value-fn stringify-elements)
+  {:body (json/write-str {:exception (exception->strs e)} :value-fn stringify-elements :escape-slash false)
    :status (exception->status e :status status)
    :headers {"Content-Type" "application/json"}})
 

@@ -27,10 +27,10 @@
      (is (str/includes? ~response-body (str "After " ~timeout-period-sec " seconds, no instance available to handle request.")))
      (when ~faulty-app?
        (is (str/includes? ~response-body "Check that your service is able to start properly!")))
-     (is (and (str/includes? ~response-body "outstanding-requests:")
-              (not (str/includes? ~response-body "outstanding-requests: 0"))))
-     (is (str/includes? ~response-body "requests-waiting-to-stream: 0"))
-     (is (str/includes? ~response-body "waiting-for-available-instance: 1"))
+     (is (and (str/includes? ~response-body "outstanding-requests")
+              (not (str/includes? ~response-body "outstanding-requests 0"))))
+     (is (str/includes? ~response-body "requests-waiting-to-stream 0"))
+     (is (str/includes? ~response-body "waiting-for-available-instance 1"))
      (is (str/includes? ~response-body ~service-name))
      (log/info "Ran assertions on timed-out request")))
 
@@ -79,7 +79,6 @@
       (assert-response-status response 503)
       (log/info "Response code check executed.")
       (is (str/includes? response-body "Connection error while sending request to instance"))
-      (is (str/includes? response-body "onIdleExpired"))
       (log/info "Response body check executed.")
       (is (not (str/blank? (get response-headers "x-waiter-backend-id"))))
       (is (not (str/blank? (get response-headers "x-waiter-backend-host"))))

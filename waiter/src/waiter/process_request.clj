@@ -449,13 +449,13 @@
           exception (ex-info (.getMessage exception) (dissoc (ex-data exception) :status))]
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
-      (utils/exception->response "Missing run-as-user:" exception :headers (assoc response-headers "Location" location) :status 303))
+      (utils/exception->response request "Missing run-as-user:" exception :headers (assoc response-headers "Location" location) :status 303))
     (do
       (track-process-error-metrics-fn descriptor)
       (when descriptor
         (let [{:keys [service-description service-id]} descriptor]
           (track-response-status-metrics service-id service-description (utils/exception->status exception))))
-      (utils/exception->response "Error in process, response headers:" exception :headers response-headers))))
+      (utils/exception->response request "Error in process, response headers:" exception :headers response-headers))))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."

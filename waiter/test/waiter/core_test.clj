@@ -488,10 +488,9 @@
                          response-chan)
         make-basic-auth-fn (fn make-basic-auth-fn [_ _ _] auth-object)
         make-request-fn-factory (fn [urls-invoked-atom]
-                                  (fn [method endpoint-url auth body config error-handler]
+                                  (fn [method endpoint-url auth body config]
                                     (is (str/blank? body))
                                     (is (empty? config))
-                                    (is (= utils/exception->strs error-handler))
                                     (is (= :get method))
                                     (is (= auth-object auth))
                                     (swap! urls-invoked-atom conj endpoint-url)
@@ -535,7 +534,6 @@
         auth (Object.)
         body "body-str"
         config {:foo :bar, :test :map}
-        error-handler identity
         expected-response (async/chan)]
     (with-redefs [http/request (fn [in-http-client config-map]
                                  (is (= http-client in-http-client))
@@ -549,7 +547,7 @@
                                         config-map))
                                  expected-response)]
       (is (= expected-response
-             (make-request-async http-client idle-timeout method endpoint-url auth body config error-handler))))))
+             (make-request-async http-client idle-timeout method endpoint-url auth body config))))))
 
 (deftest test-make-request-sync
   (let [http-client (Object.)
@@ -557,9 +555,8 @@
         method :test
         endpoint-url "endpoint/url"
         auth (Object.)
-        config {:foo :bar, :test :map}
-        error-handler (fn [error] (throw error))]
-    (with-redefs [make-request-async (fn [in-http-client in-idle-timeout in-method in-endpoint-url in-auth body in-config _]
+        config {:foo :bar, :test :map}]
+    (with-redefs [make-request-async (fn [in-http-client in-idle-timeout in-method in-endpoint-url in-auth body in-config]
                                        (is (= http-client in-http-client))
                                        (is (= idle-timeout in-idle-timeout))
                                        (is (= method in-method))
@@ -569,18 +566,18 @@
                                        (let [response-chan (async/promise-chan)
                                              body-chan (async/promise-chan)]
                                          (if (str/includes? body "error")
-                                           (async/>!! response-chan {:body body-chan, :error (Exception. (str body))})
+                                           (throw (ex-info (str body) {})) 
                                            (async/>!! response-chan {:body body-chan, :status 200}))
                                          (async/>!! body-chan body)
                                          response-chan))]
       (testing "error-in-response"
         (is (thrown-with-msg? Exception #"error-in-request"
-                              (make-request-sync http-client idle-timeout method endpoint-url auth "error-in-request" config error-handler))))
+                              (make-request-sync http-client idle-timeout method endpoint-url auth "error-in-request" config))))
 
       (testing "successful-response"
         (let [body-string "successful-response"]
           (is (= {:body body-string, :status 200}
-                 (make-request-sync http-client idle-timeout method endpoint-url auth body-string config error-handler))))))))
+                 (make-request-sync http-client idle-timeout method endpoint-url auth body-string config))))))))
 
 (deftest test-waiter-request?-factory
   (testing "waiter-request?"

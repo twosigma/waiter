@@ -602,7 +602,7 @@
         request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
         request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
         process-exception-fn (fn process-exception-fn [_ _ response-headers _ e]
-                               (utils/exception->response "Error in process" e :headers response-headers))
+                               (utils/exception->response {} "Error in process" e :headers response-headers))
         request-abort-callback-factory (fn [_] (constantly nil))
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-fn request-abort-callback-factory request)

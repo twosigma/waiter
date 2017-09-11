@@ -171,7 +171,7 @@
                                            :reason response-code}
                                           :status response-status))))))
       (catch Exception e
-        (utils/exception->response "Blacklisting instance failed." e :status 500)))))
+        (utils/exception->response request "Blacklisting instance failed." e :status 500)))))
 
 (defn get-blacklisted-instances
   "Return the blacklisted instances for a given service-id at this router."
@@ -221,7 +221,7 @@
       {:body service-id
        :status 200})
     (catch Exception e
-      (utils/exception->response "Error locating app name" e))))
+      (utils/exception->response request "Error locating app name" e))))
 
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
@@ -265,7 +265,7 @@
                              viewable-services)]
           (utils/map->streaming-json-response response-data))))
     (catch Exception e
-      (utils/exception->response "Error retrieving services" e))))
+      (utils/exception->response request "Error retrieving services" e))))
 
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
@@ -409,7 +409,7 @@
           (log/info message)
           (utils/map->json-response {:message message, :success false} :status 403))))
     (catch Exception e
-      (utils/exception->response "Error in suspending/resuming service." e :status 500))))
+      (utils/exception->response request "Error in suspending/resuming service." e :status 500))))
 
 (defn override-service-handler
   "Handles overrides for a service."
@@ -444,7 +444,7 @@
             (log/info message)
             (utils/map->json-response {:message message, :success false} :status 403)))))
     (catch Exception e
-      (utils/exception->response (str "Error in modifying overrides for " service-id) e :status 500))))
+      (utils/exception->response request (str "Error in modifying overrides for " service-id) e :status 500))))
 
 (defn service-view-logs-handler
   "Redirects user to the log directory on the slave"
@@ -602,7 +602,7 @@
     (catch Exception e
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-error"))
-      (utils/exception->response "error in processing consent" e))))
+      (utils/exception->response request "error in processing consent" e))))
 
 (defn request-consent-handler
   "Displays the consent form and requests approval from user. The content is rendered from consent.html.
@@ -637,4 +637,4 @@
     (catch Exception e
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-error"))
-      (utils/exception->response "error in rendering consent form" e))))
+      (utils/exception->response request "error in rendering consent form" e))))

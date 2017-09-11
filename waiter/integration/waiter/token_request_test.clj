@@ -233,7 +233,7 @@
                     {:keys [body] :as response} (make-request waiter-url path :headers request-headers)]
                 (is (or (every? #(str/includes? body %)
                                 ["Service description using waiter headers/token improperly configured",
-                                 "issue: {\"cmd\" missing-required-key}"])
+                                 "{\"cmd\" missing-required-key}"])
                         (str/includes? body "Invalid command or version"))
                     (str "response body was: " response))
                 (assert-response-status response 400))
