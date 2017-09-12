@@ -56,7 +56,7 @@ class Server(BaseHTTPRequestHandler):
             print('image_location: ' + str(image_location))
             urlretrieve(image_url, image_location)
 
-            cmd = 'python3.6 classify_image.py --image_file={} --num_top_predictions={}'.format(
+            cmd = 'python3 classify_image.py --image_file={} --num_top_predictions={}'.format(
                 image_location, num_top_predictions)
             print('command: ' + cmd)
             output = subprocess.getoutput(cmd)

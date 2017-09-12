@@ -1,5 +1,5 @@
 {
-  "cmd": "/Users/shamsimam/projects/github-projects/twosigma-waiter/demo/run-tag-server.sh ${PORT0}",
+  "cmd": "/opt/demos/tensorflow-image-tagging/run-tag-server.sh ${PORT0}",
   "concurrency-level": 1,
   "cpus": 1,
   "health-check-url": "/status",
