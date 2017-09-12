@@ -1,0 +1,144 @@
+minimesos {
+    clusterName = "waiter"
+    loggingLevel = "INFO"
+    mapAgentSandboxVolume = false
+    mapPortsToHost = true
+    mesosVersion = "1.0.0"
+    timeout = 60
+
+    agent {
+        imageName = "twosigma/waiter-demos"
+        imageTag = "latest"
+        loggingLevel = "# INHERIT FROM CLUSTER"
+        portNumber = 5051
+
+        resources {
+            cpu {
+                role = "*"
+                value = 4
+            }
+
+            disk {
+                role = "*"
+                value = 200
+            }
+
+            mem {
+                role = "*"
+                value = 3072
+            }
+
+            ports {
+                role = "*"
+                value = "[31000-32000]"
+            }
+        }
+    }
+
+    agent {
+        imageName = "twosigma/waiter-demos"
+        imageTag = "latest"
+        loggingLevel = "# INHERIT FROM CLUSTER"
+        portNumber = 5052
+
+        resources {
+            cpu {
+                role = "*"
+                value = 4
+            }
+
+            disk {
+                role = "*"
+                value = 200
+            }
+
+            mem {
+                role = "*"
+                value = 3072
+            }
+
+            ports {
+                role = "*"
+                value = "[31000-32000]"
+            }
+        }
+    }
+
+    agent {
+        imageName = "twosigma/waiter-demos"
+        imageTag = "latest"
+        loggingLevel = "# INHERIT FROM CLUSTER"
+        portNumber = 5053
+
+        resources {
+            cpu {
+                role = "*"
+                value = 4
+            }
+
+            disk {
+                role = "*"
+                value = 200
+            }
+
+            mem {
+                role = "*"
+                value = 3072
+            }
+
+            ports {
+                role = "*"
+                value = "[31000-32000]"
+            }
+        }
+    }
+
+    agent {
+        imageName = "twosigma/waiter-demos"
+        imageTag = "latest"
+        loggingLevel = "# INHERIT FROM CLUSTER"
+        portNumber = 5054
+
+        resources {
+            cpu {
+                role = "*"
+                value = 4
+            }
+
+            disk {
+                role = "*"
+                value = 200
+            }
+
+            mem {
+                role = "*"
+                value = 3072
+            }
+
+            ports {
+                role = "*"
+                value = "[31000-32000]"
+            }
+        }
+    }
+
+    master {
+        aclJson = null
+        authenticate = false
+        imageName = "containersol/mesos-master"
+        imageTag = "1.0.0-0.1.0"
+        loggingLevel = "# INHERIT FROM CLUSTER"
+    }
+
+    // Minimesos currently has an NPE without marathon
+    // https://github.com/ContainerSolutions/minimesos/issues/532
+    marathon {
+        imageName = "mesosphere/marathon"
+        imageTag = "v1.3.5"
+    }
+
+    zookeeper {
+        imageName = "jplock/zookeeper"
+        imageTag = "3.4.6"
+    }
+}
