@@ -9,27 +9,72 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns kitchen.demos
-  (:require [clojure.java.io :as io]
+  (:require [clojure.data.json :as json]
+            [clojure.java.io :as io]
             [clojure.java.shell :as sh]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [kitchen.utils :as utils])
-  (:import (java.io File)))
+  (:import (java.io File)
+           (java.net URLEncoder)))
 
-(defn request->cid [request]
+(defn- request->cid [request]
   (get-in request [:headers "x-cid"]))
 
 (defn- request->cid-string [request]
   (str "[CID=" (request->cid request) "]"))
 
-(defn printlog
+(defn- printlog
   ([request & messages]
    (log/info (request->cid-string request) (str/join " " messages))))
 
-(defn image-search-handler
+(defn- search->image-titles
+  [search-query]
+  (let [extract-titles (fn extract-titles [page-entries]
+                         (mapcat (fn [page-entry] (map #(get % "title") (get page-entry "images"))) page-entries))
+        search-url (str "https://en.wikipedia.org/w/api.php?action=query&prop=images&format=json&titles=" (URLEncoder/encode search-query))
+        initial-result (-> search-url slurp json/read-str)]
+    (-> initial-result
+        (get-in ["query" "pages"])
+        vals
+        extract-titles)))
+
+(defn- extract-entries
+  [page-entries]
+  (-> (map (fn [page-entry]
+             {"title" (get page-entry "title")
+              "url" (-> page-entry
+                        (get "imageinfo")
+                        first
+                        (get "url"))})
+           page-entries)
+      vec
+      first))
+
+(defn- image-title->image-entry
+  [image-title]
+  (-> (str "https://en.wikipedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&format=json&titles=" (URLEncoder/encode image-title))
+      slurp
+      json/read-str
+      (get-in ["query" "pages"])
+      vals
+      extract-entries))
+
+(defn- image-search-handler
   ""
-  [request]
-  )
+  [{:keys [query-params] :as request}]
+  (printlog request "query params:" query-params)
+  (try
+    (let [{:strs [search]} query-params
+          search-url (str "https://en.wikipedia.org/w/api.php?action=query&prop=images&format=json&titles=" search)
+          image-titles (search->image-titles search)
+          _ (printlog request "image titles:" (vec image-titles))
+          image-entries (map image-title->image-entry image-titles)]
+      (printlog request "image entries:" (vec image-entries))
+      (utils/map->json-response {:result image-entries}))
+    (catch Exception e
+      (log/error e "encountered exception while performing image search")
+      (utils/exception->json-response e))))
 
 (defn- directory-location
   [dir-name]
@@ -42,7 +87,7 @@
               out (io/output-stream file)]
     (io/copy in out)))
 
-(defn image-tagging-handler
+(defn- image-tagging-handler
   "Performs image tagging using tensorflow."
   [{:keys [query-params] :as request}]
   (printlog request "query params:" query-params)
@@ -72,7 +117,7 @@
         (utils/map->json-response {:result result-lines}
                                   :status (if (zero? exit) 200 500))))
     (catch Exception e
-      (log/error e "encountered exception")
+      (log/error e "encountered exception while tagging image")
       (utils/exception->json-response e))))
 
 (defn demo-handler

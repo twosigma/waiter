@@ -416,8 +416,6 @@
                              "/async/status" (async-status-handler request)
                              "/bad-status" (bad-status-handler request)
                              "/chunked" (chunked-handler request)
-                             "/demos/image-search" (demos/image-search-handler request)
-                             "/demos/image-tagging" (demos/image-tagging-handler request)
                              "/die" (die-handler request)
                              "/environment" (environment-handler request)
                              "/gzip" (gzip-handler request)
