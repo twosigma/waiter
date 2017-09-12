@@ -199,6 +199,11 @@ def main(_):
 
 
 if __name__ == '__main__':
+  mesos_dir = os.environ.get('MESOS_DIRECTORY')
+  if mesos_dir:
+    sys.stdout = open(os.path.join(mesos_dir, 'classify.out'), 'w')
+    sys.stderr = open(os.path.join(mesos_dir, 'classify.err'), 'w')
+
   print('Argument:' + str(sys.argv))
   parser = argparse.ArgumentParser()
   # classify_image_graph_def.pb:
