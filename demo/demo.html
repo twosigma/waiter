@@ -156,10 +156,14 @@
 	height: 200px; 
 	width: 200px; 
 }
-.image-card { 
-	height: 180px; 
+.tagged {
+	height: 300px;
+	color: #000;
+}
+.image-card {
+	height: 160px;
 	vertical-align: middle;
-	width: 180px; 
+	width: 160px;
 }
 .blue { background-color: #2185D0; }
 .green { background-color: #21BA45; }
@@ -207,16 +211,29 @@ $(document).ready(function(){
   				for (imageIndex in images) {
   					var imageName = images[imageIndex];
   					console.log('Processing:' + imageName);
-  					$.get("https://en.wikipedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&format=json&titles=" + imageName.trim().replace(/ /g, '%20'), 
+  					$.get('https://en.wikipedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&format=json&titles=' + imageName.trim().replace(/ /g, '%20'),
   						function( data ) {
   							var imagePages = data.query.pages;
   							for (imagePageIndex in imagePages) {
-  								var loopImageName = imagePages[imagePageIndex].title;
-  								var loopImageUrl = imagePages[imagePageIndex].imageinfo[0].url;
-  								var loopImageId = "result-" + Math.random().toString(36).substr(2, 10);
-  								console.log(loopImageName + " :: " + loopImageId + " :: " + loopImageUrl);
-  								$("#result-box").append("<div class='card' id='" + loopImageId + "'><img src='" + loopImageUrl + "' title='" + loopImageName + "'  class='image-card'/></div>");
-  								break;
+  								if (imagePages[imagePageIndex].imageinfo) {
+									var loopImageName = imagePages[imagePageIndex].title;
+
+									var ascii = /^[ -~]+$/;
+									if (loopImageName.endsWith('.svg') || !ascii.test(loopImageName)) {
+										continue;
+									}
+
+									var loopImageUrl = imagePages[imagePageIndex].imageinfo[0].url;
+									var loopImageId = "result-" + Math.random().toString(36).substr(2, 10);
+									console.log(loopImageName + " :: " + loopImageId + " :: " + loopImageUrl);
+									$("#result-box").append("<div class='card' id='" + loopImageId + "'><img src='" + loopImageUrl + "' title='" + loopImageName + "'  class='image-card'/></div>");
+									$.get('http://127.0.0.1:12345/?p=3&id=' + loopImageId + '&url=' + loopImageUrl + '&name=' + loopImageId + '.jpg',
+										function ( data ) {
+											$("#" + loopImageId).attr('class', $("#" + loopImageId).attr('class') + ' tagged');
+											$("#" + loopImageId).append('<div style="float: right;">' + data + '</div>');
+										});
+									break;
+  								}
   							}
 						});
   				}
