@@ -1,6 +1,6 @@
 ## Registering the token:
 
-curl -H"content-type: application/json" http://127.0.0.1:8080/token -X POST -d @tensor-token.json 
+curl -H"content-type: application/json" http://127.0.0.1:9091/token -X POST -d @tensor-token.json
 
 
 

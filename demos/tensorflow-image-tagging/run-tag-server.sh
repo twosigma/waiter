@@ -8,4 +8,4 @@ echo "tag server executable location: ${DIR}"
 cd ${DIR}
 
 echo "tag server will launch at port ${PORT}"
-python3.6 tag-server.py ${PORT}
+python3 tag-server.py ${PORT}
