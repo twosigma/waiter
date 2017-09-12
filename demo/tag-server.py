@@ -10,6 +10,8 @@ Send a GET request::
 
 """
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
+
 from urllib.request import urlretrieve
 from urllib.parse import parse_qs
 import traceback
@@ -25,9 +27,19 @@ class Server(BaseHTTPRequestHandler):
     def _set_headers(self, status):
         self.send_response(status)
         self.send_header('Content-type', 'text/html')
+        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
 
+    def do_OPTIONS(self):
+        self._set_headers(200)
+        self.wfile.write(bytes("", "utf8"))
+
     def do_GET(self):
+
+        if "/status" == self.path:
+            self._set_headers(200)
+            self.wfile.write(bytes("OK", "utf8"))
+            return
 
         try:
             get_data = parse_qs(self.path[2:])
@@ -58,14 +70,17 @@ class Server(BaseHTTPRequestHandler):
             self._set_headers(500)
             self.wfile.write(bytes("<html><body><h1>Internal Server Error</h1></body></html>", "utf8"))
 
-def run(server_class=HTTPServer, handler_class=Server, port=80):
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    """Handle requests in a separate thread."""
+
+def run(handler_class=Server, port=80):
 
     directory = "images"
     if not os.path.exists(directory):
         os.makedirs(directory)
 
     server_address = ('', port)
-    httpd = server_class(server_address, handler_class)
+    httpd = ThreadedHTTPServer(('localhost', port), handler_class)
     print('Starting httpd...')
     httpd.serve_forever()
 

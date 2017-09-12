@@ -154,16 +154,16 @@
 	border:1px solid black; 
 	display: inline-block; 
 	height: 200px; 
+	vertical-align: top;
 	width: 200px; 
 }
 .tagged {
-	height: 300px;
 	color: #000;
 }
 .image-card {
-	height: 160px;
+	max-height: 160px;
 	vertical-align: middle;
-	width: 160px;
+	max-width: 160px;
 }
 .blue { background-color: #2185D0; }
 .green { background-color: #21BA45; }
@@ -194,6 +194,13 @@
 	</body>
 	<script type="text/javascript">
 $(document).ready(function(){
+	var waiter_url = 'http://127.0.0.1:8080/?p=1&';
+	$.ajaxSetup({
+	    beforeSend: function(xhr) {
+    	    xhr.setRequestHeader('x-waiter-token', 'tensor-flow');
+    	}
+	});
+
     $( "#search-form" ).submit(function( event ) {
   		var searchText = $("#search-text").val();
   		$.get("https://en.wikipedia.org/w/api.php?action=query&prop=images&format=json&titles=" + searchText, 
@@ -227,7 +234,7 @@ $(document).ready(function(){
 									var loopImageId = "result-" + Math.random().toString(36).substr(2, 10);
 									console.log(loopImageName + " :: " + loopImageId + " :: " + loopImageUrl);
 									$("#result-box").append("<div class='card' id='" + loopImageId + "'><img src='" + loopImageUrl + "' title='" + loopImageName + "'  class='image-card'/></div>");
-									$.get('http://127.0.0.1:12345/?p=3&id=' + loopImageId + '&url=' + loopImageUrl + '&name=' + loopImageId + '.jpg',
+									$.get(waiter_url + 'id=' + loopImageId + '&url=' + loopImageUrl + '&name=' + loopImageId + '.jpg',
 										function ( data ) {
 											$("#" + loopImageId).attr('class', $("#" + loopImageId).attr('class') + ' tagged');
 											$("#" + loopImageId).append('<div style="float: right;">' + data + '</div>');
