@@ -194,58 +194,50 @@
 	</body>
 	<script type="text/javascript">
 $(document).ready(function(){
-	var waiter_url = 'http://127.0.0.1:9091/?p=1&';
-	$.ajaxSetup({
-	    beforeSend: function(xhr) {
-    	    xhr.setRequestHeader('x-waiter-token', 'tensor-flow');
-    	}
-	});
+	var waiter_url = 'http://127.0.0.1:9095';
+	var ascii = /^[ -~]+$/;
 
-    $( "#search-form" ).submit(function( event ) {
+	$( "#search-form" ).submit(function( event ) {
   		var searchText = $("#search-text").val();
-  		$.get("https://en.wikipedia.org/w/api.php?action=query&prop=images&format=json&titles=" + searchText, 
-  			function( data ) {
-  				$("#result-box").html("");
-  				var pages = data.query.pages;
-  				var images = [];
-  				for (pageIndex in pages) {
-  					var page = pages[pageIndex];
-  					for (imageIndex in page.images) {
-  						var image = page.images[imageIndex];
-  						images.push(image.title);
-  					}
-  				}
-  				for (imageIndex in images) {
-  					var imageName = images[imageIndex];
-  					console.log('Processing:' + imageName);
-  					$.get('https://en.wikipedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&format=json&titles=' + imageName.trim().replace(/ /g, '%20'),
-  						function( data ) {
-  							var imagePages = data.query.pages;
-  							for (imagePageIndex in imagePages) {
-  								if (imagePages[imagePageIndex].imageinfo) {
-									var loopImageName = imagePages[imagePageIndex].title;
+  		$.ajax({
+        	url: waiter_url + "/demos/image-search",
+        	data: { search: searchText.trim().replace(/ /g, '%20') },
+        	type: "GET",
+        	beforeSend: function(xhr){ xhr.setRequestHeader('x-waiter-token', 'image-search'); },
+        	success: function(data) {
+        		for (image_index in data.result) {
+        			var loopImageName = data.result[image_index].title;
+        			if (loopImageName.endsWith('.svg') || !ascii.test(loopImageName)) {
+						continue;
+					}
 
-									var ascii = /^[ -~]+$/;
-									if (loopImageName.endsWith('.svg') || !ascii.test(loopImageName)) {
-										continue;
-									}
+        			var loopImageUrl = data.result[image_index].url;
+        			var loopImageId = "result-" + Math.random().toString(36).substr(2, 10);
+					console.log(loopImageName + " :: " + loopImageId + " :: " + loopImageUrl);
+					$("#result-box").append("<div class='card' id='" + loopImageId + "'><img src='" + loopImageUrl + "' title='" + loopImageName + "'  class='image-card'/></div>");
 
-									var loopImageUrl = imagePages[imagePageIndex].imageinfo[0].url;
-									var loopImageId = "result-" + Math.random().toString(36).substr(2, 10);
-									console.log(loopImageName + " :: " + loopImageId + " :: " + loopImageUrl);
-									$("#result-box").append("<div class='card' id='" + loopImageId + "'><img src='" + loopImageUrl + "' title='" + loopImageName + "'  class='image-card'/></div>");
-									$.get(waiter_url + 'id=' + loopImageId + '&url=' + loopImageUrl + '&name=' + loopImageId + '.jpg',
-										function ( data ) {
-											$("#" + loopImageId).attr('class', $("#" + loopImageId).attr('class') + ' tagged');
-											$("#" + loopImageId).append('<div style="float: right;">' + data + '</div>');
-										});
-									break;
-  								}
-  							}
-						});
-  				}
-			});
-  		event.preventDefault();
+					$.ajax({
+        				url: waiter_url + "/demos/image-tagging",
+        				data: { id: loopImageId,
+        				        name: loopImageId + '.jpg',
+        				        predictions: 1,
+        				        url: loopImageUrl },
+        				type: "GET",
+        				beforeSend: function(xhr){ xhr.setRequestHeader('x-waiter-token', 'image-tagging'); },
+        				success: function(data) {
+        					var loopImageId = data.id;
+        					$("#" + loopImageId).attr('class', $("#" + loopImageId).attr('class') + ' tagged');
+        					var result_data = '';
+        					for (index in data.predictions) {
+        						result_data += data.predictions[index] + '<br />';
+        					}
+							$("#" + loopImageId).append('<div style="float: right;">' + result_data + '</div>');
+						}
+					});
+        		}
+        	}
+    	});
+    	event.preventDefault();
 	});
 });	
 	</script>

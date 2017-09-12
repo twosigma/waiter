@@ -114,7 +114,9 @@
         (printlog request "classifier exit code:" exit)
         (printlog request "classifier stdout:" out)
         (printlog request "classifier stderr:" err)
-        (utils/map->json-response {:result result-lines}
+        (utils/map->json-response (cond-> {:id id, :out out, :predictions result-lines}
+                                          (not (str/blank? err))
+                                          (assoc :err err))
                                   :status (if (zero? exit) 200 500))))
     (catch Exception e
       (log/error e "encountered exception while tagging image")
