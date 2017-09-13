@@ -28,3 +28,20 @@ $ curl -v -XPOST -H "x-kitchen-cookies: a=b,c=d" $(hostname):PORT
 < Set-Cookie: c=d
 ...
 ```
+
+# Demos
+
+## Image Search and Tagging
+
+The demo application performs image search and then tags the images using the inception-v3 model built in tensorflow.
+Since the demo uses tensorflow, it will need to be installed:
+```bash
+$ pip3 install --upgrade https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.3.0-cp34-cp34m-linux_x86_64.whl
+```
+
+Steps to demo:
+1. Launch waiter (e.g. on port 9091) `$ lein do clean, compile, run some-config.edn`
+1. Build kitchen  `$ bin/build-uberjar.sh`
+1. Register the tokens for `image-search` and `image-tagging`: `$ bin/register-demo-tokens.sh`
+1. Open the demo page, e.g., by directly opening [demo.html](resources/demo.html) on a browser.
+1. Perform your image search and notice the images being tagged incrementally. ![Demo Image](docs/images/image-search-and-tagging-demo.jpg "Demo Image")
