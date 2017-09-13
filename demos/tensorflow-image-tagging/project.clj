@@ -19,7 +19,6 @@
                  [org.clojure/data.json "0.2.6"]
                  [org.clojure/tools.cli "0.3.3"]
                  [org.clojure/tools.logging "0.3.1"]
-                 [prismatic/plumbing "0.5.3"]
                  [ring/ring-core "1.4.0"]
                  [ring-basic-authentication "1.0.5"]]
   :plugins [[lein-voom "0.1.0-20150115_230705-gd96d771"]]
