@@ -208,7 +208,7 @@ $(document).ready(function(){
         	success: function(data) {
         		for (image_index in data.result) {
         			var loopImageName = data.result[image_index].title;
-        			if (loopImageName.endsWith('.svg') || !ascii.test(loopImageName)) {
+        			if (loopImageName.endsWith('.gif') || loopImageName.endsWith('.svg') || !ascii.test(loopImageName)) {
 						continue;
 					}
 

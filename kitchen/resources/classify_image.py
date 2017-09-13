@@ -51,6 +51,7 @@ FLAGS = None
 
 # pylint: disable=line-too-long
 DATA_URL = 'http://download.tensorflow.org/models/image/imagenet/inception-2015-12-05.tgz'
+# DATA_URL = 'http://127.0.0.1:8095/inception-2015-12-05.tgz'
 # pylint: enable=line-too-long
 
 
@@ -203,9 +204,6 @@ def main(_):
 if __name__ == '__main__':
   mesos_dir = os.environ.get('MESOS_DIRECTORY')
   print('mesos_dir:' + str(mesos_dir))
-  if mesos_dir:
-    sys.stdout = open(os.path.join(mesos_dir, 'classify.out'), 'w')
-    sys.stderr = open(os.path.join(mesos_dir, 'classify.err'), 'w')
 
   print('Argument:' + str(sys.argv))
   parser = argparse.ArgumentParser()
