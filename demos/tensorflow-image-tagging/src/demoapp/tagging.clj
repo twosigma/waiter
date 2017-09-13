@@ -29,14 +29,12 @@
 (let [image-tagging-lock (Object.)]
   (defn- retrieve-image-tags
     [classifier-file image-location predictions]
-    (let [result-atom (atom nil)
-          model-dir (directory-location (str "images" File/separator "imagenet"))]
+    (let [result-atom (atom nil)]
       (locking image-tagging-lock
         (log/info "classifying image" image-location)
         (reset! result-atom (sh/sh "python3"
                                    classifier-file
                                    (str "--image_file=" image-location)
-                                   (str "--model_dir=" model-dir)
                                    (str "--num_top_predictions=" predictions))))
       @result-atom)))
 

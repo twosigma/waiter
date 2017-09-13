@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Usage: register-demo-tokens.sh
 #
-# Registers the demo tokens on Waiter.
-# Checks if WAITER_URI and WAITER_TEST_KITCHEN_CMD are set, and sets them to reasonable defaults if not.
+# Registers the tensorflow-image-tagging demo tokens on Waiter.
+# Checks if WAITER_URI is set, and sets it to a reasonable default if not.
 
 set -ev
 
@@ -13,22 +13,11 @@ else
     echo "WAITER_URI is set to ${WAITER_URI}"
 fi
 
-if [ -z ${WAITER_TEST_KITCHEN_CMD+x} ]; then
-    export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh
-    echo "WAITER_TEST_KITCHEN_CMD is unset, defaulting to ${WAITER_TEST_KITCHEN_CMD}"
-else
-    echo "WAITER_TEST_KITCHEN_CMD is set to ${WAITER_TEST_KITCHEN_CMD}"
-fi
-
-
 RUN_AS_USER="$(id -un)"
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 function generate_from_template {
-  sed \
-    -e "s|COMMAND|${WAITER_TEST_KITCHEN_CMD}|g" \
-    -e "s|RUN_AS_USER|${RUN_AS_USER}|g" \
-    < $1 > $2
+  sed -e "s|RUN_AS_USER|${RUN_AS_USER}|g" < $1 > $2
 }
 
 function register_token {

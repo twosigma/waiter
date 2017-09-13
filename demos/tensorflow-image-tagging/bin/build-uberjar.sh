@@ -5,9 +5,9 @@
 
 set -ev
 
-KITCHEN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
+DEMO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
 
-pushd ${KITCHEN_DIR}
+pushd ${DEMO_DIR}
 
 lein voom build-deps
 lein uberjar
