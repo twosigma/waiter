@@ -575,9 +575,9 @@
             (Thread/sleep start-up-sleep-ms))
           (let [partial-server-options (merge websocket-config
                                               {:request-header-size 32768
-                                               :ring-handler (->> (params/wrap-params http-handler)
-                                                                  (basic-auth-middleware username password)
-                                                                  correlation-id-middleware)
+                                               :ring-handler (->> (basic-auth-middleware username password http-handler)
+                                                                  correlation-id-middleware
+                                                                  params/wrap-params)
                                                :websocket-handler (->> (websocket-handler-factory websocket-config)
                                                                        correlation-id-middleware)})
                 server-options (if ssl

@@ -194,11 +194,12 @@
 	</body>
 	<script type="text/javascript">
 $(document).ready(function(){
-	var waiter_url = 'http://127.0.0.1:9095';
+	var waiter_url = 'http://127.0.0.1:9091';
 	var ascii = /^[ -~]+$/;
 
 	$( "#search-form" ).submit(function( event ) {
-  		var searchText = $("#search-text").val();
+  		$("#result-box").html('');
+        var searchText = $("#search-text").val();
   		$.ajax({
         	url: waiter_url + "/demos/image-search",
         	data: { search: searchText.trim().replace(/ /g, '%20') },

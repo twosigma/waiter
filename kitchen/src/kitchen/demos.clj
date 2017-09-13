@@ -87,6 +87,17 @@
               out (io/output-stream file)]
     (io/copy in out)))
 
+(let [image-tagging-lock (Object.)]
+  (defn- retrieve-image-tags
+    [classifier-file image-location predictions]
+    (let [result-atom (atom nil)]
+      (locking image-tagging-lock
+        (reset! result-atom (sh/sh "python3"
+                                   classifier-file
+                                   (str "--image_file=" image-location)
+                                   (str "--num_top_predictions=" predictions))))
+      @result-atom)))
+
 (defn- image-tagging-handler
   "Performs image tagging using tensorflow."
   [{:keys [query-params] :as request}]
@@ -108,8 +119,8 @@
         (printlog request "saving" classifier-file-name "to" classifier-file)
         (copy-uri-to-file (io/resource classifier-file-name) classifier-file))
 
-      (let [{:keys [err exit out]}
-            (sh/sh "python3" classifier-file (str "--image_file=" image-location) (str "--num_top_predictions=" predictions))
+      (printlog request "classifying image" image-location)
+      (let [{:keys [err exit out]} (retrieve-image-tags classifier-file image-location predictions)
             result-lines (filter #(str/includes? % "(score =") (str/split-lines out))]
         (printlog request "classifier exit code:" exit)
         (printlog request "classifier stdout:" out)

@@ -202,6 +202,7 @@ def main(_):
 
 if __name__ == '__main__':
   mesos_dir = os.environ.get('MESOS_DIRECTORY')
+  print('mesos_dir:' + str(mesos_dir))
   if mesos_dir:
     sys.stdout = open(os.path.join(mesos_dir, 'classify.out'), 'w')
     sys.stderr = open(os.path.join(mesos_dir, 'classify.err'), 'w')
@@ -214,10 +215,12 @@ if __name__ == '__main__':
   #   Map from synset ID to a human readable string.
   # imagenet_2012_challenge_label_map_proto.pbtxt:
   #   Text representation of a protocol buffer mapping a label to synset ID.
+  default_model_dir = os.path.join(mesos_dir or os.getcwd(), "imagenet")
+  print('default_model_dir:' + str(default_model_dir))
   parser.add_argument(
       '--model_dir',
       type=str,
-      default='/tmp/imagenet',
+      default=default_model_dir,
       help="""\
       Path to classify_image_graph_def.pb,
       imagenet_synset_to_human_label_map.txt, and
