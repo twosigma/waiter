@@ -16,7 +16,6 @@
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [clojure.tools.logging :as log]
-            [kitchen.demos :as demos]
             [kitchen.pi :as pi]
             [kitchen.utils :as utils]
             [plumbing.core :as pc]
@@ -408,23 +407,21 @@
   [{:keys [uri] :as request}]
   (try
     (swap! total-http-requests inc)
-    (let [response (cond
-                     (str/starts-with? uri "/demos/") (demos/demo-handler request)
-                     :else (case uri
-                             "/async/request" (async-request-handler request)
-                             "/async/result" (async-result-handler request)
-                             "/async/status" (async-status-handler request)
-                             "/bad-status" (bad-status-handler request)
-                             "/chunked" (chunked-handler request)
-                             "/die" (die-handler request)
-                             "/environment" (environment-handler request)
-                             "/gzip" (gzip-handler request)
-                             "/kitchen-state" (state-handler request)
-                             "/pi" (pi-handler request)
-                             "/request-info" (request-info-handler request)
-                             "/sleep" (sleep-handler request)
-                             "/unchunked" (unchunked-handler request)
-                             (default-handler request)))]
+    (let [response (case uri
+                     "/async/request" (async-request-handler request)
+                     "/async/result" (async-result-handler request)
+                     "/async/status" (async-status-handler request)
+                     "/bad-status" (bad-status-handler request)
+                     "/chunked" (chunked-handler request)
+                     "/die" (die-handler request)
+                     "/environment" (environment-handler request)
+                     "/gzip" (gzip-handler request)
+                     "/kitchen-state" (state-handler request)
+                     "/pi" (pi-handler request)
+                     "/request-info" (request-info-handler request)
+                     "/sleep" (sleep-handler request)
+                     "/unchunked" (unchunked-handler request)
+                     (default-handler request))]
       (update-in response [:headers "x-cid"] (fn [cid] (or cid (request->cid request)))))
     (catch Exception e
       (log/error e "handler: encountered exception")
@@ -494,7 +491,6 @@
     (fn basic-auth-middleware-fn [{:keys [uri] :as request}]
       (cond
         (= "/bad-status" uri) (handler request)
-        (str/starts-with? uri "/demos/") (demos/demo-handler request)
         (= "/sleep" uri) (handler request)
         (= "/status" uri) (handler request)
         :else ((basic-authentication/wrap-basic-authentication
