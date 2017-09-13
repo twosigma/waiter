@@ -89,10 +89,11 @@
 
 (let [image-tagging-lock (Object.)]
   (defn- retrieve-image-tags
-    [classifier-file image-location predictions]
+    [request classifier-file image-location predictions]
     (let [result-atom (atom nil)
           model-dir (directory-location "imagenet")]
       (locking image-tagging-lock
+        (printlog request "classifying image" image-location)
         (reset! result-atom (sh/sh "python3"
                                    classifier-file
                                    (str "--image_file=" image-location)
@@ -107,26 +108,30 @@
   (try
     (let [{:strs [id name url predictions]} query-params
           image-location (directory-location (str "images" File/separator name))
+          classifier-url "https://raw.githubusercontent.com/tensorflow/models/master/tutorials/image/imagenet/classify_image.py"
           classifier-file-name "classify_image.py"
-          classifier-file (directory-location (str "images" File/separator classifier-file-name))]
+          classifier-file-location (directory-location (str "images" File/separator classifier-file-name))]
 
       (-> image-location str File. .getParentFile .mkdirs)
-      (-> classifier-file str File. .getParentFile .mkdirs)
+      (-> classifier-file-location str File. .getParentFile .mkdirs)
 
       (printlog request "downloading" url "to" image-location)
       (copy-uri-to-file url image-location)
 
-      (printlog request "classifier resource:" (io/resource classifier-file-name))
-      (when-not (-> classifier-file str File. .exists)
-        (printlog request "saving" classifier-file-name "to" classifier-file)
-        (copy-uri-to-file (io/resource classifier-file-name) classifier-file))
+      (printlog request "classifier location" classifier-file-location)
+      (when-not (-> classifier-file-location str File. .exists)
+        (printlog request "saving" classifier-file-name "to" classifier-file-location "from" classifier-url)
+        (copy-uri-to-file classifier-url classifier-file-location))
 
-      (printlog request "classifying image" image-location)
-      (let [{:keys [err exit out]} (retrieve-image-tags classifier-file image-location predictions)
+      (let [{:keys [err exit out]} (retrieve-image-tags request classifier-file-location image-location predictions)
             result-lines (filter #(str/includes? % "(score =") (str/split-lines out))]
         (printlog request "classifier exit code:" exit)
         (printlog request "classifier stdout:" out)
         (printlog request "classifier stderr:" err)
+
+        (printlog request "deleting file" image-location)
+        (io/delete-file image-location true)
+
         (utils/map->json-response (cond-> {:id id, :out out, :predictions result-lines}
                                           (not (str/blank? err))
                                           (assoc :err err))
