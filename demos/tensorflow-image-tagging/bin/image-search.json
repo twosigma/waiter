@@ -1,0 +1,13 @@
+{
+  "cmd": "COMMAND --port ${PORT0}",
+  "concurrency-level": 64,
+  "cpus": 1,
+  "health-check-url": "/status",
+  "idle-timeout-mins": 10,
+  "max-instances": 20,
+  "mem": 1024,
+  "name": "image-search-service",
+  "run-as-user": "RUN_AS_USER",
+  "token": "image-search",
+  "version": "0.1.0-SNAPSHOT"
+}
