@@ -34,6 +34,12 @@ $ curl -v -XPOST -H "x-kitchen-cookies: a=b,c=d" $(hostname):PORT
 ## Image Search and Tagging
 
 The demo application performs image search and then tags the images using the inception-v3 model built in tensorflow.
+The demo highlights the following features of waiter:
+1. Invoking different services from a client (i.e. the demo page)
+1. Running different services (image search and image tagging) on waiter
+1. Services with different concurrency level support
+1. Scaling of services (image tagging)
+
 Since the demo uses tensorflow, it will need to be installed:
 ```bash
 $ pip3 install --upgrade https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.3.0-cp34-cp34m-linux_x86_64.whl
