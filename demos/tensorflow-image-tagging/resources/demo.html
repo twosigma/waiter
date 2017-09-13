@@ -5,7 +5,7 @@
 		<style type="text/css">
 			
  body {
-        background: #555 url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAB9JREFUeNpi/P//PwM6YGLAAuCCmpqacC2MRGsHCDAA+fIHfeQbO8kAAAAASUVORK5CYII=);
+        background: #ccc;
         font: 13px 'Lucida sans', Arial, Helvetica;
         color: #eee;
         text-align: center;
@@ -150,19 +150,28 @@
 /**  **************************** **/
 
 .card { 
-	background-color: #FFFFFF; 
-	border:1px solid black; 
+	background-color: #fff2cc;
+	border:2px solid black;
+	border-radius: 25px;
 	display: inline-block; 
-	height: 200px; 
+	height: 220px;
+	margin: 10px;
 	vertical-align: top;
-	width: 200px; 
+	width: 220px;
 }
 .tagged {
 	color: #000;
+	background-color: #d9ffcc;
+}
+.tag-text {
+	color: #000;
+	text-align: center;
+	vertical-align: bottom;
 }
 .image-card {
 	max-height: 160px;
 	vertical-align: middle;
+	margin: 10px;
 	max-width: 160px;
 }
 .blue { background-color: #2185D0; }
@@ -232,7 +241,7 @@ $(document).ready(function(){
         					for (index in data.predictions) {
         						result_data += data.predictions[index] + '<br />';
         					}
-							$("#" + loopImageId).append('<div style="float: right;">' + result_data + '</div>');
+							$("#" + loopImageId).append('<div class="tag-text">' + result_data + '</div>');
 						}
 					});
         		}
