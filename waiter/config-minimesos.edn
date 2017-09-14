@@ -33,4 +33,9 @@
                     :kind :marathon
                     :marathon {
                                ;; The URL for your Marathon HTTP API:
-                               :url #config/env "WAITER_MARATHON"}}}
+                               :url #config/env "WAITER_MARATHON"}}
+
+ ; ---------- CORS ----------
+ :cors-config {
+     :kind :allow-all
+ }}

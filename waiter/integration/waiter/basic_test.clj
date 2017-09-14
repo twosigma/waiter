@@ -469,3 +469,10 @@
                    (map #(:git-version (waiter-settings % :cookies cookies)))
                    set
                    count))))))
+
+(deftest ^:parallel ^:integration-fast test-cors-request-allowed
+  (testing-using-waiter-url
+    (let [{:keys [status] :as response} (make-request waiter-url "/waiter-auth"
+                                         :headers {"origin" "example.com"})]
+      (is (= 200 status) response))))
+

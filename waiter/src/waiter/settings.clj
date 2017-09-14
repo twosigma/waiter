@@ -176,6 +176,7 @@
    :cors-config {:kind :patterns
                  :patterns {:factory-fn 'waiter.cors/pattern-based-validator
                             :allowed-origins []}
+                 :allow-all {:factory-fn 'waiter.cors/allow-all-validator}
                  :max-age 3600}
    :blacklist-config {:blacklist-backoff-base-time-ms 10000
                       :max-blacklist-time-ms 300000}
