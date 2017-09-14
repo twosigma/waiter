@@ -77,3 +77,13 @@
                  (or (utils/same-origin request)
                      (some #(re-matches % origin) allowed-origins)))))]
     (->PatternBasedCorsValidator pattern-matches?)))
+
+(defrecord AllowAllCorsValidator []
+  CorsValidator
+  (preflight-allowed? [_ _] true)
+  (request-allowed? [_ _] true))
+
+(defn allow-all-validator
+  "Creates a CORS validator that allows all cross-origin requests."
+  [_]
+  (->AllowAllCorsValidator))

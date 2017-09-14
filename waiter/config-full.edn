@@ -188,6 +188,9 @@
                           :allowed-origins [#config/regex "^http://[^\\.]+\\.example\\.org(:80)?$"
                                             #config/regex "^https://anotherapp.example.org:12345$"]}
 
+               ;; :kind :allow-all allows all cross-origin requests
+               :allow-all {:factory-fn waiter.cors/allow-all-validator}
+
                ;; The value to use for the Access-Control-Max-Age header:
                :max-age 3600}
 

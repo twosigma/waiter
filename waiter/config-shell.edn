@@ -23,4 +23,7 @@
 
  :scheduler-config {
                     ;; :kind :shell simply schedules instances on your local machine (for testing purposes only):
-                    :kind :shell}}
+                    :kind :shell}
+
+ ; ---------- CORS ----------
+ :cors-config {:kind :allow-all}}
