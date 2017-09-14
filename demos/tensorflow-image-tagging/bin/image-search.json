@@ -1,5 +1,5 @@
 {
-  "cmd": "docker run -i -t -p${PORT0}:8080 twosigma/tensorflow-image-tagging:latest",
+  "cmd": "docker run -p ${PORT0}:8080 twosigma/tensorflow-image-tagging:latest",
   "concurrency-level": 64,
   "cpus": 1,
   "health-check-url": "/status",
