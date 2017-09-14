@@ -162,10 +162,10 @@
   (when-let [metadata-error (map-validation-helper issue "metadata")]
     (when-not (empty? metadata-error)
       (str
-        (when-let [bad-keys (map #(.value %) (get metadata-error :bad-keys))]
+        (when-let [bad-keys (seq (map #(.value %) (get metadata-error :bad-keys)))]
           (str "The following metadata keys are invalid: " (str/join ", " bad-keys)
                ". Keys must be made up of letters, numbers, and hyphens and must start with a letter. "))
-        (when-let [bad-key-values (get metadata-error :bad-key-values)]
+        (when-let [bad-key-values (seq (get metadata-error :bad-key-values))]
           (str "The following metadata keys did not have string values: " (str/join ", " bad-key-values)
                ". Metadata values must be strings. "))
         (when-let [bad-size (get metadata-error :bad-size)]
@@ -295,13 +295,18 @@
         (when (> min-instances max-instances)
           (sling/throw+ {:type :service-description-error
                          :message exception-message
-                         :friendly-error-message (str "Minimum instances (" min-instances ") must be <= Maximum instances (" max-instances ")")}))))
+                         :friendly-error-message (str "Minimum instances (" min-instances 
+                                                      ") must be <= Maximum instances (" 
+                                                      max-instances ")")
+                         :status 400}))))
 
     ; Validate the cmd-type field
     (let [cmd-type (service-description-to-use "cmd-type")]
       (when (and (not (str/blank? cmd-type)) (not ((:valid-cmd-types args-map) cmd-type)))
         (sling/throw+ {:type :service-description-error
-                       :friendly-error-message (str "Command type " cmd-type " is not supported")})))))
+                       :friendly-error-message (str "Command type " cmd-type 
+                                                    " is not supported")
+                       :status 400})))))
 
 (defprotocol ServiceDescriptionBuilder
   "A protocol for constructing a service description from the various sources. Implementations
@@ -516,7 +521,8 @@
     service-description))
 
 (let [error-message-map-fn (fn [passthrough-headers waiter-headers]
-                             {:non-waiter-headers (dissoc passthrough-headers "authorization")
+                             {:status 400
+                              :non-waiter-headers (dissoc passthrough-headers "authorization")
                               :x-waiter-headers waiter-headers})]
   (defn compute-service-description
     "Computes the service description applying any processing rules,

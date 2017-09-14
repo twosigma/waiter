@@ -1,0 +1,22 @@
+
+Waiter Error <%= status %>
+================
+
+  <%= message %>
+
+Request Info
+============
+
+          Host: <%= (or host "") %>
+          Path: <%= uri %>
+  Query String: <%= (or query-string "") %>
+        Method: <%= request-method %>
+           CID: <%= cid %>
+          Time: <%= timestamp %>
+
+<% (when details %>
+Additional Info
+===============
+  <%= details %>
+<% ) %>
+

@@ -66,7 +66,7 @@
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :delete, :headers {}})]
           (is (= 400 status))
-          (is (str/includes? body "couldn't find token in request"))))
+          (is (str/includes? body "Couldn't find token in request"))))
 
       (testing "delete:token-does-not-exist"
         (let [{:keys [status body]}
@@ -74,7 +74,7 @@
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :delete, :headers {"x-waiter-token" (str "invalid-" token)}})]
           (is (= 404 status))
-          (is (str/includes? body (str "token invalid-" token " does not exist!")))))
+          (is (str/includes? body (str "Token invalid-" token " does not exist")))))
 
       (testing "delete:token-does-exist-unauthorized"
         (try
@@ -83,10 +83,15 @@
           (let [{:keys [status body]}
                 (run-handle-token-request
                   kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
-                  {:request-method :delete, :authorization/user "tu1", :headers {"x-waiter-token" token}})]
+                  {:headers {"accept" "application/json"
+                             "x-waiter-token" token} 
+                   :request-method :delete, :authorization/user "tu1"})
+                {{message "message"
+                  {:strs [owner user]} "details"} "waiter-error"} (json/read-str body)]
             (is (= 403 status))
-            (is (every? #(str/includes? body (str %))
-                        ["User not allowed to delete token", "owner: tu2", "user: tu1"]))
+            (is (= "User not allowed to delete token." message))
+            (is (= "tu2" owner) body)
+            (is (= "tu1" user))
             (is (not (nil? (kv/fetch kv-store token)))))
           (finally
             (kv/delete kv-store token))))
@@ -105,7 +110,7 @@
                     kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                     {:request-method :delete, :authorization/user "tu1", :headers {"x-waiter-token" token}})]
               (is (= 404 status))
-              (is (str/includes? body (str "token " token " does not exist!")))
+              (is (str/includes? body (str "Token " token " does not exist")))
               (is (= token-description (kv/fetch kv-store token)) "Entry deleted from kv-store!"))
             (finally
               (kv/delete kv-store token)))))
@@ -151,7 +156,9 @@
                   kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                   {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"hard-delete" "true"}, :request-method :delete})]
             (is (= 200 status))
-            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"hard-delete\":true", "\"success\":true"]))
+            (is (str/includes? body (str "\"delete\":\"" token "\"")))
+            (is (str/includes? body "\"hard-delete\":true"))
+            (is (str/includes? body "\"success\":true"))
             (is (nil? (kv/fetch kv-store token)) "Entry not deleted from kv-store!"))
           (finally
             (kv/delete kv-store token))))
@@ -167,9 +174,15 @@
                 {:keys [status body]}
                 (run-handle-token-request
                   kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
-                  {:authorization/user "tu1", :headers {"x-waiter-token" token}, :query-params {"hard-delete" "true"}, :request-method :delete})]
+                  {:authorization/user "tu1"
+                   :headers {"accept" "application/json", "x-waiter-token" token}
+                   :query-params {"hard-delete" "true"}
+                   :request-method :delete})
+                {{message "message" 
+                  {{:strs [owner]} "metadata"} "details"} "waiter-error"} (json/read-str body)]
             (is (= 403 status))
-            (is (every? #(str/includes? body (str %)) ["Cannot hard-delete token", "user: tu1", "metadata"]))
+            (is (= "Cannot hard-delete token." message))
+            (is (= "tu2" owner) body)
             (is (not-empty (kv/fetch kv-store token)) "Entry deleted from kv-store!"))
           (finally
             (kv/delete kv-store token))))
@@ -296,7 +309,7 @@
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :get, :headers {"x-waiter-token" "###"}})]
           (is (= 404 status))
-          (is (str/includes? body "couldn't find token ###"))))
+          (is (str/includes? body "Couldn't find token ###"))))
 
       (testing "test:post-new-service-description:missing-permitted-user"
         (let [token (str token (rand-int 100000))
@@ -403,7 +416,7 @@
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                 {:request-method :post, :authorization/user "tu1", :headers {},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
-          (is (= 400 status))
+          (is (= 403 status))
           (is (str/includes? body "Token name is reserved"))))
 
       (testing "test:post-new-service-description:schema-fail"
@@ -417,7 +430,7 @@
                 {:request-method :post, :authorization/user "tu1", :headers {"x-waiter-token" token},
                  :body (StringBufferInputStream. (json/write-str service-description))})]
           (is (= 400 status))
-          (is (str/includes? body "Value does not match schema"))))
+          (is (str/includes? body "issue"))))
 
       (testing "test:post-new-service-description:edit-unauthorized-run-as-user"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -564,13 +577,14 @@
               {:keys [status body]}
               (run-handle-token-request
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
-                {:request-method :post, :authorization/user "tu1",
+                {:headers {"accept" "application/json"}
+                 :request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
-              {:strs [exception]} (json/read-str body)]
+              {{:strs [message]} "waiter-error"} (json/read-str body)] 
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
-          (is (str/includes? exception "did not have string values: a") body)
-          (is (str/includes? exception "Metadata values must be strings"))))
+          (is (str/includes? message "did not have string values: a") body)
+          (is (str/includes? message "Metadata values must be strings"))))
 
       (testing "test:post-new-service-description:bad-token-environment-vars"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -580,12 +594,13 @@
               {:keys [status body]}
               (run-handle-token-request
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
-                {:request-method :post, :authorization/user "tu1",
+                {:headers {"accept" "application/json"}
+                 :request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
-              {:strs [exception]} (json/read-str body)]
+              {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
-          (is (str/includes? exception "environment variable keys are reserved: HOME") body)))
+          (is (str/includes? message "environment variable keys are reserved: HOME") body)))
 
       (testing "test:post-new-service-description:invalid-authentication"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -595,11 +610,12 @@
               {:keys [status body]}
               (run-handle-token-request
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
-                {:request-method :post, :authorization/user "tu1",
+                {:headers {"accept" "application/json"}
+                 :request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
-              {:strs [exception]} (json/read-str body)]
+              {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? exception "invalid-authentication") body)))
+          (is (str/includes? message "invalid-authentication") body)))
 
       (testing "test:post-new-service-description:missing-permitted-user-with-authentication-disabled"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -609,11 +625,12 @@
               {:keys [status body]}
               (run-handle-token-request
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
-                {:request-method :post, :authorization/user "tu1",
+                {:headers {"accept" "application/json"}
+                 :request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
-              {:strs [exception]} (json/read-str body)]
+              {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? exception "Tokens with authentication disabled must specify permitted-user as *, instead provided") body)))
+          (is (str/includes? message "Tokens with authentication disabled must specify permitted-user as *, instead provided") body)))
 
       (testing "test:post-new-service-description:non-star-permitted-user-with-authentication-disabled"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -623,11 +640,12 @@
               {:keys [status body]}
               (run-handle-token-request
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
-                {:request-method :post, :authorization/user "tu1",
+                {:headers {"accept" "application/json"}
+                 :request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
-              {:strs [exception]} (json/read-str body)]
+              {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? exception "Tokens with authentication disabled must specify permitted-user as *, instead provided") body)))
+          (is (str/includes? message "Tokens with authentication disabled must specify permitted-user as *, instead provided") body)))
 
       (testing "test:post-new-service-description:partial-description-with-authentication-disabled"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -637,11 +655,12 @@
               {:keys [status body]}
               (run-handle-token-request
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
-                {:request-method :post, :authorization/user "tu1",
+                {:headers {"accept" "application/json"}
+                 :request-method :post, :authorization/user "tu1",
                  :body (StringBufferInputStream. (json/write-str service-description))})
-              {:strs [exception]} (json/read-str body)]
+              {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? exception "Tokens with authentication disabled must specify all required parameters") body))))))
+          (is (str/includes? message "Tokens with authentication disabled must specify all required parameters") body))))))
 
 (deftest test-store-service-description
   (let [lock (Object.)
@@ -688,7 +707,9 @@
                                       (is (= "tokens/refresh" path))
                                       (is index)
                                       (reset! inter-router-request-fn-called true)))
-          {:keys [status body]} (handle-reindex-tokens-request synchronize-fn inter-router-request-fn kv-store list-tokens-fn {:request-method :post})
+          {:keys [status body]} (handle-reindex-tokens-request
+                                  synchronize-fn inter-router-request-fn kv-store list-tokens-fn
+                                  {:request-method :post})
           json-response (json/read-str body)]
       (is (= 200 status))
       (is (= {:message "Successfully re-indexed." :tokens 3} (-> json-response clojure.walk/keywordize-keys)))
@@ -696,10 +717,11 @@
 
     (let [inter-router-request-fn-called (atom nil)
           inter-router-request-fn (fn [] (reset! inter-router-request-fn-called true))
-          {:keys [status body]} (handle-reindex-tokens-request synchronize-fn inter-router-request-fn kv-store list-tokens-fn {:request-method :get})
+          {:keys [status body]} (handle-reindex-tokens-request 
+                                  synchronize-fn inter-router-request-fn kv-store list-tokens-fn
+                                  {:headers {"accept" "application/json"}, :request-method :get})
           json-response (json/read-str body)]
       (is (= 405 status))
-      (is (= {:message "Only POST supported!" :request-method "get"} (-> json-response clojure.walk/keywordize-keys)))
       (is (not @inter-router-request-fn-called)))))
 
 (deftest test-handle-list-tokens-request
@@ -721,14 +743,17 @@
       (is (= 200 status))
       (is (= #{{"owner" "owner1", "token" "token1"}
                {"owner" "owner1", "token" "token2"}} (set (json/read-str body)))))
-    (let [{:keys [status body]} (handle-list-tokens-request kv-store {:request-method :post})
-          json-response (json/read-str body)]
-      (is (= 405 status))
-      (is (= {:message "Only GET supported!" :request-method "post"} (-> json-response clojure.walk/keywordize-keys))))
+    (let [{:keys [status body]} (handle-list-tokens-request kv-store {:headers {"accept" "application/json"}
+                                                                      :request-method :post})
+          json-response (try (json/read-str body)
+                             (catch Exception _
+                               (is (str "Failed to parse body as JSON:\n" body))))]
+      (is (= 405 status)))
     (let [{:keys [body status]} (handle-list-tokens-request kv-store {:request-method :get :query-string "owner=owner2"})]
       (is (= 200 status))
       (is (= #{{"owner" "owner2", "token" "token3"}} (set (json/read-str body)))))
-    (let [{:keys [body]} (handle-list-token-owners-request kv-store {:request-method :get})
+    (let [{:keys [body]} (handle-list-token-owners-request kv-store {:headers {"accept" "application/json"}
+                                                                     :request-method :get})
           owner-map-keys (keys (json/read-str body))]
       (is (some #(= "owner1" %) owner-map-keys) "Should have had a key 'owner1'")
       (is (some #(= "owner2" %) owner-map-keys) "Should have had a key 'owner2'"))))

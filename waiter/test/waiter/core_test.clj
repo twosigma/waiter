@@ -268,29 +268,35 @@
         user "test-user"]
     (with-redefs [clj-http.client/get (fn [_ _] {:body "{}"})]
       (testing "Missing instance id"
-        (let [request {:uri (str "/apps/" test-service-id "/logs")
-                       :request-method :get
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
                        :query-string ""
-                       :authorization/user user}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= status 500))
-          (is (str/includes? body "Instance id is missing!"))))
+                       :request-method :get
+                       :uri (str "/apps/" test-service-id "/logs")}
+              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
+              json-body (json/read-str body)]
+          (is (= status 400))
+          (is (= "Missing instance-id parameter." (get-in json-body ["waiter-error" "message"])))))
       (testing "Missing host"
-        (let [request {:uri (str "/apps/" test-service-id "/logs")
-                       :request-method :get
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
                        :query-string "instance-id=instance-id-1"
-                       :authorization/user user}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= status 500))
-          (is (str/includes? body "Host is missing!"))))
-      (testing "Missing directory"
-        (let [request {:uri (str "/apps/" test-service-id "/logs")
                        :request-method :get
+                       :uri (str "/apps/" test-service-id "/logs")}
+              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
+              json-body (json/read-str body)]
+          (is (= status 400))
+          (is (= "Missing host parameter." (get-in json-body ["waiter-error" "message"])))))
+      (testing "Missing directory"
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
                        :query-string "instance-id=instance-id-1&host=test.host.com"
-                       :authorization/user user}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= status 500))
-          (is (str/includes? body "No directory found for instance!")))))
+                       :request-method :get
+                       :uri (str "/apps/" test-service-id "/logs")}
+              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
+              json-body (json/read-str body)]
+          (is (= status 400))
+          (is (= "Missing directory parameter." (get-in json-body ["waiter-error" "message"]))))))
     (with-redefs [clj-http.client/get (fn [url _]
                                         (is (every? #(str/includes? url %) ["test.host.com" "5051"]))
                                         (let [state-json-response-body "
@@ -315,21 +321,14 @@
                                           (if (str/includes? url "state.json")
                                             {:body state-json-response-body}
                                             {:body file-browse-response-body})))]
-      (testing "Missing directory"
-        (let [request {:uri (str "/apps/" test-service-id "/logs")
-                       :request-method :get
-                       :query-string "instance-id=instance-id-1&host=test.host.com"
-                       :authorization/user user}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= status 500))
-          (is (str/includes? body "No directory found for instance!"))))
       (testing "Valid response"
-        (let [request {:uri (str "/apps/" test-service-id "/logs")
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
+                       :query-string "instance-id=service-id-1.instance-id-2&host=test.host.com&directory=/path/to/instance2/directory/"
                        :request-method :get
-                       :query-string "instance-id=service-id-1.instance-id-2&host=test.host.com"
-                       :authorization/user user}
+                       :uri (str "/apps/" test-service-id "/logs")}
               {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= status 200))
+          (is (= 200 status) body)
           (is (every? #(str/includes? body %) ["test.host.com" "5051" "file" "directory" "name" "url" "download"])))))))
 
 (deftest test-apps-handler-delete
@@ -355,7 +354,7 @@
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 200 status))
-          (is (= {"Content-Type" "application/json"} headers))
+          (is (= {"content-type" "application/json"} headers))
           (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
     (testing "service-handler:delete-nil-response"
       (with-redefs [scheduler/delete-app (fn [_ _] nil)
@@ -363,15 +362,18 @@
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 400 status))
-          (is (= {"Content-Type" "application/json"} headers))
+          (is (= {"content-type" "application/json"} headers))
           (is (= {"success" false, "service-id" service-id} (json/read-str body))))))
     (testing "service-handler:delete-unauthorized-user"
       (with-redefs [scheduler/delete-app (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" (str "another-" user), "name" (str service-id "-name")})]
-        (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
+                       :request-method :delete
+                       :uri (str "/apps/" service-id)}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 403 status))
-          (is (= {"Content-Type" "application/json"} headers))
+          (is (= {"content-type" "application/json"} headers))
           (is (str/includes? body "User not allowed to delete service")))))
     (testing "service-handler:delete-404-response"
       (with-redefs [scheduler/delete-app (fn [_ _] {:result :no-such-service-exists})
@@ -379,24 +381,32 @@
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 404 status))
-          (is (= {"Content-Type" "application/json"} headers))
+          (is (= {"content-type" "application/json"} headers))
           (is (= {"result" "no-such-service-exists", "service-id" service-id, "success" false} (json/read-str body))))))
     (testing "service-handler:delete-non-existent-service"
       (with-redefs [scheduler/delete-app (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
                     sd/fetch-core (fn [_ _ & _] {})]
-        (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
+                       :request-method :delete
+                       :uri (str "/apps/" service-id)}
+              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)
+              {{message "message"
+                {:strs [service-id]} "details"} "waiter-error"} (json/read-str body)]
           (is (= 404 status))
-          (is (= {"Content-Type" "application/json"} headers))
-          (is (= {"message" "No service description found: test-service-1"} (json/read-str body))))))
+          (is (= {"content-type" "application/json"} headers))
+          (is (= "Service not found." message))
+          (is (= "test-service-1" service-id)))))
     (testing "service-handler:delete-throws-exception"
       (with-redefs [scheduler/delete-app (fn [_ _] (throw (RuntimeException. "Error in deleting service")))
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
-        (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
+                       :request-method :delete
+                       :uri (str "/apps/" service-id)}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-          (is (= 400 status))
-          (is (= {"Content-Type" "application/json"} headers))
-          (is (str/includes? body "Error in deleting service")))))))
+          (is (= 500 status))
+          (is (= {"content-type" "application/json"} headers)))))))
 
 (deftest test-apps-handler-get
   (let [user "waiter-user"
@@ -413,12 +423,17 @@
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
     (testing "service-handler:get-missing-service-description"
       (with-redefs [sd/fetch-core (constantly nil)]
-        (let [request {:request-method :get, :uri (str "/apps/" service-id), :authorization/user user}
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
+                       :request-method :get
+                       :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 404 status))
-          (is (= {"Content-Type" "application/json"} headers))
-          (let [body-json (json/read-str (str body))]
-            (is (= body-json {"message" "No service description found: test-service-1"}))))))
+          (is (= {"content-type" "application/json"} headers))
+          (let [{{message "message"
+                  {:strs [service-id]} "details"} "waiter-error"} (json/read-str (str body))]
+            (is (= "Service not found." message))
+            (is (= "test-service-1" service-id))))))
     (testing "service-handler:valid-response-missing-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
                     scheduler/get-instances (fn [_ service-id]
@@ -429,10 +444,13 @@
                                                                    :port 31045,
                                                                    :started-at "2014-09-13T002446.959Z"}]
                                                :failed-instances []})]
-        (let [request {:request-method :get, :uri (str "/apps/" service-id), :authorization/user user}
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
+                       :request-method :get
+                       :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"Content-Type" "application/json"} headers))
+          (is (= {"content-type" "application/json"} headers))
           (let [body-json (json/read-str (str body))]
             (is (= (get body-json "instances")
                    {"active-instances" [{"id" (str service-id ".A")
@@ -457,7 +475,7 @@
         (let [request {:request-method :get, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"Content-Type" "application/json"} headers))
+          (is (= {"content-type" "application/json"} headers))
           (let [body-json (json/read-str (str body))]
             (is (= (get body-json "instances")
                    {"active-instances" [{"id" (str service-id ".A")
@@ -672,26 +690,29 @@
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
     (testing "metrics-request-handler:all-metrics"
       (with-redefs [metrics/get-metrics (fn get-metrics [] {:data "metrics-from-get-metrics"})]
-        (let [request {:request-method :get, :uri "/metrics"}
+        (let [request {:headers {"accept" "application/json"}
+                       :request-method :get
+                       :uri "/metrics"}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"Content-Type" "application/json"} headers))
+          (is (= {"content-type" "application/json"} headers))
           (is (str/includes? (str body) "metrics-from-get-metrics")))))
 
     (testing "metrics-request-handler:all-metrics:error"
       (with-redefs [metrics/get-metrics (fn get-metrics [] (throw (Exception. "get-metrics")))]
-        (let [request {:request-method :get, :uri "/metrics"}
+        (let [request {:headers {"accept" "application/json"}
+                       :request-method :get
+                       :uri "/metrics"}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 500 status))
-          (is (= {"Content-Type" "application/json"} headers))
-          (is (str/includes? (str body) "get-metrics")))))
+          (is (= {"content-type" "application/json"} headers)))))
 
     (testing "metrics-request-handler:waiter-metrics"
       (with-redefs [metrics/get-waiter-metrics (fn get-waiter-metrics-fn [] {:data (str "metrics-for-waiter")})]
         (let [request {:request-method :get, :uri "/metrics", :query-string "exclude-services=true"}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"Content-Type" "application/json"} headers))
+          (is (= {"content-type" "application/json"} headers))
           (is (str/includes? (str body) "metrics-for-waiter")))))
 
     (testing "metrics-request-handler:service-metrics"
@@ -699,16 +720,18 @@
         (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"Content-Type" "application/json"} headers))
+          (is (= {"content-type" "application/json"} headers))
           (is (str/includes? (str body) "metrics-for-abcd")))))
 
     (testing "metrics-request-handler:service-metrics:error"
       (with-redefs [metrics/get-service-metrics (fn get-service-metrics [_] (throw (Exception. "get-service-metrics")))]
-        (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
+        (let [request {:headers {"accept" "application/json"}
+                       :request-method :get
+                       :query-string "service-id=abcd"
+                       :uri "/metrics"}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 500 status))
-          (is (= {"Content-Type" "application/json"} headers))
-          (is (str/includes? (str body) "get-service-metrics")))))))
+          (is (= {"content-type" "application/json"} headers)))))))
 
 (deftest test-async-result-handler-call
   (testing "test-async-result-handler-call"

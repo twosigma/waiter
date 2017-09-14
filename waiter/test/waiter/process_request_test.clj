@@ -571,46 +571,50 @@
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory request)
-            {:keys [body headers status]} (async/<!! response-chan)]
+            {:keys [headers status] :as response} (async/<!! response-chan)]
         (is (= 303 status))
-        (is (= "/waiter-consent/path?a=b&c=d" (get headers "Location")))
-        (is (= "text/plain" (get headers "Content-Type")))
-        (is (str/includes? (str body) "Test exception"))))
+        (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
     (testing "with-query-params-and-default-port"
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory request)
-            {:keys [body headers status]} (async/<!! response-chan)]
+            {:keys [headers status]} (async/<!! response-chan)]
         (is (= 303 status))
-        (is (= "/waiter-consent/path?a=b&c=d" (get headers "Location")))
-        (is (= "text/plain" (get headers "Content-Type")))
-        (is (str/includes? (str body) "Test exception"))))
+        (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
     (testing "without-query-params"
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :uri "/path"}
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory request)
-            {:keys [body headers status]} (async/<!! response-chan)]
+            {:keys [headers status]} (async/<!! response-chan)]
         (is (= 303 status))
-        (is (= "/waiter-consent/path" (get headers "Location")))
-        (is (= "text/plain" (get headers "Content-Type")))
-        (is (str/includes? (str body) "Test exception"))))))
+        (is (= "/waiter-consent/path" (get headers "location")))))))
 
 (deftest test-no-redirect-on-process-error
   (let [ctrl-chan (async/promise-chan)
         request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
         request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
-        process-exception-fn (fn process-exception-fn [_ _ response-headers _ e]
-                               (utils/exception->response {} "Error in process" e :headers response-headers))
         request-abort-callback-factory (fn [_] (constantly nil))
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
-                               process-exception-fn request-abort-callback-factory request)
-        {:keys [body headers status]} (async/<!! response-chan)]
-    (is (= 400 status))
-    (is (nil? (get headers "Location")))
-    (is (= "text/plain" (get headers "Content-Type")))
-    (is (str/includes? (str body) "Exception message"))))
+                               process-exception-in-http-request request-abort-callback-factory request)
+        {:keys [body headers status] :as response} (async/<!! response-chan)]
+    (is (= 500 status))
+    (is (nil? (get headers "location")))
+    (is (= "text/plain" (get headers "content-type")))
+    (is (str/includes? (str body) "Internal error"))))
+
+(deftest test-message-reaches-user-on-process-error
+  (let [ctrl-chan (async/promise-chan)
+        request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status 404})))
+        request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
+        request-abort-callback-factory (fn [_] (constantly nil))
+        response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
+                               process-exception-in-http-request request-abort-callback-factory request)
+        {:keys [body headers status] :as response} (async/<!! response-chan)]
+    (is (= 404 status))
+    (is (= "text/plain" (get headers "content-type")))
+    (is (str/includes? (str body) "Error message for user"))))
 
 (deftest test-determine-priority
   (let [position-generator-atom (atom 100)]

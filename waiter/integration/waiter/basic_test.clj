@@ -483,20 +483,26 @@
 
 (deftest ^:parallel ^:integration-fast test-error-content-negotiation
   (testing-using-waiter-url
-    (testing "text/plain"
+    (testing "text/plain default"
       (let [{:keys [body headers status]} (make-request waiter-url "/")] 
         (is (= 400 status))
         (is (= "text/plain" (get headers "content-type")))
         (is (str/includes? body "Waiter Error 400"))
         (is (str/includes? body "================"))))
+    (testing "text/plain explicit"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/plain"})] 
+        (is (= 400 status))
+        (is (= "text/plain" (get headers "content-type")))
+        (is (str/includes? body "Waiter Error 400"))
+        (is (str/includes? body "================"))))
     (testing "text/html"
-      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"Accept" "text/html"})] 
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/html"})] 
         (is (= 400 status))
         (is (= "text/html" (get headers "content-type")))
         (is (str/includes? body "Waiter Error 400"))
         (is (str/includes? body "<html>"))))
     (testing "application/json"
-      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"Accept" "application/json"})
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
             {:strs [waiter-error]} (try (json/read-str body)
                                         (catch Throwable e
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 

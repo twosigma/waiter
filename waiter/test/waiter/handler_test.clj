@@ -32,26 +32,26 @@
   (testing "missing-request-id"
     (let [src-router-id "src-router-id"
           service-id "test-service-id"
-          request {:route-params {:service-id service-id}
+          request {:headers {"accept" "application/json"}
+                   :route-params {:service-id service-id}
                    :uri (str "/waiter-async/complete//" service-id)}
           async-request-terminate-fn (fn [_] (throw (Exception. "unexpected call!")))
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn src-router-id request)]
       (is (= 400 status))
-      (is (= {"Content-Type" "application/json"} headers))
-      (is (every? #(str/includes? body %)
-                  ["No request-id specified!" "src-router-id: src-router-id"]))))
+      (is (= {"content-type" "application/json"} headers))
+      (is (str/includes? body "No request-id specified"))))
 
   (testing "missing-service-id"
     (let [src-router-id "src-router-id"
           request-id "test-req-123456"
-          request {:route-params {:request-id request-id}
+          request {:headers {"accept" "application/json"}
+                   :route-params {:request-id request-id}
                    :uri (str "/waiter-async/complete/" request-id "/")}
           async-request-terminate-fn (fn [_] (throw (Exception. "unexpected call!")))
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn src-router-id request)]
       (is (= 400 status))
-      (is (= {"Content-Type" "application/json"} headers))
-      (is (every? #(str/includes? body %)
-                  ["No service-id specified!" "src-router-id: src-router-id"]))))
+      (is (= {"content-type" "application/json"} headers))
+      (is (str/includes? body "No service-id specified"))))
 
   (testing "valid-request-id"
     (let [src-router-id "src-router-id"
@@ -62,7 +62,7 @@
           async-request-terminate-fn (fn [in-request-id] (= request-id in-request-id))
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn src-router-id request)]
       (is (= 200 status))
-      (is (= {"Content-Type" "application/json"} headers))
+      (is (= {"content-type" "application/json"} headers))
       (is (= {:request-id request-id, :success true} (pc/keywordize-map (json/read-str body))))))
 
   (testing "unable-to-terminate-request"
@@ -74,7 +74,7 @@
           async-request-terminate-fn (fn [_] false)
           {:keys [body headers status]} (complete-async-handler async-request-terminate-fn src-router-id request)]
       (is (= 200 status))
-      (is (= {"Content-Type" "application/json"} headers))
+      (is (= {"content-type" "application/json"} headers))
       (is (= {:request-id request-id, :success false} (pc/keywordize-map (json/read-str body)))))))
 
 (deftest test-async-result-handler-errors
@@ -91,35 +91,39 @@
                                              (is (= service-id in-service-id))
                                              {"backend-proto" "http", "metric-group" "test-metric-group"})]
     (testing "missing-location"
-      (let [request {:route-params (make-route-params "missing-location")}
+      (let [request {:headers {"accept" "application/json"}
+                     :route-params (make-route-params "missing-location")}
             {:keys [body headers status]}
             (async/<!!
               (async-result-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
+        (is (= {"content-type" "application/json"} headers))
+        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-request-id"
-      (let [request {:route-params (make-route-params "missing-request-id")}
+      (let [request {:headers {"accept" "application/json"}
+                     :route-params (make-route-params "missing-request-id")}
             {:keys [body headers status]}
             (async/<!!
               (async-result-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
+        (is (= {"content-type" "application/json"} headers))
+        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-router-id"
-      (let [request {:route-params (make-route-params "missing-router-id")}
+      (let [request {:headers {"accept" "application/json"}
+                     :route-params (make-route-params "missing-router-id")}
             {:keys [body headers status]}
             (async/<!!
               (async-result-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
+        (is (= {"content-type" "application/json"} headers))
+        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "error-in-checking-backend-status"
       (let [request {:authorization/user "test-user"
                      :authenticated-principal "test-user@DOMAIN"
+                     :headers {"accept" "application/json"}
                      :request-method :http-method
                      :route-params (make-route-params "local")}
             make-http-request-fn (fn [instance in-request end-route metric-group]
@@ -128,7 +132,7 @@
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
-                                   (async/go {:error (Exception. "backend-status-error")}))
+                                   (async/go {:error (ex-info "backend-status-error" {:status 502})}))
             async-trigger-terminate-fn (fn [in-router-id in-service-id in-request-id]
                                          (is (= my-router-id in-router-id))
                                          (is (= service-id in-service-id))
@@ -136,8 +140,8 @@
             {:keys [body headers status]}
             (async/<!!
               (async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
-        (is (= 400 status))
-        (is (= {"Content-Type" "application/json"} headers))
+        (is (= 502 status))
+        (is (= {"content-type" "application/json"} headers))
         (is (every? #(str/includes? body %) ["backend-status-error"]))))))
 
 (deftest test-async-result-handler-with-return-codes
@@ -165,6 +169,7 @@
                                                  (is (= (request-id-fn router-type) request-id)))
                     request {:authorization/user "test-user"
                              :authenticated-principal "test-user@DOMAIN"
+                             :headers {"accept" "application/json"}
                              :request-method request-method,
                              :route-params (make-route-params router-type)}
                     make-http-request-fn (fn [instance in-request end-route metric-group]
@@ -235,36 +240,41 @@
                                              (is (= service-id in-service-id))
                                              {"backend-proto" "http", "metric-group" "test-metric-group"})]
     (testing "missing-code"
-      (let [request {:query-string ""}
+      (let [request {:headers {"accept" "application/json"}
+                     :query-string ""}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
+        (is (= {"content-type" "application/json"} headers))
+        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-location"
-      (let [request {:route-params (make-route-params "missing-location")}
+      (let [request {:headers {"accept" "application/json"}
+                     :route-params (make-route-params "missing-location")}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
+        (is (= {"content-type" "application/json"} headers))
+        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-request-id"
-      (let [request {:route-params (make-route-params "missing-request-id")}
+      (let [request {:headers {"accept" "application/json"}
+                     :route-params (make-route-params "missing-request-id")}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
+        (is (= {"content-type" "application/json"} headers))
+        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "missing-router-id"
-      (let [request {:route-params (make-route-params "missing-router-id")}
+      (let [request {:headers {"accept" "application/json"}
+                     :route-params (make-route-params "missing-router-id")}
             {:keys [body headers status]} (async/<!! (async-status-handler nil nil service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"Content-Type" "application/json"} headers))
-        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri!"))))
+        (is (= {"content-type" "application/json"} headers))
+        (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "error-in-checking-backend-status"
       (let [request {:authorization/user "test-user"
                      :authenticated-principal "test-user@DOMAIN"
+                     :headers {"accept" "application/json"}
                      :route-params (make-route-params "local")
                      :request-method :http-method}
             make-http-request-fn (fn [instance in-request end-route metric-group]
@@ -273,11 +283,11 @@
                                    (is (= request in-request))
                                    (is (= (-> request :route-params :location) end-route))
                                    (is (= "test-metric-group" metric-group))
-                                   (async/go {:error (Exception. "backend-status-error")}))
+                                   (async/go {:error (ex-info "backend-status-error" {:status 400})}))
             async-trigger-terminate-fn nil
             {:keys [body headers status]} (async/<!! (async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))]
         (is (= 400 status))
-        (is (= {"Content-Type" "application/json"} headers))
+        (is (= {"content-type" "application/json"} headers))
         (is (every? #(str/includes? body %) ["backend-status-error"]))))))
 
 (deftest test-async-status-handler-with-return-codes
@@ -415,7 +425,7 @@
         (let [{:keys [body headers status]}
               (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
           (is (= 200 status))
-          (is (= "application/json" (get headers "Content-Type")))
+          (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 4)))
           (is (not-any? #(str/includes? (str body) (str "service" %)) (range 4 7)))
           (is (instance-counts-present body))))
@@ -432,7 +442,7 @@
           (let [{:keys [body headers status]}
                 (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
             (is (= 200 status))
-            (is (= "application/json" (get headers "Content-Type")))
+            (is (= "application/json" (get headers "content-type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
             (is (every? #(str/includes? (str body) (str "service" %)) (range 4 7)))
             (is (instance-counts-present body)))))
@@ -454,7 +464,7 @@
 
                 (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
             (is (= 200 status))
-            (is (= "application/json" (get headers "Content-Type")))
+            (is (= "application/json" (get headers "content-type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
             (is (every? #(str/includes? (str body) (str "service" %)) (range 4 7)))
             (is (instance-counts-present body)))))
@@ -463,11 +473,11 @@
         (async/>!! state-chan {:service-id->healthy-instances {"service1" []}})
         (let [request {:authorization/user test-user}
               exception-message "Custom message from test case"
-              prepend-waiter-url (fn [_] (throw (RuntimeException. exception-message)))
+              prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
               {:keys [body headers status]}
               (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
           (is (= 400 status))
-          (is (= "text/plain" (get headers "Content-Type")))
+          (is (= "text/plain" (get headers "content-type")))
           (is (str/includes? (str body) exception-message))))
 
       (testing "list-services-handler:success-super-user-sees-all-apps"
@@ -487,7 +497,7 @@
               ; without a run-as-user, should return all apps
               (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
           (is (= 200 status))
-          (is (= "application/json" (get headers "Content-Type")))
+          (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 7)))
           (is (instance-counts-present body)))))))
 
@@ -506,7 +516,7 @@
               request {:authorization/user test-user}
               {:keys [body headers status]} (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn request)]
           (is (= 200 status))
-          (is (= "application/json" (get headers "Content-Type")))
+          (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str %)) ["Worked!"]))))
 
       (testing "delete-service-handler:success-regular-user-deleting-for-another-user"
@@ -623,8 +633,8 @@
         (is correlation-id)
         (is (instance? ManyToManyChannel result-chan))
         (async/close! result-chan)))
-    (let [response-body (async/<!! response-chan)]
-      (is (str/includes? response-body "Unable to find work-stealing-chan")))))
+    (let [{:keys [status]} (async/<!! response-chan)]
+      (is (= 500 status)))))
 
 (deftest test-get-router-state
   (let [get-router-state (wrap-handler-json-response get-router-state)]
@@ -640,8 +650,8 @@
           (async/go
             (let [{:keys [response-chan]} (async/<! scheduler-chan)]
               (async/>! response-chan [])))
-          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler)]
-            (is (str/includes? (str body) "clojure.lang.APersistentVector.assoc"))
+          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler {})]
+            (is (str/includes? (str body) "Internal error"))
             (is (= 500 status)))))
 
       (testing "display router state"
@@ -655,15 +665,16 @@
           (async/go
             (let [{:keys [response-chan]} (async/<! scheduler-chan)]
               (async/>! response-chan {:state []})))
-          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler)]
-            (is (every? #(str/includes? (str body) %1) ["state-data", "leader", "kv-store", "router-metrics-state", "statsd"]))
+          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler {})]
+            (is (every? #(str/includes? (str body) %1) ["state-data", "leader", "kv-store", "router-metrics-state", "statsd"])
+                (str "Body did not include necessary JSON keys:\n" body))
             (is (= 200 status))))))))
 
 (deftest test-get-service-state
   (let [router-id "router-id"
         service-id "service-1"]
     (testing "returns 400 for missing service id"
-      (is (= 400 (:status (get-service-state router-id nil "" {})))))
+      (is (= 400 (:status (async/<!! (get-service-state router-id nil "" {} {}))))))
     (let [instance-rpc-chan (async/chan 1)
           query-state-chan (async/chan 1)
           query-work-stealing-chan (async/chan 1)
@@ -692,7 +703,7 @@
       (start-instance-rpc-fn)
       (start-query-chan-fn)
       (start-maintainer-fn)
-      (let [response (async/<!! (get-service-state router-id instance-rpc-chan service-id {:maintainer-state maintainer-state-chan}))
+      (let [response (async/<!! (get-service-state router-id instance-rpc-chan service-id {:maintainer-state maintainer-state-chan} {}))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))
@@ -734,17 +745,17 @@
       (let [request {:request-method :get}
             {:keys [body headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 405 status))
-        (is (= {"Content-Type" "text/plain"} headers))
-        (is (str/includes? body "Only POST supported!"))))
+        (is (= {"content-type" "text/plain"} headers))
+        (is (str/includes? body "Only POST supported"))))
 
     (testing "host and origin mismatch"
       (let [request {:headers {"host" "www.example2.com"
                                "origin" (str "http://" test-token)}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"Content-Type" "text/plain"} headers))
+        (is (= {"content-type" "text/plain"} headers))
         (is (nil? cookie))
-        (is (str/includes? body "Origin is not the same as the host!"))))
+        (is (str/includes? body "Origin is not the same as the host"))))
 
     (testing "referer and origin mismatch"
       (let [request {:headers {"host" test-token
@@ -752,9 +763,9 @@
                                "referer" "http://www.example2.com/consent"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"Content-Type" "text/plain"} headers))
+        (is (= {"content-type" "text/plain"} headers))
         (is (nil? cookie))
-        (is (str/includes? body "Referer does not start with origin!"))))
+        (is (str/includes? body "Referer does not start with origin"))))
 
     (testing "mismatch in x-requested-with"
       (let [request {:headers {"host" test-token
@@ -763,9 +774,9 @@
                                "x-requested-with" "AJAX"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"Content-Type" "text/plain"} headers))
+        (is (= {"content-type" "text/plain"} headers))
         (is (nil? cookie))
-        (is (str/includes? body "Header x-requested-with does not match expected value!"))))
+        (is (str/includes? body "Header x-requested-with does not match expected value"))))
 
     (testing "missing mode param"
       (let [request {:headers {"host" test-token
@@ -775,9 +786,9 @@
                      :params {"service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"Content-Type" "text/plain"} headers))
+        (is (= {"content-type" "text/plain"} headers))
         (is (nil? cookie))
-        (is (str/includes? body "Missing or invalid mode!"))))
+        (is (str/includes? body "Missing or invalid mode"))))
 
     (testing "invalid mode param"
       (let [request {:authorization/user test-user
@@ -788,9 +799,9 @@
                      :params {"mode" "unsupported", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"Content-Type" "text/plain"} headers))
+        (is (= {"content-type" "text/plain"} headers))
         (is (nil? cookie))
-        (is (str/includes? body "Missing or invalid mode!"))))
+        (is (str/includes? body "Missing or invalid mode"))))
 
     (testing "missing service-id param"
       (let [request {:authorization/user test-user
@@ -801,9 +812,9 @@
                      :params {"mode" "service"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"Content-Type" "text/plain"} headers))
+        (is (= {"content-type" "text/plain"} headers))
         (is (nil? cookie))
-        (is (str/includes? body "Missing service-id!"))))
+        (is (str/includes? body "Missing service-id"))))
 
     (testing "missing service description for token"
       (let [test-host (str test-token ".test2")
@@ -815,9 +826,9 @@
                      :params {"mode" "service", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"Content-Type" "text/plain"} headers))
+        (is (= {"content-type" "text/plain"} headers))
         (is (nil? cookie))
-        (is (str/includes? body "Unable to load description for token!"))))
+        (is (str/includes? body "Unable to load description for token"))))
 
     (testing "invalid service-id param"
       (let [request {:authorization/user test-user
@@ -828,7 +839,7 @@
                      :params {"mode" "service", "service-id" "service-id-1"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 400 status))
-        (is (= {"Content-Type" "text/plain"} headers))
+        (is (= {"content-type" "text/plain"} headers))
         (is (nil? cookie))
         (is (str/includes? body "Invalid service-id for specified token"))))
 
@@ -914,8 +925,8 @@
                      :scheme :http}
             {:keys [body headers status]} (request-consent-handler-fn request)]
         (is (= 405 status))
-        (is (= {"Content-Type" "text/plain"} headers))
-        (is (str/includes? body "Only GET supported!"))))
+        (is (= {"content-type" "text/plain"} headers))
+        (is (str/includes? body "Only GET supported"))))
 
     (testing "token without service description"
       (let [request {:authorization/user "test-user"
@@ -924,9 +935,9 @@
                      :route-params {:path "some-path"}
                      :scheme :http}
             {:keys [body headers status]} (request-consent-handler-fn request)]
-        (is (= 400 status))
-        (is (= {"Content-Type" "text/plain"} headers))
-        (is (str/includes? body "Unable to load description for token!"))))
+        (is (= 404 status))
+        (is (= {"content-type" "text/plain"} headers))
+        (is (str/includes? body "Unable to load description for token"))))
 
     (with-redefs [io/resource io-resource-fn
                   template/eval (template-eval-factory "http")]
@@ -980,13 +991,13 @@
         (is correlation-id)
         (is (instance? ManyToManyChannel result-chan))
         (async/close! result-chan)))
-    (let [response-body (async/<!! response-chan)]
-      (is (str/includes? response-body "Unable to find blacklist chan")))))
+    (let [{:keys [status]} (async/<!! response-chan)]
+      (is (= 500 status)))))
 
 (deftest test-get-blacklisted-instances-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
         service-id "test-service-id"
-        response-chan (get-blacklisted-instances instance-rpc-chan service-id)]
+        response-chan (get-blacklisted-instances instance-rpc-chan service-id {})]
     (async/thread
       (let [[method in-service-id correlation-id result-chan] (async/<!! instance-rpc-chan)]
         (is (= :query-state method))
@@ -994,5 +1005,5 @@
         (is correlation-id)
         (is (instance? ManyToManyChannel result-chan))
         (async/close! result-chan)))
-    (let [response-body (async/<!! response-chan)]
-      (is (str/includes? response-body "Unable to find query-state-chan for service")))))
+    (let [{:keys [status]} (async/<!! response-chan)]
+      (is (= 500 status)))))

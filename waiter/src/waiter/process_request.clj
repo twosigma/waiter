@@ -196,12 +196,13 @@
 
 (defn- wrap-exception
   "Includes metadata such as cid and status along with the exception."
-  [exception instance message status]
+  [exception instance message status headers]
   (ex-info message
            (merge (metrics/retrieve-local-stats-for-service (scheduler/instance->service-id instance))
                   {:instance instance
                    :cid (cid/get-correlation-id)
-                   :status status})
+                   :status status
+                   :headers headers})
            exception))
 
 (defn http-method-fn
@@ -442,20 +443,21 @@
 
 (defn process-exception-in-http-request
   "Processes exceptions thrown while processing a http request."
-  [track-process-error-metrics-fn request response-headers descriptor exception]
+  [track-process-error-metrics-fn request descriptor exception]
   (if (missing-run-as-user? exception)
     (let [{:keys [query-string uri]} request
-          location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))
-          exception (ex-info (.getMessage exception) (dissoc (ex-data exception) :status))]
+          location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
-      (utils/exception->response request "Missing run-as-user:" exception :headers (assoc response-headers "Location" location) :status 303))
+      {:headers {"location" location}
+       :status 303})
     (do
       (track-process-error-metrics-fn descriptor)
-      (when descriptor
-        (let [{:keys [service-description service-id]} descriptor]
-          (track-response-status-metrics service-id service-description (utils/exception->status exception))))
-      (utils/exception->response request "Error in process, response headers:" exception :headers response-headers))))
+      (let [{:keys [status] :as error-response} (utils/exception->response exception request)]
+        (when descriptor
+          (let [{:keys [service-description service-id]} descriptor]
+            (track-response-status-metrics service-id service-description status)))  
+        error-response))))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."
@@ -555,10 +557,15 @@
                                 (if (instance? EofException error)
                                   (do
                                     (deliver reservation-status-promise :client-error)
-                                    (throw (wrap-exception error instance "Connection unexpectedly closed while sending request" 400)))
+                                    (throw (wrap-exception error instance 
+                                                           "Connection unexpectedly closed while sending request" 
+                                                           400 @response-headers)))
                                   (do
                                     (deliver reservation-status-promise :instance-error)
-                                    (throw (wrap-exception error instance "Connection error while sending request to instance. Has it been killed?" 503)))))
+                                    (throw (wrap-exception error instance 
+                                                           "Connection error while sending request to instance."
+                                                           " Has it been killed?" 
+                                                           503 @response-headers)))))
                               (process-backend-response-fn instance-request-properties descriptor instance request
                                                            reason-map response-headers reservation-status-promise
                                                            confirm-live-connection-with-abort request-state-chan response))
@@ -575,36 +582,44 @@
             (catch Exception e
               (let [{:keys [descriptor source]} (ex-data e)
                     exception (if (= source :pr/process) (.getCause e) e)]
-                (process-exception-fn track-process-error-metrics request @response-headers descriptor exception)))))))))
+                (-> (process-exception-fn track-process-error-metrics request descriptor exception)
+                    (update :headers (fn [headers] 
+                                       (merge @response-headers headers))))))))))))
 
 (defn handle-suspended-service
   "Check if a service has been suspended and immediately return a 503 response"
-  [_ {:keys [suspended-state service-description service-id]}]
-  (when (get suspended-state :suspended false)
+  [request {:keys [suspended-state service-description service-id]}]
+  (try 
+    (when (get suspended-state :suspended false)
     (let [{:keys [last-updated-by time]} suspended-state
-          response-map (cond-> {:message "Service has been suspended!"
-                                :service-id service-id}
+          response-map (cond-> {:service-id service-id}
                                time (assoc :suspended-at (utils/date-to-str time))
                                (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
       (log/info (:message response-map) (dissoc response-map :message))
       (track-response-status-metrics service-id service-description 503)
-      (utils/map->json-response response-map :status 503))))
+      (throw (ex-info "Service has been suspended." 
+                      (assoc response-map :status 503)))))
+    (catch Exception ex
+      (utils/exception->response ex request))))
 
 (defn handle-too-many-requests
   "Check if a service has more pending requests than max-queue-length and immediately return a 503"
-  [_ {:keys [service-id service-description]}]
-  (let [max-queue-length (get service-description "max-queue-length")
-        current-queue-length (counters/value (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))]
-    (when (> current-queue-length max-queue-length)
-      (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
-            response-map {:message "Max queue length exceeded!"
-                          :max-queue-length max-queue-length
-                          :current-queue-length current-queue-length
-                          :outstanding-requests outstanding-requests
-                          :service-id service-id}]
-        (log/info (:message response-map) (dissoc response-map :message))
-        (track-response-status-metrics service-id service-description 503)
-        (utils/map->json-response response-map :status 503)))))
+  [request {:keys [service-id service-description]}]
+  (try 
+    (let [max-queue-length (get service-description "max-queue-length")
+          current-queue-length (counters/value (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))]
+      (when (> current-queue-length max-queue-length)
+        (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
+              response-map {:max-queue-length max-queue-length
+                            :current-queue-length current-queue-length
+                            :outstanding-requests outstanding-requests
+                            :service-id service-id}]
+          (log/info (:message response-map) (dissoc response-map :message))
+          (track-response-status-metrics service-id service-description 503)
+          (throw (ex-info "Max queue length exceeded!"
+                          (assoc response-map :status 503))))))
+    (catch Exception ex
+      (utils/exception->response ex request))))
 
 (defn request-authorized?
   "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "

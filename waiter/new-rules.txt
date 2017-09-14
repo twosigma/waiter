@@ -1,0 +1,3 @@
+No more (every?) in tests
+Line length 110
+Use commas to separate in between lines, if not obvious based upon keywords.  Dont put commas on end of lines

@@ -874,8 +874,8 @@
                                           (handler/blacklist-instance instance-rpc-chan request))
                                         request)))
    :blacklisted-instances-list-handler-fn (pc/fnk [[:state instance-rpc-chan]]
-                                            (fn blacklisted-instances-list-handler-fn [{{:keys [service-id]} :route-params}]
-                                              (handler/get-blacklisted-instances instance-rpc-chan service-id)))
+                                            (fn blacklisted-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
+                                              (handler/get-blacklisted-instances instance-rpc-chan service-id request)))
    :cors-preflight-handler-fn (pc/fnk [[:settings cors-config]
                                        [:state cors-validator]]
                                 (let [{max-age :max-age} cors-config]
@@ -916,8 +916,8 @@
                                      router-metrics-state-fn (:router-metrics-state-fn router-metrics-helpers)]
                                  (fn display-state-handler-fn [request]
                                    (handle-secure-request-fn
-                                     (fn inner-display-state-handler-fn [_]
-                                       (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn kv-store leader?-fn scheduler))
+                                     (fn inner-display-state-handler-fn [request]
+                                       (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn kv-store leader?-fn scheduler request))
                                      request))))
    :favicon-handler-fn (pc/fnk []
                          (fn favicon-handler-fn [_]
@@ -1084,7 +1084,7 @@
                                (fn service-state-handler-fn [request]
                                  (handle-secure-request-fn
                                    (fn inner-service-state-handler-fn [{{:keys [service-id]} :route-params}]
-                                     (handler/get-service-state router-id instance-rpc-chan service-id state-query-chans))
+                                     (handler/get-service-state router-id instance-rpc-chan service-id state-query-chans request))
                                    request)))
    :service-suspend-handler-fn (pc/fnk [[:curator kv-store]
                                         [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
