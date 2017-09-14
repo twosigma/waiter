@@ -472,7 +472,10 @@
 
 (deftest ^:parallel ^:integration-fast test-cors-request-allowed
   (testing-using-waiter-url
-    (let [{:keys [status] :as response} (make-request waiter-url "/waiter-auth"
-                                         :headers {"origin" "example.com"})]
-      (is (= 200 status) response))))
-
+    (let [{{:keys [kind]} :cors-config} (waiter-settings waiter-url)]
+      (when (= kind "allow-all")
+        ; Hit an endpoint that is guarded by CORS validation.
+        ; There's nothing special about /state, any CORS validated endpoint will do.
+        (let [{:keys [status] :as response} (make-request waiter-url "/state"
+                                                          :headers {"origin" "example.com"})]
+          (is (= 200 status) response))))))

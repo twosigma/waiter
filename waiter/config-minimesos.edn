@@ -36,6 +36,4 @@
                                :url #config/env "WAITER_MARATHON"}}
 
  ; ---------- CORS ----------
- :cors-config {
-     :kind :allow-all
- }}
+ :cors-config {:kind :allow-all}}

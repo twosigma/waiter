@@ -26,6 +26,4 @@
                     :kind :shell}
 
  ; ---------- CORS ----------
- :cors-config {
-     :kind :allow-all
- }}
+ :cors-config {:kind :allow-all}}
