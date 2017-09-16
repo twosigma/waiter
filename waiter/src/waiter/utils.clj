@@ -179,13 +179,16 @@
     (str/replace message #"(https?://[^\s]+)" "<a href=\"$1\">$1</a>")))
 
 (defn request->content-type
-  "Determines best Content-Type for a response given a request."
-  [{:keys [headers]}]
-  (let [accept (or (get headers "accept") "text/plain")]
-    (cond
-      (str/includes? accept "application/json") "application/json"
-      (str/includes? accept "text/html") "text/html"
-      :else "text/plain")))
+  "Determines best Content-Type for a response given a request.
+  In the case of no Accept header, assume application/json if the
+  request Content-Type is application/json."
+  [{{:strs [accept content-type]} :headers}]
+  (cond
+    (and accept (str/includes? accept "application/json")) "application/json"
+    (and accept (str/includes? accept "text/html")) "text/html"
+    (and accept (str/includes? accept "text/plain")) "text/plain"
+    (= "application/json" content-type) "application/json"
+    :else "text/plain"))
 
 (defn error-context->text
   "Formats an error context for a text response."

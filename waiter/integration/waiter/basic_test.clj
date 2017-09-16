@@ -501,8 +501,18 @@
         (is (= "text/html" (get headers "content-type")))
         (is (str/includes? body "Waiter Error 400"))
         (is (str/includes? body "<html>"))))
-    (testing "application/json"
+    (testing "application/json explicit"
       (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
+            {:strs [waiter-error]} (try (json/read-str body)
+                                        (catch Throwable e
+                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
+        (is (= 400 status))
+        (is (= "application/json" (get headers "content-type")))
+        (is waiter-error (str "Could not find waiter-error element in body " body))
+        (let [{:strs [status]} waiter-error]
+          (is (= 400 status)))))
+    (testing "application/json implied by content-type"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"content-type" "application/json"})
             {:strs [waiter-error]} (try (json/read-str body)
                                         (catch Throwable e
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
