@@ -36,11 +36,10 @@
             [waiter.statsd :as statsd]
             [waiter.token :as token]
             [waiter.utils :as utils])
-  (:import java.io.InputStream
-           java.io.IOException
+  (:import (java.io InputStream IOException)
+           java.util.concurrent.TimeoutException
            org.eclipse.jetty.io.EofException
-           org.eclipse.jetty.server.HttpChannel
-           org.eclipse.jetty.server.HttpOutput))
+           (org.eclipse.jetty.server HttpChannel HttpOutput)))
 
 (defn check-control [control-chan]
   (let [state (au/poll! control-chan :still-running)]
@@ -554,18 +553,26 @@
                                   request-abort-callback (request-abort-callback-factory response)
                                   confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
                               (when error
-                                (if (instance? EofException error)
-                                  (do
-                                    (deliver reservation-status-promise :client-error)
-                                    (throw (wrap-exception error instance 
-                                                           "Connection unexpectedly closed while sending request" 
-                                                           400 @response-headers)))
-                                  (do
-                                    (deliver reservation-status-promise :instance-error)
-                                    (throw (wrap-exception error instance 
-                                                           "Connection error while sending request to instance."
-                                                           " Has it been killed?" 
-                                                           503 @response-headers)))))
+                                (cond (instance? EofException error)
+                                      (do
+                                        (deliver reservation-status-promise :client-error)
+                                        (throw (wrap-exception error instance 
+                                                               "Connection unexpectedly closed while sending request."
+                                                               400 @response-headers)))
+                                      
+                                      (instance? TimeoutException error)
+                                      (do
+                                        (deliver reservation-status-promise :instance-error)
+                                        (throw (wrap-exception error instance 
+                                                               "Request to service instance timed out."
+                                                               504 @response-headers)))
+
+                                      :else
+                                      (do
+                                        (deliver reservation-status-promise :instance-error)
+                                        (throw (wrap-exception error instance 
+                                                               "Request to service instance failed."
+                                                               502 @response-headers)))))
                               (process-backend-response-fn instance-request-properties descriptor instance request
                                                            reason-map response-headers reservation-status-promise
                                                            confirm-live-connection-with-abort request-state-chan response))

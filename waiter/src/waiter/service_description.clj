@@ -359,7 +359,7 @@
         data (when data ; populate token owner for backwards compatibility
                (update-in data ["owner"] (fn [current-owner] (or current-owner run-as-user))))]
     (when (and error-on-missing (not data))
-      (throw (ex-info (str "No service description template available for token " token) {})))
+      (throw (ex-info (str "Token not found: " token) {:status 400})))
     (log/debug "Extracted data for" token "is" data)
     (when (or (not deleted) include-deleted)
       data)))

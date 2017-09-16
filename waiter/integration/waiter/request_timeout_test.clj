@@ -64,9 +64,8 @@
     (log/info "response: " (:body response))
     response))
 
-(deftest ^:parallel ^:integration-fast test-request-client-timeout
+(deftest ^:parallel ^:integration-fast test-instance-request-timeout
   (testing-using-waiter-url
-    (log/info (str "request-client-timeout-test: if we can't get an instance quickly inside client timeout"))
     (let [timeout-period 2000
           extra-headers {:x-waiter-name (rand-name)
                          :x-waiter-timeout timeout-period
@@ -76,16 +75,30 @@
           response-headers (:headers response)
           response-body (:body response)
           service-id (retrieve-service-id waiter-url (:request-headers response))]
-      (assert-response-status response 503)
-      (log/info "Response code check executed.")
-      (is (str/includes? response-body "Connection error while sending request to instance"))
-      (log/info "Response body check executed.")
+      (assert-response-status response 504)
+      (is (str/includes? response-body "Request to service instance timed out."))
       (is (not (str/blank? (get response-headers "x-waiter-backend-id"))))
       (is (not (str/blank? (get response-headers "x-waiter-backend-host"))))
       (is (not (str/blank? (get response-headers "x-waiter-backend-port"))))
       (is (not (str/blank? (get response-headers "x-waiter-backend-proto"))))
       (is (not (str/blank? (get response-headers "x-cid"))))
-      (log/info "Response headers check executed.")
+      (delete-service waiter-url service-id))))
+
+(deftest ^:parallel ^:integration-fast test-instance-request-failed
+  (testing-using-waiter-url
+    (let [extra-headers {:x-waiter-name (rand-name)
+                         :x-waiter-debug "true"}
+          response (make-kitchen-request waiter-url extra-headers :path "/no-response")
+          response-headers (:headers response)
+          response-body (:body response)
+          service-id (retrieve-service-id waiter-url (:request-headers response))]
+      (assert-response-status response 502)
+      (is (str/includes? response-body "Request to service instance failed."))
+      (is (not (str/blank? (get response-headers "x-waiter-backend-id"))))
+      (is (not (str/blank? (get response-headers "x-waiter-backend-host"))))
+      (is (not (str/blank? (get response-headers "x-waiter-backend-port"))))
+      (is (not (str/blank? (get response-headers "x-waiter-backend-proto"))))
+      (is (not (str/blank? (get response-headers "x-cid"))))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-request-queue-timeout-slow-start-app

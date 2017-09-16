@@ -135,7 +135,7 @@
                 (str token " data not nil (" token-cache-data ") on " router-id ", cache data =" cache-data)))
           (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
             (assert-response-status response 404)
-            (is (str/includes? (str body) "couldn't find token") (str body)))
+            (is (str/includes? (str body) "Couldn't find token") (str body)))
           (let [response (get-token router-url token
                                     :cookies cookies
                                     :query-params {"include-deleted" true})]
@@ -156,7 +156,7 @@
                                                        :cookies cookies
                                                        :query-params {"include-deleted" true})]
             (assert-response-status response 404)
-            (is (str/includes? (str body) "couldn't find token") (str body))))))))
+            (is (str/includes? (str body) "Couldn't find token") (str body))))))))
 
 (deftest ^:parallel ^:integration-fast test-hostname-token
   (testing-using-waiter-url
@@ -296,7 +296,7 @@
               (log/info "created configuration using token" token)
               (let [{:keys [body] :as response} (get-token waiter-url token)]
                 (assert-response-status response 404)
-                (is (str/includes? (str body) "couldn't find token") (str body)))
+                (is (str/includes? (str body) "Couldn't find token") (str body)))
               (let [token-response (get-token waiter-url token :query-params {"include-deleted" true})
                     response-body (json/read-str (:body token-response))]
                 (is (= {"deleted" true, "health-check-url" "/probe", "last-update-time" last-update-time,
@@ -425,7 +425,7 @@
 
     (testing "can't use bad token"
       (let [response (make-request waiter-url "/pathabc" :headers {"X-Waiter-Token" "bad#token"})]
-        (is (str/includes? (:body response) "No service description template available for token bad#token"))
+        (is (str/includes? (:body response) "Token not found: bad#token"))
         (assert-response-status response 400)))
 
     (testing "can't create bad token"
@@ -531,7 +531,6 @@
 
         (testing "expecting redirect"
           (let [{:keys [body headers] :as response} (make-request waiter-url "/hello-world" :headers {"host" host-header})]
-            (is (str/includes? body "service-description-error"))
             (is (= (str "/waiter-consent/hello-world")
                    (get headers "location")))
             (assert-response-status response 303)))
@@ -592,7 +591,6 @@
 
               (testing "expecting redirect after token update"
                 (let [{:keys [body headers] :as response} (make-request waiter-url "/hello-world" :cookies @cookies-atom :headers {"host" host-header})]
-                  (is (str/includes? body "service-description-error"))
                   (is (= (str "/waiter-consent/hello-world")
                          (get headers "location")))
                   (assert-response-status response 303)))
