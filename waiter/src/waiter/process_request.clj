@@ -564,14 +564,14 @@
                                       (do
                                         (deliver reservation-status-promise :instance-error)
                                         (throw (wrap-exception error instance 
-                                                               "Request to service instance timed out."
+                                                               (utils/message :backend-request-timed-out)
                                                                504 @response-headers)))
 
                                       :else
                                       (do
                                         (deliver reservation-status-promise :instance-error)
                                         (throw (wrap-exception error instance 
-                                                               "Request to service instance failed."
+                                                               (utils/message :backend-request-failed)
                                                                502 @response-headers)))))
                               (process-backend-response-fn instance-request-properties descriptor instance request
                                                            reason-map response-headers reservation-status-promise

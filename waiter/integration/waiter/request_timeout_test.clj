@@ -64,41 +64,37 @@
     (log/info "response: " (:body response))
     response))
 
-(deftest ^:parallel ^:integration-fast test-instance-request-timeout
+(deftest ^:parallel ^:integration-fast test-backend-request-errors
   (testing-using-waiter-url
-    (let [timeout-period 2000
-          extra-headers {:x-waiter-name (rand-name)
-                         :x-waiter-timeout timeout-period
-                         :x-waiter-debug "true"
-                         :x-kitchen-delay-ms (+ 2000 timeout-period)}
-          response (make-kitchen-request waiter-url extra-headers)
-          response-headers (:headers response)
-          response-body (:body response)
-          service-id (retrieve-service-id waiter-url (:request-headers response))]
-      (assert-response-status response 504)
-      (is (str/includes? response-body "Request to service instance timed out."))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-id"))))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-host"))))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-port"))))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-proto"))))
-      (is (not (str/blank? (get response-headers "x-cid"))))
-      (delete-service waiter-url service-id))))
+    (let [assert-headers (fn [{:keys [headers]}]
+                           (is (not (str/blank? (get headers "x-waiter-backend-id"))))
+                           (is (not (str/blank? (get headers "x-waiter-backend-host"))))
+                           (is (not (str/blank? (get headers "x-waiter-backend-port"))))
+                           (is (not (str/blank? (get headers "x-waiter-backend-proto"))))
+                           (is (not (str/blank? (get headers "x-cid")))))
+          service-id (retrieve-service-id waiter-url {})]
+      (testing "backend request timeout"
+        (let [timeout-period 2000
+              extra-headers {:x-waiter-timeout timeout-period
+                             :x-waiter-debug "true"
+                             :x-kitchen-delay-ms (+ 2000 timeout-period)}
+              response (make-kitchen-request waiter-url extra-headers)
+              response-body (:body response)
+              error-message (-> (waiter-settings waiter-url) :messages :backend-request-timed-out)]
+          (assert-response-status response 504)
+          (is error-message)
+          (is (str/includes? response-body error-message))
+          (assert-headers response)))
 
-(deftest ^:parallel ^:integration-fast test-instance-request-failed
-  (testing-using-waiter-url
-    (let [extra-headers {:x-waiter-name (rand-name)
-                         :x-waiter-debug "true"}
-          response (make-kitchen-request waiter-url extra-headers :path "/no-response")
-          response-headers (:headers response)
-          response-body (:body response)
-          service-id (retrieve-service-id waiter-url (:request-headers response))]
-      (assert-response-status response 502)
-      (is (str/includes? response-body "Request to service instance failed."))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-id"))))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-host"))))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-port"))))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-proto"))))
-      (is (not (str/blank? (get response-headers "x-cid"))))
+      (testing "backend request failed"
+        (let [extra-headers {:x-waiter-debug "true"}
+              response (make-kitchen-request waiter-url extra-headers :path "/no-response")
+              response-body (:body response)
+              error-message (-> (waiter-settings waiter-url) :messages :backend-request-failed)]
+          (assert-response-status response 502)
+          (is error-message)
+          (is (str/includes? response-body error-message))
+          (assert-headers response)))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-request-queue-timeout-slow-start-app

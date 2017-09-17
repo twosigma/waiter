@@ -208,7 +208,9 @@
                        :ttl 60}
                :encrypt true
                :relative-path "tokens"}
-   :messages {:bad-startup-command "Invalid startup command"
+   :messages {:backend-request-failed "Request to service backend failed"
+              :backend-request-timed-out "Request to service backend timed out"
+              :bad-startup-command "Invalid startup command"
               :cannot-connect "Unable to connect to run health checks"
               :cannot-identify-service "Unable to identify service using waiter headers/token"
               :health-check-requires-authentication "Health check requires authentication"

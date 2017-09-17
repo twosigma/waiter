@@ -467,7 +467,9 @@
  ; ---------- Miscellaneous ----------
 
  ;; Certain messages that Waiter returns can be customized:
- :messages {:bad-startup-command "Invalid startup command"
+ :messages {:backend-request-failed "Request to service backend failed"
+            :backend-request-timed-out "Request to service backend timed out"
+            :bad-startup-command "Invalid startup command"
             :cannot-connect "Unable to connect to run health checks"
             :cannot-identify-service "Unable to identify service using waiter headers/token"
             :environment-variable-error-info "Error in environment variables"
