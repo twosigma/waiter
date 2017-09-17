@@ -190,31 +190,6 @@
     (= "application/json" content-type) "application/json"
     :else "text/plain"))
 
-(defn error-context->text
-  "Formats an error context for a text response."
-  [{:keys [cid details host message query-string request-method status timestamp uri]}]
-  (let [padded-format (fn [f v] (format "%16s: %s\n" f v))]
-    (str "\n" 
-         "  Waiter Error " status "\n" 
-         "  ================\n\n"
-         "    " message "\n\n"
-         "  Request Info\n" 
-         "  ============\n\n"
-         (when host (padded-format "Host" host))
-         (padded-format "Path" uri)
-         (when query-string (padded-format "Query String" query-string))
-         (padded-format "Method" request-method)
-         (padded-format "CID" cid)
-         (padded-format "Time" timestamp)
-         (when (seq details) 
-           (str "\n"
-                "  Additional Info\n" 
-                "  ===============\n\n   "
-                (-> (with-out-str 
-                      (pprint/pprint details))
-                    (str/replace #"\n" "\n    ")) 
-                "\n\n")))))
-
 (defn build-error-context
   "Creates an error context from a request and exception data."
   [^Exception e {:keys [headers query-string request-method support-info uri] :as request}]
