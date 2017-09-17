@@ -321,7 +321,7 @@
       (make-request waiter-url (str "/apps/" service-id "/suspend"))
       (let [results (parallelize-requests 10 2
                                           #(let [{:keys [body]} (make-kitchen-request waiter-url waiter-headers)]
-                                             (str/includes? body "Service has been suspended."))
+                                             (str/includes? body "Service has been suspended"))
                                           :verbose true)]
         (is (every? true? results)))
       (log/info "Resuming service " service-id)
