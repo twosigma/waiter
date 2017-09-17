@@ -276,7 +276,7 @@
               {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
               json-body (json/read-str body)]
           (is (= status 400))
-          (is (= "Missing instance-id parameter." (get-in json-body ["waiter-error" "message"])))))
+          (is (= "Missing instance-id parameter" (get-in json-body ["waiter-error" "message"])))))
       (testing "Missing host"
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
@@ -286,7 +286,7 @@
               {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
               json-body (json/read-str body)]
           (is (= status 400))
-          (is (= "Missing host parameter." (get-in json-body ["waiter-error" "message"])))))
+          (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"])))))
       (testing "Missing directory"
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
@@ -296,7 +296,7 @@
               {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
               json-body (json/read-str body)]
           (is (= status 400))
-          (is (= "Missing directory parameter." (get-in json-body ["waiter-error" "message"]))))))
+          (is (= "Missing directory parameter" (get-in json-body ["waiter-error" "message"]))))))
     (with-redefs [clj-http.client/get (fn [url _]
                                         (is (every? #(str/includes? url %) ["test.host.com" "5051"]))
                                         (let [state-json-response-body "
@@ -395,7 +395,7 @@
                 {:strs [service-id]} "details"} "waiter-error"} (json/read-str body)]
           (is (= 404 status))
           (is (= {"content-type" "application/json"} headers))
-          (is (= "Service not found." message))
+          (is (= "Service not found" message))
           (is (= "test-service-1" service-id)))))
     (testing "service-handler:delete-throws-exception"
       (with-redefs [scheduler/delete-app (fn [_ _] (throw (RuntimeException. "Error in deleting service")))
@@ -432,7 +432,7 @@
           (is (= {"content-type" "application/json"} headers))
           (let [{{message "message"
                   {:strs [service-id]} "details"} "waiter-error"} (json/read-str (str body))]
-            (is (= "Service not found." message))
+            (is (= "Service not found" message))
             (is (= "test-service-1" service-id))))))
     (testing "service-handler:valid-response-missing-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})

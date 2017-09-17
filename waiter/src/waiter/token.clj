@@ -184,12 +184,12 @@
                       (let [token-owner (get token-metadata "owner")]
                         (if hard-delete
                           (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
-                            (throw (ex-info "Cannot hard-delete token."
+                            (throw (ex-info "Cannot hard-delete token"
                                             {:metadata token-metadata
                                              :status 403
                                              :user authenticated-user})))
                           (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
-                            (throw (ex-info "User not allowed to delete token."
+                            (throw (ex-info "User not allowed to delete token"
                                             {:owner token-owner
                                              :status 403
                                              :user authenticated-user}))))
@@ -199,9 +199,9 @@
                                                :body (json/write-str {:owner token-owner, :token token})
                                                :method :post)
                         (utils/map->json-response {:delete token, :hard-delete hard-delete, :success true}))
-                      (throw (ex-info (str "Token " token " does not exist.")
+                      (throw (ex-info (str "Token " token " does not exist")
                                       {:status 404 :token token}))))
-                  (throw (ex-info "Couldn't find token in request."
+                  (throw (ex-info "Couldn't find token in request"
                                   {:status 400 :token token}))))
               (catch Exception ex
                 (utils/exception->response ex req)))
@@ -232,11 +232,11 @@
                             (get existing-token-metadata "owner")
                             authenticated-user)]
               (when (str/blank? token)
-                (throw (ex-info "Must provide the token." {:status 400})))
+                (throw (ex-info "Must provide the token" {:status 400})))
               (when (= waiter-hostname token)
-                (throw (ex-info "Token name is reserved." {:status 403 :token token})))
+                (throw (ex-info "Token name is reserved" {:status 403 :token token})))
               (when-not (re-matches valid-token-re token)
-                (throw (ex-info "Token must match pattern." 
+                (throw (ex-info "Token must match pattern" 
                                 {:status 400 :token token :pattern (str valid-token-re)})))
               (validate-service-description-fn new-service-description-template)
               (let [unknown-keys (set/difference (-> new-token-description keys set)
@@ -319,7 +319,7 @@
                                         (map (fn [v] {:token v, :owner owner})))))
                   flatten
                   utils/map->streaming-json-response))
-      (throw (ex-info "Only GET supported." {:request-method request-method
+      (throw (ex-info "Only GET supported" {:request-method request-method
                                              :status 405})))
     (catch Exception ex
       (utils/exception->response ex req))))
@@ -335,7 +335,7 @@
     (case request-method
       :get (let [owner->owner-ref (token-owners-map kv-store)]
              (utils/map->json-response owner->owner-ref))
-      (throw (ex-info "Only GET supported." {:request-method request-method
+      (throw (ex-info "Only GET supported" {:request-method request-method
                                              :status 405})))
     (catch Exception ex
       (utils/exception->response ex req))))
@@ -366,8 +366,8 @@
               (make-peer-requests-fn "tokens/refresh"
                                      :method :post
                                      :body (json/write-str {:index true}))
-              (utils/map->json-response {:message "Successfully re-indexed." :tokens (count tokens)}))
-      (throw (ex-info "Only POST supported." {:request-method request-method
+              (utils/map->json-response {:message "Successfully re-indexed" :tokens (count tokens)}))
+      (throw (ex-info "Only POST supported" {:request-method request-method
                                               :status 405})))
     (catch Exception ex
       (utils/exception->response ex req))))

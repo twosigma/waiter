@@ -89,7 +89,7 @@
                 {{message "message"
                   {:strs [owner user]} "details"} "waiter-error"} (json/read-str body)]
             (is (= 403 status))
-            (is (= "User not allowed to delete token." message))
+            (is (= "User not allowed to delete token" message))
             (is (= "tu2" owner) body)
             (is (= "tu1" user))
             (is (not (nil? (kv/fetch kv-store token)))))
@@ -181,7 +181,7 @@
                 {{message "message" 
                   {{:strs [owner]} "metadata"} "details"} "waiter-error"} (json/read-str body)]
             (is (= 403 status))
-            (is (= "Cannot hard-delete token." message))
+            (is (= "Cannot hard-delete token" message))
             (is (= "tu2" owner) body)
             (is (not-empty (kv/fetch kv-store token)) "Entry deleted from kv-store!"))
           (finally
@@ -712,7 +712,7 @@
                                   {:request-method :post})
           json-response (json/read-str body)]
       (is (= 200 status))
-      (is (= {:message "Successfully re-indexed." :tokens 3} (-> json-response clojure.walk/keywordize-keys)))
+      (is (= {:message "Successfully re-indexed" :tokens 3} (-> json-response clojure.walk/keywordize-keys)))
       (is @inter-router-request-fn-called))
 
     (let [inter-router-request-fn-called (atom nil)

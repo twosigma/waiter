@@ -237,7 +237,7 @@
   (let [{:keys [status]} (ex-data ex)]
     (if status
       ex
-      (ex-info "Internal error." {:status 500} ex))))
+      (ex-info "Internal error" {:status 500} ex))))
 
 (defn exception->response
   "Converts an exception into a ring response."

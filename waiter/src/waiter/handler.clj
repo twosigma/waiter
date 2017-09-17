@@ -57,7 +57,7 @@
    {:keys [query-string route-params uri] :as request}]
   (let [{:keys [host location port request-id router-id service-id]} route-params]
     (when-not (and host location port request-id router-id service-id)
-      (throw (ex-info "Missing host, location, port, request-id, router-id or service-id in uri."
+      (throw (ex-info "Missing host, location, port, request-id, router-id or service-id in uri"
                       {:route-params route-params, :uri uri, :status 400})))
     (counters/inc! (metrics/service-counter service-id "request-counts" counter-name))
     (let [{:strs [backend-proto metric-group]} (service-id->service-description-fn service-id)
@@ -72,9 +72,9 @@
   (try
     (let [{:keys [request-id service-id]} route-params]
       (when (str/blank? service-id)
-        (throw (ex-info "No service-id specified." {:src-router-id src-router-id, :status 400, :uri uri})))
+        (throw (ex-info "No service-id specified" {:src-router-id src-router-id, :status 400, :uri uri})))
       (when (str/blank? request-id)
-        (throw (ex-info "No request-id specified." {:src-router-id src-router-id, :status 400, :uri uri})))
+        (throw (ex-info "No request-id specified" {:src-router-id src-router-id, :status 400, :uri uri})))
       (let [succeeded (async-request-terminate-fn request-id)]
         (utils/map->json-response {:request-id request-id, :success succeeded})))
     (catch Exception ex
@@ -176,7 +176,7 @@
   (async/go
     (try
       (when (str/blank? service-id)
-        (throw (ex-info "Missing service-id." {:status 400})))
+        (throw (ex-info "Missing service-id" {:status 400})))
       (let [response-chan (async/promise-chan)
             _ (service/query-instance! instance-rpc-chan service-id response-chan)
             _ (log/info "Waiting for response from query-state channel...")
@@ -231,7 +231,7 @@
                           (async/timeout timeout-ms) ([_] :timeout)
                           :priority true)]
       (if (= :timeout current-state)
-        (throw (ex-info "Timed out while querying service state." {:status 503}))
+        (throw (ex-info "Query for service state timed out" {:status 503}))
         (let [request-params (:params (ring-params/params-request request))
               auth-user (get request :authorization/user)
               run-as-user-param (get request-params "run-as-user")
@@ -360,10 +360,10 @@
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn prepend-waiter-url make-inter-router-requests-fn request]
   (try
     (when (not service-id)
-      (throw (ex-info "Missing service-id." {:status 400})))
+      (throw (ex-info "Missing service-id" {:status 400})))
     (let [core-service-description (sd/fetch-core kv-store service-id :refresh true)]
       (if (empty? core-service-description)
-        (throw (ex-info "Service not found." {:status 404 :service-id service-id}))
+        (throw (ex-info "Service not found" {:status 404 :service-id service-id}))
         (case (:request-method request)
           :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn request)
           :get (get-service-handler router-id service-id core-service-description scheduler kv-store
@@ -381,7 +381,7 @@
   [kv-store allowed-to-manage-service? make-inter-router-requests-fn service-id mode request]
   (try
     (when (str/blank? service-id)
-      (throw (ex-info "Missing service-id." {:status 400})))
+      (throw (ex-info "Missing service-id" {:status 400})))
     ; throw exception if no service description for service-id exists
     (sd/fetch-core kv-store service-id :nil-on-missing? false)
     (let [auth-user (get request :authorization/user)
@@ -411,7 +411,7 @@
   [kv-store allowed-to-manage-service? make-inter-router-requests-fn service-id request]
   (try
     (when (str/blank? service-id)
-      (throw (ex-info "Missing service-id." {:status 400})))
+      (throw (ex-info "Missing service-id" {:status 400})))
     ; throw exception if no service description for service-id exists
     (sd/fetch-core kv-store service-id :nil-on-missing? false)
     (case (:request-method request)
@@ -449,11 +449,11 @@
   (try
     (let [{:strs [instance-id host directory]} (:params (ring-params/params-request request))
           _ (when-not instance-id
-              (throw (ex-info "Missing instance-id parameter." {:status 400})))
+              (throw (ex-info "Missing instance-id parameter" {:status 400})))
           _ (when-not host
-              (throw (ex-info "Missing host parameter." {:status 400})))
+              (throw (ex-info "Missing host parameter" {:status 400})))
           _ (when-not directory
-              (throw (ex-info "Missing directory parameter." {:status 400})))
+              (throw (ex-info "Missing directory parameter" {:status 400})))
           directory-content (map (fn [{:keys [path type] :as entry}]
                                    (if (= type "file")
                                      entry
@@ -477,7 +477,7 @@
             (-> request (:body) (slurp) (json/read-str) (walk/keywordize-keys))]
         (log/info "received work-stealing offer" (:id instance) "of" service-id "from" router-id)
         (if-not (and cid instance request-id router-id service-id)
-          (throw (ex-info "Missing one of cid, instance, request-id, router-id or service-id." 
+          (throw (ex-info "Missing one of cid, instance, request-id, router-id or service-id" 
                           (assoc request-body-map :status 400)))
           (let [response-chan (async/promise-chan)
                 offer-params {:cid cid
@@ -500,13 +500,13 @@
     (let [timeout-ms 30000
           current-state (async/alt!!
                           state-chan ([state-data] state-data)
-                          (async/timeout timeout-ms) ([_] {:message "Request timed out."})
+                          (async/timeout timeout-ms) ([_] {:message "Query for router state timed out"})
                           :priority true)
           scheduler-state (let [response-chan (async/promise-chan)]
                             (async/>!! scheduler-chan {:response-chan response-chan})
                             (async/alt!!
                               response-chan ([state] state)
-                              (async/timeout timeout-ms) ([_] {:message "Request timed out."})
+                              (async/timeout timeout-ms) ([_] {:message "Query for scheduler state timed out"})
                               :priority true))]
       (-> current-state
           (assoc :leader (leader?-fn)
@@ -524,7 +524,7 @@
   (async/go
     (try
       (if (str/blank? service-id)
-        (throw (ex-info "Missing service-id." {:status 400}))
+        (throw (ex-info "Missing service-id" {:status 400}))
         (let [timeout-ms (-> 10 t/seconds t/in-millis)
               _ (log/info "waiting for response from query-state channel...")
               responder-state-chan (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-state)
@@ -565,36 +565,36 @@
    consent-expiry-days {:keys [request-method] :as request}]
   (try
     (when-not (= :post request-method)
-      (throw (ex-info "Only POST supported." {:request-method request-method, :status 405})))
+      (throw (ex-info "Only POST supported" {:request-method request-method, :status 405})))
     (let [{:keys [headers params] :as request} (multipart-params/multipart-params-request request)
           {:strs [host origin referer x-requested-with]} headers
           {:strs [mode service-id] :as params} params]
       (when-not (str/blank? origin)
         (when-not (utils/same-origin request)
-          (throw (ex-info "Origin is not the same as the host." 
+          (throw (ex-info "Origin is not the same as the host" 
                           {:host host
                            :origin origin
                            :status 400}))))
       (when (and (not (str/blank? origin)) (not (str/blank? referer)))
         (when-not (str/starts-with? referer origin)
-          (throw (ex-info "Referer does not start with origin." 
+          (throw (ex-info "Referer does not start with origin" 
                           {:origin origin
                            :referer referer
                            :status 400}))))
       (when-not (= x-requested-with "XMLHttpRequest")
-        (throw (ex-info "Header x-requested-with does not match expected value." 
+        (throw (ex-info "Header x-requested-with does not match expected value" 
                         {:actual x-requested-with
                          :expected "XMLHttpRequest"
                          :status 400})))
       (when-not (and mode (contains? #{"service" "token"} mode))
-        (throw (ex-info "Missing or invalid mode." (assoc params :status 400))))
+        (throw (ex-info "Missing or invalid mode" (assoc params :status 400))))
       (when (= "service" mode)
         (when-not service-id
-          (throw (ex-info "Missing service-id." (assoc params :status 400)))))
+          (throw (ex-info "Missing service-id" (assoc params :status 400)))))
       (let [token (utils/authority->host host)
             {:keys [service-description-template token-metadata]} (token->token-description token)]
         (when-not (seq service-description-template)
-          (throw (ex-info "Unable to load description for token." {:token token :status 400})))
+          (throw (ex-info "Unable to load description for token" {:token token :status 400})))
         (when (= "service" mode)
           (let [auth-user (:authorization/user request)
                 computed-service-id (-> service-description-template
@@ -621,13 +621,13 @@
    {:keys [headers query-string request-method route-params] :as request}]
   (try
     (when-not (= :get request-method)
-      (throw (ex-info "Only GET supported." {:request-method request-method, :status 405})))
+      (throw (ex-info "Only GET supported" {:request-method request-method, :status 405})))
     (let [host-header (get headers "host")
           token (utils/authority->host host-header)
           {:keys [path]} route-params
           service-description-template (token->service-description-template token)]
       (when-not (seq service-description-template)
-        (throw (ex-info "Unable to load description for token." {:token token :status 404})))
+        (throw (ex-info "Unable to load description for token" {:token token :status 404})))
       (let [auth-user (:authorization/user request)
             service-id (-> service-description-template
                            (sd/assoc-run-as-requester-fields auth-user)

@@ -557,7 +557,7 @@
                                       (do
                                         (deliver reservation-status-promise :client-error)
                                         (throw (wrap-exception error instance 
-                                                               "Connection unexpectedly closed while sending request."
+                                                               "Connection unexpectedly closed while sending request"
                                                                400 @response-headers)))
                                       
                                       (instance? TimeoutException error)
@@ -604,7 +604,7 @@
                                (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
       (log/info (:message response-map) (dissoc response-map :message))
       (track-response-status-metrics service-id service-description 503)
-      (throw (ex-info "Service has been suspended." 
+      (throw (ex-info "Service has been suspended" 
                       (assoc response-map :status 503)))))
     (catch Exception ex
       (utils/exception->response ex request))))
@@ -623,7 +623,7 @@
                             :service-id service-id}]
           (log/info (:message response-map) (dissoc response-map :message))
           (track-response-status-metrics service-id service-description 503)
-          (throw (ex-info "Max queue length exceeded!"
+          (throw (ex-info "Max queue length exceeded"
                           (assoc response-map :status 503))))))
     (catch Exception ex
       (utils/exception->response ex request))))
