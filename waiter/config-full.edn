@@ -481,6 +481,10 @@
             :not-enough-memory "Not enough memory allocated"
             :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}
 
+ ;; Support information used to provide user guidance in error messages
+ :support-info [{:label "Email Support Team" :link {:type :email :value "support@example.com"}}
+                {:label "Waiter on GitHub" :link {:type :url :value "http://github.com/twosigma/waiter"}}]
+
  ;; Sets tolerance level for Waiter when declaring deployment errors
  :deployment-error-config {
                            ;; The number of instances that must fail in order to declare a deployment error:
@@ -504,5 +508,5 @@
  ;; Waiter supports making websocket connections to backends.
  ;; The maximum binary and text message sizes in the websocket request or response can be configured
  ;; as follows, the values are in bytes:
- :websocket-config {:ws-max-binary-message-size  41943040
+ :websocket-config {:ws-max-binary-message-size 41943040
                     :ws-max-text-message-size 41943040}}

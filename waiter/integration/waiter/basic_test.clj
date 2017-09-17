@@ -15,6 +15,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
             [waiter.service-description :as sd])
@@ -137,7 +138,7 @@
             logs-response (make-request-fn log-url)
             response-body (:body logs-response)
             _ (log/debug "Response body:" response-body)
-            log-files-list (clojure.walk/keywordize-keys (json/read-str response-body))
+            log-files-list (walk/keywordize-keys (json/read-str response-body))
             stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
             stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
         (is (every? #(str/includes? (:body logs-response) %) ["stderr" "stdout" service-id])
@@ -481,7 +482,7 @@
                                                           :headers {"origin" "example.com"})]
           (is (= 200 status) response))))))
 
-(deftest ^:parallel ^:integration-fast test-error-content-negotiation
+(deftest ^:parallel ^:integration-fast test-error-handling
   (testing-using-waiter-url
     (testing "text/plain default"
       (let [{:keys [body headers status]} (make-request waiter-url "/")] 
@@ -520,4 +521,19 @@
         (is (= "application/json" (get headers "content-type")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
         (let [{:strs [status]} waiter-error]
-          (is (= 400 status)))))))
+          (is (= 400 status)))))
+    (testing "support information included"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
+            {:keys [support-info]} (waiter-settings waiter-url)
+            {:strs [waiter-error]} (try (json/read-str body)
+                                        (catch Throwable e
+                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
+        (is (= 400 status))
+        (is (= "application/json" (get headers "content-type")))
+        (is waiter-error (str "Could not find waiter-error element in body " body))
+        (let [{:strs [status]} waiter-error]
+          (is (= 400 status))
+          (is (= support-info (-> (get waiter-error "support-info")
+                                  (walk/keywordize-keys)))))))))
+
+

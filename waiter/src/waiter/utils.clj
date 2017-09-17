@@ -217,7 +217,7 @@
 
 (defn build-error-context
   "Creates an error context from a request and exception data."
-  [^Exception e {:keys [headers query-string request-method uri] :as request}]
+  [^Exception e {:keys [headers query-string request-method support-info uri] :as request}]
   (let [{:strs [host x-cid]} headers
         {:keys [friendly-error-message message status] :as ex-data} (ex-data e)] 
     {:cid x-cid 
@@ -227,6 +227,7 @@
      :query-string query-string
      :request-method (-> (or request-method  "") name str/upper-case)
      :status (or status 400)
+     :support-info support-info
      :timestamp (date-to-str (t/now))
      :uri uri}))
 
@@ -266,8 +267,10 @@
                                   (-> error-context 
                                       (update :details (fn [v] 
                                                          (when v 
-                                                           (with-out-str (pprint/pprint v)))))))
-                   (str/replace #"\n" "\n  ")))
+                                                           (-> (with-out-str (pprint/pprint v))
+                                                               (str/replace #"\n" "\n  ")))))))
+                   (str/replace #"\n" "\n  ")
+                   (str/replace #"\n  $" "\n")))
        :headers (merge {"content-type" content-type} processed-headers)})))
 
 (defmacro log-and-suppress-when-exception-thrown

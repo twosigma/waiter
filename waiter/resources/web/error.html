@@ -123,10 +123,22 @@
   <div class="divider"></div>
   <div>
 	<h3>Additional Info</h3>
-	<pre id="details" class="code">
-<%= details %>
-	</pre>
+	<pre id="details" class="code"><%= details %></pre>
   </div>
+</div>
+
+<div class="additional-info">
+  <div class="divider"></div>
+  <div>
+	<h3>Getting Help</h3>
+    <ul>
+      <% (doseq [{label :label {:keys [type value]} :link} support-info] %>
+      <li><%= label %>:
+            <% (when (= type :url) %> <a href="<%= value %>"><%= value %></a><% ) %>
+            <% (when (= type :email) %> <a href="mailto:<%= value %>"><%= value %></a><% ) %>
+      </li>
+      <% ) %>
+    </ul>
 </div>
 
 </body>

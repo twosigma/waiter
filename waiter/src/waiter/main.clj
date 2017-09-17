@@ -66,15 +66,17 @@
    :handlers core/request-handlers
    :state core/state
    :http-server (pc/fnk [[:routines waiter-request?-fn websocket-request-authenticator]
-                         [:settings host port websocket-config]
+                         [:settings host port websocket-config support-info]
                          handlers] ; Insist that all systems are running before we start server
                   (let [options (merge websocket-config
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
                                                           core/correlation-id-middleware
+                                                          (core/wrap-support-info support-info)
                                                           consume-request-stream)
                                         :websocket-acceptor websocket-request-authenticator
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)
-                                                               core/correlation-id-middleware)
+                                                               core/correlation-id-middleware
+                                                               (core/wrap-support-info support-info))
                                         :host host
                                         :join? false
                                         :max-threads 250

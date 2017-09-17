@@ -120,6 +120,9 @@
                                        (s/required-key :port) schema/positive-int
                                        (s/required-key :publish-interval-ms) schema/positive-int
                                        (s/required-key :server) schema/non-empty-string})
+   (s/required-key :support-info) [{(s/required-key :label) s/Keyword
+                                    (s/required-key :link) {(s/required-key :type) schema/non-empty-string
+                                                            (s/required-key :value) schema/non-empty-string}}]
    (s/required-key :thread-stack-state-refresh-interval-ms) schema/positive-int
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
@@ -281,6 +284,9 @@
                                   "scale-factor" 1
                                   "scale-up-factor" 0.1}
    :statsd :disabled
+   :support-info [{:label "Waiter on GitHub"
+                   :link {:type :url
+                          :value "http://github.com/twosigma/waiter"}}]
    :thread-stack-state-refresh-interval-ms 600000 ; 10 minutes
    :websocket-config {:ws-max-binary-message-size  (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}

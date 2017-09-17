@@ -163,6 +163,13 @@
                   (cid/ensure-correlation-id nested-response get-request-cid)
                   nested-response)))))))))
 
+(defn wrap-support-info
+  "Attaches support-info to the request."
+  [handler support-info]
+  (fn wrap-support-info-fn [request]
+    (-> request
+        (assoc :support-info support-info)
+        handler)))
 
 (defn- make-blacklist-request
   [make-inter-router-requests-fn blacklist-period-ms dest-router-id dest-endpoint {:keys [id] :as instance} reason]
