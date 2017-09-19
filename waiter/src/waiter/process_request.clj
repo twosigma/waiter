@@ -653,9 +653,15 @@
         (when-not (or service-authentication-disabled
                       service-preauthorized
                       (and auth-user (can-run-as? auth-user run-as-user)))
-          (throw (ex-info "Authenticated user cannot run service" {:authenticated-user auth-user :run-as-user run-as-user})))
+          (throw (ex-info "Authenticated user cannot run service" 
+                          {:authenticated-user auth-user 
+                           :run-as-user run-as-user
+                           :status 403})))
         (when-not (request-authorized? auth-user permitted-user)
-          (throw (ex-info "This user isn't allowed to invoke this service" {:authenticated-user auth-user :service-description service-description})))
+          (throw (ex-info "This user isn't allowed to invoke this service"
+                          {:authenticated-user auth-user
+                           :service-description service-description
+                           :status 403})))
         descriptor))))
 
 (defn determine-priority
