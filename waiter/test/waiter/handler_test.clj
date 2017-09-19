@@ -992,7 +992,7 @@
         (is (instance? ManyToManyChannel result-chan))
         (async/close! result-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
-      (is (= 500 status)))))
+      (is (= 400 status)))))
 
 (deftest test-get-blacklisted-instances-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
