@@ -22,7 +22,8 @@
           service-id (retrieve-service-id waiter-url (:request-headers first-request))
           count-instances (fn [] (num-instances waiter-url service-id))]
       (is (wait-for #(= 1 (count-instances))) "First instance never started")
-      (future (dorun (pmap (fn [_] (while @continue-running (request-fn))) (range (* target-instances concurrency-level))))) 
+      (future (dorun (pmap (fn [_] (while @continue-running (request-fn)))
+                           (range (* target-instances concurrency-level))))) 
       (is (wait-for #(= target-instances (count-instances))) (str "Never scaled up to " target-instances " instances"))
       (reset! continue-running false)
       ; When scaling down in Marathon, we have to wait for forced kills, 
@@ -33,23 +34,27 @@
 
 (deftest ^:parallel ^:integration-slow test-scaling-healthy-app
   (testing-using-waiter-url
-    (let [custom-headers {:x-kitchen-delay-ms 5000
-                          :x-waiter-concurrency-level 3
+    (let [concurrency-level 3
+          custom-headers {:x-kitchen-delay-ms 5000
+                          :x-waiter-concurrency-level concurrency-level
                           :x-waiter-scale-up-factor 0.9
                           :x-waiter-scale-down-factor 0.9
                           :x-waiter-name (rand-name)}]
-      (scaling-for-service-test "Scaling healthy app" waiter-url 3 3 #(make-kitchen-request waiter-url custom-headers)))))
+      (scaling-for-service-test "Scaling healthy app" waiter-url 3 concurrency-level
+                                #(make-kitchen-request waiter-url custom-headers)))))
 
 (deftest ^:parallel ^:integration-slow test-scaling-unhealthy-app
   (testing-using-waiter-url
-    (let [custom-headers {:x-waiter-concurrency-level 3
+    (let [concurrency-level 3
+          custom-headers {:x-waiter-concurrency-level concurrency-level
                           :x-waiter-scale-up-factor 0.9
                           :x-waiter-scale-down-factor 0.9
                           :x-waiter-grace-period-secs 600
                           :x-waiter-name (rand-name)
                           :x-waiter-cmd "sleep 600"
                           :x-waiter-queue-timeout 5000}]
-      (scaling-for-service-test "Scaling unhealthy app" waiter-url 3 3 #(make-shell-request waiter-url custom-headers)))))
+      (scaling-for-service-test "Scaling unhealthy app" waiter-url 3 concurrency-level
+                                #(make-shell-request waiter-url custom-headers)))))
 
 ;; Marked explicit:
 ;; Expected: in range [2, 8], Actual: 1
