@@ -21,6 +21,6 @@ Additional Info
   <%= details %>
 <% ) %><% (when support-info %>Getting Help
 ============
-<% (doseq [{label :label {:keys [type value]} :link} support-info] %>
+<% (doseq [{label :label {:keys [value]} :link} support-info] %>
   <%= label %>: <%= value %> <% ) %>
 <% ) %>

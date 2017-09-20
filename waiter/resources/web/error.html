@@ -84,7 +84,7 @@
 
 <div class="main-content">
   <h1>
-	Waiter Error <%= status %>
+    Waiter Error <%= status %>
   </h1>
   <p>
   <%= message %>
@@ -94,28 +94,28 @@
 <div class="additional-info">
   <div class="divider"></div>
   <div>
-	<h3>Request Info</h3>
-	<table>
-	  <% (when host %>
-	  <tr>
-		<td class="field">Host</td><td class="code"><%= host %></td>
-	  </tr>
-	  <% ) %>
-	  <tr>
-		<td class="field">Path</td><td class="code"><%= uri %></td>
-	  </tr>
-	  <% (when query-string %>
-	  <tr>
-		<td class="field">Query String</td><td class="code"><%= query-string %></td>
-	  </tr>
-	  <% ) %>
-	  <tr>
-		<td class="field">CID</td><td class="code"><%= cid %></td>
-	  </tr>
-	  <tr>
-		<td class="field">Time</td><td class="code"><%= timestamp %></td>
-	  </tr>
-	</table>
+    <h3>Request Info</h3>
+    <table>
+      <% (when host %>
+      <tr>
+        <td class="field">Host</td><td class="code"><%= host %></td>
+      </tr>
+      <% ) %>
+      <tr>
+        <td class="field">Path</td><td class="code"><%= uri %></td>
+      </tr>
+      <% (when query-string %>
+      <tr>
+        <td class="field">Query String</td><td class="code"><%= query-string %></td>
+      </tr>
+      <% ) %>
+      <tr>
+        <td class="field">CID</td><td class="code"><%= cid %></td>
+      </tr>
+      <tr>
+        <td class="field">Time</td><td class="code"><%= timestamp %></td>
+      </tr>
+    </table>
   </div>
 </div>
 
@@ -130,12 +130,13 @@
 <div class="additional-info">
   <div class="divider"></div>
   <div>
-	<h3>Getting Help</h3>
+    <h3>Getting Help</h3>
     <ul>
       <% (doseq [{label :label {:keys [type value]} :link} support-info] %>
-      <li><%= label %>:
-            <% (when (= type :url) %> <a href="<%= value %>"><%= value %></a><% ) %>
-            <% (when (= type :email) %> <a href="mailto:<%= value %>"><%= value %></a><% ) %>
+      <li>
+        <%= label %>:
+        <% (when (= type :url) %> <a href="<%= value %>"><%= value %></a><% ) %>
+        <% (when (= type :email) %> <a href="mailto:<%= value %>"><%= value %></a><% ) %>
       </li>
       <% ) %>
     </ul>
