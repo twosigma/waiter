@@ -70,6 +70,42 @@
   (send id->service-agent maintain-instance-scale port->reservation-atom port-range)
   (ensure-agent-finished scheduler))
 
+(deftest test-update-task-stats
+  (testing "1 healthy"
+    (let [{:keys [service id->instance]} (update-task-stats {:service {}
+                                                             :id->instance {"foo" {:healthy? true}}})]
+      (is (= {:healthy 1
+              :unhealthy 0
+              :running 1
+              :staged 0} (:task-stats service)))
+      (is (= 1 (:task-count service)))))
+  (testing "1 unhealthy"
+    (let [{:keys [service id->instance]} (update-task-stats {:service {}
+                                                             :id->instance {"foo" {:healthy? false}}})]
+      (is (= {:healthy 0
+              :unhealthy 1
+              :running 1
+              :staged 0} (:task-stats service)))
+      (is (= 1 (:task-count service)))))
+  (testing "1 healthy, 1 unhealthy"
+    (let [{:keys [service id->instance]} (update-task-stats {:service {}
+                                                             :id->instance {"foo" {:healthy? true}
+                                                                            "bar" {:healthy? false}}})]
+      (is (= {:healthy 1
+              :unhealthy 1
+              :running 2
+              :staged 0} (:task-stats service)))
+   (testing "1 healthy, 1 unhealthy, 1 killed"
+    (let [{:keys [service id->instance]} (update-task-stats {:service {}
+                                                             :id->instance {"foo" {:healthy? true}
+                                                                            "bar" {:healthy? false}
+                                                                            "baz" {:healthy? false :killed? true}}})]
+      (is (= {:healthy 1
+              :unhealthy 1
+              :running 2
+              :staged 0} (:task-stats service)))
+      (is (= 2 (:task-count service)))))   (is (= 2 (:task-count service))))))
+
 (deftest test-launch-instance
   (testing "Launching an instance"
     (testing "should throw if cmd is nil"
@@ -220,22 +256,17 @@
              (scheduler/scale-app scheduler "foo" 1)))
       ;; Successfully kill one instance, instances: 1
       (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
-        (is (= {:success true, :result :deleted, :message (str "Deleted " (:id instance))}
+        (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance))))
       (force-update-service-health scheduler scheduler-config)
       (is (= {:running 1, :healthy 1, :unhealthy 0, :staged 0}
              (task-stats scheduler)))
-      ;; Automatically relaunches killed instances, instances: 2
+      ;; Scale up, instances: 2
+      (is (= {:success true, :result :scaled, :message "Scaled foo"}
+             (scheduler/scale-app scheduler "foo" 2)))
       (force-maintain-instance-scale scheduler)
       (force-update-service-health scheduler scheduler-config)
       (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
-             (task-stats scheduler)))
-      ;; Scale up, instances: 3
-      (is (= {:success true, :result :scaled, :message "Scaled foo"}
-             (scheduler/scale-app scheduler "foo" 3)))
-      (force-maintain-instance-scale scheduler)
-      (force-update-service-health scheduler scheduler-config)
-      (is (= {:running 3, :healthy 3, :unhealthy 0, :staged 0}
              (task-stats scheduler))))))
 
 (deftest test-kill-instance
@@ -249,7 +280,7 @@
            (create-test-service scheduler "foo")))
     (with-redefs [perform-health-check (constantly true)]
       (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
-        (is (= {:success true, :result :deleted, :message (str "Deleted " (:id instance))}
+        (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance)))
         (is (= {:success true, :result :deleted, :message "Deleted foo"}
                (scheduler/delete-app scheduler "foo")))
@@ -301,7 +332,7 @@
         (force-update-service-health scheduler scheduler-config)
         (is (= 1 @health-check-count-atom))
         ;; Kill the single instance of our service
-        (is (= {:success true, :result :deleted, :message (str "Deleted " (:id instance))}
+        (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance))))
       (ensure-agent-finished scheduler)
       ;; Force another health check attempt
@@ -349,7 +380,7 @@
                 [{:id "foo"
                   :instances 1
                   :task-count 1
-                  :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                  :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
                   :environment {"WAITER_USERNAME" "waiter"
                                 "WAITER_PASSWORD" "password"
                                 "HOME" (work-dir)
@@ -364,7 +395,7 @@
                  {:id "bar"
                   :instances 1
                   :task-count 1
-                  :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                  :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
                   :environment {"WAITER_USERNAME" "waiter"
                                 "WAITER_PASSWORD" "password"
                                 "HOME" (work-dir)
@@ -379,7 +410,7 @@
                  {:id "baz"
                   :instances 1
                   :task-count 1
-                  :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                  :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
                   :environment {"WAITER_USERNAME" "waiter"
                                 "WAITER_PASSWORD" "password"
                                 "HOME" (work-dir)
@@ -415,7 +446,7 @@
                                    {:id "foo"
                                     :instances 1
                                     :task-count 1
-                                    :task-stats {:running 1, :healthy 0, :unhealthy 0, :staged 0}
+                                    :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
                                     :environment {"WAITER_USERNAME" "waiter"
                                                   "WAITER_PASSWORD" "password"
                                                   "HOME" (work-dir)

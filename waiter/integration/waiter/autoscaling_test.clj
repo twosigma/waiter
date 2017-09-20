@@ -15,55 +15,46 @@
             [waiter.client-tools :refer :all]
             [waiter.utils :as utils]))
 
-(defn- scaling-for-service-test [testing-str waiter-url threads requests-per-thread request-fn]
+(defn- scaling-for-service-test [testing-str waiter-url target-instances concurrency-level request-fn]
   (testing testing-str
-    (let [expect-tasks-running (fn [service-id pred msg]
-                                 (loop [i 1
-                                        tasks-running 0]
-                                   (if (< i (* 5 4 requests-per-thread))
-                                     (let [tasks-running (num-tasks-running waiter-url service-id :prev-tasks-running tasks-running)]
-                                       (when (not (pred tasks-running))
-                                         (Thread/sleep 1000)
-                                         (recur (inc i) (int tasks-running))))
-                                     (is nil msg))))]
-      (let [_ (log/info (str "Making canary request..."))
-            first-request (request-fn)
-            service-id (retrieve-service-id waiter-url (:request-headers first-request))]
-        (expect-tasks-running service-id #(= % 1) "Never saw initial 1 task running")
-        (future (dorun (pmap (fn [_] (dotimes [_ requests-per-thread] (request-fn))) (range threads))))
-        (expect-tasks-running service-id #(> % (/ threads 2)) (str "Never scaled up to " (/ threads 2) " task(s)"))
-        (expect-tasks-running service-id #(= % 1) "Never scaled down to 1 task")
-        (delete-service waiter-url service-id)))))
+    (let [continue-running (atom true)
+          first-request (request-fn)
+          service-id (retrieve-service-id waiter-url (:request-headers first-request))
+          count-instances (fn [] (num-instances waiter-url service-id))]
+      (is (wait-for #(= 1 (count-instances))) "First instance never started")
+      (future (dorun (pmap (fn [_] (while @continue-running (request-fn)))
+                           (range (* target-instances concurrency-level))))) 
+      (is (wait-for #(= target-instances (count-instances))) (str "Never scaled up to " target-instances " instances"))
+      (reset! continue-running false)
+      ; When scaling down in Marathon, we have to wait for forced kills, 
+      ; which by default occur after 60 seconds of failed kills. 
+      ; So give the scale down extra time
+      (is (wait-for #(= 1 (count-instances)) :timeout 300) "Never scaled back down to 1 instance")
+      (delete-service waiter-url service-id))))
 
-; Marked explicit due to:
-;   FAIL in (test-scaling-healthy-app)
-;   test-scaling-healthy-app Scaling healthy app
-;   Never scaled up to 5/2 task(s)
-;   expected: nil
-;     actual: nil
-(deftest ^:parallel ^:integration-slow ^:explicit test-scaling-healthy-app
+(deftest ^:parallel ^:integration-slow test-scaling-healthy-app
   (testing-using-waiter-url
-    (log/info (str "Scaling healthy app test (should take " (colored-time "~2 minutes") ")"))
-    (let [custom-headers {:x-kitchen-delay-ms 5000
+    (let [concurrency-level 3
+          custom-headers {:x-kitchen-delay-ms 5000
+                          :x-waiter-concurrency-level concurrency-level
                           :x-waiter-scale-up-factor 0.9
                           :x-waiter-scale-down-factor 0.9
                           :x-waiter-name (rand-name)}]
-      (scaling-for-service-test "Scaling healthy app" waiter-url 5 10 #(make-kitchen-request waiter-url custom-headers)))))
+      (scaling-for-service-test "Scaling healthy app" waiter-url 3 concurrency-level
+                                #(make-kitchen-request waiter-url custom-headers)))))
 
-; Marked explicit due to:
-;   FAIL in (test-scaling-unhealthy-app)
-;   Never scaled down to 1 task
-;   expected: nil
-;     actual: nil
-(deftest ^:parallel ^:integration-slow ^:explicit test-scaling-unhealthy-app
+(deftest ^:parallel ^:integration-slow test-scaling-unhealthy-app
   (testing-using-waiter-url
-    (log/info (str "Scaling unhealthy app test (should take " (colored-time "~2 minutes") ")"))
-    (let [custom-headers {:x-waiter-scale-up-factor 0.9
+    (let [concurrency-level 3
+          custom-headers {:x-waiter-concurrency-level concurrency-level
+                          :x-waiter-scale-up-factor 0.9
                           :x-waiter-scale-down-factor 0.9
+                          :x-waiter-grace-period-secs 600
                           :x-waiter-name (rand-name)
                           :x-waiter-cmd "sleep 600"
                           :x-waiter-queue-timeout 5000}]
-      (scaling-for-service-test "Scaling unhealthy app" waiter-url 5 10 #(make-shell-request waiter-url custom-headers)))))
+      (scaling-for-service-test "Scaling unhealthy app" waiter-url 3 concurrency-level
+                                #(make-shell-request waiter-url custom-headers)))))
 
 ;; Marked explicit:
 ;; Expected: in range [2, 8], Actual: 1

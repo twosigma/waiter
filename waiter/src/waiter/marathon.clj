@@ -281,18 +281,18 @@
 
   (kill-instance [_ {:keys [id service-id] :as instance}]
     (let [current-time (t/now)
-          {:keys [last-kill-request successful-kill] :or {last-kill-request current-time, successful-kill current-time}}
+          {:keys [kill-failing-since] :or {kill-failing-since current-time}}
           (get @service-id->kill-info-store service-id)
-          use-force (and (t/after? current-time (t/plus successful-kill (t/millis force-kill-after-ms)))
-                         (t/after? last-kill-request successful-kill))
+          use-force (t/after? current-time (t/plus kill-failing-since (t/millis force-kill-after-ms))) 
           _ (when use-force
-              (log/info "using force killing" id "as last successful kill was at" (utils/date-to-str successful-kill)))
+              (log/info "using force killing" id "as kills have been failing since" (utils/date-to-str kill-failing-since)))
           params {:force use-force, :scale true}
-          _ (swap! service-id->kill-info-store assoc-in [service-id :last-kill-request] current-time)
           {:keys [killed?] :as kill-result} (process-kill-instance-request service-id id params)]
-      (when killed?
-        (swap! service-id->kill-info-store assoc-in [service-id :successful-kill] current-time)
-        (scheduler/process-instance-killed! instance))
+      (if killed?
+        (do (swap! service-id->kill-info-store dissoc service-id)
+            (scheduler/process-instance-killed! instance))
+        (swap! service-id->kill-info-store update-in [service-id :kill-failing-since] 
+               (fn [existing-time] (or existing-time current-time))))
       kill-result))
 
   (app-exists? [_ service-id]

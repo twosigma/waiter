@@ -174,6 +174,34 @@
        :shell-scheduler/working-directory working-directory
        :shell-scheduler/pid (pid process)})))
 
+(defn active?
+  "Returns true if the given instance is considered active"
+  [instance]
+  (not (:killed? instance)))
+
+(defn- healthy?
+  "Returns true if the given instance is healthy (and active)"
+  [instance]
+  (and (active? instance) (:healthy? instance)))
+
+(defn- unhealthy?
+  "Returns true if the given instance is unhealthy (but active)"
+  [instance]
+  (and (active? instance) (not (healthy? instance))))
+
+(defn update-task-stats
+  "Updates task-count and task-stats based upon the id->instances map for a service."
+  [{:keys [service id->instance] :as service-entry}]
+  (let [running (->> id->instance vals (filter active?) count)
+        healthy (->> id->instance vals (filter healthy?) count)
+        unhealthy (->> id->instance vals (filter unhealthy?) count) ]
+    (assoc service-entry :service (-> service
+                                      (assoc :task-count running)
+                                      (assoc :task-stats {:healthy healthy
+                                                          :unhealthy unhealthy
+                                                          :running running
+                                                          :staged 0})))))
+
 (defn launch-service
   "Creates a new service and launches a single new instance for this service"
   [service-id {:strs [mem] :as service-description} service-id->password-fn
@@ -184,12 +212,7 @@
                                          :instances 1
                                          :environment environment
                                          :service-description service-description
-                                         :shell-scheduler/mem mem
-                                         :task-count 1
-                                         :task-stats {:running 1
-                                                      :healthy 0
-                                                      :unhealthy 0
-                                                      :staged 0}})]
+                                         :shell-scheduler/mem mem})]
     {:service service
      :instance instance}))
 
@@ -209,8 +232,10 @@
               (launch-service service-id service-description service-id->password-fn
                               work-directory port->reservation-atom port-range)]
           (deliver completion-promise :created)
-          (assoc id->service service-id {:service service
-                                         :id->instance {(:id instance) instance}}))))
+          (let [service-entry (-> {:service service 
+                                   :id->instance {(:id instance) instance}}
+                                  update-task-stats)] 
+            (assoc id->service service-id service-entry)))))
     (catch Throwable e
       (log/error e "error attempting to create service" service-id)
       (deliver completion-promise :failed)
@@ -223,13 +248,14 @@
     (if (contains? id->service service-id)
       (let [{:keys [id->instance]} (get id->service service-id)
             {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)]
-        (if instance
+        (if (and instance (active? instance))
           (do
             (log/info "deleting instance" instance-id "process" process)
             (kill-process! instance port->reservation-atom port-grace-period-ms)
             (deliver completion-promise :deleted)
             (-> id->service
-                (assoc-in [service-id :id->instance instance-id :killed] true)
+                (update-in [service-id :service :instances] dec)
+                (assoc-in [service-id :id->instance instance-id :killed?] true)
                 (assoc-in [service-id :id->instance instance-id :shell-scheduler/process] nil)))
           (do
             (log/info "instance" instance-id "does not exist")
@@ -243,11 +269,6 @@
       (log/error e "error attempting to delete instance" instance-id)
       (deliver completion-promise :failed)
       id->service)))
-
-(defn active?
-  "Returns true if the given instance is considered active"
-  [instance]
-  (not (:killed instance)))
 
 (defn- delete-service
   "Deletes the service corresponding to service-id and returns the updated id->service map"
@@ -270,16 +291,6 @@
       (log/error e "error attempting to delete service" service-id)
       (deliver completion-promise :failed)
       id->service)))
-
-(defn- healthy?
-  "Returns true if the given instance is healthy (and active)"
-  [instance]
-  (and (active? instance) (:healthy? instance)))
-
-(defn- unhealthy?
-  "Returns true if the given instance is unhealthy (but active)"
-  [instance]
-  (and (active? instance) (not (healthy? instance))))
 
 (defn perform-health-check
   "Runs a synchronous health check against instance and returns true if it was successful"
@@ -307,8 +318,8 @@
       (log/info "instance exited with value" {:instance instance :exit-value exit-value})
       (release-port! port->reservation-atom port port-grace-period-ms)
       (assoc instance :healthy? false
-                      :failed (if (zero? exit-value) false true)
-                      :killed true                          ; does not actually mean killed -- using this to mark inactive
+                      :failed? (if (zero? exit-value) false true)
+                      :killed? true                          ; does not actually mean killed -- using this to mark inactive
                       :exit-code exit-value))
     instance))
 
@@ -322,8 +333,8 @@
         (do (log/info "unhealthy instance exceeded its grace period, killing instance"
                       {:instance instance :start-time start-time :current-time current-time :grace-period-secs grace-period-secs})
             (kill-process! instance port->reservation-atom port-grace-period-ms)
-            (assoc instance :failed true
-                            :killed true
+            (assoc instance :failed? true
+                            :killed? true
                             :flags #{:never-passed-health-checks}
                             :shell-scheduler/process nil))
         instance))
@@ -339,8 +350,8 @@
         (do (log/info "instance exceeds memory limit, killing instance" {:instance instance :memory-limit memory-allocated :memory-used memory-used})
             (kill-process! instance port->reservation-atom port-grace-period-ms)
             (assoc instance :healthy? false
-                            :failed true
-                            :killed true
+                            :failed? true
+                            :killed? true
                             :flags #{:memory-limit-exceeded}
                             :shell-scheduler/process nil))
         instance))
@@ -380,9 +391,7 @@
                 id->instance' (pc/map-vals (comp grace-period-check health-check limits-check exit-codes-check) id->instance)
                 service-entry' (-> service-entry
                                    (assoc :id->instance id->instance')
-                                   (assoc-in [:service :task-stats :healthy] (->> id->instance' vals (filter healthy?) count))
-                                   (assoc-in [:service :task-stats :unhealthy] (->> id->instance' vals (filter unhealthy?) count))
-                                   (assoc-in [:service :task-stats :running] (->> id->instance' vals (filter active?) count)))]
+                                   update-task-stats)]
             (recur (rest remaining-service-entries) (assoc id->service' (:id service) service-entry')))
           id->service')))))
 
@@ -439,8 +448,7 @@
                                (do (log/info "launching new instances to ensure scale" {:current-count active-instances, :target-count scale-to-instances})
                                    (-> service-entry
                                        (assoc :id->instance (merge id->instance (into {} (repeatedly to-launch launch-new))))
-                                       (assoc-in [:service :task-count] scale-to-instances)
-                                       (assoc-in [:service :task-stats :running] scale-to-instances)))
+                                       update-task-stats))
                                service-entry)]
           (recur (rest remaining-service-entries) (assoc id->service' id service-entry')))
         id->service'))))
@@ -465,8 +473,8 @@
   [{:keys [service id->instance]}]
   [service
    {:active-instances (filter active? (vals id->instance))
-    :failed-instances (filter :failed (vals id->instance))
-    :killed-instances (filter :killed (vals id->instance))}])
+    :failed-instances (filter :failed? (vals id->instance))
+    :killed-instances (filter :killed? (vals id->instance))}])
 
 (defn directory-content
   "Returns a sequence of entries, where each entry represents an
@@ -529,7 +537,8 @@
               completion-promise)
         (let [result (deref completion-promise)
               success (= result :deleted)]
-          {:success success
+          {:killed? true
+           :success success
            :result result
            :message (if success
                       (str "Deleted " id)
