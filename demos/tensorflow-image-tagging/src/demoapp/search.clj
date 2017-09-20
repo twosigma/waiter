@@ -13,11 +13,15 @@
             [clojure.tools.logging :as log])
   (:import (java.net URLEncoder)))
 
+(def ^:const ^:private search-base-url "https://en.wikipedia.org/w/api.php")
+(def ^:const ^:private image-search-url (str search-base-url "?action=query&prop=images&format=json&titles="))
+(def ^:const ^:private title-search-url (str search-base-url "?action=query&prop=imageinfo&iiprop=url&format=json&titles="))
+
 (defn- search->image-titles
   [search-query]
   (let [extract-titles (fn extract-titles [page-entries]
                          (mapcat (fn [page-entry] (map #(get % "title") (get page-entry "images"))) page-entries))
-        search-url (str "https://en.wikipedia.org/w/api.php?action=query&prop=images&format=json&titles=" (URLEncoder/encode search-query))
+        search-url (str image-search-url (URLEncoder/encode search-query))
         initial-result (-> search-url slurp json/read-str)]
     (-> initial-result
         (get-in ["query" "pages"])
@@ -38,7 +42,7 @@
 
 (defn- image-title->image-entry
   [image-title]
-  (-> (str "https://en.wikipedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url&format=json&titles=" (URLEncoder/encode image-title))
+  (-> (str title-search-url (URLEncoder/encode image-title))
       slurp
       json/read-str
       (get-in ["query" "pages"])

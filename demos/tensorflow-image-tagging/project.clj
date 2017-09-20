@@ -9,8 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (defproject tensorflow-image-tagging "0.1.0-SNAPSHOT"
-  :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
-                 [cc.qbits/jet "0.7.10-20170801_153701-gf517b70"]
+  :dependencies [[cc.qbits/jet "0.7.10"]
                  [log4j/log4j "1.2.17" :exclusions [javax.mail/mail
                                                     javax.jms/jms
                                                     com.sun.jmdk/jmxtools
@@ -21,7 +20,6 @@
                  [org.clojure/tools.logging "0.3.1"]
                  [ring/ring-core "1.4.0"]
                  [ring-basic-authentication "1.0.5"]]
-  :plugins [[lein-voom "0.1.0-20150115_230705-gd96d771"]]
   :main ^:skip-aot demoapp.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}}

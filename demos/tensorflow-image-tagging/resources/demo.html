@@ -203,17 +203,16 @@
 	</body>
 	<script type="text/javascript">
 $(document).ready(function(){
-	var waiter_url = 'http://127.0.0.1:9091';
+	var waiter_port = '9091';
 	var ascii = /^[ -~]+$/;
 
 	$( "#search-form" ).submit(function( event ) {
   		$("#result-box").html('');
         var searchText = $("#search-text").val();
   		$.ajax({
-        	url: waiter_url + "/image-search",
+        	url: 'http://image-search.localtest.me:' + waiter_port + '/image-search',
         	data: { search: searchText.trim().replace(/ /g, '%20') },
         	type: "GET",
-        	beforeSend: function(xhr){ xhr.setRequestHeader('x-waiter-token', 'image-search'); },
         	success: function(data) {
         		for (image_index in data.result) {
         			var loopImageName = data.result[image_index].title;
@@ -227,13 +226,12 @@ $(document).ready(function(){
 					$("#result-box").append("<div class='card' id='" + loopImageId + "'><img src='" + loopImageUrl + "' title='" + loopImageName + "'  class='image-card'/></div>");
 
 					$.ajax({
-        				url: waiter_url + "/image-tagging",
+        				url: 'http://image-tagging.localtest.me:' + waiter_port + '/image-tagging',
         				data: { id: loopImageId,
         				        name: loopImageId + '.jpg',
         				        predictions: 1,
         				        url: loopImageUrl },
         				type: "GET",
-        				beforeSend: function(xhr){ xhr.setRequestHeader('x-waiter-token', 'image-tagging'); },
         				success: function(data) {
         					var loopImageId = data.id;
         					$("#" + loopImageId).attr('class', $("#" + loopImageId).attr('class') + ' tagged');

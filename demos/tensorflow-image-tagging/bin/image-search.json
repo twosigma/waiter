@@ -8,6 +8,6 @@
   "mem": 1024,
   "name": "image-search-service",
   "run-as-user": "RUN_AS_USER",
-  "token": "image-search",
+  "token": "image-search.localtest.me",
   "version": "0.1.0-SNAPSHOT"
 }

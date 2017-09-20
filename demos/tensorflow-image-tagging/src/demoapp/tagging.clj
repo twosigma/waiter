@@ -15,6 +15,8 @@
             [clojure.tools.logging :as log])
   (:import (java.io File)))
 
+(def ^:const ^:private classifier-url "https://raw.githubusercontent.com/tensorflow/models/master/tutorials/image/imagenet/classify_image.py")
+
 (defn- directory-location
   [dir-name]
   (let [base-dir (or (System/getenv "MESOS_DIRECTORY") (System/getProperty "user.dir"))]
@@ -41,7 +43,6 @@
 (defn perform-image-tagging
   [image-id image-name image-url predictions]
   (let [image-location (directory-location (str "images" File/separator image-name))
-        classifier-url "https://raw.githubusercontent.com/tensorflow/models/master/tutorials/image/imagenet/classify_image.py"
         classifier-file-name "classify_image.py"
         classifier-file-location (directory-location (str "images" File/separator classifier-file-name))]
 
