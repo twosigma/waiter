@@ -77,11 +77,6 @@
        (printlog ~request "sending poison pill")
        (async/>! ~resp-chan (poison-pill-fn ~request)))))
 
-(defn- no-response-handler
-  "Prevents any HTTP response by exiting JVM."
-  [request]
-  (System/exit 1))
-
 (defn- gc-async-request
   "Completes a request and performs GC by cleaning up entry in async-requests."
   [request-id]
@@ -422,7 +417,6 @@
                      "/environment" (environment-handler request)
                      "/gzip" (gzip-handler request)
                      "/kitchen-state" (state-handler request)
-                     "/no-response" (no-response-handler request)
                      "/pi" (pi-handler request)
                      "/request-info" (request-info-handler request)
                      "/sleep" (sleep-handler request)

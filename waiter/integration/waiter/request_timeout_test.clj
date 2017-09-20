@@ -85,8 +85,9 @@
           (is (not (str/blank? (get headers "x-cid"))))))
 
       (testing "backend request failed"
-        (let [extra-headers {:x-waiter-debug "true"}
-              {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :path "/no-response")
+        (let [extra-headers {:x-kitchen-delay-ms 5000 ; sleep long enough to die before response
+                             :x-waiter-debug "true"}
+              {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :path "/die")
               response-body (:body response)
               error-message (-> (waiter-settings waiter-url) :messages :backend-request-failed)]
           (assert-response-status response 502)
