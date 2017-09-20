@@ -555,6 +555,8 @@
    :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
                        (authz/run-as? entitlement-manager auth-user run-as-user)))
+   :create-token-infrastructure-fn (pc/fnk [[:settings hostname token-infrastructure-config]]
+                                     (utils/create-component token-infrastructure-config :context {:hostname hostname}))
    :crypt-helpers (pc/fnk [[:state passwords]]
                     (let [password (first passwords)]
                       {:bytes-decryptor (fn bytes-decryptor [data] (utils/compressed-bytes->map data password))
@@ -1113,7 +1115,8 @@
    :status-handler-fn (pc/fnk []
                         (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
    :token-handler-fn (pc/fnk [[:curator kv-store]
-                              [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
+                              [:routines create-token-infrastructure-fn make-inter-router-requests-sync-fn synchronize-fn
+                               validate-service-description-fn]
                               [:settings hostname]
                               [:state clock entitlement-manager]
                               handle-secure-request-fn]
@@ -1122,7 +1125,7 @@
                            (fn inner-token-handler-fn [request]
                              (token/handle-token-request
                                clock synchronize-fn kv-store hostname entitlement-manager make-inter-router-requests-sync-fn
-                               validate-service-description-fn request))
+                               validate-service-description-fn create-token-infrastructure-fn request))
                            request)))
    :token-list-handler-fn (pc/fnk [[:curator kv-store]
                                    handle-secure-request-fn]

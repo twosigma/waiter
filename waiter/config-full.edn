@@ -142,6 +142,14 @@
                      ;; The time (seconds) that entries are allowed to reside in the cache:
                      :ttl 60}}
 
+ ;; Enables running the token infrastructure function to allow post processing after a token has been created/updated.
+ ;; Internally, this is used for DNS record creation and SSL certificate generation.
+ :token-infrastructure-config {:kind :none
+                               ;; the factory accepts a map as input and returns a function with the following form:
+                               ;; (fn create-token-infrastructure-fn [token token-metadata]
+                               ;;   ...)
+                               :none {:factory-fn 'waiter.token.noop-token-infrastructure-function}}
+
  ; ---------- Security ----------
 
  ;; Waiter supports authenticating requests to identify the principal of the requesting user.
