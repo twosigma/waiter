@@ -120,6 +120,9 @@
                                        (s/required-key :port) schema/positive-int
                                        (s/required-key :publish-interval-ms) schema/positive-int
                                        (s/required-key :server) schema/non-empty-string})
+   (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
+                                    (s/required-key :link) {(s/required-key :type) s/Keyword
+                                                            (s/required-key :value) schema/non-empty-string}}]
    (s/required-key :thread-stack-state-refresh-interval-ms) schema/positive-int
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
@@ -208,7 +211,9 @@
                        :ttl 60}
                :encrypt true
                :relative-path "tokens"}
-   :messages {:bad-startup-command "Invalid startup command"
+   :messages {:backend-request-failed "Request to service backend failed"
+              :backend-request-timed-out "Request to service backend timed out"
+              :bad-startup-command "Invalid startup command"
               :cannot-connect "Unable to connect to run health checks"
               :cannot-identify-service "Unable to identify service using waiter headers/token"
               :health-check-requires-authentication "Health check requires authentication"
@@ -279,6 +284,9 @@
                                   "scale-factor" 1
                                   "scale-up-factor" 0.1}
    :statsd :disabled
+   :support-info [{:label "Waiter on GitHub"
+                   :link {:type :url
+                          :value "http://github.com/twosigma/waiter"}}]
    :thread-stack-state-refresh-interval-ms 600000 ; 10 minutes
    :websocket-config {:ws-max-binary-message-size  (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}

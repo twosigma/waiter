@@ -467,7 +467,9 @@
  ; ---------- Miscellaneous ----------
 
  ;; Certain messages that Waiter returns can be customized:
- :messages {:bad-startup-command "Invalid startup command"
+ :messages {:backend-request-failed "Request to service backend failed"
+            :backend-request-timed-out "Request to service backend timed out"
+            :bad-startup-command "Invalid startup command"
             :cannot-connect "Unable to connect to run health checks"
             :cannot-identify-service "Unable to identify service using waiter headers/token"
             :environment-variable-error-info "Error in environment variables"
@@ -478,6 +480,10 @@
             :metadata-error-info "Error in metadata"
             :not-enough-memory "Not enough memory allocated"
             :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}
+
+ ;; Support information used to provide user guidance in error messages
+ :support-info [{:label "Email Support Team" :link {:type :email :value "support@example.com"}}
+                {:label "Waiter on GitHub" :link {:type :url :value "http://github.com/twosigma/waiter"}}]
 
  ;; Sets tolerance level for Waiter when declaring deployment errors
  :deployment-error-config {
@@ -502,5 +508,5 @@
  ;; Waiter supports making websocket connections to backends.
  ;; The maximum binary and text message sizes in the websocket request or response can be configured
  ;; as follows, the values are in bytes:
- :websocket-config {:ws-max-binary-message-size  41943040
+ :websocket-config {:ws-max-binary-message-size 41943040
                     :ws-max-text-message-size 41943040}}

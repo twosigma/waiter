@@ -62,8 +62,9 @@
                            {:instance-id ~instance-id, :service-id ~service-id}))))
        (do
          (log/error "Unable to find blacklist chan for service" ~service-id)
-         (throw (ex-info "Unable to find blacklist chan"
-                         {:instance-id ~instance-id, :service-id ~service-id}))))))
+         (throw (ex-info "Service not found" {:instance-id ~instance-id
+                                              :service-id ~service-id
+                                              :status 400}))))))
 
 (defn blacklist-instance-go
   "Sends a rpc to the router state to blacklist the lock on the given instance."

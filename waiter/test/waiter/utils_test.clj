@@ -140,7 +140,7 @@
     (testing "should convert empty map"
       (let [{:keys [body headers status]} (map->json-response {})]
         (is (= 200 status))
-        (is (= {"Content-Type" "application/json"} headers))
+        (is (= {"content-type" "application/json"} headers))
         (is (not (nil? body)))))
 
     (testing "should convert regex patterns to strings"
@@ -153,7 +153,7 @@
   (testing "convert empty map"
     (let [{:keys [body headers status]} (map->streaming-json-response {})]
       (is (= 200 status))
-      (is (= {"Content-Type" "application/json"} headers))
+      (is (= {"content-type" "application/json"} headers))
       (is (= {} (json/read-str (json-response->str body))))))
   (testing "consumes status argument"
     (let [{:keys [status]} (map->streaming-json-response {} :status 404)]
@@ -165,31 +165,43 @@
                                json-response->str
                                json/read-str)))))
 
-(deftest test-exception->strs
-  (let [result (exception->strs (ex-info "TestCase Exception" {}))]
-    (is (not (empty? result))))
-  (let [result (exception->strs (ex-info "Test Exception" {:friendly-error-message "No Stack Trace"}))]
-    (is (= "No Stack Trace" result))))
-
-(deftest test-exception->status
-  (is (= 400 (exception->status (Exception. "test"))))
-  (is (= 400 (exception->status (ex-info "test" {}))))
-  (is (= 400 (exception->status (ex-info "test" {:status 400}))))
-  (is (= 502 (exception->status (ex-info "test" {:status 502}))))
-  (is (= 503 (exception->status (ex-info "test" {:status 503}))))
-  (is (= 400 (exception->status (Exception. ^Throwable (ex-info "test" {:status 503}))))))
-
 (deftest test-exception->response
-  (let [{:keys [body headers status]} (exception->response "Message" (ex-info "TestCase Exception" {}))]
-    (is (= 400 status))
-    (is (= {"Content-Type" "text/plain"} headers))
-    (is (not (nil? body)))))
-
-(deftest test-exception->json-response
-  (let [{:keys [body headers status]} (exception->json-response (ex-info "TestCase Exception" {}))]
-    (is (= 400 status))
-    (is (= {"Content-Type" "application/json"} headers))
-    (is (not (nil? body)))))
+  (let [request {:request-method :get
+                 :uri "/path"
+                 :host "localhost"}]
+    (testing "html response"
+      (let [{:keys [body headers status]} 
+            (exception->response 
+              (ex-info "TestCase Exception" {:status 400})
+              (assoc-in request [:headers "accept"] "text/html"))]
+        (is (= 400 status))
+        (is (= {"content-type" "text/html"} headers))
+        (is (str/includes? body "TestCase Exception"))))
+    (testing "html response with links"
+      (let [{:keys [body headers status]} 
+            (exception->response 
+              (ex-info "TestCase Exception" {:status 400
+                                             :friendly-error-message "See http://localhost/path"})
+              (assoc-in request [:headers "accept"] "text/html"))]
+        (is (= 400 status))
+        (is (= {"content-type" "text/html"} headers))
+        (is (str/includes? body "See <a href=\"http://localhost/path\">http://localhost/path</a>"))))
+    (testing "plaintext response"
+      (let [{:keys [body headers status]}
+            (exception->response
+              (ex-info "TestCase Exception" {:status 400})
+              (assoc-in request [:headers "accept"] "text/plain"))]
+        (is (= 400 status))
+        (is (= {"content-type" "text/plain"} headers))
+        (is (str/includes? body "TestCase Exception"))))
+    (testing "json response"
+      (let [{:keys [body headers status]}
+            (exception->response 
+              (ex-info "TestCase Exception" {:status 500})
+              (assoc-in request [:headers "accept"] "application/json"))]
+        (is (= 500 status))
+        (is (= {"content-type" "application/json"} headers))
+        (is (str/includes? body "TestCase Exception"))))))
 
 (deftest test-log-and-suppress-when-exception-thrown
   (let [counter-atom (atom 0)
@@ -540,3 +552,33 @@
       (is (false? (port-available? port)))
       (.close ss))
     (is (port-available? port))))
+
+(deftest test-urls->html-links
+  (testing "nil"
+    (is (= nil (urls->html-links nil))))
+  (testing "http"
+    (is (= "<a href=\"http://localhost\">http://localhost</a>"
+           (urls->html-links "http://localhost"))))
+  (testing "with path"
+    (is (= "<a href=\"http://localhost/path\">http://localhost/path</a>"
+           (urls->html-links "http://localhost/path"))))
+  (testing "https"
+    (is (= "<a href=\"https://localhost/path\">https://localhost/path</a>"
+           (urls->html-links "https://localhost/path"))))
+  (testing "mixed content"
+    (is (= "hello <a href=\"https://localhost/path\">https://localhost/path</a> world"
+           (urls->html-links "hello https://localhost/path world")))))
+
+(deftest test-request->content-type
+  (testing "application/json if specified"
+    (is (= "application/json" (request->content-type {:headers {"accept" "application/json"}}))))
+  (testing "text/html if specified"
+    (is (= "text/html" (request->content-type {:headers {"accept" "text/html"}}))))
+  (testing "text/plain if specified"
+    (is (= "text/plain" (request->content-type {:headers {"accept" "text/plain"}}))))
+  (testing "application/json if Content-Type is application/json"
+    (is (= "application/json" (request->content-type {:headers {"content-type" "application/json"}}))))
+  (testing "else text/plain"
+    (is (= "text/plain" (request->content-type {:headers {"accept" "*/*"}})))
+    (is (= "text/plain" (request->content-type {:headers {"accept" ""}})))
+    (is (= "text/plain" (request->content-type {})))))

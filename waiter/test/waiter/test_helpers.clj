@@ -108,7 +108,7 @@
     (.toString baos)))
 
 (defn- process-streaming-body [{:keys [body headers] :as resp}]
-  (if (and (= "application/json" (get headers "Content-Type"))
+  (if (and (= "application/json" (get headers "content-type"))
            (fn? body))
     (assoc resp :body (json-response->str body))
     resp))

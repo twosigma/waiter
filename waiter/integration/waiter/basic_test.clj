@@ -15,6 +15,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
             [waiter.service-description :as sd])
@@ -137,7 +138,7 @@
             logs-response (make-request-fn log-url)
             response-body (:body logs-response)
             _ (log/debug "Response body:" response-body)
-            log-files-list (clojure.walk/keywordize-keys (json/read-str response-body))
+            log-files-list (walk/keywordize-keys (json/read-str response-body))
             stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
             stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
         (is (every? #(str/includes? (:body logs-response) %) ["stderr" "stdout" service-id])
@@ -180,11 +181,12 @@
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
+                   :x-waiter-version "1"
+                   :x-waiter-cmd "false"
                    :x-waiter-cmd-type "fakecommand"}
           {:keys [body status]} (make-light-request waiter-url headers)]
       (is (= 400 status))
-      (is (str/includes? body "fakecommand"))
-      (is (str/includes? body "cmd-type")))))
+      (is (str/includes? body "Command type fakecommand is not supported")))))
 
 (deftest ^:parallel ^:integration-fast test-header-metadata
   (testing-using-waiter-url
@@ -320,7 +322,7 @@
       (make-request waiter-url (str "/apps/" service-id "/suspend"))
       (let [results (parallelize-requests 10 2
                                           #(let [{:keys [body]} (make-kitchen-request waiter-url waiter-headers)]
-                                             (str/includes? body "Service has been suspended!"))
+                                             (str/includes? body "Service has been suspended"))
                                           :verbose true)]
         (is (every? true? results)))
       (log/info "Resuming service " service-id)
@@ -479,3 +481,60 @@
         (let [{:keys [status] :as response} (make-request waiter-url "/state"
                                                           :headers {"origin" "example.com"})]
           (is (= 200 status) response))))))
+
+(deftest ^:parallel ^:integration-fast test-error-handling
+  (testing-using-waiter-url
+    (testing "text/plain default"
+      (let [{:keys [body headers status]} (make-request waiter-url "/")] 
+        (is (= 400 status))
+        (is (= "text/plain" (get headers "content-type")))
+        (is (str/includes? body "Waiter Error 400"))
+        (is (str/includes? body "================"))))
+    (testing "text/plain explicit"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/plain"})] 
+        (is (= 400 status))
+        (is (= "text/plain" (get headers "content-type")))
+        (is (str/includes? body "Waiter Error 400"))
+        (is (str/includes? body "================"))))
+    (testing "text/html"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/html"})] 
+        (is (= 400 status))
+        (is (= "text/html" (get headers "content-type")))
+        (is (str/includes? body "Waiter Error 400"))
+        (is (str/includes? body "<html>"))))
+    (testing "application/json explicit"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
+            {:strs [waiter-error]} (try (json/read-str body)
+                                        (catch Throwable e
+                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
+        (is (= 400 status))
+        (is (= "application/json" (get headers "content-type")))
+        (is waiter-error (str "Could not find waiter-error element in body " body))
+        (let [{:strs [status]} waiter-error]
+          (is (= 400 status)))))
+    (testing "application/json implied by content-type"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"content-type" "application/json"})
+            {:strs [waiter-error]} (try (json/read-str body)
+                                        (catch Throwable e
+                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
+        (is (= 400 status))
+        (is (= "application/json" (get headers "content-type")))
+        (is waiter-error (str "Could not find waiter-error element in body " body))
+        (let [{:strs [status]} waiter-error]
+          (is (= 400 status)))))
+    (testing "support information included"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
+            {:keys [support-info]} (waiter-settings waiter-url)
+            {:strs [waiter-error]} (try (json/read-str body)
+                                        (catch Throwable e
+                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
+
+        (is (= 400 status))
+        (is (= "application/json" (get headers "content-type")))
+        (is waiter-error (str "Could not find waiter-error element in body " body))
+        (let [{:strs [status]} waiter-error]
+          (is (= 400 status))
+          (is (= support-info (-> (get waiter-error "support-info")
+                                  (walk/keywordize-keys)))))))))
+
+

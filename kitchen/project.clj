@@ -25,6 +25,7 @@
   :plugins [[lein-voom "0.1.0-20150115_230705-gd96d771"]]
   :main ^:skip-aot kitchen.core
   :target-path "target/%s"
-  :profiles {:uberjar {:aot :all}}
+  :profiles {:uberjar {:aot :all}
+             :override-maven {:local-repo ~(System/getenv "WAITER_MAVEN_LOCAL_REPO")}}
   :uberjar-name ~(System/getenv "UBERJAR_NAME")
   :resource-paths ["resources"])

@@ -27,10 +27,10 @@
      (is (str/includes? ~response-body (str "After " ~timeout-period-sec " seconds, no instance available to handle request.")))
      (when ~faulty-app?
        (is (str/includes? ~response-body "Check that your service is able to start properly!")))
-     (is (and (str/includes? ~response-body "outstanding-requests:")
-              (not (str/includes? ~response-body "outstanding-requests: 0"))))
-     (is (str/includes? ~response-body "requests-waiting-to-stream: 0"))
-     (is (str/includes? ~response-body "waiting-for-available-instance: 1"))
+     (is (and (str/includes? ~response-body "outstanding-requests")
+              (not (str/includes? ~response-body "outstanding-requests 0"))))
+     (is (str/includes? ~response-body "requests-waiting-to-stream 0"))
+     (is (str/includes? ~response-body "waiting-for-available-instance 1"))
      (is (str/includes? ~response-body ~service-name))
      (log/info "Ran assertions on timed-out request")))
 
@@ -64,29 +64,40 @@
     (log/info "response: " (:body response))
     response))
 
-(deftest ^:parallel ^:integration-fast test-request-client-timeout
+(deftest ^:parallel ^:integration-fast test-backend-request-errors
   (testing-using-waiter-url
-    (log/info (str "request-client-timeout-test: if we can't get an instance quickly inside client timeout"))
-    (let [timeout-period 2000
-          extra-headers {:x-waiter-name (rand-name)
-                         :x-waiter-timeout timeout-period
-                         :x-waiter-debug "true"
-                         :x-kitchen-delay-ms (+ 2000 timeout-period)}
-          response (make-kitchen-request waiter-url extra-headers)
-          response-headers (:headers response)
-          response-body (:body response)
-          service-id (retrieve-service-id waiter-url (:request-headers response))]
-      (assert-response-status response 503)
-      (log/info "Response code check executed.")
-      (is (str/includes? response-body "Connection error while sending request to instance"))
-      (is (str/includes? response-body "onIdleExpired"))
-      (log/info "Response body check executed.")
-      (is (not (str/blank? (get response-headers "x-waiter-backend-id"))))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-host"))))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-port"))))
-      (is (not (str/blank? (get response-headers "x-waiter-backend-proto"))))
-      (is (not (str/blank? (get response-headers "x-cid"))))
-      (log/info "Response headers check executed.")
+    (let [service-id (retrieve-service-id waiter-url {})]
+      (testing "backend request timeout"
+        (let [timeout-period 2000
+              extra-headers {:x-waiter-timeout timeout-period
+                             :x-waiter-debug "true"
+                             :x-kitchen-delay-ms (+ 2000 timeout-period)}
+              {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers)
+              response-body (:body response)
+              error-message (-> (waiter-settings waiter-url) :messages :backend-request-timed-out)]
+          (assert-response-status response 504)
+          (is error-message)
+          (is (str/includes? response-body error-message))
+          (is (not (str/blank? (get headers "x-waiter-backend-id"))))
+          (is (not (str/blank? (get headers "x-waiter-backend-host"))))
+          (is (not (str/blank? (get headers "x-waiter-backend-port"))))
+          (is (not (str/blank? (get headers "x-waiter-backend-proto"))))
+          (is (not (str/blank? (get headers "x-cid"))))))
+
+      (testing "backend request failed"
+        (let [extra-headers {:x-kitchen-delay-ms 5000 ; sleep long enough to die before response
+                             :x-waiter-debug "true"}
+              {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :path "/die")
+              response-body (:body response)
+              error-message (-> (waiter-settings waiter-url) :messages :backend-request-failed)]
+          (assert-response-status response 502)
+          (is error-message)
+          (is (str/includes? response-body error-message))
+          (is (not (str/blank? (get headers "x-waiter-backend-id"))))
+          (is (not (str/blank? (get headers "x-waiter-backend-host"))))
+          (is (not (str/blank? (get headers "x-waiter-backend-port"))))
+          (is (not (str/blank? (get headers "x-waiter-backend-proto"))))
+          (is (not (str/blank? (get headers "x-cid"))))))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-request-queue-timeout-slow-start-app

@@ -86,6 +86,6 @@
         (is (< (count responses-with-503) num-requests))
         (is (every? (fn [{body :body}]
                       (every? #(str/includes? (str body) (str %))
-                              ["Max queue length exceeded!" service-id]))
+                              ["Max queue length exceeded" service-id]))
                     responses-with-503)))
       (delete-service waiter-url service-id))))
