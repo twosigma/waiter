@@ -12,8 +12,7 @@
   (:require [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [qbits.jet.client.http :as http]
-            [token-syncer.syncer :as syncer]
-            [token-syncer.waiter :as waiter])
+            [token-syncer.syncer :as syncer])
   (:import (org.eclipse.jetty.client HttpClient))
   (:gen-class))
 
@@ -36,28 +35,29 @@
         (println (str (.getName thread) " threw exception: " (.getMessage throwable)))
         (.printStackTrace throwable)))))
 
-(defn- configure-cli-options
-  "Returns the cli options for the token syncer."
-  []
-  [["-c" "--cluster" "The comma-separated cluster urls"
-    :default ""
-    :parse-fn #(Integer/parseInt %)
-    :validate [#(not (str/blank? %)) "Must be a non-empty string"]]
-   ["-h" "--help"]
-   ["-i" "--idle-timeout-ms timeout" "The idle timeout"
-    :default 30000
-    :parse-fn #(Integer/parseInt %)
-    :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]
-   ["-s" "--use-spnego true|false" "Whether or not to use spnego"
-    :default false
-    :parse-fn #(Boolean/parseBoolean %)]
-   ["-t" "--connection-timeout-ms timeout" "The connection timeout"
-    :default 1000
-    :parse-fn #(Integer/parseInt %)
-    :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]])
+(defn parse-cli-options
+  "Parses and returns the cli options passed to the token syncer."
+  [args]
+  (let [cli-options [["-c" "--cluster-urls" "The semi-colon separated cluster urls"
+                      :default []
+                      :parse-fn #(str/split % #";")
+                      :validate [#(not (str/blank? %)) "Must be a non-empty string"]]
+                     ["-h" "--help"]
+                     ["-i" "--idle-timeout-ms timeout" "The idle timeout in milliseconds"
+                      :default 30000
+                      :parse-fn #(Integer/parseInt %)
+                      :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]
+                     ["-s" "--use-spnego"]
+                     ["-t" "--connection-timeout-ms timeout" "The connection timeout in milliseconds"
+                      :default 1000
+                      :parse-fn #(Integer/parseInt %)
+                      :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]]]
+    (cli/parse-opts args cli-options)))
 
-(defn exit [status msg]
-  (println msg)
+(defn exit
+  "Helper function that prints the message and triggers a System exit."
+  [status message]
+  (println message)
   (System/exit status))
 
 (defn -main
@@ -65,18 +65,16 @@
   [& args]
   (setup-exception-handler)
   (println "command-line arguments:" (vec args))
-  (let [cli-options (configure-cli-options)
-        {:keys [options summary]} (cli/parse-opts args cli-options)
-        {:keys [cluster help use-spnego]} options
-        cluster-urls (str/split cluster #",")]
+  (let [{:keys [options summary]} (parse-cli-options args)
+        {:keys [cluster-urls help use-spnego]} options]
     (try
       (if help
         (println summary)
         (do
           (when use-spnego
             (println "Using SPNEGO auth while communicating with Waiter clusters"))
-          (when-not (seq cluster-urls) ;; TODO validate multiple urls
-            (exit 1 "Missing cluster parameter!"))
+          (when-not (> (count cluster-urls) 1)
+            (exit 1 (str "Expecting multiple urls in the cluster parameter, provided " cluster-urls)))
           (let [http-client-wrapper (http-client-wrapper-factory options)]
             (syncer/sync-tokens http-client-wrapper cluster-urls))))
       (catch Exception e
