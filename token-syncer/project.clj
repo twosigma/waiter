@@ -23,16 +23,12 @@
                                             "git" "rev-parse" "HEAD")))})}]
   :main ^:skip-aot token-syncer.main
   :plugins [[lein-voom "0.1.0-20150115_230705-gd96d771"]]
-  :profiles {:test-log {:jvm-opts
-                        ["-Dlog4j.configuration=log4j-test.properties"]}
-             :test-repl {:jvm-opts
-                         ["-Dlog4j.configuration=log4j-repl.properties"
-                          "-XX:+PrintGCDetails"
-                          "-XX:+PrintGCTimeStamps"
-                          "-XX:+PrintReferenceGC"
-                          "-XX:+PrintAdaptiveSizePolicy"
-                          "-Xmx512m"
-                          "-Xloggc:log/gc.log"]}
+  :profiles {:test-repl {:jvm-opts ["-XX:+PrintAdaptiveSizePolicy"
+                                    "-XX:+PrintGCDetails"
+                                    "-XX:+PrintGCTimeStamps"
+                                    "-XX:+PrintReferenceGC"
+                                    "-Xmx512m"
+                                    "-Xloggc:log/gc.log"]}
              :uberjar {:aot :all}}
   :resource-paths ["resources"]
   :target-path "target/%s"

@@ -31,14 +31,7 @@ WAITER_DIR=${DIR}/../../waiter
 TEST_COMMAND=${1:-test}
 TEST_SELECTOR=${2:-integration}
 
-export WAITER_URIS=${WAITER_URIS:-127.0.0.1:9091;127.0.0.1:9092}
-export WAITER_USERNAME=testrunner
-export WAITER_PASSWORD=opensesame
-
-# Launch the token syncer
-cd ${SYNCER_DIR}
-lein do clean, compile, run config-full.edn --port 9100 &
-export SYNCER_URI=127.0.0.1:9100
+export WAITER_URIS=${WAITER_URIS:-http://127.0.0.1:9091;http://127.0.0.1:9092}
 
 # Wait for waiter to be listening
 for WAITER_URI in ${WAITER_URIS//;/ }
@@ -50,13 +43,6 @@ do
     exit 1
   fi
 done
-
-timeout 180s bash -c "wait_for_server ${SYNCER_URI}"
-if [ $? -ne 0 ]; then
-  echo "$(date +%H:%M:%S) timed out waiting for token-syncer to start listening on ${SYNCER_URI}, displaying syncer log"
-  cat ${SYNCER_DIR}/log/*token-syncer.log
-  exit 1
-fi
 
 # Run the integration tests
 cd ${SYNCER_DIR}

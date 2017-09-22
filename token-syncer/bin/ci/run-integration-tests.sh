@@ -16,28 +16,16 @@ TEST_SELECTOR=${2:-integration}
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../../../waiter
 SYNCER_DIR=${WAITER_DIR}/../token-syncer
-KITCHEN_DIR=${WAITER_DIR}/../kitchen
-
-# Build mesos agent with kitchen backed in
-export PATH=${KITCHEN_DIR}/..:$PATH
-${KITCHEN_DIR}/bin/build-docker-image.sh
-
-# Start minimesos
-export PATH=${DIR}:${PATH}
-which minimesos
-pushd ${WAITER_DIR}
-minimesos up
-popd
 
 # Start waiter
 WAITER_PORT_1=9091
-${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT_1} &
+${WAITER_DIR}/bin/run-using-shell-scheduler.sh ${WAITER_PORT_1} &
 
 WAITER_PORT_2=9092
-${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT_2} &
+${WAITER_DIR}/bin/run-using-shell-scheduler.sh ${WAITER_PORT_2} &
 
 # Run the integration tests
-export WAITER_URIS="127.0.0.1:9091;127.0.0.1:9092"
+export WAITER_URIS="http://127.0.0.1:${WAITER_PORT_1};http://127.0.0.1:${WAITER_PORT_2}"
 ${SYNCER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
 
 # If there were failures, dump the logs

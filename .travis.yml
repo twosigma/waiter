@@ -17,6 +17,8 @@ env:
     - _JAVA_OPTIONS='' # Avoid unwanted _JAVA_OPTIONS set by Travis CI
   matrix:
     - TEST_DIR=kitchen TEST_CMD='lein test'
+    - TEST_DIR=token-syncer TEST_CMD='./bin/ci/run-unit-tests.sh'
+    - TEST_DIR=token-syncer TEST_CMD='./bin/ci/run-integration-tests.sh test integration'
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-fast'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-slow'
@@ -24,8 +26,6 @@ env:
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-fast'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-slow'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test explicit'
-    - TEST_DIR=token-syncer TEST_CMD='./bin/ci/run-unit-tests.sh'
-    - TEST_DIR=token-syncer TEST_CMD='./bin/ci/run-integration-tests.sh test integration'
 matrix:
     fast_finish: true
     allow_failures:
