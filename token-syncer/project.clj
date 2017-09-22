@@ -11,19 +11,11 @@
 (defproject token-syncer "0.1.0-SNAPSHOT"
   :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
                  [cc.qbits/jet "0.7.10-20170801_153701-gf517b70"]
-                 [log4j/log4j "1.2.17"
-                  :exclusions [javax.mail/mail
-                               javax.jms/jms
-                               com.sun.jmdk/jmxtools
-                               com.sun.jmx/jmxri]]
+                 [commons-codec/commons-codec "1.10"]
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/data.json "0.2.6"]
                  [org.clojure/tools.cli "0.3.5"]
-                 [org.clojure/tools.logging "0.4.0"]
-                 [prismatic/plumbing "0.5.4"]
-                 [prismatic/schema "1.1.6"]
-                 [ring/ring-core "1.6.1"]
-                 [ring-basic-authentication "1.0.5"]]
+                 [prismatic/plumbing "0.5.4"]]
   :filespecs [{:type :fn
                :fn (fn [p]
                      {:type :bytes :path "git-log"

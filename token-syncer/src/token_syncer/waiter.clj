@@ -12,7 +12,6 @@
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
             [qbits.jet.client.http :as http]
-            [token-syncer.correlation-id :as cid]
             [token-syncer.spnego :as spnego])
   (:import (org.eclipse.jetty.client HttpClient)
            (java.net URI)))
@@ -46,7 +45,8 @@
   (let [token-list-url (str cluster-url "/tokens")
         {:keys [body error]} (async/<!! (make-http-request http-client token-list-url))]
     (when error
-      (cid/error error "error in retrieving tokens from" cluster-url)
+      (println "error in retrieving tokens from" cluster-url)
+      (.printStackTrace error)
       (throw error))
     (->> body
          (async/<!!)
@@ -64,7 +64,8 @@
                                                                     :headers {"x-waiter-token" token}
                                                                     :query-params {"include-deleted" "true"}))]
       (when error
-        (cid/error error "error in retrieving tokens from" cluster-url)
+        (println "ERROR: error in retrieving tokens from" cluster-url)
+        (.printStackTrace error)
         (throw error))
       {:description (if (= status 200)
                       (->> body
@@ -76,13 +77,13 @@
                            str))
        :status status})
     (catch Exception ex
-      (cid/error ex "unable to retrieve token" token "from" cluster-url)
+      (println "ERROR: unable to retrieve token" token "from" cluster-url)
       {:error ex})))
 
 (defn store-token-on-cluster
   "Stores the token description on a specific cluster."
   [^HttpClient http-client cluster-url token token-description]
-  (cid/info "storing token:" token-description ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
+  (println "storing token:" token-description ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
           (make-http-request http-client
@@ -93,7 +94,7 @@
         body-data (when (not error) (async/<!! body))]
     (when error
       (throw error))
-    (cid/info "status:" status ", body:" body-data)
+    (println "status:" status ", body:" body-data)
     (when (or (nil? status)
               (< status 200)
               (> status 299))
@@ -105,7 +106,7 @@
 (defn hard-delete-token-on-cluster
   "Hard-delete a token on a specific cluster."
   [^HttpClient http-client cluster-url token]
-  (cid/info "hard-delete" token "on" cluster-url)
+  (println "hard-delete" token "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
           (make-http-request http-client
@@ -116,7 +117,7 @@
         body-data (when (not error) (async/<!! body))]
     (when error
       (throw error))
-    (cid/info "status:" status ", body:" body-data)
+    (println "status:" status ", body:" body-data)
     (when (or (nil? status)
               (< status 200)
               (> status 299))

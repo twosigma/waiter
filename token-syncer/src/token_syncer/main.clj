@@ -9,51 +9,76 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns token-syncer.main
-  (:require [clojure.tools.cli :as cli]
-            [clojure.tools.logging :as log]
-            [qbits.jet.server :as server]
-            [ring.middleware.params :as params]
-            [token-syncer.core :as core]
-            [token-syncer.correlation-id :as cid]
-            [token-syncer.settings :as settings]
-            [token-syncer.utils :as utils]
+  (:require [clojure.string :as str]
+            [clojure.tools.cli :as cli]
+            [qbits.jet.client.http :as http]
+            [token-syncer.syncer :as syncer]
             [token-syncer.waiter :as waiter])
+  (:import (org.eclipse.jetty.client HttpClient))
   (:gen-class))
 
-(defn -main
-  "The main entry point."
-  [config & args]
-  (log/info "command-line arguments:" (vec args))
+(defn ^HttpClient http-client-factory
+  "Creates an instance of HttpClient with the specified timeout."
+  [{:keys [connection-timeout-ms idle-timeout-ms]}]
+  (let [client (http/client {:connect-timeout connection-timeout-ms
+                             :idle-timeout idle-timeout-ms
+                             :follow-redirects? false})
+        _ (.clear (.getContentDecoderFactories client))]
+    client))
+
+(defn- setup-exception-handler
+  "Sets up the UncaughtExceptionHandler."
+  []
   (Thread/setDefaultUncaughtExceptionHandler
     (reify Thread$UncaughtExceptionHandler
       (uncaughtException [_ thread throwable]
-        (log/error throwable (str (.getName thread) " threw exception: " (.getMessage throwable))))))
-  (let [cli-options [["-h" "--help"]
-                     ["-p" "--port PORT" "Port number"
-                      :default 9009
-                      :parse-fn #(Integer/parseInt %)
-                      :validate [#(< 0 % 0x10000) "Must be between 0 and 65536"]]]
+        (println (str (.getName thread) " threw exception: " (.getMessage throwable)))
+        (.printStackTrace throwable)))))
+
+(defn- configure-cli-options
+  "Returns the cli options for the token syncer."
+  []
+  [["-c" "--cluster" "The comma-separated cluster urls"
+    :default ""
+    :parse-fn #(Integer/parseInt %)
+    :validate [#(not (str/blank? %)) "Must be a non-empty string"]]
+   ["-h" "--help"]
+   ["-i" "--idle-timeout-ms timeout" "The idle timeout"
+    :default 30000
+    :parse-fn #(Integer/parseInt %)
+    :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]
+   ["-s" "--use-spnego true|false" "Whether or not to use spnego"
+    :default false
+    :parse-fn #(Boolean/parseBoolean %)]
+   ["-t" "--connection-timeout-ms timeout" "The connection timeout"
+    :default 1000
+    :parse-fn #(Integer/parseInt %)
+    :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]])
+
+(defn exit [status msg]
+  (println msg)
+  (System/exit status))
+
+(defn -main
+  "The main entry point."
+  [& args]
+  (setup-exception-handler)
+  (println "command-line arguments:" (vec args))
+  (let [cli-options (configure-cli-options)
         {:keys [options summary]} (cli/parse-opts args cli-options)
-        {:keys [help port]} options
-        git-version (utils/retrieve-git-version)
-        settings (settings/load-settings config git-version)]
+        {:keys [cluster help use-spnego]} options
+        cluster-urls (str/split cluster #",")]
     (try
       (if help
         (println summary)
         (do
-          (log/info "using config file:" config)
-          (let [use-spnego (get-in settings [:http-client-properties :use-spnego])]
-            (log/info (when-not use-spnego "NOT") "using SPNEGO auth while communicating with Waiter clusters")
-            (deliver waiter/use-spnego-promise use-spnego))
-          (let [username (System/getenv "WAITER_USERNAME")
-                password (System/getenv "WAITER_PASSWORD")
-                server-options {:port port
-                                :request-header-size 32768
-                                :ring-handler (->> (core/http-handler-factory settings)
-                                                   params/wrap-params
-                                                   (core/basic-auth-middleware username password)
-                                                   cid/correlation-id-middleware)}]
-            (server/run-jetty server-options))))
+          (when use-spnego
+            (deliver waiter/use-spnego-promise use-spnego)
+            (println "Using SPNEGO auth while communicating with Waiter clusters"))
+          (when-not (seq cluster-urls) ;; TODO validate multiple urls
+            (exit 1 "Missing cluster parameter!"))
+          (let [http-client (http-client-factory options)]
+            (syncer/sync-tokens http-client cluster-urls))))
       (catch Exception e
-        (log/fatal e "Encountered error starting token-syncer with" options)
-        (System/exit 1)))))
+        (.printStackTrace e)
+        (exit 1 (str "Encountered error starting token-syncer: " (.getMessage e)))))))

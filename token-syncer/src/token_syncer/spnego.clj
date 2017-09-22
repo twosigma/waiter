@@ -9,7 +9,6 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns token-syncer.spnego
-  (:require [token-syncer.correlation-id :as cid])
   (:import (java.net URI)
            (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client.api Authentication$Result Request)
@@ -37,4 +36,5 @@
               header (str "Negotiate " (String. (.encode base64 token)))]
           (.header request HttpHeader/AUTHORIZATION header))
         (catch Exception e
-          (cid/error e "failure during spnego authentication"))))))
+          (println "ERROR: failure during spnego authentication")
+          (.printStackTrace e))))))

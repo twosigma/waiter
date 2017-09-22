@@ -9,13 +9,11 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns token-syncer.basic-test
-  (:require [clojure.core.async :as async]
-            [clojure.java.shell :as shell]
+  (:require [clojure.java.shell :as shell]
             [clojure.test :refer :all]
-            [clojure.tools.logging :as log]
             [clojure.string :as str]
             [qbits.jet.client.http :as http]
-            [token-syncer.core :as core]
+            [token-syncer.syncer :as syncer]
             [token-syncer.waiter :as waiter])
   (:import (java.net URI)
            (org.eclipse.jetty.client HttpClient)
@@ -27,15 +25,10 @@
     (->> (str/split waiter-uris #";")
          (map #(str "http://" %)))))
 
-(defn syncer-url []
-  (let [syncer-uri (System/getenv "SYNCER_URI")]
-    (is syncer-uri)
-    (str "http://" syncer-uri)))
-
 (defn execute-command [& args]
   (let [shell-output (apply shell/sh args)]
     (when (not= 0 (:exit shell-output))
-      (log/info (str "Error in running command: " (str/join " " args)))
+      (println (str "Error in running command: " (str/join " " args)))
       (throw (IllegalStateException. (str (:err shell-output)))))
     (str/trim (:out shell-output))))
 
@@ -62,24 +55,32 @@
 
 (deftest ^:integration test-environment
   (testing "presence of environment variables"
-    (log/info "env.SYNCER_URI" (System/getenv "SYNCER_URI"))
+    (println "env.SYNCER_URI" (System/getenv "SYNCER_URI"))
     (is (System/getenv "SYNCER_URI"))
 
-    (log/info "env.WAITER_PASSWORD" (System/getenv "WAITER_PASSWORD"))
+    (println "env.WAITER_PASSWORD" (System/getenv "WAITER_PASSWORD"))
     (is (System/getenv "WAITER_PASSWORD"))
 
-    (log/info "env.WAITER_URIS" (System/getenv "WAITER_URIS"))
+    (println "env.WAITER_URIS" (System/getenv "WAITER_URIS"))
     (is (System/getenv "WAITER_URIS"))
 
-    (log/info "env.WAITER_USERNAME" (System/getenv "WAITER_USERNAME"))
+    (println "env.WAITER_USERNAME" (System/getenv "WAITER_USERNAME"))
     (is (System/getenv "WAITER_USERNAME"))))
+
+(defn- ^HttpClient http-client-factory
+  "Creates an instance of HttpClient with the specified timeout."
+  [{:keys [connection-timeout-ms idle-timeout-ms]}]
+  (let [client (http/client {:connect-timeout connection-timeout-ms
+                             :idle-timeout idle-timeout-ms
+                             :follow-redirects? false})
+        _ (.clear (.getContentDecoderFactories client))]
+    client))
 
 (deftest ^:integration test-token-hard-deletes
   (testing "token sync hard-delete"
     (deliver waiter/use-spnego-promise (Boolean/parseBoolean (System/getenv "USE_SPNEGO")))
     (let [waiter-urls (waiter-urls)
-          syncer-url (syncer-url)
-          http-client (core/http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
           token-names ["test-token-hard-deletes-1" "test-token-hard-deletes-2" "test-token-hard-deletes-3"]
           token-description {"cpus" 1, "deleted" true, "mem" 2048, "owner" (retrieve-username)}]
       (doseq [waiter-url waiter-urls]
@@ -88,10 +89,6 @@
             (waiter/store-token-on-cluster http-client waiter-url token-name (dissoc token-description "deleted"))
             (waiter/store-token-on-cluster http-client waiter-url token-name token-description))))
 
-      (let [sync-response-chan (make-syncer-request http-client (str syncer-url "/sync-tokens")
-                                                    :query-params {"cluster-url" (vec waiter-urls)})
-            sync-response (async/<!! sync-response-chan)
-            sync-response-body (async/<!! (:body sync-response))]
-        (println sync-response-body))
-
+      (let [sync-response (syncer/sync-tokens http-client (vec waiter-urls))]
+        (println sync-response)) ;; TODO
       )))
