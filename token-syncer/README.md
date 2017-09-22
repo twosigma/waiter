@@ -1,19 +1,13 @@
-The token-syncer app is an HTTP server designed specifically for syncing tokens across Waiter clusters.
+The token-syncer app is a command-line application designed specifically for syncing tokens across Waiter clusters.
 
 # Implementation
 
-The token syncer communicates with Waiter clusters on their respective `/token` endpoints to retrieve
-and manage individual tokens.
-When requested to sync tokens across multiple clusters (via the `/sync-tokens` endpoint), it first loads
-all tokens on each cluster (clusters are specified as a query parameter).
+The token syncer communicates with Waiter clusters on their respective `/token` endpoints to retrieve and manage individual tokens.
+When requested to sync tokens across multiple clusters, it first loads all tokens on each cluster (clusters are specified as a query parameter).
 It then computes the latest version of the tokens using the `last-update-time` field in the token description.
 It then goes ahead to perform the sync operations using following cases:
 1. Updates the token description on the other clusters if any of the clusters do not agree on the token description.
 2. Hard-deletes a token if all the clusters agree on the token description and the token has been soft-deleted.
-
-# Configuration
-
-Please see the [config file](./config-full.edn) for details on how to configure the token-syncer.
 
 # Build Uberjar
 
@@ -26,19 +20,14 @@ Created /path-to-waiter-token-syncer/target/uberjar/token-syncer-0.1.0-SNAPSHOT-
 
 # Test
 
+## Unit testing
 ```bash
-$ lein run --port PORT
+$ lein test
+```
 
-$ curl -XPOST $(hostname):PORT
-Hello World
+## Integration testing
 
-$ curl -XPOST -H "x-token-syncer-echo;" -d "some text I want back" $(hostname):PORT
-some text I want back
-
-$ curl -v -XPOST -H "x-token-syncer-cookies: a=b,c=d" $(hostname):PORT
-...
-< HTTP/1.1 200 OK
-< Set-Cookie: a=b
-< Set-Cookie: c=d
-...
+Ensure you have multiple Waiters running, e.g. locally on port 9091 and 9093
+```bash
+$ WAITER_URI http://127.0.0.1:9091;http://127.0.0.1:9093 lein test :integration
 ```

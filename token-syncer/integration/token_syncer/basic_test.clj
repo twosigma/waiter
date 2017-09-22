@@ -35,24 +35,6 @@
 (defn retrieve-username []
   (execute-command "id" "-un"))
 
-(defn make-syncer-request
-  "Makes an asynchronous request to the request-url."
-  [^HttpClient http-client request-url &
-   {:keys [body headers method query-params]
-    :or {body ""
-         headers {}
-         method http/get
-         query-params {}}}]
-  (method http-client request-url
-          {:auth (BasicAuthentication$BasicResult. (URI. request-url)
-                                                   (System/getenv "WAITER_USERNAME")
-                                                   (System/getenv "WAITER_PASSWORD"))
-           :body body
-           :headers headers
-           :fold-chunked-response? true
-           :follow-redirects? false
-           :query-string query-params}))
-
 (deftest ^:integration test-environment
   (testing "presence of environment variables"
     (println "env.SYNCER_URI" (System/getenv "SYNCER_URI"))
