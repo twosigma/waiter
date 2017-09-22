@@ -64,7 +64,7 @@
   "The main entry point."
   [& args]
   (setup-exception-handler)
-  (println "command-line arguments:" (vec args))
+  (println "Command-line arguments:" (vec args))
   (let [{:keys [options summary]} (parse-cli-options args)
         {:keys [cluster-urls help use-spnego]} options]
     (try

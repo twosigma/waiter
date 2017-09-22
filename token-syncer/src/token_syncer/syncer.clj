@@ -35,20 +35,19 @@
                       (let [accum-last-update-time (get-in accum-data [:description "last-update-time"] 0)
                             cluster-token-description (:description token-data)
                             cluster-last-update-time (get cluster-token-description "last-update-time" 0)]
-                        (println "accum-last-update-time" accum-last-update-time ", cluster-last-update-time" cluster-last-update-time)
                         (if (and (seq cluster-token-description) (< accum-last-update-time cluster-last-update-time))
                           {:cluster-url cluster-url, :description cluster-token-description}
                           accum-data)))
                     {}
                     (token->cluster-url->token-data token))]
-        (println "latest data for" token "is" latest-data)
+        (println "Latest data for" token "is" latest-data)
         latest-data))
     (keys token->cluster-url->token-data)))
 
 (defn hard-delete-token-on-all-clusters
   "Hard-deletes a given token on all clusters."
   [^HttpClient http-client cluster-urls token]
-  (println "hard-delete" token "on clusters" cluster-urls)
+  (println "Hard-delete" token "on clusters" cluster-urls)
   (loop [[cluster-url & remaining-cluster-urls] (vec cluster-urls)
          cluster-sync-result {}]
     (if cluster-url
@@ -125,7 +124,7 @@
              token-sync-result {}]
         (if token
           (do
-            (println "syncing token:" token)
+            (println "Syncing token:" token)
             (let [{:keys [cluster-url description]} (token->latest-description token)
                   remaining-cluster-urls (disj cluster-urls cluster-url)
                   all-tokens-match (every? (fn all-tokens-match-pred [cluster-url]
@@ -134,7 +133,7 @@
                   all-soft-deleted (every? (fn soft-delete-pred [[_ token-data]]
                                              (true? (get-in token-data [:description "deleted"])))
                                            (token->cluster-url->token-data token))]
-              (println "syncing" token "with token description from" cluster-url
+              (println "Syncing" token "with token description from" cluster-url
                        {:all-soft-deleted all-soft-deleted, :all-tokens-match all-tokens-match})
               (let [sync-result (if (and all-tokens-match all-soft-deleted (seq description))
                                   (hard-delete-token-on-all-clusters http-client-wrapper cluster-urls token)

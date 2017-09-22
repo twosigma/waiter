@@ -39,7 +39,7 @@
   [data]
   (try
     (json/read-str (str data))
-    (catch Exception e
+    (catch Exception _
       (println "Unable to parse as json:" data)
       data)))
 
@@ -47,9 +47,9 @@
   "Loads the list of tokens on a specific cluster."
   [http-client-wrapper cluster-url]
   (let [token-list-url (str cluster-url "/tokens")
-        {:keys [body error]} (async/<!! (make-http-request http-client-wrapper token-list-url))]
+        {:keys [body error]} (async/<!! (make-http-request http-client-wrapper token-list-url :headers {"accept" "application/json"}))]
     (when error
-      (println "error in retrieving tokens from" cluster-url)
+      (println "ERROR: in retrieving tokens from" cluster-url)
       (.printStackTrace error)
       (throw error))
     (->> body
@@ -64,7 +64,7 @@
   (try
     (let [token-get-url (str cluster-url "/token")
           {:keys [body error status]} (async/<!! (make-http-request http-client-wrapper token-get-url
-                                                                    :headers {"x-waiter-token" token}
+                                                                    :headers {"accept" "application/json", "x-waiter-token" token}
                                                                     :query-params {"include-deleted" "true"}))]
       (when error
         (println "ERROR: error in retrieving tokens from" cluster-url)
@@ -81,18 +81,19 @@
 (defn store-token-on-cluster
   "Stores the token description on a specific cluster."
   [http-client-wrapper cluster-url token token-description]
-  (println "storing token:" token-description ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
+  (println "Storing token:" token-description ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
           (make-http-request http-client-wrapper
                              (str cluster-url "/token")
                              :body (json/write-str (assoc token-description :token token))
+                             :headers {"accept" "application/json"}
                              :method http/post
                              :query-params {"update-mode" "admin"}))
         body-data (when (not error) (async/<!! body))]
     (when error
       (throw error))
-    (println "status:" status ", body:" body-data)
+    (println "Status:" status ", body:" body-data)
     (when (or (nil? status)
               (< status 200)
               (> status 299))
@@ -104,18 +105,18 @@
 (defn hard-delete-token-on-cluster
   "Hard-delete a token on a specific cluster."
   [http-client-wrapper cluster-url token]
-  (println "hard-delete" token "on" cluster-url)
+  (println "Hard-delete" token "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
           (make-http-request http-client-wrapper
                              (str cluster-url "/token")
-                             :headers {"x-waiter-token" token}
+                             :headers {"accept" "application/json", "x-waiter-token" token}
                              :method http/delete
                              :query-params {"hard-delete" "true"}))
         body-data (when (not error) (async/<!! body))]
     (when error
       (throw error))
-    (println "status:" status ", body:" body-data)
+    (println "Status:" status ", body:" body-data)
     (when (or (nil? status)
               (< status 200)
               (> status 299))
