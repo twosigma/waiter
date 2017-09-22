@@ -34,6 +34,15 @@
                   use-spnego
                   (assoc :auth (spnego/spnego-authentication (URI. request-url))))))
 
+(defn- try-parse-json-data
+  "Attempts to parse the data as json, else return the data unparsed."
+  [data]
+  (try
+    (json/read-str (str data))
+    (catch Exception e
+      (println "Unable to parse as json:" data)
+      data)))
+
 (defn load-token-list
   "Loads the list of tokens on a specific cluster."
   [http-client-wrapper cluster-url]
@@ -45,8 +54,7 @@
       (throw error))
     (->> body
          (async/<!!)
-         str
-         json/read-str
+         try-parse-json-data
          (map (fn entry->token [entry] (get entry "token")))
          set)))
 
@@ -62,14 +70,9 @@
         (println "ERROR: error in retrieving tokens from" cluster-url)
         (.printStackTrace error)
         (throw error))
-      {:description (if (= status 200)
-                      (->> body
-                           (async/<!!)
-                           str
-                           json/read-str)
-                      (->> body
-                           (async/<!!)
-                           str))
+      {:description (->> body
+                         (async/<!!)
+                         try-parse-json-data)
        :status status})
     (catch Exception ex
       (println "ERROR: unable to retrieve token" token "from" cluster-url)
@@ -95,7 +98,7 @@
               (> status 299))
       (throw (ex-info "Token store failed"
                       {:body body-data, :status status, :token-data token-description})))
-    {:body body-data
+    {:body (try-parse-json-data body-data)
      :status status}))
 
 (defn hard-delete-token-on-cluster
@@ -117,6 +120,6 @@
               (< status 200)
               (> status 299))
       (throw (ex-info "Token hard-delete failed"
-                      {:body body-data, :status status, :token token})))
-    {:body body-data
+                      {:body (try-parse-json-data body-data), :status status, :token token})))
+    {:body (try-parse-json-data body-data)
      :status status}))

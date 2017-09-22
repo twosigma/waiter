@@ -14,16 +14,14 @@
             [clojure.string :as str]
             [qbits.jet.client.http :as http]
             [token-syncer.syncer :as syncer]
-            [token-syncer.waiter :as waiter])
-  (:import (java.net URI)
-           (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.client.util BasicAuthentication$BasicResult)))
+            [token-syncer.waiter :as waiter]
+            [plumbing.core :as pc])
+  (:import (org.eclipse.jetty.client HttpClient)))
 
 (defn waiter-urls []
   (let [waiter-uris (System/getenv "WAITER_URIS")]
     (is waiter-uris)
-    (->> (str/split waiter-uris #";")
-         (map #(str "http://" %)))))
+    (str/split waiter-uris #";")))
 
 (defn execute-command [& args]
   (let [shell-output (apply shell/sh args)]
@@ -37,17 +35,10 @@
 
 (deftest ^:integration test-environment
   (testing "presence of environment variables"
-    (println "env.SYNCER_URI" (System/getenv "SYNCER_URI"))
-    (is (System/getenv "SYNCER_URI"))
-
-    (println "env.WAITER_PASSWORD" (System/getenv "WAITER_PASSWORD"))
-    (is (System/getenv "WAITER_PASSWORD"))
-
+    (println "Running: test-environment")
     (println "env.WAITER_URIS" (System/getenv "WAITER_URIS"))
     (is (System/getenv "WAITER_URIS"))
-
-    (println "env.WAITER_USERNAME" (System/getenv "WAITER_USERNAME"))
-    (is (System/getenv "WAITER_USERNAME"))))
+    (is (> (count (waiter-urls)) 1))))
 
 (defn- ^HttpClient http-client-factory
   "Creates an instance of HttpClient with the specified timeout."
@@ -59,18 +50,26 @@
     {:http-client client
      :use-spnego (Boolean/parseBoolean (System/getenv "USE_SPNEGO"))}))
 
-(deftest ^:integration test-token-hard-deletes
+(deftest ^:integration test-token-hard-delete
   (testing "token sync hard-delete"
     (let [waiter-urls (waiter-urls)
-          http-client-wrapper (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
-          token-names ["test-token-hard-deletes-1" "test-token-hard-deletes-2" "test-token-hard-deletes-3"]
-          token-description {"cpus" 1, "deleted" true, "mem" 2048, "owner" (retrieve-username)}]
-      (doseq [waiter-url waiter-urls]
-        (doseq [token-name token-names]
-          (let [token-description (assoc token-description "name" token-name)]
-            (waiter/store-token-on-cluster http-client-wrapper waiter-url token-name (dissoc token-description "deleted"))
-            (waiter/store-token-on-cluster http-client-wrapper waiter-url token-name token-description))))
+          http-client-wrapper (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})]
+      (println "Running: test-token-hard-delete")
+      (let [token-name "test-token-hard-deletes-1"
+            token-description {"cpus" 1, "deleted" true, "mem" 2048, "name" token-name,
+                               "owner" (retrieve-username), "last-update-time" (System/currentTimeMillis)}]
 
-      (let [sync-response (syncer/sync-tokens http-client-wrapper (vec waiter-urls))]
-        (println sync-response)) ;; TODO
-      )))
+        (doseq [waiter-url waiter-urls]
+          (waiter/store-token-on-cluster http-client-wrapper waiter-url token-name token-description))
+
+        (let [actual-result (syncer/sync-tokens http-client-wrapper (vec waiter-urls))
+              waiter-sync-result (constantly
+                                   {:message :successfully-hard-deleted-token-on-cluster
+                                    :response {:body {"delete" token-name, "hard-delete" true, "success" true}
+                                               :status 200}})
+              expected-result {:num-tokens-processed 1,
+                               :result {"test-token-hard-deletes-1"
+                                        {:description {:cluster-url (first waiter-urls), :description token-description}
+                                         :sync-result (pc/map-from-keys waiter-sync-result waiter-urls)}}}]
+          (clojure.pprint/pprint actual-result)
+          (is (= expected-result actual-result)))))))
