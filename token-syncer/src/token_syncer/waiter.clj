@@ -93,7 +93,6 @@
         body-data (when (not error) (async/<!! body))]
     (when error
       (throw error))
-    (println "Status:" status ", body:" body-data)
     (when (or (nil? status)
               (< status 200)
               (> status 299))
@@ -116,7 +115,6 @@
         body-data (when (not error) (async/<!! body))]
     (when error
       (throw error))
-    (println "Status:" status ", body:" body-data)
     (when (or (nil? status)
               (< status 200)
               (> status 299))

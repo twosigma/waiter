@@ -143,10 +143,8 @@
                        (assoc token-sync-result
                          token {:description (token->latest-description token)
                                 :sync-result sync-result})))))
-          (do
-            (println "token-sync-result:" token-sync-result)
-            {:num-tokens-processed (count all-tokens)
-             :result token-sync-result}))))
+          {:num-tokens-processed (count all-tokens)
+           :result token-sync-result})))
     (catch Throwable th
       (println "ERROR: unable to sync tokens")
       (.printStackTrace th)
