@@ -4,34 +4,33 @@ The demo apps are HTTP servers designed specifically for exercising demo scenari
 This demo application performs image search and then tags the images using the [inception-v3 model built in tensorflow](https://www.tensorflow.org/tutorials/image_recognition).
 
 The demo highlights the following features of Waiter:
-1. Invoking different services from a client (i.e. the demo page)
-1. Running different services (image search and image tagging) on Waiter
-1. Services with different concurrency level support
-1. [Scaling of services](../../waiter/docs/autoscaling.md) (image tagging)
+
+1. Registering image search and image tagging as DNS record tokens in Waiter.
+
+1. Running different services (image search and image tagging) on Waiter.
+
+1. Services with different concurrency level support.
+
+1. Invoking different services from the same client (i.e. the demo page).
+
+1. [Scaling of services](../../waiter/docs/autoscaling.md) (image tagging).
+
+
+## Running the demo
 
 Steps to demo:
+
 1. Launch Waiter (e.g. on port 9091) `$ lein do clean, compile, run some-config.edn`
-1. Build the demo app docker image: `$ bin/build-docker-image.sh`
-1. Register the tokens for `image-search` and `image-tagging`: `$ bin/register-demo-tokens.sh`
-1. Open the demo page, e.g., by directly opening [demo.html](resources/demo.html) on a browser.
-1. Perform your image search and notice the images being tagged incrementally. ![Demo Image](docs/images/tensorflow-image-tagging.jpg "Demo Image")
 
-# Build Uberjar
+1. Build the demo app Docker image: `$ bin/build-docker-image.sh`
 
-```bash
-$ lein uberjar
-...
-Created /path-to-tensorflow-image-tagging/target/uberjar/tensorflow-image-tagging-0.1.0-SNAPSHOT.jar
-Created /path-to-tensorflow-image-tagging/target/uberjar/tensorflow-image-tagging-0.1.0-SNAPSHOT-standalone.jar
-```
+1. Register the tokens for `image-search` and `image-tagging`: `$ bin/register-demo-tokens.sh`.
+   The tokens use the [localtest.me](http://readme.localtest.me/) suffix.
 
-# Test
+1. Launch the demo app (e.g. on port 9095) `$ lein do clean, compile, run --port 9095`
 
-```bash
-$ lein run --port PORT
+1. Open the demo page on a browser by visiting `http://127.0.0.1:9095/demo`.
 
-$ curl -XPOST $(hostname):PORT/status
-OK
-...
-```
+1. Perform your image search and notice the images being tagged incrementally.
 
+   ![Demo Image](docs/images/tensorflow-image-tagging.jpg "Demo Image")
