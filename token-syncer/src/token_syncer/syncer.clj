@@ -114,12 +114,12 @@
 
 (defn sync-tokens
   "Syncs tokens across provided clusters based on cluster-urls."
-  [^HttpClient http-client cluster-urls]
+  [http-client-wrapper cluster-urls]
   (try
     (let [cluster-urls (set cluster-urls)
-          cluster-url->tokens (pc/map-from-keys #(waiter/load-token-list http-client %) cluster-urls)
+          cluster-url->tokens (pc/map-from-keys #(waiter/load-token-list http-client-wrapper %) cluster-urls)
           all-tokens (set (mapcat identity (vals cluster-url->tokens)))
-          token->cluster-url->token-data (retrieve-token->cluster-url->token-data http-client cluster-urls all-tokens)
+          token->cluster-url->token-data (retrieve-token->cluster-url->token-data http-client-wrapper cluster-urls all-tokens)
           token->latest-description (retrieve-token->latest-description token->cluster-url->token-data)]
       (loop [[token & remaining-tokens] (vec all-tokens)
              token-sync-result {}]
@@ -137,8 +137,8 @@
               (println "syncing" token "with token description from" cluster-url
                        {:all-soft-deleted all-soft-deleted, :all-tokens-match all-tokens-match})
               (let [sync-result (if (and all-tokens-match all-soft-deleted (seq description))
-                                  (hard-delete-token-on-all-clusters http-client cluster-urls token)
-                                  (sync-token-on-clusters http-client remaining-cluster-urls token description
+                                  (hard-delete-token-on-all-clusters http-client-wrapper cluster-urls token)
+                                  (sync-token-on-clusters http-client-wrapper remaining-cluster-urls token description
                                                          (token->cluster-url->token-data token)))]
                 (recur remaining-tokens
                        (assoc token-sync-result

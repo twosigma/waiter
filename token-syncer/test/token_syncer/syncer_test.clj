@@ -243,18 +243,20 @@
                 :sync-result :token-1-3-sync-token}}}
              (sync-tokens http-client cluster-urls))))))
 
-;; TODO shams remove tests bdelow
+;; TODO shams remove tests below
 
 (comment deftest test-retrieve-token
          (let [http-client (http/client {:connect-timeout 1000
                                          :idle-timeout 20000
-                                         :follow-redirects? false})]
-           (sync-tokens http-client ["http://localhost:9091" "http://localhost:9092"])))
+                                         :follow-redirects? false})
+               http-client-wrapper {:http-client http-client, :use-spnego false}]
+           (sync-tokens http-client-wrapper ["http://localhost:9091" "http://localhost:9092"])))
 
 (comment deftest test-register-tokens
          (let [http-client (http/client {:connect-timeout 1000
                                          :idle-timeout 20000
                                          :follow-redirects? false})
+               http-client-wrapper {:http-client http-client, :use-spnego false}
                waiter-port 9091
                waiter-url (str "http://localhost:" waiter-port)]
            (let [token-prefix "test-sync-token"
@@ -264,7 +266,7 @@
              (doseq [token tokens-to-create]
                (let [{:keys [body error status]}
                      (async/<!!
-                       (waiter/make-http-request http-client (str waiter-url "/token")
+                       (waiter/make-http-request http-client-wrapper (str waiter-url "/token")
                                                  :body (json/write-str {:health-check-url "/custom-endpoint"
                                                                         :deleted true
                                                                         :token token

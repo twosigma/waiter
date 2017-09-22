@@ -16,19 +16,14 @@
   (:import (org.eclipse.jetty.client HttpClient)
            (java.net URI)))
 
-;; promise that stores the state of whether to use SPNEGO auth or not
-(def use-spnego-promise (promise))
-
 (defn make-http-request
   "Makes an asynchronous request to the request-url."
-  [^HttpClient http-client request-url &
+  [{:keys [^HttpClient http-client use-spnego]} request-url &
    {:keys [body headers method query-params]
     :or {body ""
          headers {}
          method http/get
          query-params {}}}]
-  (when-not (realized? use-spnego-promise)
-    (throw (IllegalStateException. "use-spnego-promise has not been initialized!")))
   (method http-client request-url
           (cond-> {:body body
                    :headers headers
@@ -36,14 +31,14 @@
                    :follow-redirects? false
                    :query-string query-params}
 
-                  @use-spnego-promise
+                  use-spnego
                   (assoc :auth (spnego/spnego-authentication (URI. request-url))))))
 
 (defn load-token-list
   "Loads the list of tokens on a specific cluster."
-  [^HttpClient http-client cluster-url]
+  [http-client-wrapper cluster-url]
   (let [token-list-url (str cluster-url "/tokens")
-        {:keys [body error]} (async/<!! (make-http-request http-client token-list-url))]
+        {:keys [body error]} (async/<!! (make-http-request http-client-wrapper token-list-url))]
     (when error
       (println "error in retrieving tokens from" cluster-url)
       (.printStackTrace error)
@@ -57,10 +52,10 @@
 
 (defn load-token-on-cluster
   "Loads the description of a token on a cluster."
-  [^HttpClient http-client cluster-url token]
+  [http-client-wrapper cluster-url token]
   (try
     (let [token-get-url (str cluster-url "/token")
-          {:keys [body error status]} (async/<!! (make-http-request http-client token-get-url
+          {:keys [body error status]} (async/<!! (make-http-request http-client-wrapper token-get-url
                                                                     :headers {"x-waiter-token" token}
                                                                     :query-params {"include-deleted" "true"}))]
       (when error
@@ -82,11 +77,11 @@
 
 (defn store-token-on-cluster
   "Stores the token description on a specific cluster."
-  [^HttpClient http-client cluster-url token token-description]
+  [http-client-wrapper cluster-url token token-description]
   (println "storing token:" token-description ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
-          (make-http-request http-client
+          (make-http-request http-client-wrapper
                              (str cluster-url "/token")
                              :body (json/write-str (assoc token-description :token token))
                              :method http/post
@@ -105,11 +100,11 @@
 
 (defn hard-delete-token-on-cluster
   "Hard-delete a token on a specific cluster."
-  [^HttpClient http-client cluster-url token]
+  [http-client-wrapper cluster-url token]
   (println "hard-delete" token "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
-          (make-http-request http-client
+          (make-http-request http-client-wrapper
                              (str cluster-url "/token")
                              :headers {"x-waiter-token" token}
                              :method http/delete

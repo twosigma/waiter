@@ -74,21 +74,21 @@
                              :idle-timeout idle-timeout-ms
                              :follow-redirects? false})
         _ (.clear (.getContentDecoderFactories client))]
-    client))
+    {:http-client client
+     :use-spnego (Boolean/parseBoolean (System/getenv "USE_SPNEGO"))}))
 
 (deftest ^:integration test-token-hard-deletes
   (testing "token sync hard-delete"
-    (deliver waiter/use-spnego-promise (Boolean/parseBoolean (System/getenv "USE_SPNEGO")))
     (let [waiter-urls (waiter-urls)
-          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          http-client-wrapper (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
           token-names ["test-token-hard-deletes-1" "test-token-hard-deletes-2" "test-token-hard-deletes-3"]
           token-description {"cpus" 1, "deleted" true, "mem" 2048, "owner" (retrieve-username)}]
       (doseq [waiter-url waiter-urls]
         (doseq [token-name token-names]
           (let [token-description (assoc token-description "name" token-name)]
-            (waiter/store-token-on-cluster http-client waiter-url token-name (dissoc token-description "deleted"))
-            (waiter/store-token-on-cluster http-client waiter-url token-name token-description))))
+            (waiter/store-token-on-cluster http-client-wrapper waiter-url token-name (dissoc token-description "deleted"))
+            (waiter/store-token-on-cluster http-client-wrapper waiter-url token-name token-description))))
 
-      (let [sync-response (syncer/sync-tokens http-client (vec waiter-urls))]
+      (let [sync-response (syncer/sync-tokens http-client-wrapper (vec waiter-urls))]
         (println sync-response)) ;; TODO
       )))

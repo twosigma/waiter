@@ -17,14 +17,15 @@
   (:import (org.eclipse.jetty.client HttpClient))
   (:gen-class))
 
-(defn ^HttpClient http-client-factory
+(defn ^HttpClient http-client-wrapper-factory
   "Creates an instance of HttpClient with the specified timeout."
-  [{:keys [connection-timeout-ms idle-timeout-ms]}]
+  [{:keys [connection-timeout-ms idle-timeout-ms use-spnego]}]
   (let [client (http/client {:connect-timeout connection-timeout-ms
                              :idle-timeout idle-timeout-ms
                              :follow-redirects? false})
         _ (.clear (.getContentDecoderFactories client))]
-    client))
+    {:http-client client
+     :use-spnego use-spnego}))
 
 (defn- setup-exception-handler
   "Sets up the UncaughtExceptionHandler."
@@ -73,12 +74,11 @@
         (println summary)
         (do
           (when use-spnego
-            (deliver waiter/use-spnego-promise use-spnego)
             (println "Using SPNEGO auth while communicating with Waiter clusters"))
           (when-not (seq cluster-urls) ;; TODO validate multiple urls
             (exit 1 "Missing cluster parameter!"))
-          (let [http-client (http-client-factory options)]
-            (syncer/sync-tokens http-client cluster-urls))))
+          (let [http-client-wrapper (http-client-wrapper-factory options)]
+            (syncer/sync-tokens http-client-wrapper cluster-urls))))
       (catch Exception e
         (.printStackTrace e)
         (exit 1 (str "Encountered error starting token-syncer: " (.getMessage e)))))))
