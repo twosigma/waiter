@@ -18,7 +18,7 @@ Created /path-to-waiter-token-syncer/target/uberjar/token-syncer-0.1.0-SNAPSHOT.
 Created /path-to-waiter-token-syncer/target/uberjar/token-syncer-0.1.0-SNAPSHOT-standalone.jar
 ```
 
-# Test
+# Running Tests
 
 ## Unit testing
 ```bash

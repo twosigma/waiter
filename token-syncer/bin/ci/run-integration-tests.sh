@@ -28,15 +28,21 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../../../waiter
 SYNCER_DIR=${WAITER_DIR}/../token-syncer
 
+pushd ${WAITER_DIR}
+
+lein voom build-deps
+
 # Start waiter servers
 WAITER_URIS=""
 for waiter_port in 9093 9092 9091
 do
-  ${WAITER_DIR}/bin/run-using-shell-scheduler.sh ${waiter_port} &
+  bin/run-using-shell-scheduler.sh ${waiter_port} &
   WAITER_URI="http://127.0.0.1:${waiter_port}"
   timeout 180s bash -c "wait_for_server ${WAITER_URI}"
   WAITER_URIS="${WAITER_URI};${WAITER_URIS}"
 done
+
+popd
 
 # Run the integration tests
 export WAITER_URIS="${WAITER_URIS%?}"
