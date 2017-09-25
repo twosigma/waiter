@@ -1,4 +1,9 @@
 The token-syncer app is a command-line application designed specifically for syncing tokens across Waiter clusters.
+This application can be set up as a cronjob to run at intervals to sync tokens on independently running Waiter clusters on different datacenters.
+The syncing allows supporting datacenter failures as we can failover to another datacenter either with minimal downtime and customer impact.
+All that is needed in the datacenter failure scenario is to point the DNS records to an active datacenter running a Waiter instance.
+As requests come in to the new Waiter instance, Waiter will spin up service instances on the new datacenter and process the requests.
+
 
 # Implementation
 
