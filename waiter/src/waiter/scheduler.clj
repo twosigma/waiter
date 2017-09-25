@@ -406,7 +406,12 @@
            service->service-instances' {}]
       (if-not service
         service->service-instances'
-        (let [active-instances (doall (map async/<!! active-instances))]
+        (let [start-time-ms (-> (t/now) .getMillis)
+              active-instances (doall (map async/<!! active-instances))
+              end-time-ms (-> (t/now) .getMillis)
+              active-instances-computation-time-ms (- end-time-ms start-time-ms)]
+          (when (> active-instances-computation-time-ms 100)
+            (log/info "do-health-checks: took" active-instances-computation-time-ms "ms to compute active instances for" (:id service)))
           (recur rest (assoc service->service-instances'
                         service
                         (assoc instances :active-instances active-instances))))))))
@@ -476,11 +481,13 @@
                                 :instance-id->tracked-failed-instance instance-id->tracked-failed-instance'
                                 :instance-id->failed-health-check-count instance-id->failed-health-check-count'}})
                      scheduler-messages' remaining))
-            (do (log/info (timing-message-fn) "for" (count service->service-instances) "services.")
-                {:service-id->health-check-context service-id->health-check-context'
-                 :scheduler-messages scheduler-messages}))))
-      (do (log/info (timing-message-fn))
-          {:service-id->health-check-context service-id->health-check-context}))))
+            (do
+              (log/info (timing-message-fn) "for" (count service->service-instances) "services.")
+              {:service-id->health-check-context service-id->health-check-context'
+               :scheduler-messages scheduler-messages}))))
+      (do
+        (log/info (timing-message-fn) "and found no active services")
+        {:service-id->health-check-context service-id->health-check-context}))))
 
 (defn start-scheduler-syncer
   "Starts loop to query marathon for the app and instance statuses,
@@ -530,7 +537,7 @@
                        :priority true)]
             (recur next-state)))
         (catch Exception e
-          (log/error e "Fatal error in service-chan-maintainer")
+          (log/error e "Fatal error in scheduler-syncer")
           (System/exit 1))))
     {:exit-chan exit-chan
      :query-chan state-query-chan}))
