@@ -50,7 +50,7 @@
   (testing "single valid entry"
     (let [token-data {:description {"last-update-time" 1234}}
           token->cluster-url->token-data {"token-1" {"cluster-1" token-data
-                                                    "cluster-2" {}}}]
+                                                     "cluster-2" {}}}]
       (is (= {"token-1" {:description {"last-update-time" 1234}, :cluster-url "cluster-1"}}
              (retrieve-token->latest-description token->cluster-url->token-data)))))
 
@@ -59,8 +59,8 @@
           token-data-2 {:description {"last-update-time" 4567}}
           token-data-3 {:description {"last-update-time" 1267}}
           token->cluster-url->token-data {"token-1" {"cluster-1" token-data-1
-                                                    "cluster-2" token-data-2
-                                                    "cluster-3" token-data-3}}]
+                                                     "cluster-2" token-data-2
+                                                     "cluster-3" token-data-3}}]
       (is (= {"token-1" {:description {"last-update-time" 4567}, :cluster-url "cluster-2"}}
              (retrieve-token->latest-description token->cluster-url->token-data)))))
 
@@ -69,15 +69,15 @@
           token-data-2 {:description {"last-update-time" 4567}}
           token-data-3 {:description {"last-update-time" 1267}}
           token->cluster-url->token-data {"token-A2" {"cluster-1" token-data-1
-                                                     "cluster-2" token-data-2
-                                                     "cluster-3" token-data-3}
-                                         "token-B" {}
-                                         "token-C1" {"cluster-1" token-data-2
-                                                     "cluster-2" token-data-1
-                                                     "cluster-3" token-data-3}
-                                         "token-D3" {"cluster-1" token-data-3
-                                                     "cluster-2" token-data-2
-                                                     "cluster-3" token-data-1}}]
+                                                      "cluster-2" token-data-2
+                                                      "cluster-3" token-data-3}
+                                          "token-B" {}
+                                          "token-C1" {"cluster-1" token-data-2
+                                                      "cluster-2" token-data-1
+                                                      "cluster-3" token-data-3}
+                                          "token-D3" {"cluster-1" token-data-3
+                                                      "cluster-2" token-data-2
+                                                      "cluster-3" token-data-1}}]
       (is (= {"token-A2" {:description {"last-update-time" 4567}, :cluster-url "cluster-2"}
               "token-B" {}
               "token-C1" {:description {"last-update-time" 4567}, :cluster-url "cluster-1"}
@@ -94,11 +94,11 @@
                       (throw (Exception. "Error in hard-delete thrown from test"))
                       (str cluster-url ":" token)))]
       (is (= {"www.cluster-1.com" {:message :successfully-hard-deleted-token-on-cluster
-                                  :response "www.cluster-1.com:token-1"}
+                                   :response "www.cluster-1.com:token-1"}
               "www.cluster-2-error.com" {:cause "Error in hard-delete thrown from test"
-                                        :message :error-in-delete}
+                                         :message :error-in-delete}
               "www.cluster-3.com" {:message :successfully-hard-deleted-token-on-cluster
-                                  :response "www.cluster-3.com:token-1"}}
+                                   :response "www.cluster-3.com:token-1"}}
              (hard-delete-token-on-all-clusters http-client test-cluster-urls test-token))))))
 
 (deftest test-sync-token-on-clusters
@@ -115,12 +115,12 @@
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
-                                                                        "owner" "test-user-1"}
-                                                          :status 200}
-                                      "www.cluster-2.com" {:error (Exception. "cluster-2 data cannot be loaded")}}]
+                                                                          "owner" "test-user-1"}
+                                                            :status 200}
+                                       "www.cluster-2.com" {:error (Exception. "cluster-2 data cannot be loaded")}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
                   "www.cluster-2.com" {:cause "cluster-2 data cannot be loaded"
-                                      :message :unable-to-read-token-on-cluster}}
+                                       :message :unable-to-read-token-on-cluster}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
       (testing "sync cluster error while missing status"
@@ -129,12 +129,12 @@
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
-                                                                        "owner" "test-user-1"}
-                                                          :status 200}
-                                      "www.cluster-2.com" {}}]
+                                                                          "owner" "test-user-1"}
+                                                            :status 200}
+                                       "www.cluster-2.com" {}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
                   "www.cluster-2.com" {:cause "status missing from response"
-                                      :message :unable-to-read-token-on-cluster}}
+                                       :message :unable-to-read-token-on-cluster}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
       (testing "sync cluster different owners"
@@ -143,14 +143,14 @@
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
-                                                                        "owner" "test-user-1"}
-                                                          :status 200}
-                                      "www.cluster-2.com" {:description {"owner" "test-user-2"}
-                                                          :status 200}}]
+                                                                          "owner" "test-user-1"}
+                                                            :status 200}
+                                       "www.cluster-2.com" {:description {"owner" "test-user-2"}
+                                                            :status 200}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
                   "www.cluster-2.com" {:latest-token-description token-description
-                                      :message :token-owners-are-different
-                                      :cluster-data {"owner" "test-user-2"}}}
+                                       :message :token-owners-are-different
+                                       :cluster-data {"owner" "test-user-2"}}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
       (testing "sync cluster successfully"
@@ -159,15 +159,15 @@
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
-                                                                        "owner" "test-user-1"}
-                                                          :status 200}
-                                      "www.cluster-2.com" {:description {"owner" "test-user-1"}
-                                                          :status 200}}]
+                                                                          "owner" "test-user-1"}
+                                                            :status 200}
+                                       "www.cluster-2.com" {:description {"owner" "test-user-1"}
+                                                            :status 200}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
                   "www.cluster-2.com" {:message :sync-token-on-cluster
-                                      :response (assoc token-description
-                                                  :cluster-url "www.cluster-2.com"
-                                                  :token test-token)}}
+                                       :response (assoc token-description
+                                                   :cluster-url "www.cluster-2.com"
+                                                   :token test-token)}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
       (testing "sync cluster error"
@@ -176,21 +176,21 @@
               token-description {"name" "test-name"
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
-                                                                        "owner" "test-user-1"}
-                                                          :status 200}
-                                      "www.cluster-2-error.com" {:description {"owner" "test-user-1"}
-                                                                :status 200}}]
+                                                                          "owner" "test-user-1"}
+                                                            :status 200}
+                                       "www.cluster-2-error.com" {:description {"owner" "test-user-1"}
+                                                                  :status 200}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
                   "www.cluster-2-error.com" {:cause "Error in storing token thrown from test"
-                                            :message :error-in-token-sync}}
+                                             :message :error-in-token-sync}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data))))))))
 
 (deftest test-sync-tokens
   (let [http-client (Object.)
         cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com"]
         cluster-url->tokens {"www.cluster-1.com" ["token-1" "token-2"]
-                            "www.cluster-2.com" ["token-2" "token-3" "token-4"]
-                            "www.cluster-3.com" ["token-1" "token-3"]}
+                             "www.cluster-2.com" ["token-2" "token-3" "token-4"]
+                             "www.cluster-3.com" ["token-1" "token-3"]}
         token-desc-1 {"name" "t1-all-synced"}
         token-desc-2 {"name" "t2-needs-sync"}
         token-desc-3 {"name" "t3-soft-delete"
@@ -198,17 +198,17 @@
         token-desc-4 {"name" "t4-hard-delete"
                       "deleted" true}
         token->cluster-url->token-data {"token-1" {"www.cluster-1.com" {:description token-desc-1}
-                                                  "www.cluster-2.com" {:description (assoc token-desc-1 "cmd" "test")}
-                                                  "www.cluster-3.com" {:description token-desc-1}}
-                                       "token-2" {"www.cluster-1.com" {:description token-desc-2}
-                                                  "www.cluster-2.com" {:description token-desc-2}
-                                                  "www.cluster-3.com" {:description token-desc-2}}
-                                       "token-3" {"www.cluster-1.com" {:description (dissoc token-desc-3 "deleted")}
-                                                  "www.cluster-2.com" {:description token-desc-3}
-                                                  "www.cluster-3.com" {:description token-desc-3}}
-                                       "token-4" {"www.cluster-1.com" {:description token-desc-4}
-                                                  "www.cluster-2.com" {:description token-desc-4}
-                                                  "www.cluster-3.com" {:description token-desc-1}}}
+                                                   "www.cluster-2.com" {:description (assoc token-desc-1 "cmd" "test")}
+                                                   "www.cluster-3.com" {:description token-desc-1}}
+                                        "token-2" {"www.cluster-1.com" {:description token-desc-2}
+                                                   "www.cluster-2.com" {:description token-desc-2}
+                                                   "www.cluster-3.com" {:description token-desc-2}}
+                                        "token-3" {"www.cluster-1.com" {:description (dissoc token-desc-3 "deleted")}
+                                                   "www.cluster-2.com" {:description token-desc-3}
+                                                   "www.cluster-3.com" {:description token-desc-3}}
+                                        "token-4" {"www.cluster-1.com" {:description token-desc-4}
+                                                   "www.cluster-2.com" {:description token-desc-4}
+                                                   "www.cluster-3.com" {:description token-desc-1}}}
         token->latest-description {"token-1" token-desc-1
                                    "token-2" token-desc-2
                                    "token-3" token-desc-3
@@ -216,17 +216,17 @@
     (with-redefs [waiter/load-token-list (fn [_ cluster-url]
                                            (cluster-url->tokens cluster-url))
                   retrieve-token->cluster-url->token-data (fn [_ in-cluster-urls all-tokens]
-                                                           (is (= (set cluster-urls) in-cluster-urls))
-                                                           (is (= #{"token-1" "token-2" "token-3" "token-4"}
-                                                                  (set all-tokens)))
-                                                           token->cluster-url->token-data)
+                                                            (is (= (set cluster-urls) in-cluster-urls))
+                                                            (is (= #{"token-1" "token-2" "token-3" "token-4"}
+                                                                   (set all-tokens)))
+                                                            token->cluster-url->token-data)
                   retrieve-token->latest-description (fn [in-token->cluster-url->token-data]
                                                        (is (= token->cluster-url->token-data in-token->cluster-url->token-data))
                                                        token->latest-description)
                   hard-delete-token-on-all-clusters (fn [_ cluster-urls token]
-                                                     (keyword (str token "-" (count cluster-urls) "-hard-delete")))
+                                                      (keyword (str token "-" (count cluster-urls) "-hard-delete")))
                   sync-token-on-clusters (fn [_ cluster-urls token _ _]
-                                          (keyword (str token "-" (count cluster-urls) "-sync-token")))]
+                                           (keyword (str token "-" (count cluster-urls) "-sync-token")))]
       (is (= {:num-tokens-processed 4,
               :result
               {"token-4"

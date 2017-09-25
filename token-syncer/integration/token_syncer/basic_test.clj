@@ -92,7 +92,7 @@
           (cleanup-token http-client-wrapper waiter-urls token-name))))))
 
 (deftest ^:integration test-token-soft-delete
-  (testing "token sync hard-delete"
+  (testing "token sync soft-delete"
     (let [waiter-urls (waiter-urls)
           http-client-wrapper (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
           token-name "test-token-soft-delete-1"]
@@ -129,7 +129,7 @@
           (cleanup-token http-client-wrapper waiter-urls token-name))))))
 
 (deftest ^:integration test-token-update
-  (testing "token sync hard-delete"
+  (testing "token sync update"
     (let [waiter-urls (waiter-urls)
           http-client-wrapper (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
           token-name "test-token-update-1"]
