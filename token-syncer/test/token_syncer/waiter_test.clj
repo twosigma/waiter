@@ -53,7 +53,7 @@
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
-                                          (is (empty? in-options))
+                                          (is (= [:headers {"accept" "application/json"}] in-options))
                                           (let [response-chan (async/promise-chan)]
                                             (async/put! response-chan {:error error})
                                             response-chan))]
@@ -67,7 +67,7 @@
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
-                                          (is (empty? in-options))
+                                          (is (= [:headers {"accept" "application/json"}] in-options))
                                           (send-response token-response))]
           (is (= #{"token-1" "token-2" "token-3"}
                  (load-token-list http-client-wrapper test-cluster-url))))))))
@@ -76,7 +76,8 @@
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
-        expected-options {:headers {"x-waiter-token" test-token}
+        expected-options {:headers {"accept" "application/json"
+                                    "x-waiter-token" test-token}
                           :query-params {"include-deleted" "true"}}]
 
     (testing "error in response"
@@ -111,6 +112,7 @@
         test-description {"foo" "bar"
                           "lorem" "ipsum"}
         expected-options {:body (json/write-str (assoc test-description :token test-token))
+                          :headers {"accept" "application/json"}
                           :method http/post
                           :query-params {"update-mode" "admin"}}]
 
@@ -150,7 +152,8 @@
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
-        expected-options {:headers {"x-waiter-token" test-token}
+        expected-options {:headers {"accept" "application/json"
+                                    "x-waiter-token" test-token}
                           :method http/delete
                           :query-params {"hard-delete" "true"}}]
 
