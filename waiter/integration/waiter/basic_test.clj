@@ -338,30 +338,25 @@
 (deftest ^:parallel ^:integration-fast test-override
   (testing-using-waiter-url
     (let [waiter-headers {:x-waiter-name (rand-name)}
+          overrides {:max-instances 100
+                     :min-instances 2
+                     :scale-factor 0.3}
           {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
-      (let [service-description (:service-description (service-settings waiter-url service-id))]
-        (is (every? #(not (nil? %)) (vals (select-keys service-description [:cpus :mem :cmd :name]))))
-        (is (every? #(nil? %) (vals (select-keys service-description [:max-instances :min-instances :scale-factor])))))
-      (make-request waiter-url (str "/apps/" service-id "/override")
-                    :body (json/write-str {"scale-factor" 0.3
-                                           "cmd" "overridden-cmd"
-                                           "max-instances" 100
-                                           "min-instances" 2}))
+      (let [{:keys [status]} (make-request waiter-url (str "/apps/" service-id "/override")
+                                           :http-method-fn http/post
+                                           :body (json/write-str overrides))]
+        (is (= 200 status)))
       (let [service-settings (service-settings waiter-url service-id)
             service-description (:service-description service-settings)
-            service-description-overrides (:service-description-overrides service-settings)]
-        (is (every? #(not (nil? %)) (vals (select-keys service-description [:cpus :mem :cmd :name]))))
-        (is (every? #(nil? %) (vals (select-keys service-description [:max-instances :min-instances :scale-factor]))))
-        (is (every? #(not (nil? %)) (vals (select-keys (:overrides service-description-overrides)
-                                                       [:max-instances :min-instances :scale-factor])))))
-      (make-request waiter-url (str "/apps/" service-id "/override") :http-method-fn http/delete)
+            service-description-overrides (-> service-settings :service-description-overrides :overrides)]
+        (is (= overrides service-description-overrides)))
+      (let [{:keys [status]} (make-request waiter-url (str "/apps/" service-id "/override")
+                                           :http-method-fn http/delete)]
+        (is (= 200 status)))
       (let [service-settings (service-settings waiter-url service-id)
             service-description (:service-description service-settings)
-            service-description-overrides (:service-description-overrides service-settings)]
-        (is (every? #(not (nil? %)) (vals (select-keys service-description [:cpus :mem :cmd :name]))))
-        (is (every? #(nil? %) (vals (select-keys service-description [:max-instances :min-instances :scale-factor]))))
-        (is (every? #(nil? %) (vals (select-keys (:overrides service-description-overrides)
-                                                 [:max-instances :min-instances :scale-factor])))))
+            service-description-overrides (-> service-settings :service-description-overrides :overrides)]
+        (is (not service-description-overrides)))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast basic-waiter-auth-test
