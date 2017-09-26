@@ -12,6 +12,7 @@
   (:require [clojure.pprint :as pp]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
+            [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
             [token-syncer.syncer :as syncer])
   (:import (org.eclipse.jetty.client HttpClient))
@@ -33,8 +34,7 @@
   (Thread/setDefaultUncaughtExceptionHandler
     (reify Thread$UncaughtExceptionHandler
       (uncaughtException [_ thread throwable]
-        (println (str (.getName thread) " threw exception: " (.getMessage throwable)))
-        (.printStackTrace throwable)))))
+        (log/error throwable (str (.getName thread) " threw exception: " (.getMessage throwable)))))))
 
 (defn parse-cli-options
   "Parses and returns the cli options passed to the token syncer."
@@ -58,30 +58,32 @@
 (defn exit
   "Helper function that prints the message and triggers a System exit."
   [status message]
-  (println message)
+  (if (zero? status)
+    (log/info message)
+    (log/error message))
   (System/exit status))
 
 (defn -main
   "The main entry point."
   [& args]
   (setup-exception-handler)
-  (println "Command-line arguments:" (vec args))
+  (log/info "Command-line arguments:" (vec args))
   (let [{:keys [errors options summary]} (parse-cli-options args)
         {:keys [cluster-urls help use-spnego]} options]
     (try
       (if help
-        (println summary)
+        (log/info summary)
         (do
           (when (seq errors)
             (doseq [error-message errors]
-              (println error-message))
+              (log/error error-message))
             (exit 1 "Error in parsing arguments"))
           (when use-spnego
-            (println "Using SPNEGO auth while communicating with Waiter clusters"))
+            (log/info "Using SPNEGO auth while communicating with Waiter clusters"))
           (let [http-client-wrapper (http-client-wrapper-factory options)
                 sync-result (syncer/sync-tokens http-client-wrapper cluster-urls)]
-            (println (-> sync-result pp/pprint with-out-str str/trim))
+            (log/info (-> sync-result pp/pprint with-out-str str/trim))
             (exit 0 "Exiting."))))
       (catch Exception e
-        (.printStackTrace e)
+        (log/error e "Error in syncing tokens")
         (exit 1 (str "Encountered error starting token-syncer: " (.getMessage e)))))))

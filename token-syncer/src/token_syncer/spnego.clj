@@ -9,6 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns token-syncer.spnego
+  (:require [clojure.tools.logging :as log])
   (:import (java.net URI)
            (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client.api Authentication$Result Request)
@@ -36,5 +37,4 @@
               header (str "Negotiate " (String. (.encode base64 token)))]
           (.header request HttpHeader/AUTHORIZATION header))
         (catch Exception e
-          (println "ERROR: failure during spnego authentication")
-          (.printStackTrace e))))))
+          (log/error e "Failure during spnego authentication"))))))

@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns token-syncer.syncer
-  (:require [plumbing.core :as pc]
+  (:require [clojure.tools.logging :as log]
+            [plumbing.core :as pc]
             [token-syncer.waiter :as waiter])
   (:import (org.eclipse.jetty.client HttpClient)))
 
@@ -31,7 +32,7 @@
     (fn [token]
       (let [latest-data
             (reduce (fn [accum-data [cluster-url token-data]]
-                      (println cluster-url "token-data is" token-data ", accum-data" accum-data)
+                      (log/info cluster-url "token-data is" token-data ", accum-data" accum-data)
                       (let [accum-last-update-time (get-in accum-data [:description "last-update-time"] 0)
                             cluster-token-description (:description token-data)
                             cluster-last-update-time (get cluster-token-description "last-update-time" 0)]
@@ -40,14 +41,14 @@
                           accum-data)))
                     {}
                     (token->cluster-url->token-data token))]
-        (println "Latest data for" token "is" latest-data)
+        (log/info "Latest data for" token "is" latest-data)
         latest-data))
     (keys token->cluster-url->token-data)))
 
 (defn hard-delete-token-on-all-clusters
   "Hard-deletes a given token on all clusters."
   [^HttpClient http-client cluster-urls token]
-  (println "Hard-delete" token "on clusters" cluster-urls)
+  (log/info "Hard-delete" token "on clusters" cluster-urls)
   (loop [[cluster-url & remaining-cluster-urls] (vec cluster-urls)
          cluster-sync-result {}]
     (if cluster-url
@@ -57,8 +58,7 @@
                 {:message :successfully-hard-deleted-token-on-cluster
                  :response response})
               (catch Exception ex
-                (println "ERROR: unable to delete" token "on" cluster-url)
-                (.printStackTrace ex)
+                (log/error ex "Unable to delete" token "on" cluster-url)
                 {:cause (.getMessage ex)
                  :message :error-in-delete}))]
         (recur remaining-cluster-urls
@@ -102,11 +102,10 @@
                   :else
                   {:message :token-already-synced}))
               (catch Exception ex
-                (println "ERROR: unable to sync token on" cluster-url)
-                (.printStackTrace ex)
+                (log/error ex "Unable to sync token on" cluster-url)
                 {:cause (.getMessage ex)
                  :message :error-in-token-sync}))]
-        (println cluster-url "sync result is" cluster-result)
+        (log/info cluster-url "sync result is" cluster-result)
         (recur remaining-cluster-urls
                (assoc cluster-sync-result cluster-url cluster-result)))
       cluster-sync-result)))
@@ -115,18 +114,18 @@
   "Syncs tokens across provided clusters based on cluster-urls."
   [http-client-wrapper cluster-urls]
   (try
-    (println "Syncing tokens on clusters:" (set cluster-urls))
+    (log/info "Syncing tokens on clusters:" (set cluster-urls))
     (let [cluster-urls (set cluster-urls)
           cluster-url->tokens (pc/map-from-keys #(waiter/load-token-list http-client-wrapper %) cluster-urls)
           all-tokens (set (mapcat identity (vals cluster-url->tokens)))
           token->cluster-url->token-data (retrieve-token->cluster-url->token-data http-client-wrapper cluster-urls all-tokens)
           token->latest-description (retrieve-token->latest-description token->cluster-url->token-data)]
-      (println "Found" (count all-tokens) "across the clusters")
+      (log/info "Found" (count all-tokens) "across the clusters")
       (loop [[token & remaining-tokens] (vec all-tokens)
              token-sync-result {}]
         (if token
           (do
-            (println "Syncing token:" token)
+            (log/info "Syncing token:" token)
             (let [{:keys [cluster-url description]} (token->latest-description token)
                   remaining-cluster-urls (disj cluster-urls cluster-url)
                   all-tokens-match (every? (fn all-tokens-match-pred [cluster-url]
@@ -135,21 +134,20 @@
                   all-soft-deleted (every? (fn soft-delete-pred [[_ token-data]]
                                              (true? (get-in token-data [:description "deleted"])))
                                            (token->cluster-url->token-data token))]
-              (println "Syncing" token "with token description from" cluster-url
-                       {:all-soft-deleted all-soft-deleted, :all-tokens-match all-tokens-match})
+              (log/info "Syncing" token "with token description from" cluster-url
+                        {:all-soft-deleted all-soft-deleted, :all-tokens-match all-tokens-match})
               (let [sync-result (if (and all-tokens-match all-soft-deleted (seq description))
                                   (hard-delete-token-on-all-clusters http-client-wrapper cluster-urls token)
                                   (sync-token-on-clusters http-client-wrapper remaining-cluster-urls token description
-                                                         (token->cluster-url->token-data token)))]
+                                                          (token->cluster-url->token-data token)))]
                 (recur remaining-tokens
                        (assoc token-sync-result
                          token {:description (token->latest-description token)
                                 :sync-result sync-result})))))
           (do
-            (println "Completed syncing tokens")
+            (log/info "Completed syncing tokens")
             {:num-tokens-processed (count all-tokens)
              :result token-sync-result}))))
     (catch Throwable th
-      (println "ERROR: unable to sync tokens")
-      (.printStackTrace th)
+      (log/error th "Unable to sync tokens")
       (throw th))))

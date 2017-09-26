@@ -11,6 +11,7 @@
 (ns token-syncer.waiter
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
+            [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
             [token-syncer.spnego :as spnego])
   (:import (org.eclipse.jetty.client HttpClient)
@@ -40,7 +41,7 @@
   (try
     (json/read-str (str data))
     (catch Exception _
-      (println "Unable to parse as json:" data)
+      (log/error "Unable to parse as json:" data)
       data)))
 
 (defn load-token-list
@@ -49,8 +50,7 @@
   (let [token-list-url (str cluster-url "/tokens")
         {:keys [body error]} (async/<!! (make-http-request http-client-wrapper token-list-url :headers {"accept" "application/json"}))]
     (when error
-      (println "ERROR: in retrieving tokens from" cluster-url)
-      (.printStackTrace error)
+      (log/error error "Error in retrieving tokens from" cluster-url)
       (throw error))
     (->> body
          (async/<!!)
@@ -67,21 +67,20 @@
                                                                     :headers {"accept" "application/json", "x-waiter-token" token}
                                                                     :query-params {"include-deleted" "true"}))]
       (when error
-        (println "ERROR: error in retrieving tokens from" cluster-url)
-        (.printStackTrace error)
+        (log/error error "Error in retrieving token" token "from" cluster-url)
         (throw error))
       {:description (->> body
                          (async/<!!)
                          try-parse-json-data)
        :status status})
     (catch Exception ex
-      (println "ERROR: unable to retrieve token" token "from" cluster-url)
+      (log/error "Unable to retrieve token" token "from" cluster-url)
       {:error ex})))
 
 (defn store-token-on-cluster
   "Stores the token description on a specific cluster."
   [http-client-wrapper cluster-url token token-description]
-  (println "Storing token:" token-description ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
+  (log/info "Storing token:" token-description ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
           (make-http-request http-client-wrapper
@@ -104,7 +103,7 @@
 (defn hard-delete-token-on-cluster
   "Hard-delete a token on a specific cluster."
   [http-client-wrapper cluster-url token]
-  (println "Hard-delete" token "on" cluster-url)
+  (log/info "Hard-delete" token "on" cluster-url)
   (let [{:keys [body error status]}
         (async/<!!
           (make-http-request http-client-wrapper
