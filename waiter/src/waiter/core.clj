@@ -90,10 +90,10 @@
                      "state" {"" :display-state-handler-fn
                               ["/" :service-id] :service-state-handler-fn}
                      "status" :status-handler-fn
-                     "token" :token-handler-fn   
-                     "tokens" { "" :token-list-handler-fn   
+                     "token" :token-handler-fn
+                     "tokens" { "" :token-list-handler-fn
                                "/owners" :token-owners-handler-fn
-                               "/refresh":token-refresh-handler-fn 
+                               "/refresh":token-refresh-handler-fn
                                "/reindex" :token-reindex-handler-fn}
                      "waiter-async" {["/complete/" :request-id "/" :service-id] :async-complete-handler-fn
                                      ["/result/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
