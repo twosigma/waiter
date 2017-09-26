@@ -406,7 +406,7 @@
     (async/go
       (async/<! timeout-channel)
       (when (not (realized? slowness-monitor-promise))
-        (log/info "scheduler-syncer: health checks are taking longer than" timeout-threshold-mins "minute(s) to complete!")))
+        (log/warn "scheduler-syncer: health checks are taking longer than" timeout-threshold-mins "minute(s) to complete")))
     (let [service->service-instance-futures (start-health-checks service->service-instances available? service-id->service-description-fn)]
       (loop [[[service {:keys [active-instances] :as instances}] & rest] (seq service->service-instance-futures)
              service->service-instances' {}]
