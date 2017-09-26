@@ -11,7 +11,6 @@
 (ns waiter.scheduler
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
-            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
@@ -401,15 +400,25 @@
 (defn do-health-checks
   "Takes a map from service -> service instances and performs health checks in parallel. Returns a map of service -> service instances."
   [service->service-instances available? service-id->service-description-fn]
-  (let [service->service-instance-futures (start-health-checks service->service-instances available? service-id->service-description-fn)]
-    (loop [[[service {:keys [active-instances] :as instances}] & rest] (seq service->service-instance-futures)
-           service->service-instances' {}]
-      (if-not service
-        service->service-instances'
-        (let [active-instances (doall (map async/<!! active-instances))]
-          (recur rest (assoc service->service-instances'
-                        service
-                        (assoc instances :active-instances active-instances))))))))
+  (let [timeout-threshold-mins 2
+        timeout-channel (async/timeout (-> timeout-threshold-mins t/minutes t/in-millis))
+        slowness-monitor-promise (promise)]
+    (async/go
+      (async/<! timeout-channel)
+      (when (not (realized? slowness-monitor-promise))
+        (log/warn "scheduler-syncer: health checks are taking longer than" timeout-threshold-mins "minute(s) to complete")))
+    (let [service->service-instance-futures (start-health-checks service->service-instances available? service-id->service-description-fn)]
+      (loop [[[service {:keys [active-instances] :as instances}] & rest] (seq service->service-instance-futures)
+             service->service-instances' {}]
+        (if-not service
+          (do
+            (deliver slowness-monitor-promise :done)
+            (async/close! timeout-channel)
+            service->service-instances')
+          (let [active-instances (doall (map async/<!! active-instances))]
+            (recur rest (assoc service->service-instances'
+                          service
+                          (assoc instances :active-instances active-instances)))))))))
 
 (defn- update-scheduler-state
   "Queries marathon, sends data on app and instance statuses to router state maintainer, and returns scheduler state"
@@ -476,11 +485,13 @@
                                 :instance-id->tracked-failed-instance instance-id->tracked-failed-instance'
                                 :instance-id->failed-health-check-count instance-id->failed-health-check-count'}})
                      scheduler-messages' remaining))
-            (do (log/info (timing-message-fn) "for" (count service->service-instances) "services.")
-                {:service-id->health-check-context service-id->health-check-context'
-                 :scheduler-messages scheduler-messages}))))
-      (do (log/info (timing-message-fn))
-          {:service-id->health-check-context service-id->health-check-context}))))
+            (do
+              (log/info (timing-message-fn) "for" (count service->service-instances) "services.")
+              {:service-id->health-check-context service-id->health-check-context'
+               :scheduler-messages scheduler-messages}))))
+      (do
+        (log/info (timing-message-fn) "and found no active services")
+        {:service-id->health-check-context service-id->health-check-context}))))
 
 (defn start-scheduler-syncer
   "Starts loop to query marathon for the app and instance statuses,
@@ -530,7 +541,7 @@
                        :priority true)]
             (recur next-state)))
         (catch Exception e
-          (log/error e "Fatal error in service-chan-maintainer")
+          (log/error e "Fatal error in scheduler-syncer")
           (System/exit 1))))
     {:exit-chan exit-chan
      :query-chan state-query-chan}))
