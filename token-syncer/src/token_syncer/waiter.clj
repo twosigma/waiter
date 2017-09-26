@@ -37,26 +37,32 @@
 
 (defn- try-parse-json-data
   "Attempts to parse the data as json, else return the data unparsed."
-  [data]
+  [data & {:keys [silent] :or {silent true}}]
   (try
     (json/read-str (str data))
     (catch Exception _
-      (log/error "Unable to parse as json:" data)
+      (when (not silent)
+        (log/error "Unable to parse as json:" data))
       data)))
 
 (defn load-token-list
   "Loads the list of tokens on a specific cluster."
   [http-client-wrapper cluster-url]
   (let [token-list-url (str cluster-url "/tokens")
-        {:keys [body error]} (async/<!! (make-http-request http-client-wrapper token-list-url :headers {"accept" "application/json"}))]
+        {:keys [body error status]} (async/<!! (make-http-request http-client-wrapper token-list-url :headers {"accept" "application/json"}))]
     (when error
       (log/error error "Error in retrieving tokens from" cluster-url)
       (throw error))
-    (->> body
-         (async/<!!)
-         try-parse-json-data
-         (map (fn entry->token [entry] (get entry "token")))
-         set)))
+    (if (and status (<= 200 status 299))
+      (->> body
+           (async/<!!)
+           try-parse-json-data
+           (map (fn entry->token [entry] (get entry "token")))
+           set)
+      (throw (ex-info (str "Unable to load tokens from " cluster-url)
+                      {:body (->> body async/<!! try-parse-json-data)
+                       :status status
+                       :url token-list-url})))))
 
 (defn load-token-on-cluster
   "Loads the description of a token on a cluster."
@@ -97,7 +103,7 @@
               (> status 299))
       (throw (ex-info "Token store failed"
                       {:body body-data, :status status, :token-data token-description})))
-    {:body (try-parse-json-data body-data)
+    {:body (try-parse-json-data body-data :silent false)
      :status status}))
 
 (defn hard-delete-token-on-cluster

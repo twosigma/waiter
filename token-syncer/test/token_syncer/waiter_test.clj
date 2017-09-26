@@ -68,7 +68,7 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= [:headers {"accept" "application/json"}] in-options))
-                                          (send-response token-response))]
+                                          (send-response token-response :status 200))]
           (is (= #{"token-1" "token-2" "token-3"}
                  (load-token-list http-client-wrapper test-cluster-url))))))))
 
