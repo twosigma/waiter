@@ -254,6 +254,7 @@
       ;; No need to scale down, instances: 2
       (is (= {:success false, :result :scaling-not-needed, :message "Unable to scale foo"}
              (scheduler/scale-app scheduler "foo" 1)))
+      (ensure-agent-finished scheduler)
       ;; Successfully kill one instance, instances: 1
       (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
         (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
@@ -278,12 +279,14 @@
                                            :work-directory (work-dir)})]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))
+    (ensure-agent-finished scheduler)
     (with-redefs [perform-health-check (constantly true)]
       (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
         (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance)))
         (is (= {:success true, :result :deleted, :message "Deleted foo"}
                (scheduler/delete-app scheduler "foo")))
+        (ensure-agent-finished scheduler)
         (is (= {:success false, :result :no-such-service-exists, :message "foo does not exist!"}
                (scheduler/kill-instance scheduler instance)))))))
 
@@ -322,6 +325,7 @@
         health-check-count-atom (atom 0)]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo" {"cmd" "sleep 100000"})))
+    (ensure-agent-finished scheduler)
     (with-redefs [http/get (fn [_ _]
                              (swap! health-check-count-atom inc)
                              (let [c (async/chan)]
