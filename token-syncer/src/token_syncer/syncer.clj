@@ -115,11 +115,13 @@
   "Syncs tokens across provided clusters based on cluster-urls."
   [http-client-wrapper cluster-urls]
   (try
+    (println "Syncing tokens on clusters:" (set cluster-urls))
     (let [cluster-urls (set cluster-urls)
           cluster-url->tokens (pc/map-from-keys #(waiter/load-token-list http-client-wrapper %) cluster-urls)
           all-tokens (set (mapcat identity (vals cluster-url->tokens)))
           token->cluster-url->token-data (retrieve-token->cluster-url->token-data http-client-wrapper cluster-urls all-tokens)
           token->latest-description (retrieve-token->latest-description token->cluster-url->token-data)]
+      (println "Found" (count all-tokens) "across the clusters")
       (loop [[token & remaining-tokens] (vec all-tokens)
              token-sync-result {}]
         (if token
@@ -143,8 +145,10 @@
                        (assoc token-sync-result
                          token {:description (token->latest-description token)
                                 :sync-result sync-result})))))
-          {:num-tokens-processed (count all-tokens)
-           :result token-sync-result})))
+          (do
+            (println "Completed syncing tokens")
+            {:num-tokens-processed (count all-tokens)
+             :result token-sync-result}))))
     (catch Throwable th
       (println "ERROR: unable to sync tokens")
       (.printStackTrace th)

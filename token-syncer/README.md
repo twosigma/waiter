@@ -1,9 +1,36 @@
-The token-syncer app is a command-line application designed specifically for syncing tokens across Waiter clusters.
+The token-syncer is a command-line application designed specifically for syncing tokens across Waiter clusters.
 This application can be set up as a cronjob to run at intervals to sync tokens on independently running Waiter clusters on different datacenters.
 The syncing allows supporting datacenter failures as we can failover to another datacenter either with minimal downtime and customer impact.
 All that is needed in the datacenter failure scenario is to point the DNS records to an active datacenter running a Waiter instance.
 As requests come in to the new Waiter instance, Waiter will spin up service instances on the new datacenter and process the requests.
 
+
+# Usage
+
+The token-syncer is a command-line application written in Clojure.
+It can be run as follows:
+
+```bash
+$ lein run --help
+<displays usage instructions>
+```
+
+```bash
+$ lein run --cluster-urls "http://cluster-1.localtest.me:9091;http://cluster-2.localtest.me:9093"
+...
+Syncing tokens on clusters: \#{http://cluster-1.localtest.me:9091 http://cluster-2.localtest.me:9093}
+...
+Exiting.
+```
+
+Alternatively, it can also be run after building the uberjar (see below):
+```bash
+$ java -jar /path/to/token-syncer.jar --cluster-urls "http://cluster-1.localtest.me:9091;http://cluster-2.localtest.me:9093"
+...
+Syncing tokens on clusters: \#{http://cluster-1.localtest.me:9091 http://cluster-2.localtest.me:9093}
+...
+Exiting.
+```
 
 # Implementation
 

@@ -13,6 +13,12 @@
             [token-syncer.main :refer :all]))
 
 (deftest test-parse-cli-options
+  (is (= ["Failed to validate \"-c abcd\": Must provide at least two different semi-colon separated cluster urls"]
+         (:errors (parse-cli-options ["-c" "abcd"]))))
+  (is (= ["Failed to validate \"-c abcd;abcd\": Must provide at least two different semi-colon separated cluster urls"]
+         (:errors (parse-cli-options ["-c" "abcd;abcd"]))))
+  (is (= {:cluster-urls ["abcd" "efgh"], :connection-timeout-ms 1000, :idle-timeout-ms 30000}
+         (:options (parse-cli-options ["-c" "abcd;efgh"]))))
   (is (= {:cluster-urls [], :connection-timeout-ms 1000, :help true, :idle-timeout-ms 30000}
          (:options (parse-cli-options ["-h"]))))
   (is (= {:cluster-urls [], :connection-timeout-ms 1000, :idle-timeout-ms 30000, :use-spnego true}

@@ -242,38 +242,3 @@
                {:description {"name" "t1-all-synced"},
                 :sync-result :token-1-3-sync-token}}}
              (sync-tokens http-client cluster-urls))))))
-
-;; TODO shams remove tests below
-
-(comment deftest test-retrieve-token
-         (let [http-client (http/client {:connect-timeout 1000
-                                         :idle-timeout 20000
-                                         :follow-redirects? false})
-               http-client-wrapper {:http-client http-client, :use-spnego false}]
-           (sync-tokens http-client-wrapper ["http://localhost:9091" "http://localhost:9092"])))
-
-(comment deftest test-register-tokens
-         (let [http-client (http/client {:connect-timeout 1000
-                                         :idle-timeout 20000
-                                         :follow-redirects? false})
-               http-client-wrapper {:http-client http-client, :use-spnego false}
-               waiter-port 9091
-               waiter-url (str "http://localhost:" waiter-port)]
-           (let [token-prefix "test-sync-token"
-                 num-tokens-to-create 4
-                 tokens-to-create (map #(str "token" %1 "." token-prefix "." waiter-port) (range num-tokens-to-create))]
-             (cid/info "creating the tokens:" (str waiter-url "/token"))
-             (doseq [token tokens-to-create]
-               (let [{:keys [body error status]}
-                     (async/<!!
-                       (waiter/make-http-request http-client-wrapper (str waiter-url "/token")
-                                                 :body (json/write-str {:health-check-url "/custom-endpoint"
-                                                                        :deleted true
-                                                                        :token token
-                                                                        :name token})
-                                                 :method http/post))]
-                 (when error
-                   (.printStackTrace error))
-                 (cid/info status (async/<!! body) error)
-                 (cid/info (waiter/load-token-on-cluster http-client waiter-url token))
-                 (is (= 200 status) (str "Error: " body)))))))
