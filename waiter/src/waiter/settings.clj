@@ -221,6 +221,7 @@
               :invalid-health-check-response "Health check returned an invalid response"
               :invalid-service-description "Service description using waiter headers/token improperly configured"
               :not-enough-memory "Not enough memory allocated"
+              :not-found "Not found"
               :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}
    :metric-group-mappings []
    :metrics-config {:inter-router-metrics-idle-timeout-ms 2000

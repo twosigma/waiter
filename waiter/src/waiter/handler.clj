@@ -640,9 +640,29 @@
                                :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
                                                 (when (not (str/blank? query-string)) (str "?" query-string)))
                                :token token})
-         :headers {}
+         :headers {"content-type" "text/html"}
          :status 200}))
     (catch Exception ex
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-error"))
       (utils/exception->response ex request))))
+
+(defn welcome-handler
+  [{:keys [host hostname port support-info]} request]
+  (let [welcome-info {:cid (cid/get-correlation-id)
+                      :host host
+                      :hostname hostname
+                      :message "Welcome to Waiter"
+                      :port port
+                      :support-info support-info
+                      :timestamp (utils/date-to-str (t/now))}
+        content-type (utils/request->content-type request)]
+    {:body (case content-type
+             "application/json" (json/write-str welcome-info)
+             "text/html" (template/eval (slurp (io/resource "web/welcome.html")) welcome-info)
+             "text/plain" (template/eval (slurp (io/resource "web/welcome.txt")) welcome-info))
+     :headers {"content-type" content-type}}))
+
+(defn not-found-handler
+  [request]
+  (utils/exception->response (ex-info (utils/message :not-found) {:status 404}) request))

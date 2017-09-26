@@ -809,6 +809,8 @@
 
 (deftest test-routes-mapper
   (let [exec-routes-mapper (fn [uri] (routes-mapper {:uri uri}))]
+    (is (= {:handler :welcome-handler-fn}
+           (exec-routes-mapper "/")))
     (is (= {:handler :app-name-handler-fn}
            (exec-routes-mapper "/app-name")))
     (is (= {:handler :service-list-handler-fn}
@@ -831,12 +833,10 @@
            (exec-routes-mapper "/blacklist/test-service")))
     (is (= {:handler :favicon-handler-fn}
            (exec-routes-mapper "/favicon.ico")))
-    (is (= {:handler :process-request-fn} ;; outdated mapping
-           (exec-routes-mapper "/kill-instance")))
     (is (= {:handler :metrics-request-handler-fn}
            (exec-routes-mapper "/metrics")))
-    (is (= {:handler :process-request-fn}
-           (exec-routes-mapper "/secrun")))
+    (is (= {:handler :not-found-handler-fn}
+           (exec-routes-mapper "/not-found"))) ; any path that isn't mapped
     (is (= {:handler :service-id-handler-fn}
            (exec-routes-mapper "/service-id")))
     (is (= {:handler :display-settings-handler-fn}
@@ -847,8 +847,6 @@
            (exec-routes-mapper "/state")))
     (is (= {:handler :service-state-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/state/test-service")))
-    (is (= {:handler :process-request-fn}
-           (exec-routes-mapper "/stats")))
     (is (= {:handler :status-handler-fn}
            (exec-routes-mapper "/status")))
     (is (= {:handler :token-handler-fn}
@@ -861,8 +859,6 @@
            (exec-routes-mapper "/tokens/refresh")))
     (is (= {:handler :token-reindex-handler-fn}
            (exec-routes-mapper "/tokens/reindex")))
-    (is (= {:handler :process-request-fn}
-           (exec-routes-mapper "/through-to-backend")))
     (is (= {:handler :async-complete-handler-fn, :route-params {:request-id "test-request-id", :service-id "test-service-id"}}
            (exec-routes-mapper "/waiter-async/complete/test-request-id/test-service-id")))
     (is (= {:handler :async-result-handler-fn

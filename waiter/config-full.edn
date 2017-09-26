@@ -479,6 +479,7 @@
             :invalid-service-description "Service description using waiter headers/token improperly configured"
             :metadata-error-info "Error in metadata"
             :not-enough-memory "Not enough memory allocated"
+            :not-found "Not found"
             :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}
 
  ;; Support information used to provide user guidance in error messages

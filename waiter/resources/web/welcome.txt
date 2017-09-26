@@ -1,0 +1,25 @@
+
+Welcome to Waiter
+=================
+
+  Waiter is a high-level platform for running and managing web services and applications.
+  See `Getting Help' for more info, or if you feel you've reached this page in error.
+
+Server Info
+===========
+
+       Host: <%= hostname %>
+  Interface: <%= host %>
+       Port: <%= port %>
+
+Request Info
+============
+
+        CID: <%= cid %>
+       Time: <%= timestamp %>
+
+<% (when support-info %>Getting Help
+============
+<% (doseq [{label :label {:keys [value]} :link} support-info] %>
+  <%= label %>: <%= value %> <% ) %>
+<% ) %>
