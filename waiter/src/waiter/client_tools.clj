@@ -574,7 +574,7 @@
   [waiter-url token & {:keys [hard-delete] :or {hard-delete true}}]
   (log/info "deleting token" token)
   (let [response (make-request waiter-url "/token"
-                               :headers {"host" token}
+                               :headers {"host" token, "if-match" (str (System/currentTimeMillis))}
                                :http-method-fn http/delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response 200)))
@@ -801,10 +801,10 @@
 
 (defn post-token
   "Sends a POST request with the given token definition"
-  [waiter-url {:keys [token] :as token-map} & {:keys [query-params] :or {query-params {}}}]
+  [waiter-url {:keys [token] :as token-map} & {:keys [headers query-params] :or {headers {}, query-params {}}}]
   (make-request waiter-url "/token"
                 :body (json/write-str token-map)
-                :headers {"host" token}
+                :headers (assoc headers "host" token)
                 :http-method-fn http/post
                 :query-params query-params))
 

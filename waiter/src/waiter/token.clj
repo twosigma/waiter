@@ -23,6 +23,16 @@
 (def ^:const ANY-USER "*")
 (def ^:const valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+")
 
+(defn- validate-token-modification-based-on-etag
+  "Validates whether the token modification should be allowed on the update-time-etag (timestamp)."
+  [{:strs [last-update-time] :as token-metadata} update-time-etag]
+  (when last-update-time
+    (when (> last-update-time update-time-etag)
+      (throw (ex-info "Cannot modify stale token"
+                      {:etag update-time-etag
+                       :status 412
+                       :token-metadata token-metadata})))))
+
 ;; We'd like to maintain an index of tokens by their owner.
 ;; We'll store an index in the key "^TOKEN_OWNERS" that maintains
 ;; a map of owner to another key, in which we'll store the tokens
@@ -46,20 +56,24 @@
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
-    [synchronize-fn kv-store ^String token service-description-template token-metadata]
+    [synchronize-fn kv-store ^String token service-description-template token-metadata &
+     {:keys [hard-delete, update-time] :or {hard-delete false, update-time Long/MAX_VALUE}}]
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "storing service description for token:" token)
         (let [token-description (merge service-description-template (select-keys token-metadata sd/token-metadata-keys))
               {:strs [owner] :as filtered-service-desc} (sd/sanitize-service-description token-description sd/token-description-keys)
-              previous-owner (get (kv/fetch kv-store token :refresh true) "owner")
+              existing-token-description (kv/fetch kv-store token :refresh true)
+              existing-owner (get existing-token-description "owner")
               owner->owner-key (kv/fetch kv-store token-owners-key)]
+          ; Validate the token modification for concurrency races
+          (validate-token-modification-based-on-etag existing-token-description update-time)
           ; Store the service description
           (kv/store kv-store token filtered-service-desc)
           ; Remove token from previous owner
-          (when (and previous-owner (not= owner previous-owner))
-            (let [previous-owner-key (ensure-owner-key kv-store owner->owner-key previous-owner)]
+          (when (and existing-owner (not= owner existing-owner))
+            (let [previous-owner-key (ensure-owner-key kv-store owner->owner-key existing-owner)]
               (update-kv kv-store previous-owner-key (fn [v] (disj v token)))))
           ; Add token to new owner
           (when owner
@@ -69,18 +83,22 @@
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
-    [clock synchronize-fn kv-store token owner & {:keys [hard-delete] :or {hard-delete false}}]
+    [clock synchronize-fn kv-store token owner &
+     {:keys [hard-delete update-time] :or {hard-delete false, update-time Long/MAX_VALUE}}]
     (synchronize-fn
       token-lock
       (fn inner-delete-service-description-for-token []
         (log/info "attempting to delete service description for token:" token " hard-delete:" hard-delete)
-        (if hard-delete
-          (kv/delete kv-store token)
-          (when-let [existing-token-description (kv/fetch kv-store token)]
-            (let [new-token-description (assoc existing-token-description
-                                          "deleted" true
-                                          "last-update-time" (.getMillis ^DateTime (clock)))]
-              (kv/store kv-store token new-token-description))))
+        (let [existing-token-description (kv/fetch kv-store token)]
+          ; Validate the token modification for concurrency races
+          (validate-token-modification-based-on-etag existing-token-description update-time)
+          (if hard-delete
+            (kv/delete kv-store token)
+            (when existing-token-description
+              (let [new-token-description (assoc existing-token-description
+                                            "deleted" true
+                                            "last-update-time" (.getMillis ^DateTime (clock)))]
+                (kv/store kv-store token new-token-description)))))
         ; Remove token from owner
         (when owner
           (let [owner->owner-key (kv/fetch kv-store token-owners-key)
@@ -157,6 +175,24 @@
                   token-set (->> tokens (map :token) set)]
               (kv/store kv-store owner-key token-set))))))))
 
+(defn- parse-etag-identifier
+  "Parses the etag identifier as a long value."
+  [headers header-key]
+  (when-let [header-val (get headers header-key)]
+    (try
+      (Long/parseLong (str header-val))
+      (catch Exception ex
+        (log/error ex "Unable to parse etag identifier")
+        (throw (ex-info "Unable to parse etag identifier"
+                        {:headers headers, :key header-key, :status 400, :value header-val} ex))))))
+
+(defn compute-etag-identifier
+  "Returns an appropriate etag identifier for a given set of request headers.
+   It tries to parse the if-match header, else it returns the current timestamp."
+  [clock headers]
+  (or (parse-etag-identifier headers "if-match")
+      (.getMillis ^DateTime (clock))))
+
 (defn- handle-token-delete-request
   "Deletes the token configuration if found."
   [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn {:keys [headers] :as req}]
@@ -170,17 +206,23 @@
           (if (and service-description-template (not-empty service-description-template))
             (let [token-owner (get token-metadata "owner")]
               (if hard-delete
-                (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
-                  (throw (ex-info "Cannot hard-delete token"
-                                  {:metadata token-metadata
-                                   :status 403
-                                   :user authenticated-user})))
+                (do
+                  (when-not (parse-etag-identifier headers "if-match")
+                    (throw (ex-info "Must specify if-match header for token hard deletes"
+                                    {:request-headers headers, :status 400})))
+                  (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
+                    (throw (ex-info "Cannot hard-delete token"
+                                    {:metadata token-metadata
+                                     :status 403
+                                     :user authenticated-user}))))
                 (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
                   (throw (ex-info "User not allowed to delete token"
                                   {:owner token-owner
                                    :status 403
                                    :user authenticated-user}))))
-              (delete-service-description-for-token clock synchronize-fn kv-store token token-owner :hard-delete hard-delete)
+              (delete-service-description-for-token clock synchronize-fn kv-store token token-owner
+                                                    :hard-delete hard-delete
+                                                    :update-time (compute-etag-identifier clock headers))
               ; notify peers of token delete and ask them to refresh their caches
               (make-peer-requests-fn "tokens/refresh"
                                      :body (json/write-str {:owner token-owner, :token token})
@@ -206,7 +248,8 @@
           ;;NB do not ever return the password to the user
           (do
             (log/info "successfully retrieved token " token)
-            (utils/map->json-response (merge service-description-template token-metadata)))
+            (utils/map->json-response (merge service-description-template token-metadata)
+                                      :headers {"etag" (-> token-metadata (get "last-update-time") str)}))
           (do
             (throw (ex-info (str "Couldn't find token " token)
                             {:status 404 :token token}))))))
@@ -216,7 +259,8 @@
 (defn- handle-post-token-request
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn req]
+  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
+   {:keys [headers] :as req}]
   (try
     (let [request-params (:query-params (ring-params/params-request req))
           authenticated-user (get req :authorization/user)
@@ -256,11 +300,15 @@
                            :status 400}))))
       (case (get request-params "update-mode")
         "admin"
-        (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
-          (throw (ex-info "Cannot administer token"
-                          {:status 403
-                           :token-metadata new-token-metadata
-                           :user authenticated-user})))
+        (do
+          (when-not (parse-etag-identifier headers "if-match")
+            (throw (ex-info "Must specify if-match header for admin mode token updates"
+                            {:request-headers headers, :status 400})))
+          (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
+            (throw (ex-info "Cannot administer token"
+                            {:status 403
+                             :token-metadata new-token-metadata
+                             :user authenticated-user}))))
 
         nil
         (do
@@ -294,7 +342,8 @@
       (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))
                                        "owner" owner}
                                       new-token-metadata)]
-        (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata))
+        (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata
+                                             :update-time (compute-etag-identifier clock headers)))
       ; notify peers of token update
       (make-peer-requests-fn "tokens/refresh"
                              :method :post
@@ -321,7 +370,8 @@
                                          make-peer-requests-fn req)
     :get (handle-get-token-request kv-store waiter-hostname req)
     :post (handle-post-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager
-                                     make-peer-requests-fn validate-service-description-fn req)))
+                                     make-peer-requests-fn validate-service-description-fn req)
+    (utils/map->json-response {:unsupported-method request-method} :status 405)))
 
 (defn handle-list-tokens-request
   [kv-store {:keys [request-method] :as req}]

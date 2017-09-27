@@ -154,10 +154,10 @@
 
 (defn map->json-response
   "Convert the input data into a json response."
-  [data-map & {:keys [status] :or {status 200}}]
+  [data-map & {:keys [headers status] :or {headers {} status 200}}]
   {:body (map->json data-map)
    :status status
-   :headers {"content-type" "application/json"}})
+   :headers (assoc headers "content-type" "application/json")})
 
 (defn map->streaming-json-response
   "Converts the data into a json response which can be streamed back to the client."

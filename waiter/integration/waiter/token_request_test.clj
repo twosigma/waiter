@@ -111,6 +111,13 @@
                                                :token token})]
           (assert-response-status response 200)))
 
+      (testing "token retrieval with etag"
+        (doseq [token tokens-to-create]
+          (let [{:keys [body headers] :as response} (get-token waiter-url token :cookies cookies)]
+            (assert-response-status response 200)
+            (is (get headers "etag"))
+            (is (= (get headers "etag") (-> body json/read-str (get "last-update-time") str))))))
+
       (log/info "ensuring tokens can be retrieved and listed on each router")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
@@ -259,6 +266,19 @@
         (testing "active-token"
           (let [last-update-time (System/currentTimeMillis)
                 token (create-token-name waiter-url service-id-prefix)]
+
+            (testing "if-match-required"
+              (let [token-description {:health-check-url "/probe"
+                                       :last-update-time last-update-time
+                                       :name service-id-prefix
+                                       :owner (retrieve-username)
+                                       :run-as-user "i-do-not-exist-but-will-not-be-checked"
+                                       :token token}
+                    {:keys [body] :as response} (post-token waiter-url token-description
+                                                            :query-params {"update-mode" "admin"})]
+                (assert-response-status response 400)
+                (is (str/includes? body "Must specify if-match header for admin mode token updates"))))
+
             (try
               (log/info "creating configuration using token" token)
               (let [token-description {:health-check-url "/probe"
@@ -267,7 +287,9 @@
                                        :owner (retrieve-username)
                                        :run-as-user "i-do-not-exist-but-will-not-be-checked"
                                        :token token}
-                    response (post-token waiter-url token-description :query-params {"update-mode" "admin"})]
+                    response (post-token waiter-url token-description
+                                         :headers {"if-match" (str last-update-time)}
+                                         :query-params {"update-mode" "admin"})]
                 (assert-response-status response 200))
               (log/info "created configuration using token" token)
               (let [token-response (get-token waiter-url token)
@@ -291,7 +313,9 @@
                                        :owner (retrieve-username)
                                        :run-as-user "foo-bar"
                                        :token token}
-                    response (post-token waiter-url token-description :query-params {"update-mode" "admin"})]
+                    response (post-token waiter-url token-description
+                                         :headers {"if-match" (str last-update-time)}
+                                         :query-params {"update-mode" "admin"})]
                 (assert-response-status response 200))
               (log/info "created configuration using token" token)
               (let [{:keys [body] :as response} (get-token waiter-url token)]
@@ -530,7 +554,7 @@
                    (dissoc response-body :last-update-time)))))
 
         (testing "expecting redirect"
-          (let [{:keys [body headers] :as response} (make-request waiter-url "/hello-world" :headers {"host" host-header})]
+          (let [{:keys [headers] :as response} (make-request waiter-url "/hello-world" :headers {"host" host-header})]
             (is (= (str "/waiter-consent/hello-world")
                    (get headers "location")))
             (assert-response-status response 303)))
