@@ -69,7 +69,7 @@
                        :status status
                        :url token-list-url})))))
 
-(defn load-token-on-cluster
+(defn load-token
   "Loads the description of a token on a cluster."
   [^HttpClient http-client cluster-url token]
   (try
@@ -89,7 +89,7 @@
       (log/error "Unable to retrieve token" token "from" cluster-url)
       {:error ex})))
 
-(defn store-token-on-cluster
+(defn store-token
   "Stores the token description on a specific cluster."
   [^HttpClient http-client cluster-url token token-description]
   (log/info "Storing token:" token ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
@@ -110,7 +110,7 @@
     {:body (try-parse-json-data body-data :silent false)
      :status status}))
 
-(defn hard-delete-token-on-cluster
+(defn hard-delete-token
   "Hard-delete a token on a specific cluster."
   [^HttpClient http-client cluster-url token]
   (log/info "Hard-delete" token "on" cluster-url)

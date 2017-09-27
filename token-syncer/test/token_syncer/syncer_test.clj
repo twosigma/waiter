@@ -15,11 +15,11 @@
             [token-syncer.syncer :refer :all]
             [token-syncer.waiter :as waiter]))
 
-(deftest test-retrieve-token->cluster-url->token-data
+(deftest test-retrieve-token->url->token-data
   (let [http-client (Object.)
         test-cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com"]
         test-tokens ["token-1" "token-2" "token-3" "token-4" "token-5"]]
-    (with-redefs [waiter/load-token-on-cluster (fn [_ cluster-url token] (str cluster-url ":" token))]
+    (with-redefs [waiter/load-token (fn [_ cluster-url token] (str cluster-url ":" token))]
       (is (= (pc/map-from-keys
                (fn [token]
                  (pc/map-from-keys
@@ -27,7 +27,7 @@
                      (str cluster-url ":" token))
                    test-cluster-urls))
                test-tokens)
-             (retrieve-token->cluster-url->token-data http-client test-cluster-urls test-tokens))))))
+             (retrieve-token->url->token-data http-client test-cluster-urls test-tokens))))))
 
 (deftest test-retrieve-token->latest-description
   (testing "empty input"
@@ -85,11 +85,10 @@
   (let [http-client (Object.)
         test-cluster-urls ["www.cluster-1.com" "www.cluster-2-error.com" "www.cluster-3.com"]
         test-token "token-1"]
-    (with-redefs [waiter/hard-delete-token-on-cluster
-                  (fn [_ cluster-url token]
-                    (if (str/includes? cluster-url "error")
-                      (throw (Exception. "Error in hard-delete thrown from test"))
-                      (str cluster-url ":" token)))]
+    (with-redefs [waiter/hard-delete-token (fn [_ cluster-url token]
+                                             (if (str/includes? cluster-url "error")
+                                               (throw (Exception. "Error in hard-delete thrown from test"))
+                                               (str cluster-url ":" token)))]
       (is (= {"www.cluster-1.com" {:message :successfully-hard-deleted-token-on-cluster
                                    :response "www.cluster-1.com:token-1"}
               "www.cluster-2-error.com" {:cause "Error in hard-delete thrown from test"
@@ -100,11 +99,10 @@
 
 (deftest test-sync-token-on-clusters
   (let [http-client (Object.)]
-    (with-redefs [waiter/store-token-on-cluster
-                  (fn [_ cluster-url token token-description]
-                    (if (str/includes? cluster-url "error")
-                      (throw (Exception. "Error in storing token thrown from test"))
-                      (assoc token-description :cluster-url cluster-url :token token)))]
+    (with-redefs [waiter/store-token (fn [_ cluster-url token token-description]
+                                       (if (str/includes? cluster-url "error")
+                                         (throw (Exception. "Error in storing token thrown from test"))
+                                         (assoc token-description :cluster-url cluster-url :token token)))]
 
       (testing "sync cluster error while loading token"
         (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -212,11 +210,11 @@
                                    "token-4" token-desc-4}]
     (with-redefs [waiter/load-token-list (fn [_ cluster-url]
                                            (cluster-url->tokens cluster-url))
-                  retrieve-token->cluster-url->token-data (fn [_ in-cluster-urls all-tokens]
-                                                            (is (= (set cluster-urls) in-cluster-urls))
-                                                            (is (= #{"token-1" "token-2" "token-3" "token-4"}
-                                                                   (set all-tokens)))
-                                                            token->cluster-url->token-data)
+                  retrieve-token->url->token-data (fn [_ in-cluster-urls all-tokens]
+                                                    (is (= (set cluster-urls) in-cluster-urls))
+                                                    (is (= #{"token-1" "token-2" "token-3" "token-4"}
+                                                           (set all-tokens)))
+                                                    token->cluster-url->token-data)
                   retrieve-token->latest-description (fn [in-token->cluster-url->token-data]
                                                        (is (= token->cluster-url->token-data in-token->cluster-url->token-data))
                                                        token->latest-description)

@@ -57,7 +57,7 @@
   (with-out-str
     (doseq [waiter-url waiter-urls]
       (try
-        (waiter/hard-delete-token-on-cluster http-client waiter-url token-name)
+        (waiter/hard-delete-token http-client waiter-url token-name)
         (catch Exception _)))))
 
 (deftest ^:integration test-token-hard-delete
@@ -71,7 +71,7 @@
                                  "owner" (retrieve-username), "last-update-time" (System/currentTimeMillis)}]
 
           (doseq [waiter-url waiter-urls]
-            (waiter/store-token-on-cluster http-client waiter-url token-name token-description))
+            (waiter/store-token http-client waiter-url token-name token-description))
 
           (println "****** test-token-hard-delete ACT")
           (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
@@ -86,7 +86,7 @@
                                                         :sync-result (pc/map-from-keys waiter-sync-result waiter-urls)}}}]
               (is (= expected-result actual-result))
               (doseq [waiter-url waiter-urls]
-                (is (= 404 (:status (waiter/load-token-on-cluster http-client waiter-url token-name))))))))
+                (is (= 404 (:status (waiter/load-token http-client waiter-url token-name))))))))
         (finally
           (cleanup-token http-client waiter-urls token-name))))))
 
@@ -101,11 +101,11 @@
               token-description {"cpus" 1, "mem" 2048, "name" token-name,
                                  "owner" (retrieve-username), "last-update-time" current-time}]
 
-          (waiter/store-token-on-cluster http-client (first waiter-urls) token-name
-                                         (assoc token-description "deleted" true))
+          (waiter/store-token http-client (first waiter-urls) token-name
+                              (assoc token-description "deleted" true))
           (doseq [waiter-url (rest waiter-urls)]
-            (waiter/store-token-on-cluster http-client waiter-url token-name
-                                           (assoc token-description "last-update-time" (- current-time 10000))))
+            (waiter/store-token http-client waiter-url token-name
+                                (assoc token-description "last-update-time" (- current-time 10000))))
 
           (println "****** test-token-soft-delete ACT")
           (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
@@ -123,7 +123,7 @@
               (is (= expected-result actual-result))
               (doseq [waiter-url waiter-urls]
                 (is (= {:description (assoc token-description "deleted" true), :status 200}
-                       (waiter/load-token-on-cluster http-client waiter-url token-name)))))))
+                       (waiter/load-token http-client waiter-url token-name)))))))
         (finally
           (cleanup-token http-client waiter-urls token-name))))))
 
@@ -138,10 +138,10 @@
               token-description {"cpus" 1, "mem" 4096, "name" token-name,
                                  "owner" (retrieve-username), "last-update-time" current-time}]
 
-          (waiter/store-token-on-cluster http-client (first waiter-urls) token-name token-description)
+          (waiter/store-token http-client (first waiter-urls) token-name token-description)
           (doseq [waiter-url (rest waiter-urls)]
-            (waiter/store-token-on-cluster http-client waiter-url token-name
-                                           (assoc token-description "cpus" 2, "mem" 2048, "last-update-time" (- current-time 10000))))
+            (waiter/store-token http-client waiter-url token-name
+                                (assoc token-description "cpus" 2, "mem" 2048, "last-update-time" (- current-time 10000))))
 
           (println "****** test-token-update ACT")
           (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
@@ -159,6 +159,6 @@
               (is (= expected-result actual-result))
               (doseq [waiter-url waiter-urls]
                 (is (= {:description token-description, :status 200}
-                       (waiter/load-token-on-cluster http-client waiter-url token-name)))))))
+                       (waiter/load-token http-client waiter-url token-name)))))))
         (finally
           (cleanup-token http-client waiter-urls token-name))))))

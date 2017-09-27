@@ -100,7 +100,7 @@
           (is (= #{"token-1" "token-2" "token-3"}
                  (load-token-list http-client-wrapper test-cluster-url))))))))
 
-(deftest test-load-token-on-cluster
+(deftest test-load-token
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
@@ -116,7 +116,7 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           {:error error})]
           (is (= {:error error}
-                 (load-token-on-cluster http-client-wrapper test-cluster-url test-token))))))
+                 (load-token http-client-wrapper test-cluster-url test-token))))))
 
     (testing "successful response"
       (let [token-response (json/write-str {:foo :bar
@@ -129,9 +129,9 @@
           (is (= {:description {"foo" "bar",
                                 "lorem" "ipsum"}
                   :status 200}
-                 (load-token-on-cluster http-client-wrapper test-cluster-url test-token))))))))
+                 (load-token http-client-wrapper test-cluster-url test-token))))))))
 
-(deftest test-store-token-on-cluster
+(deftest test-store-token
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
@@ -150,7 +150,7 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           {:error error})]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (store-token-on-cluster http-client-wrapper test-cluster-url test-token test-description))))))
+                                (store-token http-client-wrapper test-cluster-url test-token test-description))))))
 
     (testing "error in status code"
       (let [token-response "token response"]
@@ -160,7 +160,7 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token store failed"
-                                (store-token-on-cluster http-client-wrapper test-cluster-url test-token test-description))))))
+                                (store-token http-client-wrapper test-cluster-url test-token test-description))))))
 
     (testing "successful response"
       (let [token-response "token response"]
@@ -170,9 +170,9 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 200))]
           (is (= {:body token-response, :status 200}
-                 (store-token-on-cluster http-client-wrapper test-cluster-url test-token test-description))))))))
+                 (store-token http-client-wrapper test-cluster-url test-token test-description))))))))
 
-(deftest test-hard-delete-token-on-cluster
+(deftest test-hard-delete-token
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
@@ -189,7 +189,7 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           {:error error})]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (hard-delete-token-on-cluster http-client-wrapper test-cluster-url test-token))))))
+                                (hard-delete-token http-client-wrapper test-cluster-url test-token))))))
 
     (testing "error in status code"
       (let [token-response "token response"]
@@ -199,7 +199,7 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token hard-delete failed"
-                                (hard-delete-token-on-cluster http-client-wrapper test-cluster-url test-token))))))
+                                (hard-delete-token http-client-wrapper test-cluster-url test-token))))))
 
     (testing "successful response"
       (let [token-response "token response"]
@@ -209,4 +209,4 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 200))]
           (is (= {:body token-response, :status 200}
-                 (hard-delete-token-on-cluster http-client-wrapper test-cluster-url test-token))))))))
+                 (hard-delete-token http-client-wrapper test-cluster-url test-token))))))))
