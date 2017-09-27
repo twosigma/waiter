@@ -20,13 +20,12 @@
 
 (defn ^HttpClient http-client-wrapper-factory
   "Creates an instance of HttpClient with the specified timeout."
-  [{:keys [connection-timeout-ms idle-timeout-ms use-spnego]}]
-  (let [client (http/client {:connect-timeout connection-timeout-ms
-                             :idle-timeout idle-timeout-ms
-                             :follow-redirects? false})
-        _ (.clear (.getContentDecoderFactories client))]
-    {:http-client client
-     :use-spnego use-spnego}))
+  [{:keys [connection-timeout-ms idle-timeout-ms]}]
+  (let [http-client (http/client {:connect-timeout connection-timeout-ms
+                                  :idle-timeout idle-timeout-ms
+                                  :follow-redirects? false})
+        _ (.clear (.getContentDecoderFactories http-client))]
+    http-client))
 
 (defn- setup-exception-handler
   "Sets up the UncaughtExceptionHandler."
@@ -39,21 +38,20 @@
 (defn parse-cli-options
   "Parses and returns the cli options passed to the token syncer."
   [args]
-  (let [cli-options [["-c" "--cluster-urls urls" "The semi-colon separated cluster urls"
-                      :default []
-                      :parse-fn #(str/split % #";")
-                      :validate [#(> (count (set %)) 1) "Must provide at least two different semi-colon separated cluster urls"]]
-                     ["-h" "--help"]
-                     ["-i" "--idle-timeout-ms timeout" "The idle timeout in milliseconds"
-                      :default 30000
-                      :parse-fn #(Integer/parseInt %)
-                      :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]
-                     ["-s" "--use-spnego"]
-                     ["-t" "--connection-timeout-ms timeout" "The connection timeout in milliseconds"
-                      :default 1000
-                      :parse-fn #(Integer/parseInt %)
-                      :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]]]
-    (cli/parse-opts args cli-options)))
+  (->> [["-c" "--cluster-urls urls" "The semi-colon separated cluster urls"
+         :default []
+         :parse-fn #(str/split % #";")
+         :validate [#(> (count (set %)) 1) "Must provide at least two different semi-colon separated cluster urls"]]
+        ["-h" "--help"]
+        ["-i" "--idle-timeout-ms timeout" "The idle timeout in milliseconds"
+         :default 30000
+         :parse-fn #(Integer/parseInt %)
+         :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]
+        ["-t" "--connection-timeout-ms timeout" "The connection timeout in milliseconds"
+         :default 1000
+         :parse-fn #(Integer/parseInt %)
+         :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]]
+       (cli/parse-opts args)))
 
 (defn exit
   "Helper function that prints the message and triggers a System exit."
@@ -69,7 +67,7 @@
   (setup-exception-handler)
   (log/info "Command-line arguments:" (vec args))
   (let [{:keys [errors options summary]} (parse-cli-options args)
-        {:keys [cluster-urls help use-spnego]} options]
+        {:keys [cluster-urls help]} options]
     (try
       (if help
         (log/info summary)
@@ -78,8 +76,6 @@
             (doseq [error-message errors]
               (log/error error-message))
             (exit 1 "Error in parsing arguments"))
-          (when use-spnego
-            (log/info "Using SPNEGO auth while communicating with Waiter clusters"))
           (let [http-client-wrapper (http-client-wrapper-factory options)
                 sync-result (syncer/sync-tokens http-client-wrapper cluster-urls)]
             (log/info (-> sync-result pp/pprint with-out-str str/trim))

@@ -9,12 +9,9 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns token-syncer.syncer-test
-  (:require [clojure.core.async :as async]
-            [clojure.data.json :as json]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [plumbing.core :as pc]
-            [qbits.jet.client.http :as http]
             [token-syncer.syncer :refer :all]
             [token-syncer.waiter :as waiter]))
 

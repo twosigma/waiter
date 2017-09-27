@@ -45,26 +45,25 @@
 (defn- ^HttpClient http-client-factory
   "Creates an instance of HttpClient with the specified timeout."
   [{:keys [connection-timeout-ms idle-timeout-ms]}]
-  (let [client (http/client {:connect-timeout connection-timeout-ms
-                             :idle-timeout idle-timeout-ms
-                             :follow-redirects? false})
-        _ (.clear (.getContentDecoderFactories client))]
-    {:http-client client
-     :use-spnego (Boolean/parseBoolean (System/getenv "USE_SPNEGO"))}))
+  (let [http-client (http/client {:connect-timeout connection-timeout-ms
+                                  :idle-timeout idle-timeout-ms
+                                  :follow-redirects? false})
+        _ (.clear (.getContentDecoderFactories http-client))]
+    http-client))
 
 (defn- cleanup-token
-  [http-client-wrapper waiter-urls token-name]
+  [http-client waiter-urls token-name]
   (println "Cleaning up token:" token-name)
   (with-out-str
     (doseq [waiter-url waiter-urls]
       (try
-        (waiter/hard-delete-token-on-cluster http-client-wrapper waiter-url token-name)
+        (waiter/hard-delete-token-on-cluster http-client waiter-url token-name)
         (catch Exception _)))))
 
 (deftest ^:integration test-token-hard-delete
   (testing "token sync hard-delete"
     (let [waiter-urls (waiter-urls)
-          http-client-wrapper (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
           token-name "test-token-hard-delete-1"]
       (try
         (println "****** test-token-hard-delete ARRANGE")
@@ -72,10 +71,10 @@
                                  "owner" (retrieve-username), "last-update-time" (System/currentTimeMillis)}]
 
           (doseq [waiter-url waiter-urls]
-            (waiter/store-token-on-cluster http-client-wrapper waiter-url token-name token-description))
+            (waiter/store-token-on-cluster http-client waiter-url token-name token-description))
 
           (println "****** test-token-hard-delete ACT")
-          (let [actual-result (syncer/sync-tokens http-client-wrapper (vec waiter-urls))]
+          (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
 
             (println "****** test-token-hard-delete ASSERT")
             (let [waiter-sync-result (constantly
@@ -87,14 +86,14 @@
                                                         :sync-result (pc/map-from-keys waiter-sync-result waiter-urls)}}}]
               (is (= expected-result actual-result))
               (doseq [waiter-url waiter-urls]
-                (is (= 404 (:status (waiter/load-token-on-cluster http-client-wrapper waiter-url token-name))))))))
+                (is (= 404 (:status (waiter/load-token-on-cluster http-client waiter-url token-name))))))))
         (finally
-          (cleanup-token http-client-wrapper waiter-urls token-name))))))
+          (cleanup-token http-client waiter-urls token-name))))))
 
 (deftest ^:integration test-token-soft-delete
   (testing "token sync soft-delete"
     (let [waiter-urls (waiter-urls)
-          http-client-wrapper (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
           token-name "test-token-soft-delete-1"]
       (try
         (println "****** test-token-soft-delete ARRANGE")
@@ -102,14 +101,14 @@
               token-description {"cpus" 1, "mem" 2048, "name" token-name,
                                  "owner" (retrieve-username), "last-update-time" current-time}]
 
-          (waiter/store-token-on-cluster http-client-wrapper (first waiter-urls) token-name
+          (waiter/store-token-on-cluster http-client (first waiter-urls) token-name
                                          (assoc token-description "deleted" true))
           (doseq [waiter-url (rest waiter-urls)]
-            (waiter/store-token-on-cluster http-client-wrapper waiter-url token-name
+            (waiter/store-token-on-cluster http-client waiter-url token-name
                                            (assoc token-description "last-update-time" (- current-time 10000))))
 
           (println "****** test-token-soft-delete ACT")
-          (let [actual-result (syncer/sync-tokens http-client-wrapper (vec waiter-urls))]
+          (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
 
             (println "****** test-token-soft-delete ASSERT")
             (let [waiter-sync-result (constantly
@@ -124,14 +123,14 @@
               (is (= expected-result actual-result))
               (doseq [waiter-url waiter-urls]
                 (is (= {:description (assoc token-description "deleted" true), :status 200}
-                       (waiter/load-token-on-cluster http-client-wrapper waiter-url token-name)))))))
+                       (waiter/load-token-on-cluster http-client waiter-url token-name)))))))
         (finally
-          (cleanup-token http-client-wrapper waiter-urls token-name))))))
+          (cleanup-token http-client waiter-urls token-name))))))
 
 (deftest ^:integration test-token-update
   (testing "token sync update"
     (let [waiter-urls (waiter-urls)
-          http-client-wrapper (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
           token-name "test-token-update-1"]
       (try
         (println "****** test-token-update ARRANGE")
@@ -139,13 +138,13 @@
               token-description {"cpus" 1, "mem" 4096, "name" token-name,
                                  "owner" (retrieve-username), "last-update-time" current-time}]
 
-          (waiter/store-token-on-cluster http-client-wrapper (first waiter-urls) token-name token-description)
+          (waiter/store-token-on-cluster http-client (first waiter-urls) token-name token-description)
           (doseq [waiter-url (rest waiter-urls)]
-            (waiter/store-token-on-cluster http-client-wrapper waiter-url token-name
+            (waiter/store-token-on-cluster http-client waiter-url token-name
                                            (assoc token-description "cpus" 2, "mem" 2048, "last-update-time" (- current-time 10000))))
 
           (println "****** test-token-update ACT")
-          (let [actual-result (syncer/sync-tokens http-client-wrapper (vec waiter-urls))]
+          (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
 
             (println "****** test-token-update ASSERT")
             (let [waiter-sync-result (constantly
@@ -160,6 +159,6 @@
               (is (= expected-result actual-result))
               (doseq [waiter-url waiter-urls]
                 (is (= {:description token-description, :status 200}
-                       (waiter/load-token-on-cluster http-client-wrapper waiter-url token-name)))))))
+                       (waiter/load-token-on-cluster http-client waiter-url token-name)))))))
         (finally
-          (cleanup-token http-client-wrapper waiter-urls token-name))))))
+          (cleanup-token http-client waiter-urls token-name))))))

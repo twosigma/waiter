@@ -17,12 +17,10 @@
 
 (defn- send-response
   [body-data & {:keys [status]}]
-  (let [response-chan (async/promise-chan)
-        body-chan (async/promise-chan)]
+  (let [body-chan (async/promise-chan)]
     (async/put! body-chan body-data)
-    (async/put! response-chan (cond-> {:body body-chan}
-                                      status (assoc :status status)))
-    response-chan))
+    (cond-> {:body body-chan}
+            status (assoc :status status))))
 
 (deftest test-make-http-request
   (let [http-client-wrapper (Object.)
@@ -30,19 +28,51 @@
         test-body "test-body-data"
         test-headers {"header" "value", "source" "test"}
         test-query-params {"foo" "bar", "lorem" "ipsum"}]
-    (with-redefs [http/get (fn get-wrapper [in-http-client in-endopint-url in-options]
-                             (is (= (:http-client http-client-wrapper) in-http-client))
-                             (is (= test-endpoint in-endopint-url))
-                             (is (= {:body test-body
-                                     :headers test-headers
-                                     :fold-chunked-response? true
-                                     :follow-redirects? false
-                                     :query-string test-query-params}
-                                    in-options)))]
-      (make-http-request http-client-wrapper test-endpoint
-                         :body test-body
-                         :headers test-headers
-                         :query-params test-query-params))))
+
+    (testing "simple request"
+      (with-redefs [http/get (fn get-wrapper [in-http-client in-endopint-url in-options]
+                               (is (= http-client-wrapper in-http-client))
+                               (is (= test-endpoint in-endopint-url))
+                               (is (not (contains? in-options :auth)))
+                               (is (= {:body test-body
+                                       :headers test-headers
+                                       :fold-chunked-response? true
+                                       :follow-redirects? false
+                                       :query-string test-query-params}
+                                      in-options))
+                               (let [response-chan (async/promise-chan)]
+                                 (async/put! response-chan {})
+                                 response-chan))]
+        (make-http-request http-client-wrapper test-endpoint
+                           :body test-body
+                           :headers test-headers
+                           :query-params test-query-params)))
+
+    (testing "spengo auth"
+      (let [call-counter (atom 0)]
+        (with-redefs [http/get (fn get-wrapper [in-http-client in-endopint-url in-options]
+                                 (swap! call-counter inc)
+                                 (is (= http-client-wrapper in-http-client))
+                                 (is (= test-endpoint in-endopint-url))
+                                 (when (= @call-counter 2)
+                                   (is (contains? in-options :auth)))
+                                 (is (= {:body test-body
+                                         :headers test-headers
+                                         :fold-chunked-response? true
+                                         :follow-redirects? false
+                                         :query-string test-query-params}
+                                        (dissoc in-options :auth)))
+                                 (let [response-chan (async/promise-chan)
+                                       response (cond-> {}
+                                                        (not (:auth in-options))
+                                                        (assoc :status 401 :headers {"www-authenticate" "Negotiate"}))]
+                                   (async/put! response-chan response)
+                                   response-chan))]
+          (make-http-request http-client-wrapper test-endpoint
+                             :body test-body
+                             :headers test-headers
+                             :query-params test-query-params)
+          (is (= 2 @call-counter)))))))
 
 (deftest test-load-token-list
   (let [http-client-wrapper (Object.)
@@ -54,9 +84,7 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= [:headers {"accept" "application/json"}] in-options))
-                                          (let [response-chan (async/promise-chan)]
-                                            (async/put! response-chan {:error error})
-                                            response-chan))]
+                                          {:error error})]
           (is (thrown-with-msg? Exception #"exception from test"
                                 (load-token-list http-client-wrapper test-cluster-url))))))
 
@@ -86,9 +114,7 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          (let [response-chan (async/promise-chan)]
-                                            (async/put! response-chan {:error error})
-                                            response-chan))]
+                                          {:error error})]
           (is (= {:error error}
                  (load-token-on-cluster http-client-wrapper test-cluster-url test-token))))))
 
@@ -122,9 +148,7 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          (let [response-chan (async/promise-chan)]
-                                            (async/put! response-chan {:error error})
-                                            response-chan))]
+                                          {:error error})]
           (is (thrown-with-msg? Exception #"exception from test"
                                 (store-token-on-cluster http-client-wrapper test-cluster-url test-token test-description))))))
 
@@ -163,9 +187,7 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          (let [response-chan (async/promise-chan)]
-                                            (async/put! response-chan {:error error})
-                                            response-chan))]
+                                          {:error error})]
           (is (thrown-with-msg? Exception #"exception from test"
                                 (hard-delete-token-on-cluster http-client-wrapper test-cluster-url test-token))))))
 
