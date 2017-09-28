@@ -39,32 +39,46 @@
              (retrieve-token->latest-description token->cluster-url->token-data)))))
 
   (testing "single entry"
-    (let [token-data {:description {"last-update-time" 1234}}
+    (let [token-data {:description {"last-update-time" 1234}
+                      :last-modified-etag "1234"}
           token->cluster-url->token-data {"token-1" {"cluster-1" token-data}}]
-      (is (= {"token-1" {:description {"last-update-time" 1234}, :cluster-url "cluster-1"}}
+      (is (= {"token-1" {:cluster-url "cluster-1"
+                         :description {"last-update-time" 1234}
+                         :last-modified-etag "1234"}}
              (retrieve-token->latest-description token->cluster-url->token-data)))))
 
   (testing "single valid entry"
-    (let [token-data {:description {"last-update-time" 1234}}
+    (let [token-data {:description {"last-update-time" 1234}
+                      :last-modified-etag "1234"}
           token->cluster-url->token-data {"token-1" {"cluster-1" token-data
                                                      "cluster-2" {}}}]
-      (is (= {"token-1" {:description {"last-update-time" 1234}, :cluster-url "cluster-1"}}
+      (is (= {"token-1" {:cluster-url "cluster-1"
+                         :description {"last-update-time" 1234}
+                         :last-modified-etag "1234"}}
              (retrieve-token->latest-description token->cluster-url->token-data)))))
 
   (testing "single valid entry"
-    (let [token-data-1 {:description {"last-update-time" 1234}}
-          token-data-2 {:description {"last-update-time" 4567}}
-          token-data-3 {:description {"last-update-time" 1267}}
+    (let [token-data-1 {:description {"last-update-time" 1234}
+                        :last-modified-etag "1234"}
+          token-data-2 {:description {"last-update-time" 4567}
+                        :last-modified-etag "4567"}
+          token-data-3 {:description {"last-update-time" 1267}
+                        :last-modified-etag "1267"}
           token->cluster-url->token-data {"token-1" {"cluster-1" token-data-1
                                                      "cluster-2" token-data-2
                                                      "cluster-3" token-data-3}}]
-      (is (= {"token-1" {:description {"last-update-time" 4567}, :cluster-url "cluster-2"}}
+      (is (= {"token-1" {:cluster-url "cluster-2"
+                         :description {"last-update-time" 4567}
+                         :last-modified-etag "4567"}}
              (retrieve-token->latest-description token->cluster-url->token-data)))))
 
   (testing "multiple-tokens"
-    (let [token-data-1 {:description {"last-update-time" 1234}}
-          token-data-2 {:description {"last-update-time" 4567}}
-          token-data-3 {:description {"last-update-time" 1267}}
+    (let [token-data-1 {:description {"last-update-time" 1234}
+                        :last-modified-etag "1234"}
+          token-data-2 {:description {"last-update-time" 4567}
+                        :last-modified-etag "4567"}
+          token-data-3 {:description {"last-update-time" 1267}
+                        :last-modified-etag "1234"}
           token->cluster-url->token-data {"token-A2" {"cluster-1" token-data-1
                                                       "cluster-2" token-data-2
                                                       "cluster-3" token-data-3}
@@ -75,17 +89,25 @@
                                           "token-D3" {"cluster-1" token-data-3
                                                       "cluster-2" token-data-2
                                                       "cluster-3" token-data-1}}]
-      (is (= {"token-A2" {:description {"last-update-time" 4567}, :cluster-url "cluster-2"}
+      (is (= {"token-A2" {:cluster-url "cluster-2"
+                          :description {"last-update-time" 4567}
+                          :last-modified-etag "4567"}
               "token-B" {}
-              "token-C1" {:description {"last-update-time" 4567}, :cluster-url "cluster-1"}
-              "token-D3" {:description {"last-update-time" 4567}, :cluster-url "cluster-2"}}
+              "token-C1" {:cluster-url "cluster-1"
+                          :description {"last-update-time" 4567}
+                          :last-modified-etag "4567"}
+              "token-D3" {:cluster-url "cluster-2"
+                          :description {"last-update-time" 4567}
+                          :last-modified-etag "4567"}}
              (retrieve-token->latest-description token->cluster-url->token-data))))))
 
 (deftest test-hard-delete-token-on-all-clusters
   (let [http-client (Object.)
         test-cluster-urls ["www.cluster-1.com" "www.cluster-2-error.com" "www.cluster-3.com"]
-        test-token "token-1"]
-    (with-redefs [waiter/hard-delete-token (fn [_ cluster-url token]
+        test-token "token-1"
+        test-last-modified-etag (System/currentTimeMillis)]
+    (with-redefs [waiter/hard-delete-token (fn [_ cluster-url token in-last-modified-etag]
+                                             (is (= test-last-modified-etag in-last-modified-etag))
                                              (if (str/includes? cluster-url "error")
                                                (throw (Exception. "Error in hard-delete thrown from test"))
                                                (str cluster-url ":" token)))]
@@ -95,11 +117,18 @@
                                          :message :error-in-delete}
               "www.cluster-3.com" {:message :successfully-hard-deleted-token-on-cluster
                                    :response "www.cluster-3.com:token-1"}}
-             (hard-delete-token-on-all-clusters http-client test-cluster-urls test-token))))))
+             (hard-delete-token-on-all-clusters http-client test-cluster-urls test-token test-last-modified-etag))))))
 
 (deftest test-sync-token-on-clusters
-  (let [http-client (Object.)]
-    (with-redefs [waiter/store-token (fn [_ cluster-url token token-description]
+  (let [http-client (Object.)
+        test-last-modified-etag (System/currentTimeMillis)]
+    (with-redefs [waiter/store-token (fn [_ cluster-url token last-modified-etag token-description]
+                                       (cond
+                                         (str/includes? cluster-url "cluster-1")
+                                         (is (= (str test-last-modified-etag ".1") last-modified-etag))
+                                         (str/includes? cluster-url "cluster-2")
+                                         (is (= (str test-last-modified-etag ".2") last-modified-etag)))
+
                                        (if (str/includes? cluster-url "error")
                                          (throw (Exception. "Error in storing token thrown from test"))
                                          (assoc token-description :cluster-url cluster-url :token token)))]
@@ -111,6 +140,7 @@
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                           "owner" "test-user-1"}
+                                                            :last-modified-etag (str test-last-modified-etag ".1")
                                                             :status 200}
                                        "www.cluster-2.com" {:error (Exception. "cluster-2 data cannot be loaded")}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
@@ -125,6 +155,7 @@
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                           "owner" "test-user-1"}
+                                                            :last-modified-etag (str test-last-modified-etag ".1")
                                                             :status 200}
                                        "www.cluster-2.com" {}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
@@ -139,8 +170,10 @@
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                           "owner" "test-user-1"}
+                                                            :last-modified-etag (str test-last-modified-etag ".1")
                                                             :status 200}
                                        "www.cluster-2.com" {:description {"owner" "test-user-2"}
+                                                            :last-modified-etag (str test-last-modified-etag ".2")
                                                             :status 200}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
                   "www.cluster-2.com" {:latest-token-description token-description
@@ -155,8 +188,10 @@
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                           "owner" "test-user-1"}
+                                                            :last-modified-etag (str test-last-modified-etag ".1")
                                                             :status 200}
                                        "www.cluster-2.com" {:description {"owner" "test-user-1"}
+                                                            :last-modified-etag (str test-last-modified-etag ".2")
                                                             :status 200}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
                   "www.cluster-2.com" {:message :sync-token-on-cluster
@@ -172,8 +207,10 @@
                                  "owner" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
                                                                           "owner" "test-user-1"}
+                                                            :last-modified-etag (str test-last-modified-etag ".1")
                                                             :status 200}
                                        "www.cluster-2-error.com" {:description {"owner" "test-user-1"}
+                                                                  :last-modified-etag (str test-last-modified-etag ".2")
                                                                   :status 200}}]
           (is (= {"www.cluster-1.com" {:message :token-already-synced}
                   "www.cluster-2-error.com" {:cause "Error in storing token thrown from test"
@@ -192,18 +229,32 @@
                       "deleted" true}
         token-desc-4 {"name" "t4-hard-delete"
                       "deleted" true}
-        token->cluster-url->token-data {"token-1" {"www.cluster-1.com" {:description token-desc-1}
-                                                   "www.cluster-2.com" {:description (assoc token-desc-1 "cmd" "test")}
-                                                   "www.cluster-3.com" {:description token-desc-1}}
-                                        "token-2" {"www.cluster-1.com" {:description token-desc-2}
-                                                   "www.cluster-2.com" {:description token-desc-2}
-                                                   "www.cluster-3.com" {:description token-desc-2}}
-                                        "token-3" {"www.cluster-1.com" {:description (dissoc token-desc-3 "deleted")}
-                                                   "www.cluster-2.com" {:description token-desc-3}
-                                                   "www.cluster-3.com" {:description token-desc-3}}
-                                        "token-4" {"www.cluster-1.com" {:description token-desc-4}
-                                                   "www.cluster-2.com" {:description token-desc-4}
-                                                   "www.cluster-3.com" {:description token-desc-1}}}
+        current-time-ms (System/currentTimeMillis)
+        previous-time-ms (- current-time-ms 10101010)
+        token->cluster-url->token-data {"token-1" {"www.cluster-1.com" {:description token-desc-1
+                                                                        :last-modified-etag current-time-ms}
+                                                   "www.cluster-2.com" {:description (assoc token-desc-1 "cmd" "test")
+                                                                        :last-modified-etag previous-time-ms}
+                                                   "www.cluster-3.com" {:description token-desc-1
+                                                                        :last-modified-etag current-time-ms}}
+                                        "token-2" {"www.cluster-1.com" {:description token-desc-2
+                                                                        :last-modified-etag current-time-ms}
+                                                   "www.cluster-2.com" {:description token-desc-2
+                                                                        :last-modified-etag current-time-ms}
+                                                   "www.cluster-3.com" {:description token-desc-2
+                                                                        :last-modified-etag current-time-ms}}
+                                        "token-3" {"www.cluster-1.com" {:description (dissoc token-desc-3 "deleted")
+                                                                        :last-modified-etag previous-time-ms}
+                                                   "www.cluster-2.com" {:description token-desc-3
+                                                                        :last-modified-etag current-time-ms}
+                                                   "www.cluster-3.com" {:description token-desc-3
+                                                                        :last-modified-etag current-time-ms}}
+                                        "token-4" {"www.cluster-1.com" {:description token-desc-4
+                                                                        :last-modified-etag current-time-ms}
+                                                   "www.cluster-2.com" {:description token-desc-4
+                                                                        :last-modified-etag current-time-ms}
+                                                   "www.cluster-3.com" {:description token-desc-1
+                                                                        :last-modified-etag previous-time-ms}}}
         token->latest-description {"token-1" token-desc-1
                                    "token-2" token-desc-2
                                    "token-3" token-desc-3
@@ -218,7 +269,7 @@
                   retrieve-token->latest-description (fn [in-token->cluster-url->token-data]
                                                        (is (= token->cluster-url->token-data in-token->cluster-url->token-data))
                                                        token->latest-description)
-                  hard-delete-token-on-all-clusters (fn [_ cluster-urls token]
+                  hard-delete-token-on-all-clusters (fn [_ cluster-urls token _]
                                                       (keyword (str token "-" (count cluster-urls) "-hard-delete")))
                   sync-token-on-clusters (fn [_ cluster-urls token _ _]
                                            (keyword (str token "-" (count cluster-urls) "-sync-token")))]

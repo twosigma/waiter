@@ -16,10 +16,11 @@
             [token-syncer.waiter :refer :all]))
 
 (defn- send-response
-  [body-data & {:keys [status]}]
+  [body-data & {:keys [headers status]}]
   (let [body-chan (async/promise-chan)]
     (async/put! body-chan body-data)
-    (cond-> {:body body-chan}
+    (cond-> {:body body-chan
+             :headers (or headers {})}
             status (assoc :status status))))
 
 (deftest test-make-http-request
@@ -39,7 +40,7 @@
                                        :fold-chunked-response? true
                                        :follow-redirects? false
                                        :query-string test-query-params}
-                                      in-options))
+                                      (update in-options :headers dissoc "x-cid")))
                                (let [response-chan (async/promise-chan)]
                                  (async/put! response-chan {})
                                  response-chan))]
@@ -61,7 +62,9 @@
                                          :fold-chunked-response? true
                                          :follow-redirects? false
                                          :query-string test-query-params}
-                                        (dissoc in-options :auth)))
+                                        (-> in-options
+                                            (dissoc :auth)
+                                            (update :headers dissoc "x-cid"))))
                                  (let [response-chan (async/promise-chan)
                                        response (cond-> {}
                                                         (not (:auth in-options))
@@ -120,14 +123,22 @@
 
     (testing "successful response"
       (let [token-response (json/write-str {:foo :bar
-                                            :lorem :ipsum})]
+                                            :lorem :ipsum})
+            current-time-ms (-> (System/currentTimeMillis)
+                                (mod 1000)
+                                (* 1000))
+            last-modified-str current-time-ms]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          (send-response token-response :status 200))]
+                                          (send-response token-response
+                                                         :headers {"etag" last-modified-str}
+                                                         :status 200))]
           (is (= {:description {"foo" "bar",
                                 "lorem" "ipsum"}
+                  :headers {"etag" last-modified-str}
+                  :last-modified-etag current-time-ms
                   :status 200}
                  (load-token http-client-wrapper test-cluster-url test-token))))))))
 
@@ -135,10 +146,12 @@
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
+        test-last-modified-etag (System/currentTimeMillis)
         test-description {"foo" "bar"
                           "lorem" "ipsum"}
         expected-options {:body (json/write-str (assoc test-description :token test-token))
-                          :headers {"accept" "application/json"}
+                          :headers {"accept" "application/json"
+                                    "if-match" test-last-modified-etag}
                           :method http/post
                           :query-params {"update-mode" "admin"}}]
 
@@ -150,7 +163,8 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           {:error error})]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (store-token http-client-wrapper test-cluster-url test-token test-description))))))
+                                (store-token http-client-wrapper test-cluster-url test-token test-last-modified-etag
+                                             test-description))))))
 
     (testing "error in status code"
       (let [token-response "token response"]
@@ -160,7 +174,8 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token store failed"
-                                (store-token http-client-wrapper test-cluster-url test-token test-description))))))
+                                (store-token http-client-wrapper test-cluster-url test-token test-last-modified-etag
+                                             test-description))))))
 
     (testing "successful response"
       (let [token-response "token response"]
@@ -169,14 +184,17 @@
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 200))]
-          (is (= {:body token-response, :status 200}
-                 (store-token http-client-wrapper test-cluster-url test-token test-description))))))))
+          (is (= {:body token-response, :headers {}, :status 200}
+                 (store-token http-client-wrapper test-cluster-url test-token test-last-modified-etag
+                              test-description))))))))
 
 (deftest test-hard-delete-token
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
+        test-last-modified-etag (System/currentTimeMillis)
         expected-options {:headers {"accept" "application/json"
+                                    "if-match" test-last-modified-etag
                                     "x-waiter-token" test-token}
                           :method http/delete
                           :query-params {"hard-delete" "true"}}]
@@ -189,7 +207,8 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           {:error error})]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (hard-delete-token http-client-wrapper test-cluster-url test-token))))))
+                                (hard-delete-token http-client-wrapper test-cluster-url test-token
+                                                   test-last-modified-etag))))))
 
     (testing "error in status code"
       (let [token-response "token response"]
@@ -199,7 +218,8 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token hard-delete failed"
-                                (hard-delete-token http-client-wrapper test-cluster-url test-token))))))
+                                (hard-delete-token http-client-wrapper test-cluster-url test-token
+                                                   test-last-modified-etag))))))
 
     (testing "successful response"
       (let [token-response "token response"]
@@ -208,5 +228,5 @@
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
                                           (send-response token-response :status 200))]
-          (is (= {:body token-response, :status 200}
-                 (hard-delete-token http-client-wrapper test-cluster-url test-token))))))))
+          (is (= {:body token-response, :headers {}, :status 200}
+                 (hard-delete-token http-client-wrapper test-cluster-url test-token test-last-modified-etag))))))))

@@ -51,42 +51,56 @@
         _ (.clear (.getContentDecoderFactories http-client))]
     http-client))
 
+(defn- token->etag
+  "Retrieves the etag for a token on a waiter router."
+  [http-client waiter-url token-name]
+  (-> (waiter/load-token http-client waiter-url token-name)
+      (get :last-modified-etag)))
+
 (defn- cleanup-token
   [http-client waiter-urls token-name]
   (println "Cleaning up token:" token-name)
   (with-out-str
     (doseq [waiter-url waiter-urls]
       (try
-        (waiter/hard-delete-token http-client waiter-url token-name)
+        (let [last-modified-etag (token->etag http-client waiter-url token-name)]
+          (waiter/hard-delete-token http-client waiter-url token-name last-modified-etag))
         (catch Exception _)))))
 
 (deftest ^:integration test-token-hard-delete
   (testing "token sync hard-delete"
     (let [waiter-urls (waiter-urls)
           http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
-          token-name "test-token-hard-delete-1"]
+          token-name (str "test-token-hard-delete-" (rand-int 10000))]
       (try
         (println "****** test-token-hard-delete ARRANGE")
-        (let [token-description {"cpus" 1, "deleted" true, "mem" 2048, "name" token-name,
-                                 "owner" (retrieve-username), "last-update-time" (System/currentTimeMillis)}]
+        (let [current-time-ms (System/currentTimeMillis)
+              token-description {"cpus" 1, "deleted" true, "mem" 2048, "name" token-name,
+                                 "owner" (retrieve-username), "last-update-time" current-time-ms}]
 
           (doseq [waiter-url waiter-urls]
-            (waiter/store-token http-client waiter-url token-name token-description))
+            (waiter/store-token http-client waiter-url token-name "0" token-description))
 
-          (println "****** test-token-hard-delete ACT")
-          (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
+          (let [last-modified-etag (token->etag http-client (first waiter-urls) token-name)]
 
-            (println "****** test-token-hard-delete ASSERT")
-            (let [waiter-sync-result (constantly
-                                       {:message :successfully-hard-deleted-token-on-cluster
-                                        :response {:body {"delete" token-name, "hard-delete" true, "success" true}
-                                                   :status 200}})
-                  expected-result {:num-tokens-processed 1,
-                                   :result {token-name {:description {:cluster-url (first waiter-urls), :description token-description}
-                                                        :sync-result (pc/map-from-keys waiter-sync-result waiter-urls)}}}]
-              (is (= expected-result actual-result))
-              (doseq [waiter-url waiter-urls]
-                (is (= 404 (:status (waiter/load-token http-client waiter-url token-name))))))))
+            (println "****** test-token-hard-delete ACT")
+            (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
+
+              (println "****** test-token-hard-delete ASSERT")
+              (let [waiter-sync-result (constantly
+                                         {:message :successfully-hard-deleted-token-on-cluster
+                                          :response {:body {"delete" token-name, "hard-delete" true, "success" true}
+                                                     :headers {"content-type" "application/json"}
+                                                     :status 200}})
+                    expected-result {:num-tokens-processed 1,
+                                     :result {token-name {:description {:cluster-url (first waiter-urls)
+                                                                        :description token-description
+                                                                        :last-modified-etag last-modified-etag}
+                                                          :sync-result (pc/map-from-keys waiter-sync-result waiter-urls)}}}]
+                (is (= expected-result actual-result))
+                (doseq [waiter-url waiter-urls]
+                  (let [response (waiter/load-token http-client waiter-url token-name)]
+                    (is (= 404 (:status response)) (str waiter-url " responded with " response))))))))
         (finally
           (cleanup-token http-client waiter-urls token-name))))))
 
@@ -94,36 +108,45 @@
   (testing "token sync soft-delete"
     (let [waiter-urls (waiter-urls)
           http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
-          token-name "test-token-soft-delete-1"]
+          token-name (str "test-token-soft-delete-" (rand-int 10000))]
       (try
         (println "****** test-token-soft-delete ARRANGE")
-        (let [current-time (System/currentTimeMillis)
+        (let [current-time-ms (System/currentTimeMillis)
               token-description {"cpus" 1, "mem" 2048, "name" token-name,
-                                 "owner" (retrieve-username), "last-update-time" current-time}]
+                                 "owner" (retrieve-username), "last-update-time" current-time-ms}]
 
-          (waiter/store-token http-client (first waiter-urls) token-name
-                              (assoc token-description "deleted" true))
+          (waiter/store-token http-client (first waiter-urls) token-name "0" (assoc token-description "deleted" true))
           (doseq [waiter-url (rest waiter-urls)]
-            (waiter/store-token http-client waiter-url token-name
-                                (assoc token-description "last-update-time" (- current-time 10000))))
+            (let [last-update-time-ms (- current-time-ms 10000)]
+              (waiter/store-token http-client waiter-url token-name "0"
+                                  (assoc token-description "last-update-time" last-update-time-ms))))
 
-          (println "****** test-token-soft-delete ACT")
-          (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
+          (let [last-modified-etag (token->etag http-client (first waiter-urls) token-name)]
 
-            (println "****** test-token-soft-delete ASSERT")
-            (let [waiter-sync-result (constantly
-                                       {:message :soft-delete-token-on-cluster
-                                        :response {:body {"message" (str "Successfully created " token-name),
-                                                          "service-description" (dissoc token-description "owner" "last-update-time")}
-                                                   :status 200}})
-                  expected-result {:num-tokens-processed 1,
-                                   :result {token-name {:description {:cluster-url (first waiter-urls)
-                                                                      :description (assoc token-description "deleted" true)}
-                                                        :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}}]
-              (is (= expected-result actual-result))
-              (doseq [waiter-url waiter-urls]
-                (is (= {:description (assoc token-description "deleted" true), :status 200}
-                       (waiter/load-token http-client waiter-url token-name)))))))
+            (println "****** test-token-soft-delete ACT")
+            (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
+
+              (println "****** test-token-soft-delete ASSERT")
+              (let [waiter-sync-result (constantly
+                                         {:message :soft-delete-token-on-cluster
+                                          :response {:body {"message" (str "Successfully created " token-name),
+                                                            "service-description" (dissoc token-description "owner" "last-update-time")}
+                                                     :headers {"content-type" "application/json"
+                                                               "etag" last-modified-etag}
+                                                     :status 200}})
+                    expected-result {:num-tokens-processed 1,
+                                     :result {token-name {:description {:cluster-url (first waiter-urls)
+                                                                        :description (assoc token-description "deleted" true)
+                                                                        :last-modified-etag last-modified-etag}
+                                                          :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}}]
+                (is (= expected-result actual-result))
+                (doseq [waiter-url waiter-urls]
+                  (is (= {:description (assoc token-description "deleted" true)
+                          :headers {"content-type" "application/json"
+                                    "etag" last-modified-etag}
+                          :last-modified-etag last-modified-etag
+                          :status 200}
+                         (waiter/load-token http-client waiter-url token-name))))))))
         (finally
           (cleanup-token http-client waiter-urls token-name))))))
 
@@ -131,34 +154,44 @@
   (testing "token sync update"
     (let [waiter-urls (waiter-urls)
           http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
-          token-name "test-token-update-1"]
+          token-name (str "test-token-update-" (rand-int 10000))]
       (try
         (println "****** test-token-update ARRANGE")
-        (let [current-time (System/currentTimeMillis)
+        (let [current-time-ms (System/currentTimeMillis)
               token-description {"cpus" 1, "mem" 4096, "name" token-name,
-                                 "owner" (retrieve-username), "last-update-time" current-time}]
+                                 "owner" (retrieve-username), "last-update-time" current-time-ms}]
 
-          (waiter/store-token http-client (first waiter-urls) token-name token-description)
-          (doseq [waiter-url (rest waiter-urls)]
-            (waiter/store-token http-client waiter-url token-name
-                                (assoc token-description "cpus" 2, "mem" 2048, "last-update-time" (- current-time 10000))))
+          (let [last-update-time-ms (- current-time-ms 10000)]
+            (waiter/store-token http-client (first waiter-urls) token-name "0" token-description)
+            (doseq [waiter-url (rest waiter-urls)]
+              (waiter/store-token http-client waiter-url token-name "0"
+                                  (assoc token-description "cpus" 2, "mem" 2048, "last-update-time" last-update-time-ms))))
 
-          (println "****** test-token-update ACT")
-          (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
+          (let [last-modified-etag (token->etag http-client (first waiter-urls) token-name)]
 
-            (println "****** test-token-update ASSERT")
-            (let [waiter-sync-result (constantly
-                                       {:message :sync-token-on-cluster
-                                        :response {:body {"message" (str "Successfully created " token-name),
-                                                          "service-description" (dissoc token-description "owner" "last-update-time")}
-                                                   :status 200}})
-                  expected-result {:num-tokens-processed 1,
-                                   :result {token-name {:description {:cluster-url (first waiter-urls)
-                                                                      :description token-description}
-                                                        :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}}]
-              (is (= expected-result actual-result))
-              (doseq [waiter-url waiter-urls]
-                (is (= {:description token-description, :status 200}
-                       (waiter/load-token http-client waiter-url token-name)))))))
+            (println "****** test-token-update ACT")
+            (let [actual-result (syncer/sync-tokens http-client (vec waiter-urls))]
+
+              (println "****** test-token-update ASSERT")
+              (let [waiter-sync-result (constantly
+                                         {:message :sync-token-on-cluster
+                                          :response {:body {"message" (str "Successfully created " token-name),
+                                                            "service-description" (dissoc token-description "owner" "last-update-time")}
+                                                     :headers {"content-type" "application/json"
+                                                               "etag" last-modified-etag}
+                                                     :status 200}})
+                    expected-result {:num-tokens-processed 1,
+                                     :result {token-name {:description {:cluster-url (first waiter-urls)
+                                                                        :description token-description
+                                                                        :last-modified-etag last-modified-etag}
+                                                          :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}}]
+                (is (= expected-result actual-result))
+                (doseq [waiter-url waiter-urls]
+                  (is (= {:description token-description
+                          :headers {"content-type" "application/json"
+                                    "etag" last-modified-etag}
+                          :last-modified-etag last-modified-etag
+                          :status 200}
+                         (waiter/load-token http-client waiter-url token-name))))))))
         (finally
           (cleanup-token http-client waiter-urls token-name))))))

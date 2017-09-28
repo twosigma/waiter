@@ -35,12 +35,15 @@
             (reduce
               (fn [accum-data [cluster-url token-data]]
                 (log/info cluster-url "token-data is" token-data ", accum-data" accum-data)
-                (let [accum-last-update-time (get-in accum-data [:description "last-update-time"] 0)
-                      cluster-token-description (:description token-data)
-                      cluster-last-update-time (get cluster-token-description "last-update-time" 0)]
-                  (if (and (seq cluster-token-description)
-                           (< accum-last-update-time cluster-last-update-time))
-                    {:cluster-url cluster-url, :description cluster-token-description}
+                (let [accum-last-update-etag (:last-modified-etag accum-data)
+                      accum-last-update-time (get-in accum-data [:description "last-update-time"])
+                      {:strs [last-update-time] :as cluster-token-description} (:description token-data)]
+                  (if (or (nil? accum-last-update-etag)
+                          (nil? accum-last-update-time)
+                          (and last-update-time (< accum-last-update-time last-update-time)))
+                    {:cluster-url cluster-url
+                     :description cluster-token-description
+                     :last-modified-etag (:last-modified-etag token-data "0")}
                     accum-data)))
               {}
               (token->cluster-url->token-data token))]
@@ -50,12 +53,12 @@
 
 (defn hard-delete-token-on-all-clusters
   "Hard-deletes a given token on all clusters."
-  [^HttpClient http-client cluster-urls token]
+  [^HttpClient http-client cluster-urls token last-modified-etag]
   (log/info "Hard-delete" token "on clusters" cluster-urls)
   (reduce
     (fn [cluster-sync-result cluster-url]
       (->> (try
-             (let [response (waiter/hard-delete-token http-client cluster-url token)]
+             (let [response (waiter/hard-delete-token http-client cluster-url token last-modified-etag)]
                {:message :successfully-hard-deleted-token-on-cluster
                 :response response})
              (catch Exception ex
@@ -75,7 +78,7 @@
     (fn [cluster-sync-result cluster-url]
       (let [cluster-result
             (try
-              (let [{:keys [description error status]} (get cluster-url->token-data cluster-url)
+              (let [{:keys [description error last-modified-etag status]} (get cluster-url->token-data cluster-url)
                     latest-owner (get token-description "owner")
                     cluster-owner (get description "owner")]
                 (cond
@@ -93,7 +96,7 @@
                    :message :token-owners-are-different}
 
                   (not= token-description (get-in cluster-url->token-data [cluster-url :description]))
-                  (let [response (waiter/store-token http-client cluster-url token token-description)]
+                  (let [response (waiter/store-token http-client cluster-url token last-modified-etag token-description)]
                     {:message (if (true? (get token-description "deleted"))
                                 :soft-delete-token-on-cluster
                                 :sync-token-on-cluster)
@@ -120,6 +123,7 @@
         (do
           (log/info "Syncing token:" token)
           (let [{:keys [cluster-url description]} (token->latest-description token)
+                last-modified-etag (get-in token->url->token-data [token cluster-url :last-modified-etag])
                 remaining-cluster-urls (disj cluster-urls cluster-url)
                 all-tokens-match (every? (fn all-tokens-match-pred [cluster-url]
                                            (= description (get-in token->url->token-data
@@ -131,7 +135,7 @@
             (log/info "Syncing" token "with token description from" cluster-url
                       {:all-soft-deleted all-soft-deleted, :all-tokens-match all-tokens-match})
             (let [sync-result (if (and all-tokens-match all-soft-deleted (seq description))
-                                (hard-delete-token-on-all-clusters http-client cluster-urls token)
+                                (hard-delete-token-on-all-clusters http-client cluster-urls token last-modified-etag)
                                 (sync-token-on-clusters http-client remaining-cluster-urls token description
                                                         (token->url->token-data token)))]
               (assoc token-sync-result
