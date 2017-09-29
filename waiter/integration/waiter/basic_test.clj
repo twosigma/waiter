@@ -37,11 +37,11 @@
 
       (testing "empty-body"
         (log/info "Basic test for empty body in request")
-        (let [{:keys [body]} (make-kitchen-request 
-                               waiter-url 
-                               (assoc request-headers 
-                                      :accept "text/plain")
-                               :path "/request-info") 
+        (let [{:keys [body]} (make-kitchen-request
+                               waiter-url
+                               (assoc request-headers
+                                 :accept "text/plain")
+                               :path "/request-info")
               body-json (json/read-str (str body))]
           (is (get-in body-json ["headers" "authorization"]) (str body))
           (is (get-in body-json ["headers" "x-waiter-auth-principal"]) (str body))
@@ -77,12 +77,12 @@
                            waiter-url request-headers
                            :path "/request-info"
                            :body long-request)
-              chunked-resp (make-kitchen-request 
+              chunked-resp (make-kitchen-request
                              waiter-url
                              request-headers
                              :path "/request-info"
                              ; force a chunked request
-                             :body (ByteArrayInputStream. (.getBytes long-request))) 
+                             :body (ByteArrayInputStream. (.getBytes long-request)))
               plain-body-json (json/read-str (str (:body plain-resp)))
               chunked-body-json (json/read-str (str (:body chunked-resp)))]
           (is (= (str request-length) (get-in plain-body-json ["headers" "content-length"])))
@@ -97,7 +97,7 @@
                              (log/info "making request with header size" header-size)
                              (make-kitchen-request waiter-url
                                                    (assoc request-headers :x-kitchen-long-string
-                                                          (random-string header-size))))]
+                                                                          (random-string header-size))))]
           (let [response (make-request 2000)]
             (assert-response-status response 200))
           (let [response (make-request 4000)]
@@ -113,44 +113,32 @@
 
       (delete-service waiter-url service-id))))
 
-; Marked explicit due to:
-; FAIL in (test-basic-logs)
-; Directory listing is missing entries: stderr, stdout, and ...:
-; got response: {:status 500, :headers {:body "{ "exception":["Connection refused",
-; "java.net.PlainSocketImpl.socketConnect(Native Method)",
-; ...
-; "clojure.lang.RestFn.invoke(RestFn.java:423)",
-; "waiter.marathon$retrieve_log_url.invokeStatic(marathon.clj:210)",
-; "waiter.marathon$retrieve_log_url.invoke(marathon.clj:204)",
-; "waiter.marathon.MarathonScheduler.retrieve_directory_content(marathon.clj:336)",
-; ...
-(deftest ^:parallel ^:integration-fast ^:explicit test-basic-logs
+(deftest ^:parallel ^:integration-fast test-basic-logs
   (testing-using-waiter-url
-    (let [waiter-headers {:x-waiter-name (rand-name)}
-          {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
-      (let [active-instances (get-in (service-settings waiter-url service-id) [:instances :active-instances])
-            log-url (:log-url (first active-instances))
-            _ (log/debug "Log Url:" log-url)
-            make-request-fn (fn [url] (http/get url {:headers {}
-                                                     :throw-exceptions false
-                                                     :spnego-auth true
-                                                     :body ""}))
-            logs-response (make-request-fn log-url)
-            response-body (:body logs-response)
-            _ (log/debug "Response body:" response-body)
-            log-files-list (walk/keywordize-keys (json/read-str response-body))
-            stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
-            stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
-        (is (every? #(str/includes? (:body logs-response) %) ["stderr" "stdout" service-id])
-            (str "Directory listing is missing entries: stderr, stdout, and " service-id
-                 ": got response: " logs-response))
-        (let [stdout-response (make-request-fn stdout-file-link)]
-          (is (= 200 (:status stdout-response))
-              (str "Expected 200 while getting stdout, got response: " stdout-response)))
-        (let [stderr-response (make-request-fn stderr-file-link)]
-          (is (= 200 (:status stderr-response))
-              (str "Expected 200 while getting stderr, got response: " stderr-response))))
-      (delete-service waiter-url service-id))))
+    (if (using-marathon? waiter-url)
+      (let [waiter-headers {:x-waiter-name (rand-name)}
+            {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
+        (let [active-instances (get-in (service-settings waiter-url service-id) [:instances :active-instances])
+              log-url (:log-url (first active-instances))
+              _ (log/debug "Log Url:" log-url)
+              make-request-fn (fn [url] (make-request url "" :verbose true))
+              {:keys [body] :as logs-response} (make-request-fn log-url)
+              _ (assert-response-status logs-response 200)
+              _ (log/debug "Response body:" body)
+              log-files-list (walk/keywordize-keys (json/read-str body))
+              stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
+              stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
+          (is (every? #(str/includes? body %) ["stderr" "stdout" service-id])
+              (str "Directory listing is missing entries: stderr, stdout, and " service-id
+                   ": got response: " logs-response))
+          (let [stdout-response (make-request-fn stdout-file-link)]
+            (is (= 200 (:status stdout-response))
+                (str "Expected 200 while getting stdout, got response: " stdout-response)))
+          (let [stderr-response (make-request-fn stderr-file-link)]
+            (is (= 200 (:status stderr-response))
+                (str "Expected 200 while getting stderr, got response: " stderr-response))))
+        (delete-service waiter-url service-id))
+      (log/warn "test-basic-logs cannot run because the target Waiter is not using Marathon"))))
 
 (deftest ^:parallel ^:integration-fast test-basic-backoff-config
   (let [path "/secrun"]
@@ -460,12 +448,12 @@
 
 (deftest ^:parallel ^:integration-fast test-identical-version
   (testing-using-waiter-url
-   (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
-     (is (= 1 (->> (routers waiter-url)
-                   vals
-                   (map #(:git-version (waiter-settings % :cookies cookies)))
-                   set
-                   count))))))
+    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
+      (is (= 1 (->> (routers waiter-url)
+                    vals
+                    (map #(:git-version (waiter-settings % :cookies cookies)))
+                    set
+                    count))))))
 
 (deftest ^:parallel ^:integration-fast test-cors-request-allowed
   (testing-using-waiter-url
@@ -480,19 +468,19 @@
 (deftest ^:parallel ^:integration-fast test-error-handling
   (testing-using-waiter-url
     (testing "text/plain default"
-      (let [{:keys [body headers status]} (make-request waiter-url "/")] 
+      (let [{:keys [body headers status]} (make-request waiter-url "/")]
         (is (= 400 status))
         (is (= "text/plain" (get headers "content-type")))
         (is (str/includes? body "Waiter Error 400"))
         (is (str/includes? body "================"))))
     (testing "text/plain explicit"
-      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/plain"})] 
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/plain"})]
         (is (= 400 status))
         (is (= "text/plain" (get headers "content-type")))
         (is (str/includes? body "Waiter Error 400"))
         (is (str/includes? body "================"))))
     (testing "text/html"
-      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/html"})] 
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/html"})]
         (is (= 400 status))
         (is (= "text/html" (get headers "content-type")))
         (is (str/includes? body "Waiter Error 400"))
@@ -501,7 +489,7 @@
       (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
             {:strs [waiter-error]} (try (json/read-str body)
                                         (catch Throwable e
-                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
+                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
         (is (= 400 status))
         (is (= "application/json" (get headers "content-type")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
@@ -511,7 +499,7 @@
       (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"content-type" "application/json"})
             {:strs [waiter-error]} (try (json/read-str body)
                                         (catch Throwable e
-                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
+                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
         (is (= 400 status))
         (is (= "application/json" (get headers "content-type")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
@@ -522,7 +510,7 @@
             {:keys [support-info]} (waiter-settings waiter-url)
             {:strs [waiter-error]} (try (json/read-str body)
                                         (catch Throwable e
-                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))] 
+                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
 
         (is (= 400 status))
         (is (= "application/json" (get headers "content-type")))

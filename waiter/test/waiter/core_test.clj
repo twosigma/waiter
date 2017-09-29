@@ -286,17 +286,7 @@
               {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
               json-body (json/read-str body)]
           (is (= status 400))
-          (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"])))))
-      (testing "Missing directory"
-        (let [request {:authorization/user user
-                       :headers {"accept" "application/json"}
-                       :query-string "instance-id=instance-id-1&host=test.host.com"
-                       :request-method :get
-                       :uri (str "/apps/" test-service-id "/logs")}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
-              json-body (json/read-str body)]
-          (is (= status 400))
-          (is (= "Missing directory parameter" (get-in json-body ["waiter-error" "message"]))))))
+          (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"]))))))
     (with-redefs [clj-http.client/get (fn [url _]
                                         (is (every? #(str/includes? url %) ["test.host.com" "5051"]))
                                         (let [state-json-response-body "
@@ -321,6 +311,32 @@
                                           (if (str/includes? url "state.json")
                                             {:body state-json-response-body}
                                             {:body file-browse-response-body})))]
+      (testing "Missing directory"
+        (let [request {:authorization/user user
+                       :headers {"accept" "application/json"}
+                       :query-string "instance-id=service-id-1.instance-id-1&host=test.host.com"
+                       :request-method :get
+                       :uri (str "/apps/" test-service-id "/logs")}
+              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
+              json-body (json/read-str body)]
+          (is (= status 200))
+          (is (= [{"name" "fil1"
+                   "size" 1000
+                   "type" "file"
+                   "url" "http://test.host.com:5051/files/download?path=/path/to/instance2/directory/fil1"}
+                  {"name" "dir2"
+                   "size" 2000
+                   "type" "directory"
+                   "url" "/apps/test-service-id/logs?instance-id=service-id-1.instance-id-1&host=test.host.com&directory=/path/to/instance2/directory/dir2"}
+                  {"name" "fil3"
+                   "size" 3000
+                   "type" "file"
+                   "url" "http://test.host.com:5051/files/download?path=/path/to/instance2/directory/fil3"}
+                  {"name" "dir4"
+                   "size" 4000
+                   "type" "directory"
+                   "url" "/apps/test-service-id/logs?instance-id=service-id-1.instance-id-1&host=test.host.com&directory=/path/to/instance2/directory/dir4"}]
+                 json-body))))
       (testing "Valid response"
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
@@ -584,7 +600,7 @@
                                        (let [response-chan (async/promise-chan)
                                              body-chan (async/promise-chan)]
                                          (if (str/includes? body "error")
-                                           (throw (ex-info (str body) {})) 
+                                           (throw (ex-info (str body) {}))
                                            (async/>!! response-chan {:body body-chan, :status 200}))
                                          (async/>!! body-chan body)
                                          response-chan))]
