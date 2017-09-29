@@ -29,9 +29,7 @@
   (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
            (marathonclj.common Connection)
-           (org.apache.http.client CookieStore)
-           (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.util HttpCookieStore HttpCookieStore$Empty)
+           (org.eclipse.jetty.util HttpCookieStore$Empty)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
 
@@ -574,7 +572,8 @@
   [waiter-url token & {:keys [hard-delete] :or {hard-delete true}}]
   (log/info "deleting token" token)
   (let [response (make-request waiter-url "/token"
-                               :headers {"host" token, "if-match" (str (System/currentTimeMillis))}
+                               :headers (cond-> {"host" token}
+                                                hard-delete (assoc "if-match" (str (System/currentTimeMillis))))
                                :http-method-fn http/delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response 200)))

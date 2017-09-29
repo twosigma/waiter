@@ -176,5 +176,6 @@
     (try 
       (f)
       (catch Exception e
-        (log/error e "Error during synchronized"))
+        (log/error e "Error during synchronized")
+        (throw e))
       (finally (.release mutex)))))
