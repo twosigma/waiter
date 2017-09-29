@@ -115,28 +115,30 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-logs
   (testing-using-waiter-url
-    (let [waiter-headers {:x-waiter-name (rand-name)}
-          {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
-      (let [active-instances (get-in (service-settings waiter-url service-id) [:instances :active-instances])
-            log-url (:log-url (first active-instances))
-            _ (log/debug "Log Url:" log-url)
-            make-request-fn (fn [url] (make-request url "" :verbose true))
-            {:keys [body] :as logs-response} (make-request-fn log-url)
-            _ (assert-response-status logs-response 200)
-            _ (log/debug "Response body:" body)
-            log-files-list (walk/keywordize-keys (json/read-str body))
-            stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
-            stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
-        (is (every? #(str/includes? body %) ["stderr" "stdout" service-id])
-            (str "Directory listing is missing entries: stderr, stdout, and " service-id
-                 ": got response: " logs-response))
-        (let [stdout-response (make-request-fn stdout-file-link)]
-          (is (= 200 (:status stdout-response))
-              (str "Expected 200 while getting stdout, got response: " stdout-response)))
-        (let [stderr-response (make-request-fn stderr-file-link)]
-          (is (= 200 (:status stderr-response))
-              (str "Expected 200 while getting stderr, got response: " stderr-response))))
-      (delete-service waiter-url service-id))))
+    (if (using-marathon? waiter-url)
+      (let [waiter-headers {:x-waiter-name (rand-name)}
+            {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
+        (let [active-instances (get-in (service-settings waiter-url service-id) [:instances :active-instances])
+              log-url (:log-url (first active-instances))
+              _ (log/debug "Log Url:" log-url)
+              make-request-fn (fn [url] (make-request url "" :verbose true))
+              {:keys [body] :as logs-response} (make-request-fn log-url)
+              _ (assert-response-status logs-response 200)
+              _ (log/debug "Response body:" body)
+              log-files-list (walk/keywordize-keys (json/read-str body))
+              stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
+              stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
+          (is (every? #(str/includes? body %) ["stderr" "stdout" service-id])
+              (str "Directory listing is missing entries: stderr, stdout, and " service-id
+                   ": got response: " logs-response))
+          (let [stdout-response (make-request-fn stdout-file-link)]
+            (is (= 200 (:status stdout-response))
+                (str "Expected 200 while getting stdout, got response: " stdout-response)))
+          (let [stderr-response (make-request-fn stderr-file-link)]
+            (is (= 200 (:status stderr-response))
+                (str "Expected 200 while getting stderr, got response: " stderr-response))))
+        (delete-service waiter-url service-id))
+      (log/warn "test-basic-logs cannot run because the target Waiter is not using Marathon"))))
 
 (deftest ^:parallel ^:integration-fast test-basic-backoff-config
   (let [path "/secrun"]
