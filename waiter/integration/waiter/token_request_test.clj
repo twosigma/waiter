@@ -295,6 +295,7 @@
                                        :run-as-user "i-do-not-exist-but-will-not-be-checked"
                                        :token token}
                     {:keys [body] :as response} (post-token waiter-url token-description
+                                                            :headers (attach-token-etag waiter-url token {})
                                                             :query-params {"update-mode" "admin"})]
                 (assert-response-status response 400)
                 (is (str/includes? body "Must specify if-match header for admin mode token updates"))))
@@ -308,7 +309,7 @@
                                        :run-as-user "i-do-not-exist-but-will-not-be-checked"
                                        :token token}
                     response (post-token waiter-url token-description
-                                         :headers {"if-match" (str last-update-time)}
+                                         :headers (attach-token-etag waiter-url token {})
                                          :query-params {"update-mode" "admin"})]
                 (assert-response-status response 200))
               (log/info "created configuration using token" token)
@@ -334,7 +335,7 @@
                                        :run-as-user "foo-bar"
                                        :token token}
                     response (post-token waiter-url token-description
-                                         :headers {"if-match" (str last-update-time)}
+                                         :headers (attach-token-etag waiter-url token {})
                                          :query-params {"update-mode" "admin"})]
                 (assert-response-status response 200))
               (log/info "created configuration using token" token)
@@ -634,7 +635,8 @@
                   (assert-response-status response 200)))
 
               (testing "expecting redirect after token update"
-                (let [{:keys [body headers] :as response} (make-request waiter-url "/hello-world" :cookies @cookies-atom :headers {"host" host-header})]
+                (let [{:keys [headers] :as response}
+                      (make-request waiter-url "/hello-world" :cookies @cookies-atom :headers {"host" host-header})]
                   (is (= (str "/waiter-consent/hello-world")
                          (get headers "location")))
                   (assert-response-status response 303)))

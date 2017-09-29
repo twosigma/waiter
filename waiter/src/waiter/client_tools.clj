@@ -568,15 +568,23 @@
          test-prefix (System/getenv "WAITER_TEST_PREFIX")]
      (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
 
+(defn token->etag
+  "Returns the current etag of a token"
+  [waiter-url token]
+  (log/info "retrieving etag for token" token)
+  (let [response (make-request waiter-url "/token" :headers {"x-waiter-token" token})]
+    (get-in response [:headers "etag"])))
+
+(defn attach-token-etag
+  "Attaches the if-match etag to the headers"
+  [waiter-url token headers]
+  (assoc headers "if-match" (token->etag waiter-url token)))
+
 (defn delete-token-and-assert
   [waiter-url token & {:keys [hard-delete headers] :or {hard-delete true}}]
   (log/info "deleting token" token {:hard-delete hard-delete})
-  (let [headers (if (and hard-delete (nil? headers))
-                  (do
-                    (log/info "retrieving token" token "etag before hard-delete")
-                    (let [response (make-request waiter-url "/token" :headers {"x-waiter-token" token})]
-                      {"if-match" (get-in response [:headers "etag"])}))
-                  headers)
+  (let [headers (cond->> headers
+                         (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
         response (make-request waiter-url "/token"
                                :headers (assoc headers "host" token)
                                :http-method-fn http/delete
@@ -805,7 +813,8 @@
 
 (defn post-token
   "Sends a POST request with the given token definition"
-  [waiter-url {:keys [token] :as token-map} & {:keys [headers query-params] :or {headers {}, query-params {}}}]
+  [waiter-url {:keys [token] :as token-map} &
+   {:keys [headers query-params] :or {headers {}, query-params {}}}]
   (make-request waiter-url "/token"
                 :body (json/write-str token-map)
                 :headers (assoc headers "host" token)

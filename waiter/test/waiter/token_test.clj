@@ -45,12 +45,10 @@
                         validate-service-description-fn request))
 
 (deftest test-compute-last-modified
-  (let [current-time (clock-millis)]
-    (is (= current-time (compute-last-modified clock {})))
-    (is (= 123456 (compute-last-modified clock {"if-match" "123456"})))
-    (is (= current-time (compute-last-modified clock {"etag" "123456"})))
-    (is (thrown-with-msg? ExceptionInfo #"Unable to parse etag value"
-                          (compute-last-modified clock {"etag" "123456", "if-match" "abcdef"})))))
+  (is (nil? (compute-last-modified {})))
+  (is (= "123456" (compute-last-modified {"if-match" "123456"})))
+  (is (nil? (compute-last-modified {"etag" "123456"})))
+  (is (= "abcdef" (compute-last-modified {"etag" "123456", "if-match" "abcdef"}))))
 
 (deftest test-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
@@ -201,7 +199,8 @@
                 (run-handle-token-request
                   kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
                   {:authorization/user "tu1"
-                   :headers {"if-match" (str (clock-millis)), "x-waiter-token" token}
+                   :headers {"if-match" (str (- (clock-millis) 1000))
+                             "x-waiter-token" token}
                    :query-params {"hard-delete" "true"}
                    :request-method :delete})]
             (is (= 200 status))
@@ -430,7 +429,7 @@
                 kv-store waiter-hostname entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user test-user
                  :body (StringBufferInputStream. (json/write-str service-description))
-                 :headers {"if-match" (str (clock-millis))
+                 :headers {"if-match" "0"
                            "x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
@@ -764,7 +763,7 @@
     (testing "basic update with valid etag"
       (let [{:strs [last-update-time]} (kv/fetch kv-store token)]
         (store-service-description-for-token synchronize-fn kv-store token service-description-2 token-metadata-2
-                                             :if-unmodified-since last-update-time)
+                                             :version-etag last-update-time)
         (let [token-description (kv/fetch kv-store token)]
           (is (= service-description-2 (select-keys token-description sd/service-description-keys)))
           (is (= token-metadata-2 (select-keys token-description sd/token-metadata-keys)))
@@ -775,7 +774,7 @@
         (is (thrown-with-msg?
               ExceptionInfo #"Cannot modify stale token"
               (store-service-description-for-token synchronize-fn kv-store token service-description-3 token-metadata-1
-                                                   :if-unmodified-since (- last-update-time 1000))))
+                                                   :version-etag (- last-update-time 1000))))
         (let [token-description (kv/fetch kv-store token)]
           (is (= service-description-2 (select-keys token-description sd/service-description-keys)))
           (is (= token-metadata-2 (select-keys token-description sd/token-metadata-keys)))
@@ -802,7 +801,7 @@
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
       (delete-service-description-for-token clock synchronize-fn kv-store token owner
-                                            :if-unmodified-since last-update-time)
+                                            :version-etag last-update-time)
       (is (= (assoc token-description "last-update-time" current-time "deleted" true)
              (kv/fetch kv-store token))))
 
@@ -812,7 +811,7 @@
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
             (delete-service-description-for-token clock synchronize-fn kv-store token owner
-                                                  :if-unmodified-since (- current-time 5000))))
+                                                  :version-etag (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))
 
     (testing "valid hard delete"
@@ -826,7 +825,7 @@
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
       (delete-service-description-for-token clock synchronize-fn kv-store token owner
-                                            :hard-delete true :if-unmodified-since last-update-time)
+                                            :hard-delete true :version-etag last-update-time)
       (is (nil? (kv/fetch kv-store token))))
 
     (testing "invalid hard delete"
@@ -835,7 +834,7 @@
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
             (delete-service-description-for-token clock synchronize-fn kv-store token owner
-                                                  :hard-delete true :if-unmodified-since (- current-time 5000))))
+                                                  :hard-delete true :version-etag (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))))
 
 (deftest test-token-index
