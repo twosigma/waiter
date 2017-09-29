@@ -286,8 +286,7 @@
               {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
               json-body (json/read-str body)]
           (is (= status 400))
-          (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"])))))
-      )
+          (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"]))))))
     (with-redefs [clj-http.client/get (fn [url _]
                                         (is (every? #(str/includes? url %) ["test.host.com" "5051"]))
                                         (let [state-json-response-body "
