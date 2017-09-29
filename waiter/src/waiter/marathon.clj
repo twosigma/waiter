@@ -230,7 +230,7 @@
         _ (log/info "Mesos state on" host "is" response-body)
         response-parsed (walk/keywordize-keys (json/read-str response-body))
         frameworks (concat (:completed_frameworks response-parsed) (:frameworks response-parsed))
-        marathon-framework (first (filter #(= (:role %) "marathon") frameworks))
+        marathon-framework (first (filter #(or (= (:role %) "marathon") (= (:name %) "marathon")) frameworks))
         marathon-executors (concat (:completed_executors marathon-framework) (:executors marathon-framework))
         log-directory (str (:directory (first (filter #(= (:id %) instance-id) marathon-executors))))]
     log-directory))

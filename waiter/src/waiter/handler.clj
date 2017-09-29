@@ -452,8 +452,6 @@
               (throw (ex-info "Missing instance-id parameter" {:status 400})))
           _ (when-not host
               (throw (ex-info "Missing host parameter" {:status 400})))
-          _ (when-not directory
-              (throw (ex-info "Missing directory parameter" {:status 400})))
           directory-content (map (fn [{:keys [path type] :as entry}]
                                    (if (= type "file")
                                      entry

@@ -39,7 +39,7 @@ minimesos {
         imageName = "twosigma/kitchen"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
-        portNumber = 5052
+        portNumber = 5051
 
         resources {
             cpu {
@@ -68,7 +68,7 @@ minimesos {
         imageName = "twosigma/kitchen"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
-        portNumber = 5053
+        portNumber = 5051
 
         resources {
             cpu {
@@ -97,7 +97,7 @@ minimesos {
         imageName = "twosigma/kitchen"
         imageTag = "latest"
         loggingLevel = "# INHERIT FROM CLUSTER"
-        portNumber = 5054
+        portNumber = 5051
 
         resources {
             cpu {

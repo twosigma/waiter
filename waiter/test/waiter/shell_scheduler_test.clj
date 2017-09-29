@@ -95,16 +95,17 @@
               :unhealthy 1
               :running 2
               :staged 0} (:task-stats service)))
-   (testing "1 healthy, 1 unhealthy, 1 killed"
-    (let [{:keys [service id->instance]} (update-task-stats {:service {}
-                                                             :id->instance {"foo" {:healthy? true}
-                                                                            "bar" {:healthy? false}
-                                                                            "baz" {:healthy? false :killed? true}}})]
-      (is (= {:healthy 1
-              :unhealthy 1
-              :running 2
-              :staged 0} (:task-stats service)))
-      (is (= 2 (:task-count service)))))   (is (= 2 (:task-count service))))))
+      (testing "1 healthy, 1 unhealthy, 1 killed"
+        (let [{:keys [service id->instance]} (update-task-stats {:service {}
+                                                                 :id->instance {"foo" {:healthy? true}
+                                                                                "bar" {:healthy? false}
+                                                                                "baz" {:healthy? false :killed? true}}})]
+          (is (= {:healthy 1
+                  :unhealthy 1
+                  :running 2
+                  :staged 0} (:task-stats service)))
+          (is (= 2 (:task-count service)))))
+      (is (= 2 (:task-count service))))))
 
 (deftest test-launch-instance
   (testing "Launching an instance"
@@ -303,16 +304,14 @@
             port-range-start 2000
             instance (launch-instance "bar" {"backend-proto" "http" "cmd" "ls" "ports" num-ports "mem" 32} (work-dir) {} port-reservation-atom [port-range-start 3000])]
         (is (= num-ports (count @port-reservation-atom)))
-        (is (every? #(= {:state :in-use, :expiry-time nil}
-                        (get @port-reservation-atom %))
-                    (range port-range-start (+ port-range-start num-ports))))
+        (is (= (repeat num-ports {:state :in-use, :expiry-time nil})
+               (vals @port-reservation-atom)))
         (let [current-time (t/now)]
           (with-redefs [t/now (fn [] current-time)]
             (kill-process! instance port-reservation-atom 0)
             (is (= num-ports (count @port-reservation-atom)))
-            (is (every? #(= {:state :in-grace-period-until-expiry, :expiry-time current-time}
-                            (get @port-reservation-atom %))
-                        (range port-range-start (+ port-range-start num-ports))))))))))
+            (is (= (repeat num-ports {:state :in-grace-period-until-expiry, :expiry-time current-time})
+                   (vals @port-reservation-atom)))))))))
 
 (deftest test-health-check-instances
   (let [scheduler-config {:health-check-timeout-ms 1
@@ -554,7 +553,7 @@
            (create-test-service scheduler "foo" {"cmd" "sleep 10000" "grace-period-secs" 0})))
     ;; Instance should be marked as unhealthy and failed
     (with-redefs [perform-health-check (constantly false)]
-     (force-update-service-health scheduler scheduler-config))
+      (force-update-service-health scheduler scheduler-config))
     (let [instances (scheduler/get-instances scheduler "foo")]
       (is (= 0 (count (:active-instances instances))))
       (is (= 1 (count (:failed-instances instances)))))))

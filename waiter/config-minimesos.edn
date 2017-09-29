@@ -11,9 +11,6 @@
  ;; Set the port:
  :port #config/env-int "WAITER_PORT"
 
- ;; Set the DNS name for your Waiter cluster:
- :hostname #config/env "MINIMESOS_NETWORK_GATEWAY"
-
  ; ---------- Security ----------
 
  :authenticator-config {:kind :one-user
@@ -27,7 +24,8 @@
                     :kind :marathon
                     :marathon {
                                ;; The URL for your Marathon HTTP API:
-                               :url #config/env "WAITER_MARATHON"}}
+                               :url #config/env "WAITER_MARATHON"
+                               :mesos-slave-port 5051}}
 
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all }}
