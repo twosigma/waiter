@@ -236,6 +236,14 @@
     (catch Exception ex
       (utils/exception->response ex req))))
 
+(defn- token-metadata->etag
+  "Converts the token metadata to a tag"
+  [token-metadata]
+  (-> token-metadata
+      (get "last-update-time")
+      (or 0)
+      str))
+
 (defn- handle-get-token-request
   "Returns the configuration if found.
    Anyone can see the configuration, b/c it shouldn't contain any sensitive data."
@@ -250,10 +258,12 @@
           (do
             (log/info "successfully retrieved token " token)
             (utils/map->json-response (merge service-description-template token-metadata)
-                                      :headers {"etag" (-> token-metadata (get "last-update-time") str)}))
+                                      :headers {"etag" (token-metadata->etag token-metadata)}))
           (do
             (throw (ex-info (str "Couldn't find token " token)
-                            {:status 404 :token token}))))))
+                            {:headers {"etag" (token-metadata->etag token-metadata)}
+                             :status 404
+                             :token token}))))))
     (catch Exception ex
       (utils/exception->response ex req))))
 
@@ -344,13 +354,14 @@
                                        "owner" owner}
                                       new-token-metadata)]
         (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata
-                                             :if-unmodified-since (compute-last-modified clock headers)))
-      ; notify peers of token update
-      (make-peer-requests-fn "tokens/refresh"
-                             :method :post
-                             :body (json/write-str {:token token, :owner owner}))
-      (utils/map->json-response {:message (str "Successfully created " token)
-                                 :service-description new-service-description-template}))
+                                             :if-unmodified-since (compute-last-modified clock headers))
+        ; notify peers of token update
+        (make-peer-requests-fn "tokens/refresh"
+                               :method :post
+                               :body (json/write-str {:token token, :owner owner}))
+        (utils/map->json-response {:message (str "Successfully created " token)
+                                   :service-description new-service-description-template}
+                                  :headers {"etag" (token-metadata->etag new-token-metadata)})))
     (catch Exception ex
       (utils/exception->response ex req))))
 

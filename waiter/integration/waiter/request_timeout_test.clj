@@ -11,7 +11,6 @@
 (ns waiter.request-timeout-test
   (:require [clj-time.core :as time]
             [clojure.core.async :as async]
-            [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
@@ -217,9 +216,9 @@
                                       :cmd-type "shell"})]
           (is (= 200 status) (str "Did not get a 200 response. " body)))
         (log/info "Making request for" token)
-        (let [{:keys [status body service-id] :as response} (make-request-with-debug-info
-                                                              {:x-waiter-token token}
-                                                              #(make-request waiter-url "/secrun" :headers %))]
+        (let [{:keys [status body service-id]} (make-request-with-debug-info
+                                                 {:x-waiter-token token}
+                                                 #(make-request waiter-url "/secrun" :headers %))]
           (is (= 200 status) (str "Did not get a 200 response. " body))
           (when (and (= 200 status) (can-query-for-grace-period? waiter-url))
             (log/info "Verifying app grace period for" token)

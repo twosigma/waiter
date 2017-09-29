@@ -569,11 +569,16 @@
      (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
 
 (defn delete-token-and-assert
-  [waiter-url token & {:keys [hard-delete] :or {hard-delete true}}]
-  (log/info "deleting token" token)
-  (let [response (make-request waiter-url "/token"
-                               :headers (cond-> {"host" token}
-                                                hard-delete (assoc "if-match" (str (System/currentTimeMillis))))
+  [waiter-url token & {:keys [hard-delete headers] :or {hard-delete true}}]
+  (log/info "deleting token" token {:hard-delete hard-delete})
+  (let [headers (if (and hard-delete (nil? headers))
+                  (do
+                    (log/info "retrieving token" token "etag before hard-delete")
+                    (let [response (make-request waiter-url "/token" :headers {"x-waiter-token" token})]
+                      {"if-match" (get-in response [:headers "etag"])}))
+                  headers)
+        response (make-request waiter-url "/token"
+                               :headers (assoc headers "host" token)
                                :http-method-fn http/delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response 200)))
