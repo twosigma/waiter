@@ -545,4 +545,8 @@
                              (is false ("Not json:\n" body))))]
         (is (= 200 status))
         (is (= "application/json" (get headers "content-type")))
-        (is (= "Welcome to Waiter" (get json-data "message")))))))
+        (is (= "Welcome to Waiter" (get json-data "message")))))
+    (testing "only GET"
+      (let [{:keys [body status]} (make-request waiter-url "/" :http-method-fn http/post)]
+        (is (= 405 status))
+        (is (str/includes? body "Only GET supported"))))))

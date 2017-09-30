@@ -648,7 +648,8 @@
       (utils/exception->response ex request))))
 
 (defn welcome-handler
-  [{:keys [host hostname port support-info]} request]
+  "Response with a welcome page."
+  [{:keys [host hostname port support-info]} {:keys [request-method] :as request}]
   (let [welcome-info {:cid (cid/get-correlation-id)
                       :host host
                       :hostname hostname
@@ -657,12 +658,18 @@
                       :support-info support-info
                       :timestamp (utils/date-to-str (t/now))}
         content-type (utils/request->content-type request)]
-    {:body (case content-type
-             "application/json" (json/write-str welcome-info)
-             "text/html" (template/eval (slurp (io/resource "web/welcome.html")) welcome-info)
-             "text/plain" (template/eval (slurp (io/resource "web/welcome.txt")) welcome-info))
-     :headers {"content-type" content-type}}))
+    (try
+      (case request-method
+        :get {:body (case content-type
+                      "application/json" (json/write-str welcome-info)
+                      "text/html" (template/eval (slurp (io/resource "web/welcome.html")) welcome-info)
+                      "text/plain" (template/eval (slurp (io/resource "web/welcome.txt")) welcome-info))
+              :headers {"content-type" content-type}}
+        (throw (ex-info "Only GET supported" {:status 405})))
+      (catch Exception ex
+        (utils/exception->response ex request)))))
 
 (defn not-found-handler
+  "Responds with a handler indicating a resource isn't found."
   [request]
   (utils/exception->response (ex-info (utils/message :not-found) {:status 404}) request))
