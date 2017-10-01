@@ -168,7 +168,6 @@
                                                                     "if-match" "1010"}
                                                           :http-method-fn http/delete
                                                           :query-params {"hard-delete" true})]
-            (println body)
             (assert-response-status response 412)
             (is (str/includes? (str body) "Cannot modify stale token")))))
 
@@ -295,7 +294,7 @@
                                        :run-as-user "i-do-not-exist-but-will-not-be-checked"
                                        :token token}
                     {:keys [body] :as response} (post-token waiter-url token-description
-                                                            :headers (attach-token-etag waiter-url token {})
+                                                            :headers {}
                                                             :query-params {"update-mode" "admin"})]
                 (assert-response-status response 400)
                 (is (str/includes? body "Must specify if-match header for admin mode token updates"))))

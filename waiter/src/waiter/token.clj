@@ -30,17 +30,17 @@
     (-> token-metadata
         (get "last-update-time")
         (or default-etag)
-        str))
+        str)))
 
-  (defn- validate-token-modification-based-on-etag
-    "Validates whether the token modification should be allowed on the update-time-etag (timestamp)."
-    [{:strs [last-update-time] :as token-metadata} version-etag]
-    (when version-etag
-      (when (not= (str (or last-update-time default-etag)) (str version-etag))
-        (throw (ex-info "Cannot modify stale token"
-                        {:etag version-etag
-                         :status 412
-                         :token-metadata token-metadata}))))))
+(defn- validate-token-modification-based-on-etag
+  "Validates whether the token modification should be allowed on the update-time-etag (timestamp)."
+  [token-metadata version-etag]
+  (when version-etag
+    (when (not= (token-metadata->etag token-metadata) (str version-etag))
+      (throw (ex-info "Cannot modify stale token"
+                      {:etag version-etag
+                       :status 412
+                       :token-metadata token-metadata})))))
 
 ;; We'd like to maintain an index of tokens by their owner.
 ;; We'll store an index in the key "^TOKEN_OWNERS" that maintains
@@ -184,7 +184,7 @@
                   token-set (->> tokens (map :token) set)]
               (kv/store kv-store owner-key token-set))))))))
 
-(defn compute-last-modified
+(defn compute-last-modified-etag
   "Returns an appropriate last-modified value for a given set of request headers.
    It tries to parse the if-match header, else it returns the current timestamp."
   [headers]
@@ -205,7 +205,7 @@
             (let [token-owner (get token-metadata "owner")]
               (if hard-delete
                 (do
-                  (when-not (compute-last-modified headers)
+                  (when-not (compute-last-modified-etag headers)
                     (throw (ex-info "Must specify if-match header for token hard deletes"
                                     {:request-headers headers, :status 400})))
                   (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
@@ -220,7 +220,7 @@
                                    :user authenticated-user}))))
               (delete-service-description-for-token clock synchronize-fn kv-store token token-owner
                                                     :hard-delete hard-delete
-                                                    :version-etag (compute-last-modified headers))
+                                                    :version-etag (compute-last-modified-etag headers))
               ; notify peers of token delete and ask them to refresh their caches
               (make-peer-requests-fn "tokens/refresh"
                                      :body (json/write-str {:owner token-owner, :token token})
@@ -301,7 +301,7 @@
       (case (get request-params "update-mode")
         "admin"
         (do
-          (when-not (compute-last-modified headers)
+          (when-not (compute-last-modified-etag headers)
             (throw (ex-info "Must specify if-match header for admin mode token updates"
                             {:request-headers headers, :status 400})))
           (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
@@ -343,7 +343,7 @@
                                        "owner" owner}
                                       new-token-metadata)]
         (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata
-                                             :version-etag (compute-last-modified headers))
+                                             :version-etag (compute-last-modified-etag headers))
         ; notify peers of token update
         (make-peer-requests-fn "tokens/refresh"
                                :method :post

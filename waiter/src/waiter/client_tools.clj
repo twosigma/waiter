@@ -572,15 +572,19 @@
   "Returns the current etag of a token"
   [waiter-url token]
   (log/info "retrieving etag for token" token)
-  (let [response (make-request waiter-url "/token" :headers {"x-waiter-token" token})]
+  (let [response (make-request waiter-url "/token"
+                               :headers {"x-waiter-token" token}
+                               :query-params {"include-deleted" true})]
     (get-in response [:headers "etag"])))
 
 (defn attach-token-etag
   "Attaches the if-match etag to the headers"
   [waiter-url token headers]
-  (assoc headers "if-match" (token->etag waiter-url token)))
+  (let [last-modified-etag (token->etag waiter-url token)]
+    (assoc headers "if-match" last-modified-etag)))
 
 (defn delete-token-and-assert
+  "Deletes and token and asserts that the delete was successful."
   [waiter-url token & {:keys [hard-delete headers] :or {hard-delete true}}]
   (log/info "deleting token" token {:hard-delete hard-delete})
   (let [headers (cond->> headers

@@ -44,11 +44,11 @@
   (handle-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn
                         validate-service-description-fn request))
 
-(deftest test-compute-last-modified
-  (is (nil? (compute-last-modified {})))
-  (is (= "123456" (compute-last-modified {"if-match" "123456"})))
-  (is (nil? (compute-last-modified {"etag" "123456"})))
-  (is (= "abcdef" (compute-last-modified {"etag" "123456", "if-match" "abcdef"}))))
+(deftest test-compute-last-modified-etag
+  (is (nil? (compute-last-modified-etag {})))
+  (is (= "123456" (compute-last-modified-etag {"if-match" "123456"})))
+  (is (nil? (compute-last-modified-etag {"etag" "123456"})))
+  (is (= "abcdef" (compute-last-modified-etag {"etag" "123456", "if-match" "abcdef"}))))
 
 (deftest test-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
