@@ -227,7 +227,7 @@
   (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
   (let [url (str "http://" host ":" mesos-slave-port "/state.json")
         response-body (:body (http/get url (assoc http-options :headers {} :throw-exceptions false)))
-        _ (log/info "Mesos state on" host "is" response-body)
+        _ (log/debug "Mesos state on" host "is" response-body)
         response-parsed (walk/keywordize-keys (json/read-str response-body))
         frameworks (concat (:completed_frameworks response-parsed) (:frameworks response-parsed))
         marathon-framework (first (filter #(or (= (:role %) "marathon") (= (:name %) "marathon")) frameworks))
