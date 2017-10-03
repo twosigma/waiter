@@ -71,7 +71,7 @@
 (defn register-router-ws
   "Registers the websocket request with the specified request-id into the agent's state.
    It also attaches a callback to deregister the request when the connection receives data on the `ctrl` channel."
-  [{:keys [router-id] :as router-metrics-state} router-ws-key source-router-id {:keys [ctrl request-id] :as ws-request} encrypt router-metrics-agent]
+  [router-metrics-state router-ws-key source-router-id {:keys [ctrl request-id] :as ws-request} encrypt router-metrics-agent]
   (with-catch
     router-metrics-state
     (if request-id
@@ -123,10 +123,10 @@
                                  (decrypt received-data))]
             (cid/cdebug request-id "received metrics data from router" source-router-id)
             (send router-metrics-agent update-router-metrics decrypted-data)
-            (async/timeout metrics-sync-interval-ms) ; throttle rate of receiving metrics
+            (async/<! (async/timeout metrics-sync-interval-ms)) ; throttle rate of receiving metrics
             (recur)))
         (do
-          (cid/cinfo request-id "deregistering router socket as recevied nil data from router" source-router-id)
+          (cid/cinfo request-id "deregistering router socket as received nil data from router" source-router-id)
           (send router-metrics-agent deregister-router-ws :router-id->incoming-ws source-router-id request-id encrypt))))))
 
 (defn incoming-router-metrics-handler
@@ -213,7 +213,7 @@
         (let [router-id->incoming-ws' (cleanup-router-requests :router-id->incoming-ws known-router-ids encrypt router-metrics-state)
               router-id->outgoing-ws' (cleanup-router-requests :router-id->outgoing-ws known-router-ids encrypt router-metrics-state)
               new-outgoing-router-ids (->> (:router-id->outgoing-ws router-metrics-state) (keys) (set) (set/difference known-router-ids))]
-          (cid/cinfo "metrics-router-syncer" "new routers:" new-outgoing-router-ids)
+          (cid/cinfo "metrics-router-syncer" "new routers:" new-outgoing-router-ids ", known routers" known-router-ids)
           (doseq [router-id new-outgoing-router-ids]
             (let [ws-endpoint (-> (get router-id->http-endpoint router-id)
                                   (str/replace "http://" "ws://")
@@ -333,20 +333,20 @@
                            (map keys)
                            (map set)
                            (reduce set/union #{}))]
-      (log/info "aggregating metrics for" (count service-ids) "services from" (count router-id->service-id->metrics) "routers")
-      (loop [[service-id & remaining-service-ids] (seq service-ids)
-             service-id->metrics {}]
-        (if-not service-id
-          service-id->metrics
-          (let [router->metrics (pc/map-vals (fn [service-id->metrics] (service-id->metrics service-id))
-                                             router-id->service-id->metrics)
-                aggregate-metrics (try
-                                    (->> router->metrics (utils/filterm val) (metrics/aggregate-router-data))
-                                    (catch Exception e
-                                      (log/error e "error in retrieving aggregated metrics for" service-id)))]
-            (if aggregate-metrics
-              (recur remaining-service-ids (assoc service-id->metrics service-id aggregate-metrics))
-              (recur remaining-service-ids service-id->metrics))))))
+      (log/info "aggregating metrics for" (count service-ids) "services from" (count router-id->service-id->metrics)
+                "routers with distribution" (pc/map-vals count router-id->service-id->metrics))
+      (->> (seq service-ids)
+           (pc/map-from-keys (fn [service-id]
+                               (let [router->metrics (pc/map-vals (fn [service-id->metrics] (service-id->metrics service-id))
+                                                                  router-id->service-id->metrics)]
+                                 (try
+                                   (->> router->metrics
+                                        (utils/filterm val)
+                                        (metrics/aggregate-router-data))
+                                   (catch Exception e
+                                     (log/error e "error in retrieving aggregated metrics for" service-id))))))
+           (filter second)
+           (into {})))
     (catch Exception e
       (log/error e "unable to retrieve service-id->metrics"))))
 
@@ -359,4 +359,4 @@
        (pc/map-vals (fn [service-id->metrics] (service-id->metrics service-id))
                     router->service-id->metrics))
      (catch Exception e
-       (log/error e "error in obtaining router->metrics data"))))
+       (log/error e "error in obtaining router-id->metrics data for" service-id))))
