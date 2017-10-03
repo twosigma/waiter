@@ -12,7 +12,6 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.set :as set]
-            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.core]
             [metrics.counters :as counters]
@@ -49,8 +48,8 @@
         (loop [service-id->scaling-executor-chan initial-state]
           (recur
             (let [[data channel] (async/alts! [executor-multiplexer-chan query-chan] :priority true)]
-              (cond
-                (= channel executor-multiplexer-chan)
+              (condp = channel
+                executor-multiplexer-chan
                 (let [{:keys [service-id scale-amount correlation-id] :as scaling-data} data]
                   (cid/with-correlation-id
                     correlation-id
@@ -69,7 +68,8 @@
                           (log/info "shutting down scaling executor channel for" service-id)
                           (async/close! executor-chan)
                           (dissoc service-id->scaling-executor-chan service-id))))))
-                (= channel query-chan)
+
+                query-chan
                 (let [{:keys [response-chan service-id]} data]
                   (if service-id
                     (if-let [query-chan (get-in service-id->scaling-executor-chan [service-id :query-chan])]
@@ -356,7 +356,7 @@
             (map (fn [service-id]
                    (let [outstanding-requests (or (service-id->outstanding-requests service-id) 0)
                          {:keys [healthy-instances expired-instances]} (service-id->router-state service-id)
-                         {:keys [instances task-count]} (service-id->scheduler-state service-id)
+                         {:keys [instances task-count] :as scheduler-state} (service-id->scheduler-state service-id)
                          ; if we don't have a target instance count, default to the number of tasks
                          target-instances (get-in service-id->scale-state [service-id :target-instances] task-count)
                          {:keys [target-instances scale-to-instances scale-amount]}
@@ -368,7 +368,10 @@
                                           :outstanding-requests outstanding-requests
                                           :target-instances target-instances
                                           :total-instances instances})
-                           {:scale-to-instances instances :target-instances target-instances :scale-amount 0})]
+                           (do
+                             (log/info "no target instances available for service"
+                                       {:scheduler-state scheduler-state, :service-id service-id})
+                             {:scale-to-instances instances :target-instances target-instances :scale-amount 0}))]
                      (when-not (zero? scale-amount)
                        (apply-scaling-fn service-id
                                          {:outstanding-requests outstanding-requests
@@ -419,9 +422,11 @@
                         (assoc current-state :continue-looping false :timeout-chan nil)
                         state-chan
                         (let [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->expired-instances]} args
+                              existing-service-ids-set (set (keys service-id->router-state))
                               service-ids-set (set/union (-> service-id->healthy-instances (keys) (set))
                                                          (-> service-id->unhealthy-instances (keys) (set)))
-                              deleted-service-ids (set/difference (set (keys service-id->router-state)) service-ids-set)
+                              deleted-service-ids (set/difference existing-service-ids-set service-ids-set)
+                              new-service-ids (set/difference service-ids-set existing-service-ids-set)
                               service-id->router-state' (pc/map-from-keys
                                                           (fn [service-id]
                                                             {:healthy-instances (count (service-id->healthy-instances service-id))
@@ -429,6 +434,8 @@
                                                           service-ids-set)]
                           (cid/with-correlation-id
                             correlation-id
+                            (when (seq new-service-ids)
+                              (log/info "started tracking following services:" new-service-ids))
                             (when (seq deleted-service-ids)
                               (log/info "no longer tracking following services:" deleted-service-ids)
                               ; trigger closing of the scaling executors for the services
