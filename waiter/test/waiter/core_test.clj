@@ -420,7 +420,7 @@
                        :headers {"accept" "application/json"}
                        :request-method :delete
                        :uri (str "/apps/" service-id)}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 500 status))
           (is (= {"content-type" "application/json"} headers)))))))
 
@@ -524,7 +524,7 @@
         make-request-fn-factory (fn [urls-invoked-atom]
                                   (fn [method endpoint-url auth body config]
                                     (is (str/blank? body))
-                                    (is (empty? config))
+                                    (is (= {:headers {"accept" "application/json"}} config))
                                     (is (= :get method))
                                     (is (= auth-object auth))
                                     (swap! urls-invoked-atom conj endpoint-url)
@@ -719,7 +719,7 @@
         (let [request {:headers {"accept" "application/json"}
                        :request-method :get
                        :uri "/metrics"}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 500 status))
           (is (= {"content-type" "application/json"} headers)))))
 
@@ -745,7 +745,7 @@
                        :request-method :get
                        :query-string "service-id=abcd"
                        :uri "/metrics"}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 500 status))
           (is (= {"content-type" "application/json"} headers)))))))
 
