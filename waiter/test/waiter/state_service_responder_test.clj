@@ -178,12 +178,12 @@
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
-                                                                  (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy :expired})
+                                                                  (update-slot-state-fn "testabcd.h1" 1 0 #{:expired :healthy})
                                                                   (update-slot-state-fn "testabcd.h2" 1 0)
-                                                                  (update-slot-state-fn "testabcd.h3" 1 0 #{:healthy :expired})
+                                                                  (update-slot-state-fn "testabcd.h3" 1 0 #{:expired :healthy})
                                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
                                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
-                                                                  (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :starting}))
+                                                                  (update-slot-state-fn "testabcd.u3" 0 0 #{:starting :unhealthy}))
                                           :sorted-instance-ids ["testabcd.h2" ; healthy
                                                                 "testabcd.u1" "testabcd.u2" "testabcd.u3" ; unhealthy
                                                                 "testabcd.h1" "testabcd.h3" ; expired
@@ -263,9 +263,9 @@
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
-                                                                  (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy, :expired})
+                                                                  (update-slot-state-fn "testabcd.h1" 1 0 #{:expired :healthy})
                                                                   (update-slot-state-fn "testabcd.h2" 1 0)
-                                                                  (update-slot-state-fn "testabcd.h3" 1 0 #{:healthy, :expired})
+                                                                  (update-slot-state-fn "testabcd.h3" 1 0 #{:expired :healthy})
                                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
                                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy}))
                                           :request-id->work-stealer {}
@@ -307,9 +307,9 @@
                                           :instance-id->request-id->use-reason-map {}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
-                                                                  (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy, :expired})
+                                                                  (update-slot-state-fn "testabcd.h1" 1 0 #{:expired :healthy})
                                                                   (update-slot-state-fn "testabcd.h2" 1 0)
-                                                                  (update-slot-state-fn "testabcd.h3" 1 0 #{:healthy, :expired})
+                                                                  (update-slot-state-fn "testabcd.h3" 1 0 #{:expired :healthy})
                                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy}))
                                           :request-id->work-stealer {}
                                           :sorted-instance-ids ["testabcd.h2" ; healthy
@@ -328,9 +328,9 @@
                              :instance-id->request-id->use-reason-map {}
                              :instance-id->consecutive-failures {}
                              :instance-id->state (-> {}
-                                                     (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy, :expired, :blacklisted})
+                                                     (update-slot-state-fn "testabcd.h1" 1 0 #{:blacklisted :expired :healthy})
                                                      (update-slot-state-fn "testabcd.h2" 1 0)
-                                                     (update-slot-state-fn "testabcd.h3" 1 0 #{:healthy, :expired, :blacklisted})
+                                                     (update-slot-state-fn "testabcd.h3" 1 0 #{:blacklisted :expired :healthy})
                                                      (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy}))})
             (check-blacklist-instance-fn blacklist-instance-chan "testabcd.h4" :blacklisted)
             (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}]
@@ -346,10 +346,10 @@
                                :instance-id->request-id->use-reason-map {}
                                :instance-id->consecutive-failures {}
                                :instance-id->state (-> {}
-                                                       (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy, :expired, :blacklisted})
+                                                       (update-slot-state-fn "testabcd.h1" 1 0 #{:blacklisted :expired :healthy})
                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                        (update-slot-state-fn "testabcd.h3" 0 0 #{:blacklisted})
-                                                       (update-slot-state-fn "testabcd.h4" 0 0 #{:blacklisted, :expired})
+                                                       (update-slot-state-fn "testabcd.h4" 0 0 #{:blacklisted :expired})
                                                        (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy}))})
               (is (= {"testabcd.h1" blacklist-backoff-base-time-ms
                       "testabcd.h3" blacklist-backoff-base-time-ms
@@ -366,7 +366,7 @@
                              :instance-id->request-id->use-reason-map {}
                              :instance-id->consecutive-failures {}
                              :instance-id->state (-> {}
-                                                     (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy, :expired})
+                                                     (update-slot-state-fn "testabcd.h1" 1 0 #{:expired :healthy})
                                                      (update-slot-state-fn "testabcd.h2" 1 0)
                                                      (update-slot-state-fn "testabcd.h3" 0 0 #{})
                                                      (update-slot-state-fn "testabcd.h4" 0 0 #{:expired})
@@ -400,7 +400,7 @@
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 1 0)
-                                                                  (update-slot-state-fn "testabcd.h2" 2 0 #{:healthy :expired})
+                                                                  (update-slot-state-fn "testabcd.h2" 2 0 #{:expired :healthy})
                                                                   (update-slot-state-fn "testabcd.h3" 1 0))})
         (check-request-instance-fn kill-instance-chan "testabcd.h2" :mode :kill-instance)
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
@@ -408,7 +408,7 @@
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 1 0)
-                                                                  (update-slot-state-fn "testabcd.h2" 2 0 #{:healthy :expired :locked})
+                                                                  (update-slot-state-fn "testabcd.h2" 2 0 #{:expired :healthy :locked})
                                                                   (update-slot-state-fn "testabcd.h3" 1 0))
                                           :work-stealing-queue (make-queue [])})
         (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}, {:id "testabcd.h4"}, {:id "testabcd.h5"}]
@@ -422,7 +422,7 @@
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 1 0)
-                                                                  (update-slot-state-fn "testabcd.h2" 4 0 #{:healthy :expired :locked})
+                                                                  (update-slot-state-fn "testabcd.h2" 4 0 #{:expired :healthy :locked})
                                                                   (update-slot-state-fn "testabcd.h3" 4 0))
                                           :request-id->work-stealer {}
                                           :work-stealing-queue (make-queue [])})
@@ -437,7 +437,7 @@
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 1 0)
-                                                                  (update-slot-state-fn "testabcd.h2" 4 0 #{:healthy :expired :locked})
+                                                                  (update-slot-state-fn "testabcd.h2" 4 0 #{:expired :healthy :locked})
                                                                   (update-slot-state-fn "testabcd.h3" 2 0))})
         (release-instance-fn release-instance-chan "testabcd.h2" 1 :not-killed)
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
@@ -445,7 +445,7 @@
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 1 0)
-                                                                  (update-slot-state-fn "testabcd.h2" 4 0 #{:healthy :expired})
+                                                                  (update-slot-state-fn "testabcd.h2" 4 0 #{:expired :healthy})
                                                                   (update-slot-state-fn "testabcd.h3" 2 0))
                                           :request-id->work-stealer {}
                                           :work-stealing-queue (make-queue [])})
@@ -509,7 +509,7 @@
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 2 2)
-                                                                  (update-slot-state-fn "testabcd.h2" 1 1 #{:healthy :expired}))
+                                                                  (update-slot-state-fn "testabcd.h2" 1 1 #{:expired :healthy}))
                                           :request-id->work-stealer {}
                                           :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
@@ -566,8 +566,8 @@
                                                  (update-slot-state-fn "testabcd.h2" 1 1)
                                                  (update-slot-state-fn "testabcd.h3" 8 4)
                                                  (update-slot-state-fn "testabcd.h4" 0 1 #{})
-                                                 (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy, :locked})
-                                                 (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.u1" 0 0 #{:locked :unhealthy})
+                                                 (update-slot-state-fn "testabcd.u2" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
@@ -592,8 +592,8 @@
                                                                        (update-slot-state-fn "testabcd.h2" 1 1)
                                                                        (update-slot-state-fn "testabcd.h3" 8 4)
                                                                        (update-slot-state-fn "testabcd.h4" 0 1 #{})
-                                                                       (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy, :locked})
-                                                                       (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u1" 0 0 #{:locked :unhealthy})
+                                                                       (update-slot-state-fn "testabcd.u2" 0 0 #{:locked :unhealthy}))
                                                :request-id->work-stealer {}
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.u1" "testabcd.u2"]
                                                :work-stealing-queue (make-queue [])})]
@@ -618,8 +618,8 @@
                                                      (update-slot-state-fn "testabcd.h2" 1 1)
                                                      (update-slot-state-fn "testabcd.h3" 8 4)
                                                      (update-slot-state-fn "testabcd.h4" 0 1 #{})
-                                                     (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy, :locked})
-                                                     (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :blacklisted, :killed}))
+                                                     (update-slot-state-fn "testabcd.u1" 0 0 #{:locked :unhealthy})
+                                                     (update-slot-state-fn "testabcd.u2" 0 0 #{:blacklisted :killed :unhealthy}))
                              :request-id->work-stealer {}
                              :work-stealing-queue (make-queue [])})
             (is (= {"testabcd.u2" max-blacklist-time-ms}
@@ -642,8 +642,8 @@
                                                      (update-slot-state-fn "testabcd.h2" 1 1)
                                                      (update-slot-state-fn "testabcd.h3" 8 4)
                                                      (update-slot-state-fn "testabcd.h4" 0 1 #{})
-                                                     (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy, :blacklisted, :killed})
-                                                     (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :blacklisted, :killed}))
+                                                     (update-slot-state-fn "testabcd.u1" 0 0 #{:blacklisted :killed :unhealthy})
+                                                     (update-slot-state-fn "testabcd.u2" 0 0 #{:blacklisted :killed :unhealthy}))
                              :request-id->work-stealer {}
                              :work-stealing-queue (make-queue [])})
             (is (= {"testabcd.u1" max-blacklist-time-ms
@@ -672,8 +672,8 @@
                                                      (update-slot-state-fn "testabcd.h2" 1 1)
                                                      (update-slot-state-fn "testabcd.h3" 8 4)
                                                      (update-slot-state-fn "testabcd.h4" 0 1 #{})
-                                                     (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy, :killed})
-                                                     (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :killed}))
+                                                     (update-slot-state-fn "testabcd.u1" 0 0 #{:killed :unhealthy})
+                                                     (update-slot-state-fn "testabcd.u2" 0 0 #{:killed :unhealthy}))
                              :request-id->work-stealer {}
                              :work-stealing-queue (make-queue [])}))
           (async/>!! exit-chan :exit))))
@@ -696,8 +696,8 @@
                                                                        (update-slot-state-fn "testabcd.h2" 1 1)
                                                                        (update-slot-state-fn "testabcd.h3" 8 4)
                                                                        (update-slot-state-fn "testabcd.h4" 0 1 #{})
-                                                                       (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy, :killed})
-                                                                       (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :killed}))
+                                                                       (update-slot-state-fn "testabcd.u1" 0 0 #{:killed :unhealthy})
+                                                                       (update-slot-state-fn "testabcd.u2" 0 0 #{:killed :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.u1" "testabcd.u2"]})]
         ; try blacklisting an instance in-use
         (check-blacklist-instance-fn blacklist-instance-chan "testabcd.h1" :in-use)
@@ -721,8 +721,8 @@
                                                                        (update-slot-state-fn "testabcd.h2" 1 1)
                                                                        (update-slot-state-fn "testabcd.h3" 8 4)
                                                                        (update-slot-state-fn "testabcd.h4" 0 1 #{})
-                                                                       (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy, :killed})
-                                                                       (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :killed}))
+                                                                       (update-slot-state-fn "testabcd.u1" 0 0 #{:killed :unhealthy})
+                                                                       (update-slot-state-fn "testabcd.u2" 0 0 #{:killed :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.u1" "testabcd.u2"]})]
         ; update state with newer unhealthy-instance
         (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}, {:id "testabcd.h4"}, {:id "testabcd.h5"}]
@@ -820,10 +820,10 @@
                          :instance-id->consecutive-failures {}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
-                                                 (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy, :locked})
+                                                 (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h3" 0 1 #{:unhealthy})
-                                                 (update-slot-state-fn "testabcd.h4" 0 0 #{:healthy, :locked}) ;; since the response was a success
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.h4" 0 0 #{:healthy :locked}) ;; since the response was a success
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
@@ -857,9 +857,9 @@
                              :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}}
                              :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.h3" 2, "testabcd.u1" 1, "testabcd.u2" 1}
                              :instance-id->state (-> {}
-                                                     (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy, :blacklisted})
+                                                     (update-slot-state-fn "testabcd.h1" 1 0 #{:blacklisted :healthy})
                                                      (update-slot-state-fn "testabcd.h2" 1 0)
-                                                     (update-slot-state-fn "testabcd.h3" 8 1 #{:healthy, :blacklisted})
+                                                     (update-slot-state-fn "testabcd.h3" 8 1 #{:blacklisted :healthy})
                                                      (update-slot-state-fn "testabcd.h4" 0 0)
                                                      (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy}))})
             (is (= {"testabcd.h1" blacklist-backoff-base-time-ms
@@ -881,7 +881,7 @@
                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                        (update-slot-state-fn "testabcd.h3" 8 1)
                                                        (update-slot-state-fn "testabcd.h4" 0 0)
-                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                :request-id->work-stealer {}
                                :work-stealing-queue (make-queue [])})
               (release-instance-fn release-instance-chan "testabcd.u3" 13 :killed)))
@@ -903,7 +903,7 @@
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 1)
                                                                        (update-slot-state-fn "testabcd.h4" 0 0)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.u3"]})]
         ; kill a healthy instance and clear the blacklist buffer
         (let [current-time (t/now)]
@@ -919,8 +919,8 @@
                                                  (update-slot-state-fn "testabcd.h1" 1 0)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
                                                  (update-slot-state-fn "testabcd.h3" 8 1)
-                                                 (update-slot-state-fn "testabcd.h4" 0 0 #{:healthy, :locked})
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.h4" 0 0 #{:healthy :locked})
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
@@ -940,7 +940,7 @@
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 1)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
         ; kill a healthy instance and clear the blacklist buffer
         (let [current-time (t/now)]
@@ -954,9 +954,9 @@
                          :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.h3" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 0)
-                                                 (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy, :locked})
+                                                 (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h3" 8 1)
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
@@ -974,7 +974,7 @@
                                                                        (update-slot-state-fn "testabcd.h1" 1 1)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :starting}))})]
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:starting :unhealthy}))})]
         ; testabcd.h3 now becomes expired
         (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}]
                             :unhealthy-instances [{:id "testabcd.u2"} {:id "testabcd.u3"}]
@@ -995,7 +995,7 @@
                                                  (update-slot-state-fn "testabcd.h3" 0 0 #{:expired})
                                                  (update-slot-state-fn "testabcd.h4" 0 0 #{:expired})
                                                  (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :starting}))
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:starting :unhealthy}))
                          :request-id->work-stealer {}
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.u2" "testabcd.u3" "testabcd.h3" "testabcd.h4"]
                          :work-stealing-queue (make-queue [])})
@@ -1022,7 +1022,7 @@
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
-                                                 (update-slot-state-fn "testabcd.h3" 0 0 #{:expired, :locked})
+                                                 (update-slot-state-fn "testabcd.h3" 0 0 #{:expired :locked})
                                                  (update-slot-state-fn "testabcd.u2" 0 0 #{:locked})
                                                  (update-slot-state-fn "testabcd.u3" 0 0))})
         (async/>!! exit-chan :exit)))
@@ -1040,9 +1040,9 @@
                                                                                    "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
-                                                                       (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy, :locked})
+                                                                       (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h3" 8 1)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
         ; successful release should clear out the failures counter
         (release-instance-fn release-instance-chan "testabcd.h3" 5 :success)
@@ -1053,9 +1053,9 @@
                          :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 0)
-                                                 (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy, :locked})
+                                                 (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h3" 8 0)
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
@@ -1069,9 +1069,9 @@
                                                :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
-                                                                       (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy, :locked})
+                                                                       (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h3" 8 0)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
         ; release instance without killing
         (release-instance-fn release-instance-chan "testabcd.h2" 14 :not-killed)
@@ -1083,7 +1083,7 @@
                                                  (update-slot-state-fn "testabcd.h1" 1 0)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
                                                  (update-slot-state-fn "testabcd.h3" 8 0)
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))})
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))})
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-blacklist-owned-instance
@@ -1096,7 +1096,7 @@
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 0)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
         ; try blacklisting an instance successfully
         (let [start-time (t/now)
@@ -1111,9 +1111,9 @@
                              :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 1 0)
-                                                     (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy, :blacklisted})
+                                                     (update-slot-state-fn "testabcd.h2" 1 0 #{:blacklisted :healthy})
                                                      (update-slot-state-fn "testabcd.h3" 8 0)
-                                                     (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))})
+                                                     (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))})
             (is (= {"testabcd.h2" blacklist-backoff-base-time-ms}
                    @trigger-unblacklist-process-atom))
             ; clear the blacklist buffer with a dummy state call
@@ -1130,7 +1130,7 @@
                                                      (update-slot-state-fn "testabcd.h1" 1 0)
                                                      (update-slot-state-fn "testabcd.h2" 1 0)
                                                      (update-slot-state-fn "testabcd.h3" 8 0)
-                                                     (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))}))
+                                                     (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))}))
           (async/>!! exit-chan :exit))))
 
     (deftest test-start-service-chan-responder-blacklist-external-instance
@@ -1143,7 +1143,7 @@
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 0)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
         ; try blacklisting an external instance successfully
         (let [start-time (t/now)
@@ -1163,7 +1163,7 @@
                                                      (update-slot-state-fn "testabcd.h3" 8 0)
                                                      (update-slot-state-fn "testabcd.h8" 0 0 #{:blacklisted})
                                                      (update-slot-state-fn "testabcd.h9" 0 0 #{:blacklisted})
-                                                     (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))})
+                                                     (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))})
             (is (= {"testabcd.h8" blacklist-backoff-base-time-ms
                     "testabcd.h9" blacklist-backoff-base-time-ms}
                    @trigger-unblacklist-process-atom))
@@ -1184,7 +1184,7 @@
                                                      (update-slot-state-fn "testabcd.h3" 8 0)
                                                      (update-slot-state-fn "testabcd.h8" 0 0 #{})
                                                      (update-slot-state-fn "testabcd.h9" 0 0 #{})
-                                                     (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                     (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                              :work-stealing-queue (make-queue [])}))
           (async/>!! exit-chan :exit))))
 
@@ -1198,7 +1198,7 @@
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 0)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
         ; blacklist an instance which gets remove from state, it should not introduce any errors
         (check-request-instance-fn reserve-instance-chan "testabcd.h1")
@@ -1213,7 +1213,7 @@
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
                                                  (update-slot-state-fn "testabcd.h2" 1 1)
                                                  (update-slot-state-fn "testabcd.h3" 8 0)
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
         (let [update-state {:healthy-instances [{:id "testabcd.h2"}, {:id "testabcd.h3"}]
@@ -1291,10 +1291,10 @@
                                                                                          "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                                                :instance-id->state (-> {}
-                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 0)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
         ; locked testabcd.h1 should not be used to service a request
         (check-request-instance-fn reserve-instance-chan "testabcd.h2")
@@ -1309,10 +1309,10 @@
                                                                    "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                          :instance-id->state (-> {}
-                                                 (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                 (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h2" 1 1)
                                                  (update-slot-state-fn "testabcd.h3" 8 2)
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
@@ -1331,7 +1331,7 @@
                                                                                    "testabcd.u3" 1
                                                                                    "testabcd.z1" 1} ; testabcd.z1 should be removed
                                                :instance-id->state (-> {}
-                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h2" 1 1)
                                                                        (update-slot-state-fn "testabcd.h3" 8 2)
                                                                        (update-slot-state-fn "testabcd.h4" 5 0)
@@ -1339,9 +1339,9 @@
                                                                        (update-slot-state-fn "testabcd.h6" 7 0)
                                                                        (update-slot-state-fn "testabcd.h7" 0 0 #{:blacklisted})
                                                                        (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
-                                                                       (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :killed})
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked})
-                                                                       (update-slot-state-fn "testabcd.u4" 0 0 #{:unhealthy, :killed})
+                                                                       (update-slot-state-fn "testabcd.u2" 0 0 #{:killed :unhealthy})
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy})
+                                                                       (update-slot-state-fn "testabcd.u4" 0 0 #{:killed :unhealthy})
                                                                        (update-slot-state-fn "testabcd.u5" 0 0 #{:unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.h5" "testabcd.h6" "testabcd.h7"
                                                                      "testabcd.u1" "testabcd.u2" "testabcd.u3" "testabcd.u4" "testabcd.u5"]})]
@@ -1382,10 +1382,10 @@
                                                                                          "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                                                :instance-id->state (-> {}
-                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 0)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
         (counters/clear! (metrics/service-counter service-id "request-counts" "outstanding")) ;; clear the counter to zero
         (let [response-chan-1 (make-work-stealing-offer work-stealing-chan "test-router" "testabcd.h1") ;; offer a known instance
@@ -1400,10 +1400,10 @@
                                                                      "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                            :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                            :instance-id->state (-> {}
-                                                   (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                   (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                    (update-slot-state-fn "testabcd.h2" 1 0)
                                                    (update-slot-state-fn "testabcd.h3" 8 0)
-                                                   (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                   (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                            :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                            :request-id->work-stealer {}
                            :work-stealing-queue (make-queue [])})
@@ -1420,10 +1420,10 @@
                                                                                          "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                                                :instance-id->state (-> {}
-                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 0)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
         (counters/clear! (metrics/service-counter service-id "request-counts" "outstanding")) ;; clear the counter to zero
         (counters/inc! (metrics/service-counter service-id "request-counts" "outstanding") 20) ;; more outstanding requests than available slots
@@ -1438,10 +1438,10 @@
                                                                      "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                            :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                            :instance-id->state (-> {}
-                                                   (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                   (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                    (update-slot-state-fn "testabcd.h2" 1 0)
                                                    (update-slot-state-fn "testabcd.h3" 8 0)
-                                                   (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                   (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                            :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                            :request-id->work-stealer {}
                            :work-stealing-queue (make-queue [(make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")
@@ -1454,10 +1454,10 @@
             response-chan-2 (async/chan 1)
             response-chan-3 (async/chan 1)
             test-instance-id->state (-> {}
-                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                         (update-slot-state-fn "testabcd.h2" 1 0)
                                         (update-slot-state-fn "testabcd.h3" 8 0)
-                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
@@ -1488,10 +1488,10 @@
                                                                                          "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                                                :instance-id->state (-> {}
-                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                                       (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 0)
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                                                :request-id->work-stealer {}
                                                :work-stealing-queue (make-queue [(make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")
@@ -1507,10 +1507,10 @@
                                                                    "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                          :instance-id->state (-> {}
-                                                 (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                 (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
                                                  (update-slot-state-fn "testabcd.h3" 8 0)
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [(make-work-stealing-data "cid-16" "testabcd.h2" response-chan-2 "test-router-2")
@@ -1525,10 +1525,10 @@
                                                                    "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                          :instance-id->state (-> {}
-                                                 (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                 (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
                                                  (update-slot-state-fn "testabcd.h3" 8 0)
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [(make-work-stealing-data "cid-17" "testabcd.h4" response-chan-3 "test-router-1")])})
@@ -1542,10 +1542,10 @@
                                                                    "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                          :instance-id->state (-> {}
-                                                 (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                                 (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
                                                  (update-slot-state-fn "testabcd.h3" 8 0)
-                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                                 (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
@@ -1560,10 +1560,10 @@
             response-chan-2 (async/chan 1)
             response-chan-3 (async/chan 1)
             test-instance-id->state (-> {}
-                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                         (update-slot-state-fn "testabcd.h2" 1 0)
                                         (update-slot-state-fn "testabcd.h3" 8 0)
-                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan query-state-chan release-instance-chan reserve-instance-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
@@ -1632,10 +1632,10 @@
             response-chan-2 (async/chan 1)
             response-chan-3 (async/chan 1)
             test-instance-id->state (-> {}
-                                        (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy, :locked})
+                                        (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy :locked})
                                         (update-slot-state-fn "testabcd.h2" 1 1)
                                         (update-slot-state-fn "testabcd.h3" 1 2)
-                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan query-state-chan release-instance-chan reserve-instance-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
@@ -1715,10 +1715,10 @@
       (let [response-chan-1 (async/chan 1)
             response-chan-2 (async/chan 1)
             test-instance-id->state (-> {}
-                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                         (update-slot-state-fn "testabcd.h2" 1 0)
                                         (update-slot-state-fn "testabcd.h3" 8 0)
-                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 19 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
@@ -1767,10 +1767,10 @@
       (let [response-chan-1 (async/chan 1)
             response-chan-2 (async/chan 1)
             test-instance-id->state (-> {}
-                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy, :locked})
+                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                         (update-slot-state-fn "testabcd.h2" 1 0)
                                         (update-slot-state-fn "testabcd.h3" 8 0)
-                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy, :locked}))
+                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 19 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
@@ -1795,7 +1795,7 @@
                                                                        "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                              :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.h2" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                              :instance-id->state (-> test-instance-id->state
-                                                     (update-slot-state-fn "testabcd.h2" 1 0 #{:blacklisted, :healthy}))
+                                                     (update-slot-state-fn "testabcd.h2" 1 0 #{:blacklisted :healthy}))
                              :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                              :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")}
                              :work-stealing-queue (make-queue [])})
@@ -1816,8 +1816,8 @@
                                                    (update-slot-state-fn "testabcd.h1" 1 1)
                                                    (update-slot-state-fn "testabcd.h2" 1 1)
                                                    (update-slot-state-fn "testabcd.h3" 8 2)
-                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy, :killed})
-                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :killed}))
+                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:killed :unhealthy})
+                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:killed :unhealthy}))
                            :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.u1" "testabcd.u2"]}
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 10 initial-state)]
@@ -1850,8 +1850,8 @@
                                                    (update-slot-state-fn "testabcd.h1" 1 1)
                                                    (update-slot-state-fn "testabcd.h2" 1 1)
                                                    (update-slot-state-fn "testabcd.h3" 8 1)
-                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy, :killed})
-                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy, :killed}))
+                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:killed :unhealthy})
+                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:killed :unhealthy}))
                            :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.u1" "testabcd.u2"]
                            :request-id->work-stealer {"req-4" (make-work-stealing-data "cid-4" "testabcd.h2" response-chan-1 "test-router-1")}
                            :work-stealing-queue (make-queue [(make-work-stealing-data "cid-7" "testabcd.h4" response-chan-2 "test-router-1")])}
@@ -1883,7 +1883,7 @@
                                                                      "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                            :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                            :instance-id->state (-> {}
-                                                   (update-slot-state-fn "testabcd.h1" 2 1 #{:healthy, :blacklisted})
+                                                   (update-slot-state-fn "testabcd.h1" 2 1 #{:blacklisted :healthy})
                                                    (update-slot-state-fn "testabcd.h2" 2 1 #{:healthy})
                                                    (update-slot-state-fn "testabcd.h3" 8 0)
                                                    (update-slot-state-fn "testabcd.u3" 0 0 #{:locked}))}
@@ -1907,7 +1907,7 @@
                                                                      "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
                            :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                            :instance-id->state (-> {}
-                                                   (update-slot-state-fn "testabcd.h1" 0 1 #{:healthy, :blacklisted})
+                                                   (update-slot-state-fn "testabcd.h1" 0 1 #{:blacklisted :healthy})
                                                    (update-slot-state-fn "testabcd.h2" 2 1 #{:healthy})
                                                    (update-slot-state-fn "testabcd.h3" 8 0)
                                                    (update-slot-state-fn "testabcd.u3" 0 0 #{:locked}))}
@@ -1933,7 +1933,7 @@
                                                                                     "req-11" {:cid "cid-11", :request-id "req-11", :reason :serve-request}}}
                            :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
                            :instance-id->state (-> {}
-                                                   (update-slot-state-fn "testabcd.h1" 2 1 #{:healthy, :blacklisted})
+                                                   (update-slot-state-fn "testabcd.h1" 2 1 #{:blacklisted :healthy})
                                                    (update-slot-state-fn "testabcd.h2" 3 1 #{:healthy})
                                                    (update-slot-state-fn "testabcd.h3" 7 0)
                                                    (update-slot-state-fn "testabcd.h4" 11 0 #{:locked})
@@ -1953,7 +1953,7 @@
                                                                      "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}}}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
-                                                   (update-slot-state-fn "testabcd.h1" 0 1 #{:healthy, :blacklisted})
+                                                   (update-slot-state-fn "testabcd.h1" 0 1 #{:blacklisted :healthy})
                                                    (update-slot-state-fn "testabcd.h2" 2 1 #{:healthy})
                                                    (update-slot-state-fn "testabcd.u3" 0 0 #{:locked}))
                            :request-id->work-stealer {"req-4" (make-work-stealing-data "cid-4" "testabcd.h3" response-chan-1 "test-router-1")}}
@@ -2025,7 +2025,7 @@
                                                                      "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}}}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
-                                                   (update-slot-state-fn "testabcd.h1" 0 1 #{:healthy, :blacklisted})
+                                                   (update-slot-state-fn "testabcd.h1" 0 1 #{:blacklisted :healthy})
                                                    (update-slot-state-fn "testabcd.h2" 2 2 #{:healthy})
                                                    (update-slot-state-fn "testabcd.h5" 0 0 #{:healthy})
                                                    (update-slot-state-fn "testabcd.u3" 0 0 #{:locked}))
@@ -2036,5 +2036,51 @@
         (testing "check kill when no idle assigned instances"
           (check-request-instance-fn kill-instance-chan :no-matching-instance-found :mode :kill-instance)
           (check-state-fn query-state-chan initial-state))
+
+        (async/>!! exit-chan :exit)))
+
+    (deftest test-start-service-chan-responder-blacklisted-instance-cleanup
+      (let [current-time (t/now)
+            initial-state {:instance-id->blacklist-expiry-time {"testabcd.h1" (t/minus current-time (t/millis 1000))
+                                                                "testabcd.h2" (t/minus current-time (t/millis 2000))
+                                                                "testabcd.h3" (t/minus current-time (t/millis 3000))
+                                                                "testabcd.h4" (t/plus current-time (t/millis 10000))}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
+                                                                     "testabcd.h4" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}
+                                                                     "testabcd.h5" {"req-10" {:cid "cid-10", :request-id "req-10", :reason :serve-request}
+                                                                                    "req-11" {:cid "cid-11", :request-id "req-11", :reason :serve-request}}}
+                           :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                           :instance-id->state (-> {}
+                                                   (update-slot-state-fn "testabcd.h1" 2 1 #{:blacklisted :healthy})
+                                                   (update-slot-state-fn "testabcd.h2" 3 1 #{:blacklisted :healthy})
+                                                   (update-slot-state-fn "testabcd.h3" 7 0 #{:blacklisted})
+                                                   (update-slot-state-fn "testabcd.h4" 11 0 #{:blacklisted :locked})
+                                                   (update-slot-state-fn "testabcd.h5" 0 2))}
+            {:keys [exit-chan query-state-chan update-state-chan]}
+            (launch-service-chan-responder 16 initial-state)]
+
+        (check-state-fn query-state-chan initial-state)
+
+        (testing "check unblacklist cleanup during state update"
+          (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h5"}, {:id "testabcd.h6"}]
+                              :unhealthy-instances [{:id "testabcd.u1"}, {:id "testabcd.u2"}]
+                              :my-instance->slots {{:id "testabcd.h1"} 5, {:id "testabcd.h2"} 2, {:id "testabcd.h3"} 8,
+                                                   {:id "testabcd.h4"} 2, {:id "testabcd.h5"} 1}}]
+            (async/>!! update-state-chan [update-state current-time]))
+
+          (check-state-fn query-state-chan
+                          (-> initial-state
+                              (assoc :instance-id->blacklist-expiry-time {"testabcd.h4" (t/plus current-time (t/millis 10000))}
+                                     :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1}
+                                     :instance-id->state (-> {}
+                                                             (update-slot-state-fn "testabcd.h1" 5 1 #{:healthy})
+                                                             (update-slot-state-fn "testabcd.h2" 2 1 #{:healthy})
+                                                             (update-slot-state-fn "testabcd.h3" 8 0 #{})
+                                                             (update-slot-state-fn "testabcd.h4" 2 0 #{:blacklisted :locked})
+                                                             (update-slot-state-fn "testabcd.h5" 1 2 #{:healthy})
+                                                             (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
+                                                             (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy}))))))
+
 
         (async/>!! exit-chan :exit)))))

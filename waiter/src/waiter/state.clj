@@ -406,18 +406,37 @@
        :response-chan response-chan
        :response response-code})))
 
-(defn handle-unblacklist-request
-  "Handle a request to unblacklist an instance."
-  [{:keys [instance-id->blacklist-expiry-time instance-id->state] :as current-state} update-status-tag-fn 
-   update-instance-id->blacklist-expiry-time-fn {:keys [instance-id]}]
-  (let [expiry-time (get instance-id->blacklist-expiry-time instance-id)
-        unblacklist? (and (not (nil? expiry-time)) (not (t/after? expiry-time (t/now))))]
-    (if unblacklist?
-      (do
-        (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
-        (cond-> (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
+(defn- unblacklist-instance
+  [{:keys [instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
+   instance-id expiry-time]
+  (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
+  (cond-> (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
           (contains? instance-id->state instance-id)
           (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
+
+(defn handle-unblacklist-request
+  "Handle a request to unblacklist an instance."
+  [{:keys [instance-id->blacklist-expiry-time] :as current-state} update-status-tag-fn
+   update-instance-id->blacklist-expiry-time-fn {:keys [instance-id]}]
+  (let [expiry-time (get instance-id->blacklist-expiry-time instance-id)]
+    (if (utils/time-less-than-or-equal-to expiry-time (t/now))
+      (unblacklist-instance current-state update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
+                            instance-id expiry-time)
+      current-state)))
+
+(defn handle-unblacklist-cleanup
+  "Handle cleanup of expired blacklisted instances."
+  [{:keys [instance-id->blacklist-expiry-time] :as current-state} cleanup-time update-status-tag-fn
+   update-instance-id->blacklist-expiry-time-fn]
+  (let [expired-instance-id->expiry-time (->> instance-id->blacklist-expiry-time
+                                              (filter #(utils/time-less-than-or-equal-to (val %) cleanup-time))
+                                              (into {}))]
+    (if (seq expired-instance-id->expiry-time)
+      (letfn [(unblacklist-instance-fn [new-state [instance-id expiry-time]]
+                (unblacklist-instance new-state update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
+                                      instance-id expiry-time))]
+        (log/info "found" (count expired-instance-id->expiry-time) "instances blacklisted beyond time of" cleanup-time)
+        (reduce unblacklist-instance-fn current-state expired-instance-id->expiry-time))
       current-state)))
 
 (defn release-unneeded-work-stealing-offers!
@@ -534,7 +553,7 @@
 
                          work-stealing-chan
                          (let [{:keys [current-state' response-chan response]}
-                               (handle-work-stealing-offer current-state service-id slots-in-use-counter slots-available-counter 
+                               (handle-work-stealing-offer current-state service-id slots-in-use-counter slots-available-counter
                                                            work-stealing-received-in-flight-counter requests-outstanding-counter data)]
                            (when response
                              (async/>! response-chan response))
@@ -553,9 +572,9 @@
                            current-state')
 
                          release-instance-chan
-                         (handle-release-instance-request current-state service-id update-slot-state-fn update-status-tag-fn 
+                         (handle-release-instance-request current-state service-id update-slot-state-fn update-status-tag-fn
                                                           update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
-                                                          work-stealing-received-in-flight-counter max-blacklist-time-ms 
+                                                          work-stealing-received-in-flight-counter max-blacklist-time-ms
                                                           blacklist-backoff-base-time-ms max-backoff-exponent data)
 
                          query-state-chan
@@ -566,8 +585,12 @@
                            current-state)
 
                          update-state-chan
-                         (handle-update-state-request current-state data update-responder-state-timer update-responder-state-meter
-                                                      slots-assigned-counter slots-available-counter slots-in-use-counter)
+                         (let [[_ data-time] data]
+                           (-> current-state
+                               (handle-update-state-request data update-responder-state-timer update-responder-state-meter
+                                                            slots-assigned-counter slots-available-counter slots-in-use-counter)
+                               ;; cleanup items from blacklist map in-case they have not been cleaned
+                               (handle-unblacklist-cleanup data-time update-status-tag-fn update-instance-id->blacklist-expiry-time-fn)))
 
                          blacklist-instance-chan
                          (let [{:keys [current-state' response-chan response]}
@@ -581,7 +604,7 @@
                        ;; cleanup items from work-stealing queue one at a time if they are not needed
                        (and (seq work-stealing-queue)
                             (not (contains? #{query-state-chan, reserve-instance-chan, work-stealing-chan} chan-selected)))
-                       (release-unneeded-work-stealing-offers! service-id slots-in-use-counter slots-available-counter 
+                       (release-unneeded-work-stealing-offers! service-id slots-in-use-counter slots-available-counter
                                                                work-stealing-received-in-flight-counter requests-outstanding-counter)))]
             (do
               (metrics/reset-counter in-use-instance-counter (count (:instance-id->request-id->use-reason-map new-state)))
@@ -1163,7 +1186,10 @@
                        (let [router-id->endpoint-url data
                              new-state
                              (if (not= routers router-id->endpoint-url)
-                               (let [candidate-state (assoc current-state :routers router-id->endpoint-url)]
+                               (let [candidate-state (assoc current-state :routers router-id->endpoint-url)
+                                     current-routers (-> current-state :routers keys vec sort)
+                                     new-routers (-> router-id->endpoint-url keys vec sort)]
+                                 (log/info "peer router info changed from" current-routers "to" new-routers)
                                  (metrics/update-counter (metrics/waiter-counter "core" "number-of-routers") routers router-id->endpoint-url)
                                  (update-router-state router-id current-state candidate-state service-id->service-description-fn))
                                current-state)]
