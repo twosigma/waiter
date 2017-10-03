@@ -152,25 +152,6 @@
             (assert-response-status tokens-response 200)
             (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
 
-      (testing "hard-delete without etag"
-        (doseq [token tokens-to-create]
-          (let [{:keys [body] :as response} (make-request waiter-url "/token"
-                                                          :headers {"host" token}
-                                                          :http-method-fn http/delete
-                                                          :query-params {"hard-delete" true})]
-            (assert-response-status response 400)
-            (is (str/includes? (str body) "Must specify if-match header for token hard deletes")))))
-
-      (testing "hard-delete with invalid etag"
-        (doseq [token tokens-to-create]
-          (let [{:keys [body] :as response} (make-request waiter-url "/token"
-                                                          :headers {"host" token
-                                                                    "if-match" "1010"}
-                                                          :http-method-fn http/delete
-                                                          :query-params {"hard-delete" true})]
-            (assert-response-status response 412)
-            (is (str/includes? (str body) "Cannot modify stale token")))))
-
       (log/info "hard-deleting the tokens")
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token))
@@ -286,12 +267,19 @@
           (let [last-update-time (System/currentTimeMillis)
                 token (create-token-name waiter-url service-id-prefix)]
 
-            (testing "if-match-required"
-              (let [token-description {:health-check-url "/probe"
+            (let [token-description {:health-check-url "/probe"
+                                     :name service-id-prefix
+                                     :owner (retrieve-username)
+                                     :run-as-user (retrieve-username)
+                                     :token token}
+                  response (post-token waiter-url token-description)]
+              (assert-response-status response 200))
+
+            (testing "if-match-required during update"
+              (let [token-description {:health-check-url "/probe-1"
                                        :last-update-time last-update-time
                                        :name service-id-prefix
                                        :owner (retrieve-username)
-                                       :run-as-user "i-do-not-exist-but-will-not-be-checked"
                                        :token token}
                     {:keys [body] :as response} (post-token waiter-url token-description
                                                             :headers {}
@@ -300,24 +288,58 @@
                 (is (str/includes? body "Must specify if-match header for admin mode token updates"))))
 
             (try
-              (log/info "creating configuration using token" token)
-              (let [token-description {:health-check-url "/probe"
-                                       :last-update-time last-update-time
-                                       :name service-id-prefix
-                                       :owner (retrieve-username)
-                                       :run-as-user "i-do-not-exist-but-will-not-be-checked"
-                                       :token token}
-                    response (post-token waiter-url token-description
-                                         :headers (attach-token-etag waiter-url token {})
-                                         :query-params {"update-mode" "admin"})]
-                (assert-response-status response 200))
-              (log/info "created configuration using token" token)
-              (let [token-response (get-token waiter-url token)
-                    response-body (json/read-str (:body token-response))]
-                (is (= {"health-check-url" "/probe", "last-update-time" last-update-time, "name" service-id-prefix,
-                        "owner" (retrieve-username), "run-as-user" "i-do-not-exist-but-will-not-be-checked"}
-                       response-body)))
-              (log/info "asserted retrieval of configuration for token" token)
+              (testing "successful admin mode update"
+                (log/info "creating configuration using token" token)
+                (let [token-description {:health-check-url "/probe-2"
+                                         :last-update-time last-update-time
+                                         :name service-id-prefix
+                                         :owner (retrieve-username)
+                                         :run-as-user "i-do-not-exist-but-will-not-be-checked"
+                                         :token token}
+                      response (post-token waiter-url token-description
+                                           :headers (attach-token-etag waiter-url token {})
+                                           :query-params {"update-mode" "admin"})]
+                  (assert-response-status response 200)
+                  (log/info "created configuration using token" token))
+
+                (let [token-response (get-token waiter-url token)
+                      response-body (json/read-str (:body token-response))]
+                  (is (= {"health-check-url" "/probe-2", "last-update-time" last-update-time, "name" service-id-prefix,
+                          "owner" (retrieve-username), "run-as-user" "i-do-not-exist-but-will-not-be-checked"}
+                         response-body))
+                  (log/info "asserted retrieval of configuration for token" token)))
+
+              (testing "update with invalid etag"
+                (let [token-description {:health-check-url "/probe-3"
+                                         :last-update-time last-update-time
+                                         :name service-id-prefix
+                                         :owner (retrieve-username)
+                                         :run-as-user "foo-bar"
+                                         :token token}
+                      {:keys [body] :as response} (post-token waiter-url token-description
+                                                              :headers {"host" token
+                                                                        "if-match" "1010"}
+                                                              :query-params {"update-mode" "admin"})]
+                  (assert-response-status response 412)
+                  (is (str/includes? (str body) "Cannot modify stale token"))))
+
+              (testing "hard-delete without etag"
+                (let [{:keys [body] :as response} (make-request waiter-url "/token"
+                                                                :headers {"host" token}
+                                                                :http-method-fn http/delete
+                                                                :query-params {"hard-delete" true})]
+                  (assert-response-status response 400)
+                  (is (str/includes? (str body) "Must specify if-match header for token hard deletes"))))
+
+              (testing "hard-delete with invalid etag"
+                (let [{:keys [body] :as response} (make-request waiter-url "/token"
+                                                                :headers {"host" token
+                                                                          "if-match" "1010"}
+                                                                :http-method-fn http/delete
+                                                                :query-params {"hard-delete" true})]
+                  (assert-response-status response 412)
+                  (is (str/includes? (str body) "Cannot modify stale token"))))
+
               (finally
                 (delete-token-and-assert waiter-url token)))))
 

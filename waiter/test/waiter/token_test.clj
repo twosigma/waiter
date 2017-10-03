@@ -44,12 +44,6 @@
   (handle-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn
                         validate-service-description-fn request))
 
-(deftest test-compute-last-modified-etag
-  (is (nil? (compute-last-modified-etag {})))
-  (is (= "123456" (compute-last-modified-etag {"if-match" "123456"})))
-  (is (nil? (compute-last-modified-etag {"etag" "123456"})))
-  (is (= "abcdef" (compute-last-modified-etag {"etag" "123456", "if-match" "abcdef"}))))
-
 (deftest test-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -66,6 +60,14 @@
           service-id2 (sd/service-description->service-id service-id-prefix service-description2)
           waiter-hostname "waiter-hostname.app.example.com"
           handle-list-tokens-request (wrap-handler-json-response handle-list-tokens-request)]
+
+      (testing "put:unsupported-request-method"
+        (let [{:keys [status body]}
+              (run-handle-token-request
+                kv-store waiter-hostname entitlement-manager make-peer-requests-fn nil
+                {:request-method :put, :headers {}})]
+          (is (= 405 status))
+          (is (str/includes? body "Invalid request method"))))
 
       (testing "delete:no-token-in-request"
         (let [{:keys [status body]}
