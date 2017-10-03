@@ -818,3 +818,16 @@
                                      :query-params query-params)]
     (log/debug "retrieved token" token ":" (:body token-response))
     token-response))
+
+(defmacro with-service-cleanup
+  "Ensures a service is cleaned up."
+  [service-id & body]
+  `(try
+     ~@body
+     (finally
+       (delete-service ~'waiter-url ~service-id))))
+
+(defn response->service-id
+  "Gets the service-id from a response."
+  [{:keys [headers]}]
+  (get headers "x-waiter-service-id"))

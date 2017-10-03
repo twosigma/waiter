@@ -344,8 +344,8 @@
   "Kills processes that exceed allocated memory usage"
   [{:keys [:shell-scheduler/process :shell-scheduler/pid] :as instance} mem pid->memory port->reservation-atom port-grace-period-ms]
   (if (and (active? instance) (.isAlive process))
-    (let [memory-allocated (* mem 1000)
-          memory-used (get pid->memory pid)]
+    (let [memory-allocated (* mem 1024)
+          memory-used (pid->memory pid)]
       (if (and memory-used (> memory-used memory-allocated))
         (do (log/info "instance exceeds memory limit, killing instance" {:instance instance :memory-limit memory-allocated :memory-used memory-used})
             (kill-process! instance port->reservation-atom port-grace-period-ms)
@@ -357,43 +357,63 @@
         instance))
     instance))
 
-(defn- get-pid->memory
-  "Issues and parses the results of a ps shell command and returns a new pid->memory map"
+(defn get-pid->memory
+  "Issues and parses the results of a ps shell command and returns a pid->memory fn.  Memory is measured in KB."
   []
   (try
-    (let [ps-output (-> (sh/sh "ps" "-eo" "pid,pgid,rss") :out (str/split #"\n") rest)
-          pid->pgid (map #(-> % str/trim (str/split #"\s+") butlast
-                              ((fn [[a b]] [(Integer/parseInt a) (Integer/parseInt b)])))
-                         ps-output)
-          pgid->rss (apply merge-with +
-                           (map #(-> % str/trim (str/split #"\s+") rest
-                                     ((fn [[a b]] {(Integer/parseInt a) (Integer/parseInt b)})))
-                                ps-output))]
-      (into {} (for [[pid pgid] pid->pgid] [pid (get pgid->rss pgid)])))
+    (let [cols->entry (fn [[pid ppid rss]] {:pid (Integer/parseInt pid)
+                                            :ppid (Integer/parseInt ppid)
+                                            :rss (Integer/parseInt rss)})
+          line->entry (fn [line] (-> line
+                                     str/trim
+                                     (str/split #"\s+")
+                                     cols->entry))
+          ps-entries (->> (sh/sh "ps" "-eo" "pid,ppid,rss")
+                          :out
+                          str/split-lines
+                          rest
+                          (map line->entry))
+          pid->entry (pc/map-from-vals :pid ps-entries)
+          ppid->children (group-by :ppid ps-entries)]
+      (fn pid->memory [pid]
+        (let [root-entry (pid->entry pid)]
+          (when root-entry
+            (loop [memory 0
+                   entries [root-entry]]
+              (if (seq entries)
+                (recur (+ memory (reduce + (map :rss entries)))
+                       (->> (map :pid entries)
+                            (map ppid->children)
+                            (apply concat)))
+                memory))))))
     (catch Throwable e
-      (log/error e "error attempting to issue ps command")
+      (log/error e "error creating pid->memory")
       {})))
 
 (defn update-service-health
   "Runs health checks against all active instances of service and returns the updated service-entry"
   [id->service port->reservation-atom port-grace-period-ms http-client]
-  (timers/start-stop-time!
-    (metrics/waiter-timer "shell-scheduler" "update-health")
-    (let [pid->memory (get-pid->memory)
-          exit-codes-check #(associate-exit-codes % port->reservation-atom port-grace-period-ms)]
-      (loop [remaining-service-entries (vals id->service)
-             id->service' {}]
-        (if-let [{:keys [service id->instance] :as service-entry} (first remaining-service-entries)]
-          (let [{:strs [health-check-url grace-period-secs]} (:service-description service)
-                health-check #(update-instance-health % health-check-url http-client)
-                limits-check #(enforce-instance-limits % (:shell-scheduler/mem service) pid->memory port->reservation-atom port-grace-period-ms)
-                grace-period-check #(enforce-grace-period % grace-period-secs port->reservation-atom port-grace-period-ms)
-                id->instance' (pc/map-vals (comp grace-period-check health-check limits-check exit-codes-check) id->instance)
-                service-entry' (-> service-entry
-                                   (assoc :id->instance id->instance')
-                                   update-task-stats)]
-            (recur (rest remaining-service-entries) (assoc id->service' (:id service) service-entry')))
-          id->service')))))
+  (try
+    (timers/start-stop-time!
+      (metrics/waiter-timer "shell-scheduler" "update-health")
+      (let [pid->memory (get-pid->memory)
+            exit-codes-check #(associate-exit-codes % port->reservation-atom port-grace-period-ms)]
+        (reduce
+          (fn [id->service' {:keys [service id->instance] :as service-entry}]
+            (let [{:strs [health-check-url grace-period-secs]} (:service-description service)
+                  health-check #(update-instance-health % health-check-url http-client)
+                  limits-check #(enforce-instance-limits % (:shell-scheduler/mem service) pid->memory port->reservation-atom port-grace-period-ms)
+                  grace-period-check #(enforce-grace-period % grace-period-secs port->reservation-atom port-grace-period-ms)
+                  id->instance' (pc/map-vals (comp grace-period-check health-check limits-check exit-codes-check) id->instance)
+                  service-entry' (-> service-entry
+                                     (assoc :id->instance id->instance')
+                                     update-task-stats)]
+              (assoc id->service' (:id service) service-entry')))
+          {}
+          (vals id->service))))
+    (catch Throwable e
+      (log/error e "error while updating service health")
+      id->service)))
 
 (defn- start-updating-health
   "Runs health checks against all active instances of all services in a loop"

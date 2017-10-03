@@ -13,6 +13,7 @@
             [clj-time.format :as f]
             [clojure.core.async :as async]
             [clojure.java.io :as io]
+            [clojure.java.shell :as sh]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
@@ -557,3 +558,16 @@
     (let [instances (scheduler/get-instances scheduler "foo")]
       (is (= 0 (count (:active-instances instances))))
       (is (= 1 (count (:failed-instances instances)))))))
+
+(deftest test-pid->memory
+  (with-redefs [sh/sh (fn [& args]
+                        {:out (str "PID  PPID   RSS\n"
+                                   "  1     0     1\n"
+                                   "  2     1    10\n"
+                                   "  3     1   100\n"
+                                   "  4     3  1000\n")})]
+    (let [pid->memory (get-pid->memory)]
+      (is (= 1111 (pid->memory 1)))
+      (is (= 10 (pid->memory 2)))
+      (is (= 1100 (pid->memory 3)))
+      (is (= 1000 (pid->memory 4))))))
