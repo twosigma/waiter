@@ -831,7 +831,7 @@
                                 (async/tap state-chan-mult state-chan)
                                 (state/start-service-chan-maintainer
                                   {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
-   :state-query-chans (pc/fnk [[:state query-app-maintainer-chan scheduler]
+   :state-query-chans (pc/fnk [[:state query-app-maintainer-chan]
                                autoscaler autoscaling-multiplexer gc-for-transient-metrics scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
                         {:app-maintainer-state query-app-maintainer-chan
                          :autoscaler-state (:query autoscaler)
@@ -890,7 +890,7 @@
                                     (try
                                       (cors/preflight-handler cors-validator max-age request)
                                       (catch Exception e
-                                        (utils/exception->response request "Error in CORS pre-flight handler" e))))))
+                                        (utils/exception->response (ex-info "Error in CORS pre-flight handler" {} e) request))))))
    :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
                                           [:state instance-rpc-chan passwords router-id websocket-client]]
