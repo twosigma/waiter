@@ -24,7 +24,7 @@
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
-           clojure.lang.PersistentQueue
+           (clojure.lang IBlockingDeref PersistentQueue)
            java.io.OutputStreamWriter
            java.lang.Process
            java.net.ServerSocket
@@ -137,6 +137,7 @@
     (map (partial stringify-elements k) v)
     (cond
       (instance? DateTime v) (date-to-str v)
+      (instance? IBlockingDeref v) (str (deref v 1 :uninitialized))
       (instance? UUID v) (str v)
       (instance? Pattern v) (str v)
       (instance? PersistentQueue v) (vec v)

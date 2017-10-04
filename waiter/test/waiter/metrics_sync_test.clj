@@ -20,7 +20,8 @@
             [waiter.metrics-sync :refer :all]
             [waiter.test-helpers :as test-helpers]
             [waiter.utils :as utils])
-  (:import (org.eclipse.jetty.websocket.client WebSocketClient)))
+  (:import (qbits.jet.websocket WebSocket)
+           (org.eclipse.jetty.websocket.client WebSocketClient)))
 
 (defn- query-agent-state
   "Queries the agent state and returns the result in the response-chan."
@@ -159,24 +160,33 @@
     (let [test-start-time (t/now)]
       (with-redefs [t/now (constantly test-start-time)]
         (let [encrypt (fn [data] {:data data})
+              initiated-promise (fn []
+                                  (let [result (promise)]
+                                    (deliver result :initiated)
+                                    result))
               router-metrics {"s1" {"c" 1}, "s2" {"c" 1}, "s3" {"c" 1}}
-              ws-request-2 {:out (async/chan 10), :request-id "request-id-2"}
-              ws-request-3 {:out (async/chan 10), :request-id "request-id-3"}
-              ws-request-4 {:out (async/chan 10), :request-id "request-id-4"}
+              ws-request-2 {:initiated-promise (initiated-promise), :out (async/chan 10), :request-id "request-id-2"}
+              ws-request-3 {:initiated-promise (initiated-promise), :out (async/chan 10), :request-id "request-id-3"}
+              ws-request-4 {:initiated-promise (initiated-promise), :out (async/chan 10), :request-id "request-id-4"}
+              ws-request-5 {:initiated-promise (promise), :out (async/chan 10), :request-id "request-id-5"}
               in-router-metrics-state {:metrics {:routers {"router-1" {"s1" {"c" 0}, "s2" {"c" 0}, "s3" {"c" 0}}
                                                            "router-2" {"s1" {"c" 2}, "s3" {"c" 2}}
                                                            "router-3" {"s1" {"c" 3}, "s2" {"c" 3}, "s3" {"c" 3}}
-                                                           "router-4" {"s1" {"c" 4}, "s4" {"c" 4}}}}
+                                                           "router-4" {"s1" {"c" 4}, "s4" {"c" 4}}
+                                                           "router-5" {"s1" {"c" 1}, "s4" {"c" 1}}}}
                                        :router-id "router-1"
                                        :router-id->outgoing-ws {"router-2" ws-request-2
                                                                 "router-3" ws-request-3
-                                                                "router-4" ws-request-4}
+                                                                "router-4" ws-request-4
+                                                                "router-5" ws-request-5}
                                        :fee :fie}
               out-router-metrics-state (publish-router-metrics in-router-metrics-state encrypt router-metrics "core")]
           (let [output-data {:data {:router-metrics router-metrics, :source-router-id "router-1", :time (utils/date-to-str test-start-time)}}]
             (is (= output-data (async/<!! (:out ws-request-2))))
             (is (= output-data (async/<!! (:out ws-request-3))))
-            (is (= output-data (async/<!! (:out ws-request-4)))))
+            (is (= output-data (async/<!! (:out ws-request-4))))
+            (let [timeout-chan (async/timeout 100)]
+              (is (= [nil timeout-chan] (async/alts!! [(:out ws-request-5) timeout-chan] :priority true)))))
           (is (= (-> in-router-metrics-state
                      (assoc-in [:metrics :routers "router-1"] router-metrics)
                      (assoc-in [:last-update-times "router-1"] (utils/date-to-str test-start-time)))
@@ -212,8 +222,8 @@
                                 (is (str/ends-with? ws-endpoint "/waiter-router-metrics"))
                                 (let [in-chan (async/chan 10)
                                       out-chan (async/chan 10)
-                                      ws-request {:ctrl ctrl-chan, :in in-chan, :out out-chan, :tag ws-endpoint}]
-                                  {:socket ws-request}))]
+                                      web-socket (WebSocket. in-chan out-chan ctrl-chan nil nil nil)]
+                                  {:socket web-socket}))]
       (let [my-router-id "router-0"
             in-router-metrics-state {:metrics {:routers {"router-0" {"s1" {"c" 0}, "s2" {"c" 0}, "s3" {"c" 0}}
                                                          "router-1" {"s1" {"c" 1}, "s2" {"c" 1}, "s3" {"c" 1}}
@@ -247,8 +257,10 @@
             (doseq [[router-id ws-request] (-> out-router-metrics-state :router-id->outgoing-ws seq)]
               (if (contains? new-outgoing-router-ids router-id)
                 (do
+                  (is (:initiated-promise ws-request))
+                  (is (= :timeout (deref (:initiated-promise ws-request) 100 :timeout)))
                   (is (:request-id ws-request))
-                  (is (= (str "ws://www." router-id ".com:1234/waiter-router-metrics") (:tag ws-request))))
+                  (is (:time ws-request)))
                 (let [old-ws-request (get-in in-router-metrics-state [:router-id->outgoing-ws router-id])]
                   (is (and old-ws-request (= old-ws-request ws-request)))))))
 
@@ -267,10 +279,13 @@
                               (is (str/ends-with? ws-endpoint "/waiter-router-metrics"))
                               (let [in-chan (async/chan 10)
                                     out-chan (async/chan 10)
-                                    ws-request {:in in-chan, :out out-chan, :tag ws-endpoint}]
+                                    ws-request {:in in-chan, :out out-chan, :tag ws-endpoint}
+                                    ;; use ws-endpoint as ctrl-chan for test assertion purposes
+                                    web-socket (WebSocket. in-chan out-chan ws-endpoint nil nil nil)]
                                 (async/>!! in-chan :success)
                                 (callback ws-request)
-                                {:socket ws-request}))]
+                                {:socket web-socket
+                                 :tag ws-endpoint}))]
     (let [my-router-id "router-0"
           in-router-metrics-state {:metrics {:routers {"router-0" {"s1" {"c" 0}, "s2" {"c" 0}, "s3" {"c" 0}}
                                                        "router-1" {"s1" {"c" 1}, "s2" {"c" 1}, "s3" {"c" 1}}
@@ -310,8 +325,11 @@
           (doseq [[router-id ws-request] (-> out-router-metrics-state :router-id->outgoing-ws seq)]
             (if (contains? new-outgoing-router-ids router-id)
               (do
+                (is (:initiated-promise ws-request))
+                (is (= :initiated (deref (:initiated-promise ws-request) 100 :timeout)))
                 (is (:request-id ws-request))
-                (is (= (str "ws://www." router-id ".com:1234/waiter-router-metrics") (:tag ws-request))))
+                (is (:time ws-request))
+                (is (= (str "ws://www." router-id ".com:1234/waiter-router-metrics") (:ctrl ws-request))))
               (let [old-ws-request (get-in in-router-metrics-state [:router-id->outgoing-ws router-id])]
                 (is (and old-ws-request (= old-ws-request ws-request)))))))))))
 
