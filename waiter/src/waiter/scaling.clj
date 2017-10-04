@@ -22,8 +22,8 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
-            [waiter.utils :as utils]
-            [slingshot.slingshot :refer [try+]]))
+            [waiter.utils :as utils])
+  (:import (org.joda.time DateTime)))
 
 (defn get-app-instance-stats
   "Queries scheduler to find the number of instances and running tasks for all apps"
@@ -352,44 +352,50 @@
                                :service-id->scheduler-state service-id->scheduler-state
                                :service-id->scale-state service-id->scale-state
                                :scale-ticks scale-ticks})
-    (zipmap service-ids
-            (map (fn [service-id]
-                   (let [outstanding-requests (or (service-id->outstanding-requests service-id) 0)
-                         {:keys [healthy-instances expired-instances]} (service-id->router-state service-id)
-                         {:keys [instances task-count] :as scheduler-state} (service-id->scheduler-state service-id)
-                         ; if we don't have a target instance count, default to the number of tasks
-                         target-instances (get-in service-id->scale-state [service-id :target-instances] task-count)
-                         {:keys [target-instances scale-to-instances scale-amount]}
-                         (if (and target-instances scale-ticks)
-                           (scale-app-fn (assoc (get service-id->service-description service-id)
-                                           "scale-ticks" scale-ticks)
-                                         {:healthy-instances healthy-instances
-                                          :expired-instances expired-instances
-                                          :outstanding-requests outstanding-requests
-                                          :target-instances target-instances
-                                          :total-instances instances})
-                           (do
-                             (log/info "no target instances available for service"
-                                       {:scheduler-state scheduler-state, :service-id service-id})
-                             {:scale-to-instances instances :target-instances target-instances :scale-amount 0}))]
-                     (when-not (zero? scale-amount)
-                       (apply-scaling-fn service-id
-                                         {:outstanding-requests outstanding-requests
-                                          :task-count task-count
-                                          :total-instances instances
-                                          :scale-amount scale-amount
-                                          :scale-to-instances scale-to-instances}))
-                     {:target-instances target-instances
-                      :scale-to-instances scale-to-instances
-                      :scale-amount scale-amount}))
-                 service-ids))
+    (pc/map-from-keys
+      (fn [service-id]
+        (let [outstanding-requests (or (service-id->outstanding-requests service-id) 0)
+              {:keys [healthy-instances expired-instances]} (service-id->router-state service-id)
+              {:keys [instances task-count] :as scheduler-state} (service-id->scheduler-state service-id)
+              ; if we don't have a target instance count, default to the number of tasks
+              target-instances (get-in service-id->scale-state [service-id :target-instances] task-count)
+              {:keys [target-instances scale-to-instances scale-amount]}
+              (if (and target-instances scale-ticks)
+                (scale-app-fn (assoc (get service-id->service-description service-id)
+                                "scale-ticks" scale-ticks)
+                              {:healthy-instances healthy-instances
+                               :expired-instances expired-instances
+                               :outstanding-requests outstanding-requests
+                               :target-instances target-instances
+                               :total-instances instances})
+                (do
+                  (log/info "no target instances available for service"
+                            {:scheduler-state scheduler-state, :service-id service-id})
+                  {:scale-to-instances instances :target-instances target-instances :scale-amount 0}))]
+          (when-not (zero? scale-amount)
+            (apply-scaling-fn service-id
+                              {:outstanding-requests outstanding-requests
+                               :task-count task-count
+                               :total-instances instances
+                               :scale-amount scale-amount
+                               :scale-to-instances scale-to-instances}))
+          {:target-instances target-instances
+           :scale-to-instances scale-to-instances
+           :scale-amount scale-amount}))
+      service-ids)
     (catch Exception e
       (log/error e "exception in scale-apps")
       service-id->scale-state)))
 
+(defn- difference-in-millis
+  "Helper method to compute time difference in millis.
+   Added type hints to avoid warn-on-relfection warnings."
+  [^DateTime end-time ^DateTime start-time]
+  (- (.getMillis end-time) (.getMillis start-time)))
+
 (defn autoscaler-goroutine
   "Autoscaler encapsulated in goroutine.
-  Acquires state of services and passes to scale-apps."
+   Acquires state of services and passes to scale-apps."
   [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-app-fn
    service-id->service-description-fn state-mult]
   (let [exit-chan (async/chan)
@@ -453,21 +459,29 @@
                                     (if (seq service-id->router-state)
                                       (cid/with-correlation-id
                                         correlation-id
-                                        (let [scalable-service-ids (set/intersection (set (keys service-id->router-state))
-                                                                                     (set (keys service-id->scheduler-state')))]
+                                        (let [router-service-ids (set (keys service-id->router-state))
+                                              scheduler-service-ids (set (keys service-id->scheduler-state'))
+                                              scalable-service-ids (set/intersection router-service-ids scheduler-service-ids)
+                                              excluded-service-ids (-> (set/union router-service-ids scheduler-service-ids)
+                                                                       (set/difference scalable-service-ids))
+                                              scale-ticks (when previous-cycle-start-time
+                                                            (-> (difference-in-millis cycle-start-time previous-cycle-start-time)
+                                                                (/ 1000)
+                                                                int))]
+                                          (when (seq excluded-service-ids)
+                                            (cid/cinfo correlation-id "services excluded this iteration" excluded-service-ids))
                                           (scale-apps scalable-service-ids
                                                       (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
                                                       ; default to 0 outstanding requests for services without metrics
                                                       (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
                                                       service-id->scale-state
                                                       apply-scaling-fn
-                                                      (when previous-cycle-start-time
-                                                        (int (/ (- (.getMillis cycle-start-time) (.getMillis previous-cycle-start-time)) 1000)))
+                                                      scale-ticks
                                                       scale-app-fn
                                                       service-id->router-state
                                                       service-id->scheduler-state')))
                                       service-id->scale-state)]
-                                (cid/cinfo correlation-id "scaling iteration took" (- (.getMillis (t/now)) (.getMillis cycle-start-time))
+                                (cid/cinfo correlation-id "scaling iteration took" (difference-in-millis (t/now) cycle-start-time)
                                            "ms for" (count service->scale-state') "services.")
                                 (assoc current-state
                                   :global-state global-state'
