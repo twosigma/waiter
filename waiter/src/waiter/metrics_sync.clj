@@ -76,15 +76,14 @@
     router-metrics-state
     (if request-id
       (do
-        (cid/cdebug request-id "registering request from router" source-router-id)
+        (cid/cinfo request-id "registering request from router" source-router-id)
         (counters/inc! (metrics/waiter-counter "metrics-syncer" (router-ws-key->name router-ws-key) (str source-router-id) "register"))
-        (when ctrl
-          (let [control-mult (async/mult ctrl)
-                request-terminate-chan (async/tap control-mult (au/sliding-buffer-chan 1))]
-            (async/go
-              (when-let [ctrl-data (async/<! request-terminate-chan)]
-                (cid/cinfo request-id "received" ctrl-data "in control channel, deregistering request")
-                (send router-metrics-agent deregister-router-ws router-ws-key source-router-id request-id encrypt)))))
+        (if ctrl
+          (async/go
+            (when-let [ctrl-data (async/<! ctrl)]
+              (cid/cinfo request-id "deregistering request, data received on control channel is" ctrl-data)
+              (send router-metrics-agent deregister-router-ws router-ws-key source-router-id request-id encrypt)))
+          (cid/cinfo request-id "no ctrl-chan available to monitor request"))
         (assoc-in router-metrics-state [router-ws-key source-router-id]
                   (select-keys ws-request [:in :ctrl :out :request-id :tag])))
       (do
@@ -138,7 +137,7 @@
       (let [raw-data (async/<! in)
             {:keys [request-id source-router-id] :as data} (when raw-data (decrypt raw-data))
             request-id (or request-id (str "metrics-" (utils/unique-identifier)))
-            request (assoc request :request-id request-id)]
+            request (assoc request :request-id request-id :time (t/now))]
         (cid/cinfo request-id "received request from router" source-router-id)
         (if (nil? source-router-id)
           (close-router-metrics-request request (encrypt {:message "Missing source router!", :data data}))
@@ -154,7 +153,8 @@
   [router-metrics-state router-ids]
   (with-catch
     router-metrics-state
-    (let [router-ids-to-delete (set/difference (-> (get-in router-metrics-state [:metrics :routers]) (keys) (set))
+    (let [router-ids-to-delete (set/difference (-> (get-in router-metrics-state [:metrics :routers])
+                                                   utils/keyset)
                                                (set router-ids))]
       (loop [[router-id-to-delete & remaining-ids] (seq router-ids-to-delete)
              loop-state router-metrics-state]
@@ -172,17 +172,15 @@
     router-metrics-state
     (let [time (utils/date-to-str (t/now))
           metrics-data {:router-metrics router-metrics, :source-router-id router-id, :time time}]
-      (loop [[[target-router-id {:keys [out request-id]}] & remaining-router-id->outgoing-ws] (seq router-id->outgoing-ws)]
-        (if target-router-id
-          (let [encrypted-data (timers/start-stop-time!
-                                 (metrics/waiter-timer "metrics-syncer" "encrypt" target-router-id)
-                                 (encrypt metrics-data))]
-            (cid/cdebug request-id "sending" tag "metrics to" target-router-id "of size" (count router-metrics))
-            (meters/mark! (metrics/waiter-meter "metrics-syncer" "sent-rate" target-router-id))
-            (meters/mark! (metrics/waiter-meter "metrics-syncer" "sent-bytes" target-router-id) (.capacity encrypted-data))
-            (async/put! out encrypted-data)
-            (recur remaining-router-id->outgoing-ws))
-          (update-router-metrics router-metrics-state metrics-data))))))
+      (doseq [[target-router-id {:keys [out request-id]}] (seq router-id->outgoing-ws)]
+        (let [encrypted-data (timers/start-stop-time!
+                               (metrics/waiter-timer "metrics-syncer" "encrypt" target-router-id)
+                               (encrypt metrics-data))]
+          (cid/cdebug request-id "sending" tag "metrics to" target-router-id "of size" (count router-metrics))
+          (meters/mark! (metrics/waiter-meter "metrics-syncer" "sent-rate" target-router-id))
+          (meters/mark! (metrics/waiter-meter "metrics-syncer" "sent-bytes" target-router-id) (.capacity encrypted-data))
+          (async/put! out encrypted-data)))
+      (update-router-metrics router-metrics-state metrics-data))))
 
 (defn- cleanup-router-requests
   "Close and remove websocket connections for obsolete routers."
@@ -206,31 +204,37 @@
   (with-catch
     router-metrics-state
     (let [my-router-id (:router-id router-metrics-state)
-          known-router-ids (disj (set (keys router-id->http-endpoint)) my-router-id)
-          prev-incoming-router-ids (set (keys router-id->incoming-ws))
-          prev-outgoing-router-ids (set (keys router-id->outgoing-ws))]
+          known-router-ids (disj (utils/keyset router-id->http-endpoint) my-router-id)
+          prev-incoming-router-ids (utils/keyset router-id->incoming-ws)
+          prev-outgoing-router-ids (utils/keyset router-id->outgoing-ws)]
       (if (or (not= known-router-ids prev-incoming-router-ids) (not= known-router-ids prev-outgoing-router-ids))
         (let [router-id->incoming-ws' (cleanup-router-requests :router-id->incoming-ws known-router-ids encrypt router-metrics-state)
               router-id->outgoing-ws' (cleanup-router-requests :router-id->outgoing-ws known-router-ids encrypt router-metrics-state)
-              new-outgoing-router-ids (->> (:router-id->outgoing-ws router-metrics-state) (keys) (set) (set/difference known-router-ids))]
-          (cid/cinfo "metrics-router-syncer" "new routers:" new-outgoing-router-ids ", known routers" known-router-ids)
-          (doseq [router-id new-outgoing-router-ids]
-            (let [ws-endpoint (-> (get router-id->http-endpoint router-id)
-                                  (str/replace "http://" "ws://")
-                                  (str "waiter-router-metrics"))
-                  request-id (str "inter-router-metrics-" (utils/unique-identifier))]
-              (cid/cinfo request-id "connecting to" router-id "at" ws-endpoint)
-              (ws/connect! websocket-client ws-endpoint
-                           (fn register-outgoing-request [{:keys [out] :as ws-request}]
-                             (let [ws-request (assoc ws-request :request-id request-id)]
-                               (async/>!! out (encrypt {:dest-router-id router-id
-                                                        :request-id request-id
-                                                        :source-router-id my-router-id
-                                                        :tag :initiate}))
-                               (send router-metrics-agent register-router-ws :router-id->outgoing-ws router-id
-                                     ws-request encrypt router-metrics-agent)))
-                           connect-options)))
-          (-> (preserve-metrics-from-routers router-metrics-state (set/union #{my-router-id} (set (keys router-id->http-endpoint))))
+              new-outgoing-router-ids (->> router-metrics-state
+                                           :router-id->outgoing-ws
+                                           utils/keyset
+                                           (set/difference known-router-ids))]
+          (when (not-empty new-outgoing-router-ids)
+            (cid/cinfo "metrics-router-syncer" "new routers:" new-outgoing-router-ids ", known routers" known-router-ids)
+            (doseq [router-id new-outgoing-router-ids]
+              (let [ws-endpoint (-> (get router-id->http-endpoint router-id)
+                                    (str/replace "http://" "ws://")
+                                    (str "waiter-router-metrics"))
+                    request-id (str "inter-router-metrics-" (utils/unique-identifier))
+                    _ (cid/cinfo request-id "connecting to" router-id "at" ws-endpoint)
+                    {:keys [socket]} (ws/connect! websocket-client ws-endpoint
+                                                  (fn register-outgoing-request [{:keys [out]}]
+                                                    (async/>!! out (encrypt {:dest-router-id router-id
+                                                                             :request-id request-id
+                                                                             :source-router-id my-router-id
+                                                                             :tag :initiate})))
+                                                  connect-options)]
+                ;; register outside connect! callback to handle messages on the ctrl channel
+                (let [ws-request (assoc socket :request-id request-id :time (t/now))]
+                  (send router-metrics-agent register-router-ws :router-id->outgoing-ws router-id ws-request encrypt
+                        router-metrics-agent)))))
+          (-> router-metrics-state
+              (preserve-metrics-from-routers (set/union #{my-router-id} (utils/keyset router-id->http-endpoint)))
               (assoc :router-id->incoming-ws router-id->incoming-ws'
                      :router-id->outgoing-ws router-id->outgoing-ws')))
         router-metrics-state))))
@@ -330,8 +334,7 @@
     (let [router-id->service-id->metrics (get-in @router-metrics-agent [:metrics :routers])
           service-ids (->> router-id->service-id->metrics
                            (vals)
-                           (map keys)
-                           (map set)
+                           (map utils/keyset)
                            (reduce set/union #{}))]
       (log/info "aggregating metrics for" (count service-ids) "services from" (count router-id->service-id->metrics)
                 "routers with distribution" (pc/map-vals count router-id->service-id->metrics))
