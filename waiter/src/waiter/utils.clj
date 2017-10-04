@@ -472,8 +472,3 @@
   "Parses the request header to determine if debug mode has been enabled."
   [request]
   (boolean (get-in request [:headers "x-waiter-debug"])))
-
-(defn time-less-than-or-equal-to
-  "Returns true if current-time is greater than or equal to expiry-time."
-  [expiry-time current-time]
-  (and expiry-time current-time (not (t/after? expiry-time current-time))))

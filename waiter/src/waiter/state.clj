@@ -414,22 +414,27 @@
           (contains? instance-id->state instance-id)
           (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
 
-(defn handle-unblacklist-request
+(defn- expiry-time-reached?
+  "Returns true if current-time is greater than or equal to expiry-time."
+  [expiry-time current-time]
+  (and expiry-time current-time (not (t/after? expiry-time current-time))))
+
+(defn- handle-unblacklist-request
   "Handle a request to unblacklist an instance."
   [{:keys [instance-id->blacklist-expiry-time] :as current-state} update-status-tag-fn
    update-instance-id->blacklist-expiry-time-fn {:keys [instance-id]}]
   (let [expiry-time (get instance-id->blacklist-expiry-time instance-id)]
-    (if (utils/time-less-than-or-equal-to expiry-time (t/now))
+    (if (expiry-time-reached? expiry-time (t/now))
       (unblacklist-instance current-state update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
                             instance-id expiry-time)
       current-state)))
 
-(defn handle-unblacklist-cleanup
+(defn- handle-unblacklist-cleanup-request
   "Handle cleanup of expired blacklisted instances."
   [{:keys [instance-id->blacklist-expiry-time] :as current-state} cleanup-time update-status-tag-fn
    update-instance-id->blacklist-expiry-time-fn]
   (let [expired-instance-id->expiry-time (->> instance-id->blacklist-expiry-time
-                                              (filter #(utils/time-less-than-or-equal-to (val %) cleanup-time))
+                                              (filter #(expiry-time-reached? (val %) cleanup-time))
                                               (into {}))]
     (if (seq expired-instance-id->expiry-time)
       (letfn [(unblacklist-instance-fn [new-state [instance-id expiry-time]]
@@ -587,10 +592,12 @@
                          update-state-chan
                          (let [[_ data-time] data]
                            (-> current-state
-                               (handle-update-state-request data update-responder-state-timer update-responder-state-meter
-                                                            slots-assigned-counter slots-available-counter slots-in-use-counter)
+                               (handle-update-state-request
+                                 data update-responder-state-timer update-responder-state-meter slots-assigned-counter
+                                 slots-available-counter slots-in-use-counter)
                                ;; cleanup items from blacklist map in-case they have not been cleaned
-                               (handle-unblacklist-cleanup data-time update-status-tag-fn update-instance-id->blacklist-expiry-time-fn)))
+                               (handle-unblacklist-cleanup-request
+                                 data-time update-status-tag-fn update-instance-id->blacklist-expiry-time-fn)))
 
                          blacklist-instance-chan
                          (let [{:keys [current-state' response-chan response]}
