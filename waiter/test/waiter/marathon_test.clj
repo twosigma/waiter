@@ -14,6 +14,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [marathonclj.rest.apps :as apps]
+            [marathonclj.rest.deployments :as md]
             [slingshot.slingshot :as ss]
             [waiter.marathon :refer :all]
             [waiter.scheduler :as scheduler]
@@ -821,3 +822,37 @@
       (is (= {:result :no-such-service-exists
               :message "Marathon reports service does not exist"}
              (scheduler/delete-app scheduler "foo"))))))
+
+(deftest test-extract-deployment-info
+  (with-redefs [md/get-deployments (constantly [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
+                                                {"affectedApps" "waiter-app-4567", "id" "4567", "version" "v4567"}
+                                                {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}
+                                                {"affectedApps" "waiter-app-4321", "id" "4321", "version" "v4321"}])]
+    (testing "no deployments entry"
+      (let [response {:body "{\"message\": \"App is locked by one or more deployments.\"}"}]
+        (is (not (extract-deployment-info response)))))
+
+    (testing "no deployments listed"
+      (let [response {:body "{\"deployments\": [],
+                            \"message\": \"App is locked by one or more deployments.\"}"}]
+        (is (not (extract-deployment-info response)))))
+
+    (testing "single deployment"
+      (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}],
+                            \"message\": \"App is locked by one or more deployments.\"}"}]
+        (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}]
+               (extract-deployment-info response)))))
+
+    (testing "multiple deployments"
+      (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}],
+                            \"message\": \"App is locked by one or more deployments.\"}"}]
+        (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
+                {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}]
+               (extract-deployment-info response)))))
+
+    (testing "multiple deployments, one without info"
+      (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}, {\"id\":\"9876\"}],
+                            \"message\": \"App is locked by one or more deployments.\"}"}]
+        (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
+                {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}]
+               (extract-deployment-info response)))))))
