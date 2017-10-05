@@ -214,7 +214,8 @@
                         (-> (make-inter-router-requests-fn "work-stealing"
                                                            :acceptable-router? #(= target-router-id %)
                                                            :body (-> reservation-parameters
-                                                                     (assoc :router-id router-id :service-id service-id)
+                                                                     (assoc :router-id router-id
+                                                                            :service-id service-id)
                                                                      (utils/map->json-response)
                                                                      :body)
                                                            :method :post)
