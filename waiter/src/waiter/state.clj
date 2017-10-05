@@ -417,7 +417,7 @@
 (defn- expiry-time-reached?
   "Returns true if current-time is greater than or equal to expiry-time."
   [expiry-time current-time]
-  (and expiry-time current-time (not (t/after? expiry-time current-time))))
+  (and expiry-time (not (t/after? expiry-time current-time))))
 
 (defn- handle-unblacklist-request
   "Handle a request to unblacklist an instance."
@@ -440,7 +440,7 @@
       (letfn [(unblacklist-instance-fn [new-state [instance-id expiry-time]]
                 (unblacklist-instance new-state update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
                                       instance-id expiry-time))]
-        (log/info "found" (count expired-instance-id->expiry-time) "instances blacklisted beyond time of" cleanup-time)
+        (log/warn "found" (count expired-instance-id->expiry-time) "instances blacklisted beyond time of" cleanup-time)
         (reduce unblacklist-instance-fn current-state expired-instance-id->expiry-time))
       current-state)))
 
