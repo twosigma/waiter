@@ -13,6 +13,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all])
@@ -106,12 +107,31 @@
 
       (log/info "creating the tokens")
       (doseq [token tokens-to-create]
-        (let [response (post-token waiter-url {:health-check-url "/probe"
+        (let [response (post-token waiter-url {:health-check-url "/check"
                                                :name service-id-prefix
                                                :token token})]
           (assert-response-status response 200)))
 
-      (testing "token retrieval with etag"
+      (testing "update without etags"
+        (doseq [token tokens-to-create]
+          (let [response (post-token waiter-url {:health-check-url "/health"
+                                                 :name service-id-prefix
+                                                 :token token})]
+            (assert-response-status response 200))))
+
+      (testing "update with etags"
+        (doseq [token tokens-to-create]
+          (let [{:keys [body headers]} (get-token waiter-url token)
+                token-description (-> body
+                                      json/read-str
+                                      walk/keywordize-keys
+                                      (select-keys [:name])
+                                      (assoc :health-check-url "/probe"
+                                             :token token))
+                response (post-token waiter-url token-description :headers {"if-match" (get headers "etag")})]
+            (assert-response-status response 200))))
+
+      (testing "token retrieval - presence of etag header"
         (doseq [token tokens-to-create]
           (let [{:keys [body headers] :as response} (get-token waiter-url token :cookies cookies)]
             (assert-response-status response 200)
@@ -290,14 +310,17 @@
             (try
               (testing "successful admin mode update"
                 (log/info "creating configuration using token" token)
-                (let [token-description {:health-check-url "/probe-2"
-                                         :last-update-time last-update-time
-                                         :name service-id-prefix
-                                         :owner (retrieve-username)
-                                         :run-as-user "i-do-not-exist-but-will-not-be-checked"
-                                         :token token}
+                (let [{:keys [body headers]} (get-token waiter-url token)
+                      token-description (-> body
+                                            json/read-str
+                                            walk/keywordize-keys
+                                            (assoc :health-check-url "/probe-2"
+                                                   :last-update-time last-update-time
+                                                   :owner (retrieve-username)
+                                                   :run-as-user "i-do-not-exist-but-will-not-be-checked"
+                                                   :token token))
                       response (post-token waiter-url token-description
-                                           :headers (attach-token-etag waiter-url token {})
+                                           :headers {"if-match" (get headers "etag")}
                                            :query-params {"update-mode" "admin"})]
                   (assert-response-status response 200)
                   (log/info "created configuration using token" token))
@@ -348,15 +371,24 @@
                 token (create-token-name waiter-url service-id-prefix)]
             (try
               (log/info "creating configuration using token" token)
-              (let [token-description {:deleted true
-                                       :health-check-url "/probe"
-                                       :last-update-time last-update-time
+              (let [token-description {:health-check-url "/probe-3"
                                        :name service-id-prefix
                                        :owner (retrieve-username)
-                                       :run-as-user "foo-bar"
                                        :token token}
+                    response (post-token waiter-url token-description :headers {"host" token})]
+                (assert-response-status response 200))
+
+              (let [{:keys [body headers]} (get-token waiter-url token)
+                    token-description (-> body
+                                          json/read-str
+                                          walk/keywordize-keys
+                                          (assoc :deleted true
+                                                 :health-check-url "/probe"
+                                                 :last-update-time last-update-time
+                                                 :run-as-user "foo-bar"
+                                                 :token token))
                     response (post-token waiter-url token-description
-                                         :headers (attach-token-etag waiter-url token {})
+                                         :headers {"if-match" (get headers "etag")}
                                          :query-params {"update-mode" "admin"})]
                 (assert-response-status response 200))
               (log/info "created configuration using token" token)

@@ -568,7 +568,7 @@
          test-prefix (System/getenv "WAITER_TEST_PREFIX")]
      (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
 
-(defn token->etag
+(defn- token->etag
   "Returns the current etag of a token"
   [waiter-url token]
   (log/info "retrieving etag for token" token)
@@ -577,7 +577,7 @@
                                :query-params {"include-deleted" true})]
     (get-in response [:headers "etag"])))
 
-(defn attach-token-etag
+(defn- attach-token-etag
   "Attaches the if-match etag to the headers"
   [waiter-url token headers]
   (let [last-modified-etag (token->etag waiter-url token)]
