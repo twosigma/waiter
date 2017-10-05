@@ -16,17 +16,22 @@
                                            ServiceInstance ServiceInstanceBuilder UriSpec)))
 
 (defn- ->service-instance
-  [id svc-name {:keys [host port]}]
+  [id service-name {:keys [host port]}]
   (let [builder (-> (ServiceInstance/builder)
                     (.id id)
-                    (.name svc-name)
+                    (.name service-name)
                     (.uriSpec (UriSpec. "{scheme}://{address}:{port}/{endpoint}"))
                     (.port port)
                     (.address (if (= host "0.0.0.0")
-                                (let [local-ips (ServiceInstanceBuilder/getAllLocalIPs)]
-                                  (->> (or (some #(when (instance? Inet4Address %) %) local-ips)
-                                           (first local-ips))
-                                       .getHostAddress))
+                                (let [inet-addresses (ServiceInstanceBuilder/getAllLocalIPs)
+                                      ipv4-address (->> inet-addresses
+                                                        (some #(when (instance? Inet4Address %) %)))]
+                                  (if ipv4-address
+                                    (.getHostAddress ipv4-address)
+                                    (throw (ex-info "No IPv4 address found for host"
+                                                    {:id id
+                                                     :inet-addresses inet-addresses
+                                                     :service-name service-name}))))
                                 host)))]
     (.build builder)))
 
@@ -39,10 +44,10 @@
       (.build)))
 
 (defn- ->service-cache
-  [^ServiceDiscovery service-discovery svc-name]
+  [^ServiceDiscovery service-discovery service-name]
   (-> service-discovery
       (.serviceCacheBuilder)
-      (.name svc-name)
+      (.name service-name)
       (.build)))
 
 (defn- get-instance-url [service-instance protocol endpoint]
