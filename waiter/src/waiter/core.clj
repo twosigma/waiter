@@ -71,7 +71,8 @@
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
   ;; Please include/update a corresponding unit test anytime the routes data structure is modified
   [{:keys [uri]}]
-  (let [routes ["/" {"app-name" :app-name-handler-fn
+  (let [routes ["/" {"" :welcome-handler-fn
+                     "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
                              ["/" :service-id] :service-handler-fn
                              ["/" :service-id "/logs"] :service-view-logs-handler-fn
@@ -90,10 +91,10 @@
                      "state" {"" :display-state-handler-fn
                               ["/" :service-id] :service-state-handler-fn}
                      "status" :status-handler-fn
-                     "token" :token-handler-fn   
-                     "tokens" { "" :token-list-handler-fn   
+                     "token" :token-handler-fn
+                     "tokens" { "" :token-list-handler-fn
                                "/owners" :token-owners-handler-fn
-                               "/refresh":token-refresh-handler-fn 
+                               "/refresh":token-refresh-handler-fn
                                "/reindex" :token-reindex-handler-fn}
                      "waiter-async" {["/complete/" :request-id "/" :service-id] :async-complete-handler-fn
                                      ["/result/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
@@ -106,7 +107,7 @@
                      "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
                      "work-stealing" :work-stealing-handler-fn}]]
     (or (bidi/match-route routes uri)
-        {:handler :process-request-fn})))
+        {:handler :not-found-handler-fn})))
 
 (defn ring-handler-factory
   "Creates the handler for processing http requests."
@@ -1002,6 +1003,7 @@
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
+   :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
                                  prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
@@ -1189,6 +1191,8 @@
                                                 token->service-description-template service-description->service-id
                                                 consent-expiry-days request))
                                             request)))
+   :welcome-handler-fn (pc/fnk [handle-secure-request-fn settings]
+                               (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]
                                       handle-inter-router-request-fn]
                                (fn work-stealing-handler-fn [request]

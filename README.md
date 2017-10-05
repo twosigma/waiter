@@ -4,7 +4,7 @@
 
 Welcome to Two Sigma's Waiter project!
 
-Waiter is a web service platform that runs, manages and automatically scales services without requiring human intervention.
+Waiter is a web service platform that runs, manages, and automatically scales services without requiring human intervention.
 
 [Waiter Design](waiter/docs/waiter-design-docs.md) is a good place to start to learn more.
 

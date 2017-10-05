@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
 <head>
-  <title>Error <%= status %> - Waiter</title>
+  <title>Welcome - Waiter</title>
   <meta http-equiv="x-ua-compatible" content="IE=edge" />
   <style type="text/css">
    html {
@@ -43,6 +43,10 @@
      margin-top: 2em;
    }
 
+   .additional-info p {
+     margin-left: 1em;
+   }
+
    .additional-info h3 {
      margin-top: 2em;
    }
@@ -72,6 +76,7 @@
      font-weight: bold;
      text-align: right;
      vertical-align: baseline;
+     width: 70px;
    }
 
    .additional-info td.code {
@@ -82,18 +87,46 @@
      margin-left: 1em;
      border-collapse: collapse;
    }
-
     </style>
 </head>
 <body>
 
 <div class="main-content">
   <h1>
-    Waiter Error <%= status %>
+    Welcome to Waiter
   </h1>
   <p>
-  <%= message %>
+    Waiter is a platform for running and managing web services and applications.
   </p>
+<% (when (seq support-info) %>
+  <p>
+    See <a href="#gettinghelp">Getting Help</a> for more information.
+  </p>
+<% ) %>
+</div>
+
+<div class="additional-info">
+  <div class="divider"></div>
+  <div>
+    <h3>Server Info</h3>
+    <table>
+      <tr>
+        <td class="field">Host</td>
+        <td class="code"><%= hostname %></td>
+      </tr>
+      <tr>
+        <td class="field">Interface</td>
+        <td class="code"><%= host %></td>
+      </tr>
+      <tr>
+        <td class="field">Port</td>
+        <td class="code"><%= port %></td>
+      </tr>
+    </table>
+    <p>
+      <a href="/settings">More Settings</a>
+    </p>
+  </div>
 </div>
 
 <div class="additional-info">
@@ -101,39 +134,21 @@
   <div>
     <h3>Request Info</h3>
     <table>
-      <% (when host %>
       <tr>
-        <td class="field">Host</td><td class="code"><%= host %></td>
-      </tr>
-      <% ) %>
-      <tr>
-        <td class="field">Path</td><td class="code"><%= uri %></td>
-      </tr>
-      <% (when query-string %>
-      <tr>
-        <td class="field">Query String</td><td class="code"><%= query-string %></td>
-      </tr>
-      <% ) %>
-      <tr>
-        <td class="field">CID</td><td class="code"><%= cid %></td>
+        <td class="field">CID</td>
+        <td class="code"><%= cid %></td>
       </tr>
       <tr>
-        <td class="field">Time</td><td class="code"><%= timestamp %></td>
+        <td class="field">Time</td>
+        <td class="code"><%= timestamp %></td>
       </tr>
     </table>
   </div>
 </div>
 
-<div class="additional-info">
-  <div class="divider"></div>
-  <div>
-	<h3>Additional Info</h3>
-	<pre id="details" class="code"><%= details %></pre>
-  </div>
-</div>
-
 <% (when (seq support-info) %>
-<div class="additional-info">
+Getting Help
+<div class="additional-info" id="gettinghelp">
   <div class="divider"></div>
   <div>
     <h3>Getting Help</h3>

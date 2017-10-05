@@ -468,56 +468,85 @@
 (deftest ^:parallel ^:integration-fast test-error-handling
   (testing-using-waiter-url
     (testing "text/plain default"
-      (let [{:keys [body headers status]} (make-request waiter-url "/")]
-        (is (= 400 status))
+      (let [{:keys [body headers status]} (make-request waiter-url "/404")]
+        (is (= 404 status))
         (is (= "text/plain" (get headers "content-type")))
-        (is (str/includes? body "Waiter Error 400"))
+        (is (str/includes? body "Waiter Error 404"))
         (is (str/includes? body "================"))))
     (testing "text/plain explicit"
-      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/plain"})]
-        (is (= 400 status))
+      (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"accept" "text/plain"})]
+        (is (= 404 status))
         (is (= "text/plain" (get headers "content-type")))
-        (is (str/includes? body "Waiter Error 400"))
+        (is (str/includes? body "Waiter Error 404"))
         (is (str/includes? body "================"))))
     (testing "text/html"
-      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/html"})]
-        (is (= 400 status))
+      (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"accept" "text/html"})]
+        (is (= 404 status))
         (is (= "text/html" (get headers "content-type")))
-        (is (str/includes? body "Waiter Error 400"))
+        (is (str/includes? body "Waiter Error 404"))
         (is (str/includes? body "<html>"))))
     (testing "application/json explicit"
-      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
+      (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"accept" "application/json"})
             {:strs [waiter-error]} (try (json/read-str body)
                                         (catch Throwable e
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
-        (is (= 400 status))
+        (is (= 404 status))
         (is (= "application/json" (get headers "content-type")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
         (let [{:strs [status]} waiter-error]
-          (is (= 400 status)))))
+          (is (= 404 status)))))
     (testing "application/json implied by content-type"
-      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"content-type" "application/json"})
+      (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"content-type" "application/json"})
             {:strs [waiter-error]} (try (json/read-str body)
                                         (catch Throwable e
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
-        (is (= 400 status))
+        (is (= 404 status))
         (is (= "application/json" (get headers "content-type")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
         (let [{:strs [status]} waiter-error]
-          (is (= 400 status)))))
+          (is (= 404 status)))))
     (testing "support information included"
-      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
-            {:keys [support-info]} (waiter-settings waiter-url)
+      (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"accept" "application/json"})
+            {:keys [messages support-info]} (waiter-settings waiter-url)
             {:strs [waiter-error]} (try (json/read-str body)
                                         (catch Throwable e
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
 
-        (is (= 400 status))
+        (is (= 404 status))
         (is (= "application/json" (get headers "content-type")))
+        (is (= (:not-found messages) (get waiter-error "message")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
         (let [{:strs [status]} waiter-error]
-          (is (= 400 status))
+          (is (= 404 status))
           (is (= support-info (-> (get waiter-error "support-info")
                                   (walk/keywordize-keys)))))))))
 
-
+(deftest ^:parallel ^:integration-fast test-welcome-page
+  (testing-using-waiter-url
+    (testing "default text/plain"
+      (let [{:keys [body headers status]} (make-request waiter-url "/")]
+        (is (= 200 status))
+        (is (= "text/plain" (get headers "content-type")))
+        (is (str/includes? body "Welcome to Waiter"))))
+    (testing "accept text/plain"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/plain"})]
+        (is (= 200 status))
+        (is (= "text/plain" (get headers "content-type")))
+        (is (str/includes? body "Welcome to Waiter"))))
+    (testing "accept text/html"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "text/html"})]
+        (is (= 200 status))
+        (is (= "text/html" (get headers "content-type")))
+        (is (str/includes? body "Welcome to Waiter"))))
+    (testing "accept application/json"
+      (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
+            json-data (try (json/read-str body)
+                           (catch Exception _
+                             (is false ("Not json:\n" body))))]
+        (is (= 200 status))
+        (is (= "application/json" (get headers "content-type")))
+        (is (= "Welcome to Waiter" (get json-data "message")))))
+    (testing "only GET"
+      (let [{:keys [body status]} (make-request waiter-url "/" :http-method-fn http/post)]
+        (is (= 405 status))
+        (is (str/includes? body "Only GET supported"))))))

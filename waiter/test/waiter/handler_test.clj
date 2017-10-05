@@ -948,19 +948,19 @@
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]
           (is (= 200 status))
-          (is (= {} headers))
+          (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))
 
     (with-redefs [io/resource io-resource-fn
                   template/eval (template-eval-factory "https")]
-      (testing "token without service description - http scheme"
+      (testing "token without service description - https scheme"
         (let [request {:authorization/user "test-user"
                        :headers {"host" "www.example.com:6789"}
                        :route-params {:path "some-path"}
                        :scheme :https}
               {:keys [body headers status]} (request-consent-handler-fn request)]
           (is (= 200 status))
-          (is (= {} headers))
+          (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))
 
     (with-redefs [io/resource io-resource-fn
@@ -972,7 +972,7 @@
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]
           (is (= 200 status))
-          (is (= {} headers))
+          (is (= {"content-type" "text/html"} headers))
           (is (= body "template:some-content")))))))
 
 (deftest test-blacklist-instance-cannot-find-channel
