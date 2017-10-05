@@ -19,7 +19,7 @@ Additional Info
 ===============
 
   <%= details %>
-<% ) %><% (when support-info %>Getting Help
+<% ) %><% (when (seq support-info) %>Getting Help
 ============
 <% (doseq [{label :label {:keys [value]} :link} support-info] %>
   <%= label %>: <%= value %> <% ) %>

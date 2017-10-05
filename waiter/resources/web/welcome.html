@@ -98,9 +98,11 @@
   <p>
     Waiter is a platform for running and managing web services and applications.
   </p>
+<% (when (seq support-info) %>
   <p>
     See <a href="#gettinghelp">Getting Help</a> for more information.
   </p>
+<% ) %>
 </div>
 
 <div class="additional-info">
@@ -144,7 +146,8 @@
   </div>
 </div>
 
-
+<% (when (seq support-info) %>
+Getting Help
 <div class="additional-info" id="gettinghelp">
   <div class="divider"></div>
   <div>
@@ -159,6 +162,7 @@
       <% ) %>
     </ul>
 </div>
+<% ) %>
 
 </body>
 
