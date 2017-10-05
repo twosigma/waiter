@@ -205,21 +205,22 @@
             (async/go
               (let [response-result-promise (promise)
                     response->body (fn [{:keys [body error]}]
-                                       (if error
-                                         (throw error)
-                                         body))]
+                                     (if error
+                                       (throw error)
+                                       body))
+                    default-response-result "work-stealing-error"]
                 (try
-                  (let [inter-router-response (-> (make-inter-router-requests-fn
-                                                    "work-stealing"
-                                                    :acceptable-router? #(= target-router-id %)
-                                                    :body (-> reservation-parameters
-                                                              (assoc :router-id router-id
-                                                                     :service-id service-id)
-                                                              (utils/map->json-response)
-                                                              :body)
-                                                    :method :post)
-                                                  (get target-router-id))
-                        response-result (if inter-router-response
+                  (let [{:keys [headers status] :as inter-router-response}
+                        (-> (make-inter-router-requests-fn "work-stealing"
+                                                           :acceptable-router? #(= target-router-id %)
+                                                           :body (-> reservation-parameters
+                                                                     (assoc :router-id router-id
+                                                                            :service-id service-id)
+                                                                     (utils/map->json-response)
+                                                                     :body)
+                                                           :method :post)
+                            (get target-router-id))
+                        response-result (if (and inter-router-response (<= 200 status 299))
                                           (-> inter-router-response
                                               async/<!
                                               response->body
@@ -227,14 +228,15 @@
                                               str
                                               json/read-str
                                               walk/keywordize-keys
-                                              (get :response-status "work-stealing-error"))
+                                              (get :response-status default-response-result))
                                           (do
-                                            (log/info "no inter-router response from" target-router-id)
-                                            "work-stealing-error"))]
+                                            (log/info "no inter-router response from" target-router-id
+                                                      {:cid (get headers "x-cid"), :status status})
+                                            default-response-result))]
                     (deliver response-result-promise response-result))
                   (catch Exception e
                     (counters/inc! (metrics/service-counter service-id "work-stealing" "sent-to" target-router-id "errors"))
-                    (deliver response-result-promise "work-stealing-error")
+                    (deliver response-result-promise default-response-result)
                     (log/error e "unsuccessful attempt to offer work-stealing help" reservation-parameters))
                   (finally
                     (deliver response-result-promise "success")

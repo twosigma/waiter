@@ -330,7 +330,8 @@
      :query query-chan}))
 
 (defn make-inter-router-requests
-  "Helper function to make inter-router requests with basic authentication."
+  "Helper function to make inter-router requests with basic authentication.
+   It assumes that the response from inter-router communication always supports json."
   [make-request-fn make-basic-auth-fn my-router-id discovery passwords endpoint &
    {:keys [acceptable-router? body config method]
     :or {acceptable-router? (constantly true)
@@ -338,7 +339,8 @@
          config {}
          method :get}}]
   (let [router-id->endpoint-url (discovery/router-id->endpoint-url discovery "http" endpoint :exclude-set #{my-router-id})
-        router-id->endpoint-url' (filter (fn [[router-id _]] (acceptable-router? router-id)) router-id->endpoint-url)]
+        router-id->endpoint-url' (filter (fn [[router-id _]] (acceptable-router? router-id)) router-id->endpoint-url)
+        config' (update config :headers assoc "accept" "application/json")]
     (when (and (empty? router-id->endpoint-url')
                (not-empty router-id->endpoint-url))
       (log/info "no acceptable routers found to make request!"))
@@ -347,7 +349,7 @@
       (if dest-router-id
         (let [secret-word (utils/generate-secret-word my-router-id dest-router-id passwords)
               auth (make-basic-auth-fn endpoint-url my-router-id secret-word)
-              response (make-request-fn method endpoint-url auth body config)]
+              response (make-request-fn method endpoint-url auth body config')]
           (recur remaining-items
                  (assoc router-id->response dest-router-id response)))
         router-id->response))))
