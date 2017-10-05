@@ -29,9 +29,7 @@
   (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
            (marathonclj.common Connection)
-           (org.apache.http.client CookieStore)
-           (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.util HttpCookieStore HttpCookieStore$Empty)
+           (org.eclipse.jetty.util HttpCookieStore$Empty)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
 
@@ -570,11 +568,29 @@
          test-prefix (System/getenv "WAITER_TEST_PREFIX")]
      (str/replace (str test-prefix service-name username (rand-int 3000000)) #"-" ""))))
 
-(defn delete-token-and-assert
-  [waiter-url token & {:keys [hard-delete] :or {hard-delete true}}]
-  (log/info "deleting token" token)
+(defn- token->etag
+  "Returns the current etag of a token"
+  [waiter-url token]
+  (log/info "retrieving etag for token" token)
   (let [response (make-request waiter-url "/token"
-                               :headers {"host" token}
+                               :headers {"x-waiter-token" token}
+                               :query-params {"include-deleted" true})]
+    (get-in response [:headers "etag"])))
+
+(defn- attach-token-etag
+  "Attaches the if-match etag to the headers"
+  [waiter-url token headers]
+  (let [last-modified-etag (token->etag waiter-url token)]
+    (assoc headers "if-match" last-modified-etag)))
+
+(defn delete-token-and-assert
+  "Deletes and token and asserts that the delete was successful."
+  [waiter-url token & {:keys [hard-delete headers] :or {hard-delete true}}]
+  (log/info "deleting token" token {:hard-delete hard-delete})
+  (let [headers (cond->> headers
+                         (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
+        response (make-request waiter-url "/token"
+                               :headers (assoc headers "host" token)
                                :http-method-fn http/delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response 200)))
@@ -801,10 +817,11 @@
 
 (defn post-token
   "Sends a POST request with the given token definition"
-  [waiter-url {:keys [token] :as token-map} & {:keys [query-params] :or {query-params {}}}]
+  [waiter-url {:keys [token] :as token-map} &
+   {:keys [headers query-params] :or {headers {}, query-params {}}}]
   (make-request waiter-url "/token"
                 :body (json/write-str token-map)
-                :headers {"host" token}
+                :headers (assoc headers "host" token)
                 :http-method-fn http/post
                 :query-params query-params))
 
