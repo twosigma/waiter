@@ -10,50 +10,42 @@
 ;;
 (ns waiter.discovery
   (:require [clojure.tools.logging :as log])
-  (:import org.apache.curator.x.discovery.ServiceDiscoveryBuilder
-           org.apache.curator.x.discovery.ServiceInstance
-           org.apache.curator.x.discovery.UriSpec
-           (org.apache.curator.x.discovery ServiceDiscovery ServiceCache)
-           (org.apache.curator.framework CuratorFramework)))
+  (:import (java.net Inet4Address)
+           (org.apache.curator.framework CuratorFramework)
+           (org.apache.curator.x.discovery ServiceCache ServiceDiscovery ServiceDiscoveryBuilder
+                                           ServiceInstance ServiceInstanceBuilder UriSpec)))
 
 (defn- ->service-instance
   [id svc-name {:keys [host port]}]
-  (let [builder (.. ServiceInstance
-                    builder
-                    (id id)
-                    (name svc-name)
-                    (uriSpec (UriSpec. "{scheme}://{address}:{port}/{endpoint}"))
-                    (port port))
-        builder' (if (= host "0.0.0.0")
-                   builder
-                   (.address builder host))]
-    (.build builder')))
+  (let [builder (-> (ServiceInstance/builder)
+                    (.id id)
+                    (.name svc-name)
+                    (.uriSpec (UriSpec. "{scheme}://{address}:{port}/{endpoint}"))
+                    (.port port)
+                    (.address (if (= host "0.0.0.0")
+                                (let [local-ips (ServiceInstanceBuilder/getAllLocalIPs)]
+                                  (->> (or (some #(when (instance? Inet4Address %) %) local-ips)
+                                           (first local-ips))
+                                       .getHostAddress))
+                                host)))]
+    (.build builder)))
 
 (defn- ->service-discovery
   [^CuratorFramework curator base-path instance]
-  (.. ServiceDiscoveryBuilder
-      (builder Void)
-      (client curator)
-      (basePath base-path)
-      (thisInstance instance)
-      build))
+  (-> (ServiceDiscoveryBuilder/builder Void)
+      (.client curator)
+      (.basePath base-path)
+      (.thisInstance instance)
+      (.build)))
 
 (defn- ->service-cache
   [^ServiceDiscovery service-discovery svc-name]
-  (.. service-discovery
-      serviceCacheBuilder
-      (name svc-name)
-      build))
-
-(defn- ->service-provider
-  [^ServiceDiscovery service-discovery svc-name]
-  (.. service-discovery
-      serviceProviderBuilder
-      (serviceName svc-name)
-      build))
+  (-> service-discovery
+      (.serviceCacheBuilder)
+      (.name svc-name)
+      (.build)))
 
 (defn- get-instance-url [service-instance protocol endpoint]
-  ; (.buildUriSpec service-instance {"endpoint" endpoint})
   (str protocol "://" (.getAddress service-instance) ":" (.getPort service-instance) "/" endpoint))
 
 (defn- create-unregistration-hook
@@ -98,15 +90,12 @@
   [router-id curator service-name discovery-path {:keys [host port]}]
   (let [instance (->service-instance router-id service-name {:host host :port port})
         discovery (->service-discovery curator discovery-path instance)
-        ^ServiceCache cache (->service-cache discovery service-name)]
+        cache (->service-cache discovery service-name)]
     (log/info "Using service name:" service-name "for router id:" router-id)
     (.start discovery)
     (create-unregistration-hook discovery instance)
     (.start cache)
     (log/info "Started service cache with peers:" (.getInstances cache))
-    {:service-instance instance
+    {:service-cache cache
      :service-discovery discovery
-     :service-cache cache}))
-
-(comment
-  (.. ServiceDiscoveryBuilder (builder nil)))
+     :service-instance instance}))
