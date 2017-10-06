@@ -97,7 +97,8 @@
         (->> all-marathon-deployments
              (filter (fn [{:strs [id]}] (contains? deployment-ids id)))
              vec)))
-    (catch Exception _ (comment "gobble the exception"))))
+    (catch Exception e
+      (log/error e "unable to extract the deployment info"))))
 
 (defn process-kill-instance-request
   "Processes a kill instance request"
