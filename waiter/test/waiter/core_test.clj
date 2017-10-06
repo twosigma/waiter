@@ -9,8 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.core-test
-  (:require [clj-http.client]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
@@ -26,6 +25,7 @@
             [waiter.handler :as handler]
             [waiter.kv :as kv]
             [waiter.marathon :as marathon]
+            [waiter.marathon-api :as apps]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
@@ -266,30 +266,43 @@
         waiter-request?-fn (fn [_] true)
         test-service-id "test-service-id"
         user "test-user"]
-    (with-redefs [clj-http.client/get (fn [_ _] {:body "{}"})]
-      (testing "Missing instance id"
-        (let [request {:authorization/user user
-                       :headers {"accept" "application/json"}
-                       :query-string ""
-                       :request-method :get
-                       :uri (str "/apps/" test-service-id "/logs")}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
-              json-body (json/read-str body)]
-          (is (= status 400))
-          (is (= "Missing instance-id parameter" (get-in json-body ["waiter-error" "message"])))))
-      (testing "Missing host"
-        (let [request {:authorization/user user
-                       :headers {"accept" "application/json"}
-                       :query-string "instance-id=instance-id-1"
-                       :request-method :get
-                       :uri (str "/apps/" test-service-id "/logs")}
-              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
-              json-body (json/read-str body)]
-          (is (= status 400))
-          (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"]))))))
-    (with-redefs [clj-http.client/get (fn [url _]
-                                        (is (every? #(str/includes? url %) ["test.host.com" "5051"]))
-                                        (let [state-json-response-body "
+
+    (testing "Missing instance id"
+      (let [request {:authorization/user user
+                     :headers {"accept" "application/json"}
+                     :query-string ""
+                     :request-method :get
+                     :uri (str "/apps/" test-service-id "/logs")}
+            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
+            json-body (json/read-str body)]
+        (is (= status 400))
+        (is (= "Missing instance-id parameter" (get-in json-body ["waiter-error" "message"])))))
+
+    (testing "Missing host"
+      (let [request {:authorization/user user
+                     :headers {"accept" "application/json"}
+                     :query-string "instance-id=instance-id-1"
+                     :request-method :get
+                     :uri (str "/apps/" test-service-id "/logs")}
+            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
+            json-body (json/read-str body)]
+        (is (= status 400))
+        (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"])))))
+
+    (with-redefs [apps/agent-directory-content (fn [_ in-host in-port in-directory]
+                                                 (is (= "test.host.com" in-host))
+                                                 (is (= 5051 in-port))
+                                                 (is (str/starts-with? in-directory "/path/to/instance"))
+                                                 (let [file-browse-response-body "
+                                   [{\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil1\", \"size\": 1000},
+                                    {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir2\", \"size\": 2000},
+                                    {\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil3\", \"size\": 3000},
+                                    {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir4\", \"size\": 4000}]"]
+                                                   (json/read-str file-browse-response-body)))
+                  apps/agent-state (fn [_ in-host in-port]
+                                     (is (= "test.host.com" in-host))
+                                     (is (= 5051 in-port))
+                                     (let [state-json-response-body "
                                    {
                                     \"frameworks\": [{
                                                    \"role\": \"marathon\",
@@ -302,15 +315,8 @@
                                                                   \"directory\": \"/path/to/instance2/directory\"
                                                                   }]
                                                    }]
-                                    }"
-                                              file-browse-response-body "
-                                   [{\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil1\", \"size\": 1000},
-                                    {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir2\", \"size\": 2000},
-                                    {\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil3\", \"size\": 3000},
-                                    {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir4\", \"size\": 4000}]"]
-                                          (if (str/includes? url "state.json")
-                                            {:body state-json-response-body}
-                                            {:body file-browse-response-body})))]
+                                    }"]
+                                       (json/read-str state-json-response-body)))]
       (testing "Missing directory"
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
@@ -337,6 +343,7 @@
                    "type" "directory"
                    "url" "/apps/test-service-id/logs?instance-id=service-id-1.instance-id-1&host=test.host.com&directory=/path/to/instance2/directory/dir4"}]
                  json-body))))
+
       (testing "Valid response"
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}

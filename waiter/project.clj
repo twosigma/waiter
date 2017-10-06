@@ -27,9 +27,6 @@
                   :exclusions [prismatic/schema ring/ring-core]]
                  ^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
                  [cc.qbits/jet "0.7.10-20170801_153701-gf517b70"]
-                 ^{:voom {:repo "https://github.com/twosigma/clj-http.git" :branch "waiter-patch"}}
-                 [clj-http "1.0.2-20170524_085846-g161c42f"
-                  :exclusions [commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.12.0"
                   :exclusions
                   [joda-time]]
@@ -46,11 +43,6 @@
                    clj-time/clj-time
                    org.clojure/core.async]]
                  [joda-time "2.9.4"]
-                 [marathonclj "0.1.1"
-                  :exclusions
-                  [clj-http
-                   org.clojure/clojure
-                   org.clojure/data.json]]
                  ^{:voom {:repo "https://github.com/twosigma/metrics-clojure.git" :branch "waiter-patch"}}
                  [metrics-clojure "2.6.0-20170531_164957-gd0d2c2c"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
@@ -83,10 +75,8 @@
                  [org.clojure/tools.reader "0.10.0"]
                  [org.slf4j/slf4j-log4j12 "1.7.21"
                   :exclusions [log4j]]
-                 [potemkin "0.4.1"] ;; needed by clj-http, upgraded for clojure 1.8.0
                  [prismatic/plumbing "0.5.3"]
-                 [prismatic/schema "1.1.3"
-                  :exclusions [potemkin]]
+                 [prismatic/schema "1.1.3"]
                  [ring/ring-core "1.5.0"
                   :exclusions [org.clojure/tools.reader]]
                  [ring-basic-authentication "1.0.5"]

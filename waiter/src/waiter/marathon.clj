@@ -9,24 +9,19 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.marathon
-  (:require [clj-http.client :as http]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
             [clojure.core.memoize :as memo]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [marathonclj.common :as mc]
-            [marathonclj.rest.apps :as apps]
-            [marathonclj.rest.deployments :as md]
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
+            [waiter.marathon-api :as apps]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils])
-  (:import java.io.StringWriter
-           marathonclj.common.Connection))
+            [waiter.utils :as utils]))
 
 (defn- remove-slash-prefix
   "Returns the input string after stripping out any preceding slashes."
@@ -65,17 +60,6 @@
         service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance
         (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set)))))))
 
-(defmacro swallow-out
-  "Like with-out-str, except it swallows anything sent to *out* and returns
-  what the body returns. We wrap this around the calls made to marathonclj
-  that call pprint on the request to avoid the unwanted output on stdout"
-  [& body]
-  `(let [sw# (new StringWriter)]
-     (try
-       (binding [*out* sw#] ~@body)
-       (finally
-         (.close sw#)))))
-
 (defn- get-deployment-info
   "Extracts the deployments section from the response body if it exists."
   [{:keys [body]}]
@@ -87,13 +71,13 @@
 
 (defn extract-deployment-info
   "If the response body has deployments listed, pings Marathon to get the deployment details."
-  [response]
+  [marathon-api response]
   (try
     (when-let [deployments (get-deployment-info response)]
       (let [deployment-ids (->> deployments
                                 (map #(get % "id"))
                                 set)
-            all-marathon-deployments (md/get-deployments)]
+            all-marathon-deployments (apps/get-deployments marathon-api)]
         (->> all-marathon-deployments
              (filter (fn [{:strs [id]}] (contains? deployment-ids id)))
              vec)))
@@ -102,14 +86,14 @@
 
 (defn process-kill-instance-request
   "Processes a kill instance request"
-  [service-id instance-id {:keys [force scale] :or {force false, scale true} :as kill-params}]
+  [marathon-api service-id instance-id {:keys [force scale] :or {force false, scale true} :as kill-params}]
   (scheduler/retry-on-transient-server-exceptions
     "kill-instance"
     (letfn [(make-kill-response [killed? message status]
               {:instance-id instance-id, :killed? killed?, :message message, :service-id service-id, :status status})]
       (ss/try+
         (log/debug "killing instance" instance-id "from service" service-id)
-        (let [result (swallow-out (apps/kill-task service-id instance-id "scale" (str scale) "force" (str force)))
+        (let [result (apps/kill-task marathon-api service-id instance-id scale force)
               kill-success? (and result (map? result) (contains? result :deploymentId))]
           (log/info "kill instance" instance-id "result" result)
           (let [message (if kill-success? "Successfully killed instance" "Unable to kill instance")
@@ -117,7 +101,7 @@
             (make-kill-response kill-success? message status)))
         (catch [:status 409] e
           (log/info "kill instance" instance-id "failed as it is locked by one or more deployments"
-                    {:deployment-info (extract-deployment-info e)
+                    {:deployment-info (extract-deployment-info marathon-api e)
                      :kill-params kill-params} )
           (make-kill-response false "Locked by one or more deployments" 409))
         (catch map? {:keys [body status]}
@@ -129,15 +113,15 @@
 
 (defn response-data->service-instances
   "Extracts the list of instances for a given app from the marathon response."
-  [marathon-response service-keys retrieve-framework-id-fn slave-directory service-id->failed-instances-transient-store]
+  [marathon-response service-keys retrieve-framework-id-fn agent-directory service-id->failed-instances-transient-store]
   (let [service-id (remove-slash-prefix (get-in marathon-response (conj service-keys :id)))
         framework-id (retrieve-framework-id-fn)
         common-extractor-fn (fn [instance-id marathon-task-response]
                               (let [{:keys [appId host message slaveId]} marathon-task-response
-                                    log-directory (str slave-directory "/" slaveId "/frameworks/" framework-id "/executors/" instance-id "/runs/latest")]
+                                    log-directory (str agent-directory "/" slaveId "/frameworks/" framework-id "/executors/" instance-id "/runs/latest")]
                                 (cond-> {:service-id (remove-slash-prefix appId)
                                          :host host}
-                                        (and slave-directory framework-id slaveId)
+                                        (and agent-directory framework-id slaveId)
                                         (assoc :log-directory log-directory)
 
                                         message
@@ -203,11 +187,11 @@
 
 (defn response-data->service->service-instances
   "Extracts the list of instances for a given app from the marathon apps-list."
-  [apps-list retrieve-framework-id-fn slave-directory service-id->failed-instances-transient-store]
+  [apps-list retrieve-framework-id-fn agent-directory service-id->failed-instances-transient-store]
   (let [service->service-instances (zipmap
                                      (map response->Service apps-list)
                                      (map #(response-data->service-instances
-                                             % [] retrieve-framework-id-fn slave-directory
+                                             % [] retrieve-framework-id-fn agent-directory
                                              service-id->failed-instances-transient-store)
                                           apps-list))]
     (scheduler/preserve-only-killed-instances-for-services! (map :id (keys service->service-instances)))
@@ -217,9 +201,9 @@
 
 (defn- get-apps
   "Makes a call with hardcoded embed parameters.
-  marathonclj.rest.apps cannot handle duplicate query params."
-  [is-waiter-app?-fn]
-  (let [apps (mc/get (mc/url-with-path "v2" "apps?embed=apps.tasks&embed=apps.lastTaskFailure"))]
+   Filters the apps to return only Waiter apps."
+  [marathon-api is-waiter-app?-fn]
+  (let [apps (apps/get-apps marathon-api)]
     (filter #(is-waiter-app?-fn (app->waiter-service-id %)) (:apps apps))))
 
 (defn marathon-descriptor
@@ -249,13 +233,10 @@
 
 (defn retrieve-log-url
   "Retrieve the directory path for the specified instance running on the specified host."
-  [http-options mesos-slave-port instance-id host]
+  [marathon-api mesos-agent-port instance-id host]
   (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
   (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
-  (let [url (str "http://" host ":" mesos-slave-port "/state.json")
-        response-body (:body (http/get url (assoc http-options :headers {} :throw-exceptions false)))
-        _ (log/debug "Mesos state on" host "is" response-body)
-        response-parsed (walk/keywordize-keys (json/read-str response-body))
+  (let [response-parsed (walk/keywordize-keys (apps/agent-state marathon-api host mesos-agent-port))
         frameworks (concat (:completed_frameworks response-parsed) (:frameworks response-parsed))
         marathon-framework (first (filter #(or (= (:role %) "marathon") (= (:name %) "marathon")) frameworks))
         marathon-executors (concat (:completed_executors marathon-framework) (:executors marathon-framework))
@@ -264,44 +245,43 @@
 
 (defn retrieve-directory-content-from-host
   "Retrieve the content of the directory for the given instance on the specified host"
-  [http-options mesos-slave-port service-id instance-id host directory]
+  [marathon-api mesos-agent-port service-id instance-id host directory]
   (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {})))
   (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
   (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
   (when (str/blank? directory) (throw (ex-info "No directory found for instance!" {})))
-  (let [response (http/get (str "http://" host ":" mesos-slave-port "/files/browse?path=" directory) (assoc http-options :headers {} :throw-exceptions false))
-        response-parsed (walk/keywordize-keys (json/read-str (:body response)))]
+  (let [response-parsed (walk/keywordize-keys (apps/agent-directory-content marathon-api host mesos-agent-port directory))]
     (map (fn [entry]
            (merge {:name (subs (:path entry) (inc (count directory)))
                    :size (:size entry)}
                   (if (= (:nlink entry) 1)
                     {:type "file"
-                     :url (str "http://" host ":" mesos-slave-port "/files/download?path=" (:path entry))}
+                     :url (str "http://" host ":" mesos-agent-port "/files/download?path=" (:path entry))}
                     {:type "directory"
                      :path (:path entry)})))
          response-parsed)))
 
-(defrecord MarathonScheduler [http-options mesos-slave-port retrieve-framework-id-fn
-                              slave-directory home-path-prefix service-id->failed-instances-transient-store
+(defrecord MarathonScheduler [marathon-api mesos-agent-port retrieve-framework-id-fn
+                              agent-directory home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store force-kill-after-ms is-waiter-app?-fn]
 
   scheduler/ServiceScheduler
 
   (get-apps->instances [_]
-    (let [apps (get-apps is-waiter-app?-fn)]
+    (let [apps (get-apps marathon-api is-waiter-app?-fn)]
       (response-data->service->service-instances
-        apps retrieve-framework-id-fn slave-directory
+        apps retrieve-framework-id-fn agent-directory
         service-id->failed-instances-transient-store)))
 
   (get-apps [_]
-    (map response->Service (get-apps is-waiter-app?-fn)))
+    (map response->Service (get-apps marathon-api is-waiter-app?-fn)))
 
   (get-instances [_ service-id]
     (ss/try+
       (scheduler/retry-on-transient-server-exceptions
         (str "get-instances[" service-id "]")
-        (let [marathon-response (apps/get-app service-id)]
-          (response-data->service-instances marathon-response [:app] retrieve-framework-id-fn slave-directory
+        (let [marathon-response (apps/get-app marathon-api service-id)]
+          (response-data->service-instances marathon-response [:app] retrieve-framework-id-fn agent-directory
                                             service-id->failed-instances-transient-store)))
       (catch [:status 404] {}
         (log/warn "get-instances: service" service-id "does not exist!"))))
@@ -314,7 +294,7 @@
           _ (when use-force
               (log/info "using force killing" id "as kills have been failing since" (utils/date-to-str kill-failing-since)))
           params {:force use-force, :scale true}
-          {:keys [killed?] :as kill-result} (process-kill-instance-request service-id id params)]
+          {:keys [killed?] :as kill-result} (process-kill-instance-request marathon-api service-id id params)]
       (if killed?
         (do (swap! service-id->kill-info-store dissoc service-id)
             (scheduler/process-instance-killed! instance))
@@ -326,7 +306,7 @@
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
         (str "app-exists?[" service-id "]")
-        (apps/get-app service-id))
+        (apps/get-app marathon-api service-id))
       (catch [:status 404] _
         (log/warn "app-exists?: service" service-id "does not exist!"))))
 
@@ -340,10 +320,10 @@
             (log/info "Starting new app for" service-id "with descriptor" (dissoc marathon-descriptor :env))
             (scheduler/retry-on-transient-server-exceptions
               (str "create-app-if-new[" service-id "]")
-              (swallow-out (apps/create-app marathon-descriptor)))
+              (apps/create-app marathon-api marathon-descriptor))
             (catch [:status 409] e
               (log/warn (ex-info "Conflict status when trying to start app. Is app starting up?"
-                                 {:deployment-info (extract-deployment-info e)
+                                 {:deployment-info (extract-deployment-info marathon-api e)
                                   :descriptor marathon-descriptor
                                   :error e})
                         "Exception starting new app")))))))
@@ -353,7 +333,7 @@
       (let [delete-result (scheduler/retry-on-transient-server-exceptions
                             (str "in delete-app[" service-id "]")
                             (log/info "deleting service" service-id)
-                            (swallow-out (apps/delete-app service-id)))]
+                            (apps/delete-app marathon-api service-id))]
         (when delete-result
           (remove-failed-instances-for-service! service-id->failed-instances-transient-store service-id)
           (scheduler/remove-killed-instances-for-service! service-id)
@@ -369,7 +349,7 @@
          :message "Marathon reports service does not exist"})
       (catch [:status 409] e
         (log/warn "Marathon deployment conflict while deleting"
-                  {:deployment-info (extract-deployment-info e)
+                  {:deployment-info (extract-deployment-info marathon-api e)
                    :service-id service-id} ))
       (catch [:status 503] {}
         (log/warn "[delete-app] Marathon unavailable (Error 503).")
@@ -379,24 +359,24 @@
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
         (str "in scale-app[" service-id "]")
-        (let [old-descriptor (:app (apps/get-app service-id))
+        (let [old-descriptor (:app (apps/get-app marathon-api service-id))
               new-descriptor (update-in
                                (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
                                [:instances]
                                (fn [_] instances))]
-          (swallow-out (apps/update-app service-id new-descriptor "force" "true"))))
+          (apps/update-app marathon-api service-id new-descriptor)))
       (catch [:status 409] e
         (log/warn "Marathon deployment conflict while scaling"
-                  {:deployment-info (extract-deployment-info e)
+                  {:deployment-info (extract-deployment-info marathon-api e)
                    :service-id service-id}))
       (catch [:status 503] {}
         (log/warn "[scale-app] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[autoscaler] Marathon unavailable"))))
 
   (retrieve-directory-content [_ service-id instance-id host directory]
-    (when mesos-slave-port
-      (let [log-directory (or directory (retrieve-log-url http-options mesos-slave-port instance-id host))]
-        (retrieve-directory-content-from-host http-options mesos-slave-port service-id instance-id host log-directory))))
+    (when mesos-agent-port
+      (let [log-directory (or directory (retrieve-log-url marathon-api mesos-agent-port instance-id host))]
+        (retrieve-directory-content-from-host marathon-api mesos-agent-port service-id instance-id host log-directory))))
 
   (service-id->state [_ service-id]
     {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
@@ -409,10 +389,10 @@
 
 (defn- retrieve-framework-id
   "Retrieves the framework id of the running marathon instance."
-  []
+  [marathon-api]
   (utils/log-and-suppress-when-exception-thrown
     "Error in retrieving info from marathon."
-    (:frameworkId (mc/get (mc/url-with-path "v2" "info")))))
+    (:frameworkId (apps/get-info marathon-api))))
 
 (defn marathon-scheduler
   "Returns a new MarathonScheduler with the provided configuration. Validates the
@@ -428,10 +408,10 @@
          (not (str/blank? home-path-prefix))]}
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
-  (mc/init! (Connection. url http-options))
-  (let [retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id) :ttl/threshold framework-id-ttl)
+  (let [marathon-api (apps/marathon-rest-api-factory http-options url)
         service-id->failed-instances-transient-store (atom {})
-        service-id->last-force-kill-store (atom {})]
-    (->MarathonScheduler http-options mesos-slave-port retrieve-framework-id-fn slave-directory home-path-prefix
+        service-id->last-force-kill-store (atom {})
+        retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)]
+    (->MarathonScheduler marathon-api mesos-slave-port retrieve-framework-id-fn slave-directory home-path-prefix
                          service-id->failed-instances-transient-store service-id->last-force-kill-store
                          force-kill-after-ms is-waiter-app?-fn)))

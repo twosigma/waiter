@@ -205,7 +205,7 @@
            exception))
 
 (defn http-method-fn
-  "Retrieves the clj-http client function that corresponds to the http method."
+  "Retrieves the qbits.jet.client.http client function that corresponds to the http method."
   [request-method]
   (let [default-http-method http/post
         http-method-helper (fn http-method-helper [http-method]
@@ -224,7 +224,7 @@
       default-http-method)))
 
 (defn request->http-method-fn
-  "Retrieves the clj-http client function that corresponds to the http method used in the request."
+  "Retrieves the qbits.jet.client.http client function that corresponds to the http method used in the request."
   [{:keys [request-method]}]
   (http-method-fn request-method))
 
