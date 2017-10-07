@@ -18,6 +18,7 @@
             [clojure.walk :as walk]
             [marathonclj.common :as mc]
             [marathonclj.rest.apps :as apps]
+            [marathonclj.rest.deployments :as md]
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
             [waiter.metrics :as metrics]
@@ -75,6 +76,30 @@
        (finally
          (.close sw#)))))
 
+(defn- get-deployment-info
+  "Extracts the deployments section from the response body if it exists."
+  [{:keys [body]}]
+  (-> body
+      str
+      json/read-str
+      (get "deployments")
+      not-empty))
+
+(defn extract-deployment-info
+  "If the response body has deployments listed, pings Marathon to get the deployment details."
+  [response]
+  (try
+    (when-let [deployments (get-deployment-info response)]
+      (let [deployment-ids (->> deployments
+                                (map #(get % "id"))
+                                set)
+            all-marathon-deployments (md/get-deployments)]
+        (->> all-marathon-deployments
+             (filter (fn [{:strs [id]}] (contains? deployment-ids id)))
+             vec)))
+    (catch Exception e
+      (log/error e "unable to extract the deployment info"))))
+
 (defn process-kill-instance-request
   "Processes a kill instance request"
   [service-id instance-id {:keys [force scale] :or {force false, scale true} :as kill-params}]
@@ -90,8 +115,10 @@
           (let [message (if kill-success? "Successfully killed instance" "Unable to kill instance")
                 status (if kill-success? 200 500)]
             (make-kill-response kill-success? message status)))
-        (catch [:status 409] _
-          (log/info "kill instance" instance-id "failed as it is locked by one or more deployments" kill-params)
+        (catch [:status 409] e
+          (log/info "kill instance" instance-id "failed as it is locked by one or more deployments"
+                    {:deployment-info (extract-deployment-info e)
+                     :kill-params kill-params} )
           (make-kill-response false "Locked by one or more deployments" 409))
         (catch map? {:keys [body status]}
           (log/info "kill instance" instance-id "returned" status body)
@@ -124,7 +151,7 @@
 
                                         (str/includes? (str message) "Command exited with status")
                                         (assoc :exit-code (try (-> message (str/split #"\s+") last Integer/parseInt)
-                                                               (catch Throwable e))))))
+                                                               (catch Throwable _))))))
         healthy?-fn #(let [health-checks (:healthCheckResults %)]
                        (and
                          (and (seq health-checks)
@@ -316,7 +343,8 @@
               (swallow-out (apps/create-app marathon-descriptor)))
             (catch [:status 409] e
               (log/warn (ex-info "Conflict status when trying to start app. Is app starting up?"
-                                 {:descriptor marathon-descriptor
+                                 {:deployment-info (extract-deployment-info e)
+                                  :descriptor marathon-descriptor
                                   :error e})
                         "Exception starting new app")))))))
 
@@ -339,8 +367,10 @@
         (log/warn "[delete-app] Service does not exist:" service-id)
         {:result :no-such-service-exists
          :message "Marathon reports service does not exist"})
-      (catch [:status 409] {}
-        (log/warn "Marathon deployment conflict while deleting" service-id))
+      (catch [:status 409] e
+        (log/warn "Marathon deployment conflict while deleting"
+                  {:deployment-info (extract-deployment-info e)
+                   :service-id service-id} ))
       (catch [:status 503] {}
         (log/warn "[delete-app] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[delete-app] Marathon unavailable"))))
@@ -355,8 +385,10 @@
                                [:instances]
                                (fn [_] instances))]
           (swallow-out (apps/update-app service-id new-descriptor "force" "true"))))
-      (catch [:status 409] {}
-        (log/warn "Marathon deployment conflict while scaling" service-id))
+      (catch [:status 409] e
+        (log/warn "Marathon deployment conflict while scaling"
+                  {:deployment-info (extract-deployment-info e)
+                   :service-id service-id}))
       (catch [:status 503] {}
         (log/warn "[scale-app] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[autoscaler] Marathon unavailable"))))
