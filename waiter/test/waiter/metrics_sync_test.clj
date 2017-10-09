@@ -67,22 +67,26 @@
   (testing "register-router-ws:matching-request-id"
     (let [router-ws-key :ws-requests-key
           router-id "router-1"
-          ws-request {:out :baz, :request-id "request-1"}
-          in-router-metrics-state {:ws-requests-key {:foo :bar}, :fee :fie}
+          ctrl-chan (async/chan)
+          ws-request {:ctrl ctrl-chan, :out :baz, :request-id "request-1"}
+          initial-state {:ws-requests-key {:foo :bar} :fee :fie}
+          in-router-metrics-state initial-state
           router-metrics-agent (agent in-router-metrics-state)
           encrypt identity
           out-router-metrics-state (register-router-ws in-router-metrics-state router-ws-key router-id ws-request encrypt router-metrics-agent)]
-      (is (= {:ws-requests-key {router-id ws-request, :foo :bar} :fee :fie}, out-router-metrics-state))))
+      (is (= (assoc-in initial-state [:ws-requests-key router-id] ws-request) out-router-metrics-state))
+      (async/close! ctrl-chan)))
 
-  (testing "register-router-ws:different-request-id"
+  (testing "register-router-ws:missing-request-id"
     (let [router-ws-key :ws-requests-key
           router-id "router-1"
           ws-request {:out :baz}
-          in-router-metrics-state {:ws-requests-key {:foo :bar} :fee :fie}
+          initial-state {:ws-requests-key {:foo :bar} :fee :fie}
+          in-router-metrics-state initial-state
           router-metrics-agent (agent in-router-metrics-state)
           encrypt identity
           out-router-metrics-state (register-router-ws in-router-metrics-state router-ws-key router-id ws-request encrypt router-metrics-agent)]
-      (is (= {:ws-requests-key {:foo :bar}, :fee :fie}, out-router-metrics-state)))))
+      (is (= initial-state, out-router-metrics-state)))))
 
 (deftest test-register-router-ws-with-ctrl-chan
   (testing "register-router-ws:deregistering-on-ctrl-chan"
@@ -160,15 +164,10 @@
     (let [test-start-time (t/now)]
       (with-redefs [t/now (constantly test-start-time)]
         (let [encrypt (fn [data] {:data data})
-              initiated-promise (fn []
-                                  (let [result (promise)]
-                                    (deliver result :initiated)
-                                    result))
               router-metrics {"s1" {"c" 1}, "s2" {"c" 1}, "s3" {"c" 1}}
-              ws-request-2 {:initiated-promise (initiated-promise), :out (async/chan 10), :request-id "request-id-2"}
-              ws-request-3 {:initiated-promise (initiated-promise), :out (async/chan 10), :request-id "request-id-3"}
-              ws-request-4 {:initiated-promise (initiated-promise), :out (async/chan 10), :request-id "request-id-4"}
-              ws-request-5 {:initiated-promise (promise), :out (async/chan 10), :request-id "request-id-5"}
+              ws-request-2 {:out (async/chan 10), :request-id "request-id-2"}
+              ws-request-3 {:out (async/chan 10), :request-id "request-id-3"}
+              ws-request-4 {:out (async/chan 10), :request-id "request-id-4"}
               in-router-metrics-state {:metrics {:routers {"router-1" {"s1" {"c" 0}, "s2" {"c" 0}, "s3" {"c" 0}}
                                                            "router-2" {"s1" {"c" 2}, "s3" {"c" 2}}
                                                            "router-3" {"s1" {"c" 3}, "s2" {"c" 3}, "s3" {"c" 3}}
@@ -177,16 +176,13 @@
                                        :router-id "router-1"
                                        :router-id->outgoing-ws {"router-2" ws-request-2
                                                                 "router-3" ws-request-3
-                                                                "router-4" ws-request-4
-                                                                "router-5" ws-request-5}
+                                                                "router-4" ws-request-4}
                                        :fee :fie}
               out-router-metrics-state (publish-router-metrics in-router-metrics-state encrypt router-metrics "core")]
           (let [output-data {:data {:router-metrics router-metrics, :source-router-id "router-1", :time (utils/date-to-str test-start-time)}}]
             (is (= output-data (async/<!! (:out ws-request-2))))
             (is (= output-data (async/<!! (:out ws-request-3))))
-            (is (= output-data (async/<!! (:out ws-request-4))))
-            (let [timeout-chan (async/timeout 100)]
-              (is (= [nil timeout-chan] (async/alts!! [(:out ws-request-5) timeout-chan] :priority true)))))
+            (is (= output-data (async/<!! (:out ws-request-4)))))
           (is (= (-> in-router-metrics-state
                      (assoc-in [:metrics :routers "router-1"] router-metrics)
                      (assoc-in [:last-update-times "router-1"] (utils/date-to-str test-start-time)))
@@ -250,15 +246,13 @@
           (is (= new-router-ids (utils/keyset (get-in out-router-metrics-state [:metrics :routers]))))
           (is (= (set/intersection (utils/keyset (:router-id->incoming-ws out-router-metrics-state)) new-router-ids)
                  (utils/keyset (get-in out-router-metrics-state [:router-id->incoming-ws]))))
-          (is (= (set/difference new-router-ids #{my-router-id})
+          (is (= (set/difference new-router-ids #{my-router-id "router-1"})
                  (utils/keyset (get-in out-router-metrics-state [:router-id->outgoing-ws]))))
           (let [old-outgoing-router-ids (utils/keyset (get-in in-router-metrics-state [:router-id->outgoing-ws]))
                 new-outgoing-router-ids (set/difference new-router-ids (set/union old-outgoing-router-ids #{my-router-id}))]
             (doseq [[router-id ws-request] (-> out-router-metrics-state :router-id->outgoing-ws seq)]
               (if (contains? new-outgoing-router-ids router-id)
                 (do
-                  (is (:initiated-promise ws-request))
-                  (is (= :timeout (deref (:initiated-promise ws-request) 100 :timeout)))
                   (is (:request-id ws-request))
                   (is (:time ws-request)))
                 (let [old-ws-request (get-in in-router-metrics-state [:router-id->outgoing-ws router-id])]
@@ -277,13 +271,15 @@
   (with-redefs [ws/connect! (fn ws-connect! [_ ws-endpoint callback _]
                               (is (str/starts-with? ws-endpoint "ws://"))
                               (is (str/ends-with? ws-endpoint "/waiter-router-metrics"))
-                              (let [in-chan (async/chan 10)
+                              (let [ctrl-chan (async/chan 10)
+                                    in-chan (async/chan 10)
                                     out-chan (async/chan 10)
-                                    ws-request {:in in-chan, :out out-chan, :tag ws-endpoint}
-                                    ;; use ws-endpoint as ctrl-chan for test assertion purposes
-                                    web-socket (WebSocket. in-chan out-chan ws-endpoint nil nil nil)]
+                                    ws-request {:ctrl ctrl-chan, :in in-chan, :out out-chan, :tag ws-endpoint}
+                                    web-socket (WebSocket. in-chan out-chan ctrl-chan nil nil nil)]
                                 (async/>!! in-chan :success)
                                 (callback ws-request)
+                                (let [{:keys [dest-router-id]} (async/<!! out-chan)]
+                                  (is (= (str "ws://www." dest-router-id ".com:1234/waiter-router-metrics") ws-endpoint)))
                                 {:socket web-socket
                                  :tag ws-endpoint}))]
     (let [my-router-id "router-0"
@@ -325,11 +321,8 @@
           (doseq [[router-id ws-request] (-> out-router-metrics-state :router-id->outgoing-ws seq)]
             (if (contains? new-outgoing-router-ids router-id)
               (do
-                (is (:initiated-promise ws-request))
-                (is (= :initiated (deref (:initiated-promise ws-request) 100 :timeout)))
                 (is (:request-id ws-request))
-                (is (:time ws-request))
-                (is (= (str "ws://www." router-id ".com:1234/waiter-router-metrics") (:ctrl ws-request))))
+                (is (:time ws-request)))
               (let [old-ws-request (get-in in-router-metrics-state [:router-id->outgoing-ws router-id])]
                 (is (and old-ws-request (= old-ws-request ws-request)))))))))))
 
@@ -360,7 +353,7 @@
                         (async/>!! release-chan :release))
                       decrypted-data))
           router-metrics-agent (agent {})
-          ws-request {:in (async/chan 10), :out (async/chan 10)}
+          ws-request {:ctrl (async/chan 10), :in (async/chan 10), :out (async/chan 10)}
           source-router-id "router-1"
           iteration-limit 20]
       (async/>!! (:in ws-request) (encrypt {:source-router-id source-router-id}))
