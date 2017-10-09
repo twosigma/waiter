@@ -28,18 +28,11 @@
   [m]
   (-> m keys set))
 
-(defn- query-agent-state
-  "Queries the agent state and returns the result in the response-chan."
-  [agent-state response-chan]
-  (async/>!! response-chan agent-state)
-  agent-state)
-
 (defn- retrieve-agent-state
-  "Retrieves the agent's state."
+  "Awaits all actions dispatched thus far to the agent to complete and then returns the state of the agent."
   [router-metrics-agent]
-  (let [response-chan (async/promise-chan)]
-    (send router-metrics-agent #(do (async/>!! response-chan %1) %1))
-    (async/<!! response-chan)))
+  (await router-metrics-agent)
+  @router-metrics-agent)
 
 (deftest test-deregister-router-ws
   (testing "deregister-router-ws:matching-request-id"
@@ -210,11 +203,11 @@
                            :out async/chan}
           router-metrics-agent (agent in-router-metrics-state)
           encrypt identity
-          out-router-metrics-state (update-metrics-router-state in-router-metrics-state websocket-client router-id->http-endpoint encrypt connect-options router-metrics-agent)
-          response-chan (async/promise-chan)]
+          out-router-metrics-state
+          (update-metrics-router-state in-router-metrics-state websocket-client router-id->http-endpoint encrypt
+                                       connect-options router-metrics-agent)]
       (is (= in-router-metrics-state out-router-metrics-state))
-      (send router-metrics-agent query-agent-state response-chan)
-      (is (= in-router-metrics-state (async/<!! response-chan))))))
+      (is (= in-router-metrics-state (retrieve-agent-state router-metrics-agent))))))
 
 (deftest test-update-metrics-router-state-new-and-missing-router-ids-connect-failed
   (let [ctrl-chan (async/chan 1)]
@@ -233,7 +226,6 @@
                                      :router-id->incoming-ws {"router-2" {:out (async/chan 10), :request-id :dummy-2}}
                                      :router-id->outgoing-ws {"router-2" {:out (async/chan 10), :request-id :dummy-5}}}
             router-metrics-agent (agent in-router-metrics-state)
-            response-chan (async/promise-chan)
             websocket-client nil
             router-id->http-endpoint {"router-0" "http://www.router-0.com:1234/"
                                       "router-1" "http://www.router-1.com:1234/"
@@ -242,9 +234,7 @@
             connect-options {:async-write-timeout 10000
                              :out async/chan}]
         (send router-metrics-agent update-metrics-router-state websocket-client router-id->http-endpoint encrypt connect-options router-metrics-agent)
-        (await router-metrics-agent)
-        (send router-metrics-agent query-agent-state response-chan)
-        (let [out-router-metrics-state (async/<!! response-chan)
+        (let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)
               new-router-ids (keyset router-id->http-endpoint)]
           (is (= (select-keys (get-in in-router-metrics-state [:metrics :routers]) (keys router-id->http-endpoint))
                  (get-in out-router-metrics-state [:metrics :routers])))
@@ -265,10 +255,8 @@
 
           (async/>!! ctrl-chan [:error (ex-info "Thrown from test" {})])
           (is (test-helpers/wait-for
-                #(let [response-chan (async/promise-chan)]
-                   (send router-metrics-agent query-agent-state response-chan)
-                   (let [out-router-metrics-state (async/<!! response-chan)]
-                     (= in-router-metrics-state out-router-metrics-state)))
+                #(let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)]
+                   (= in-router-metrics-state out-router-metrics-state))
                 :interval 200, :timeout 4000, :unit-multiplier 1)
               "Deregistering router-1 failed"))))))
 
@@ -300,7 +288,6 @@
                                    :router-id->outgoing-ws {"router-2" {:out (async/chan 10), :request-id :dummy-5}
                                                             "router-4" {:out (async/chan 10), :request-id :dummy-4}}}
           router-metrics-agent (agent in-router-metrics-state)
-          response-chan (async/promise-chan)
           websocket-client nil
           router-id->http-endpoint {"router-0" "http://www.router-0.com:1234/"
                                     "router-1" "http://www.router-1.com:1234/"
@@ -310,9 +297,8 @@
           connect-options {:async-write-timeout 10000
                            :out async/chan}]
       (send router-metrics-agent update-metrics-router-state websocket-client router-id->http-endpoint encrypt connect-options router-metrics-agent)
-      (await router-metrics-agent)
-      (send router-metrics-agent query-agent-state response-chan)
-      (let [out-router-metrics-state (async/<!! response-chan)
+      (await router-metrics-agent) ;; ensure update-metrics-router-state is processed and has triggered nested sends
+      (let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)
             new-router-ids (keyset router-id->http-endpoint)]
         (is (= (select-keys (get-in in-router-metrics-state [:metrics :routers]) (keys router-id->http-endpoint))
                (get-in out-router-metrics-state [:metrics :routers])))
@@ -379,9 +365,7 @@
                (log/debug "router-metrics-state:" out-router-metrics-state)
                (= (str "time-" iteration-limit) (get-in out-router-metrics-state [:last-update-times source-router-id])))
             :interval 1000, :unit-multiplier 1))
-      (let [response-chan (async/promise-chan)
-            _ (send router-metrics-agent query-agent-state response-chan)
-            out-router-metrics-state (async/<!! response-chan)]
+      (let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)]
         (is (< 1 @decrypt-call-counter iteration-limit)) ; expect throttling
         (is (= {"s1" {:iteration iteration-limit}, "s2" {:iteration iteration-limit}}
                (get-in out-router-metrics-state [:metrics :routers source-router-id]))

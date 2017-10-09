@@ -74,7 +74,7 @@
   [ctrl router-ws-key router-id request-id encrypt router-metrics-agent]
   (async/go
     (when-let [ctrl-data (async/<! ctrl)]
-      (cid/cinfo request-id "deregistering request, data received on control channel is" ctrl-data)
+      (cid/cinfo request-id "triggering deregister, data received on control channel is" ctrl-data)
       (send router-metrics-agent deregister-router-ws router-ws-key router-id request-id encrypt))))
 
 (defn register-router-ws
@@ -244,10 +244,10 @@
                                    (let [ws-request (assoc ws-request :request-id request-id :time (t/now))]
                                      (send router-metrics-agent register-router-ws :router-id->outgoing-ws router-id
                                            ws-request encrypt router-metrics-agent)))
-                                 connect-options)]
+                                 connect-options)
+                    ctrl (.ctrl socket)]
                 ;; register outside connect! callback to handle messages on the ctrl channel
-                (let [ctrl (.ctrl socket)]
-                  (listen-on-ctrl-chan ctrl :router-id->outgoing-ws router-id request-id encrypt router-metrics-agent)))))
+                (listen-on-ctrl-chan ctrl :router-id->outgoing-ws router-id request-id encrypt router-metrics-agent))))
           (-> router-metrics-state
               (preserve-metrics-from-routers
                 (set/union #{my-router-id} (-> router-id->http-endpoint keys set)))

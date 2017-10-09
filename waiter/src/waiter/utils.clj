@@ -472,4 +472,3 @@
   "Parses the request header to determine if debug mode has been enabled."
   [request]
   (boolean (get-in request [:headers "x-waiter-debug"])))
-
