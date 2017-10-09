@@ -496,6 +496,14 @@
                 (discovery/register router-id curator name (str base-path "/" discovery-relative-path) {:host host :port port}))
    :gc-base-path (pc/fnk [[:settings [:zookeeper base-path gc-relative-path]]]
                    (str base-path "/" gc-relative-path))
+   :gc-state-reader-fn (pc/fnk [curator gc-base-path]
+                         (fn read-gc-state [name]
+                           (:data (curator/read-path curator (str gc-base-path "/" name)
+                                                     :nil-on-missing? true :serializer :nippy))))
+   :gc-state-writer-fn (pc/fnk [curator gc-base-path]
+                         (fn write-gc-state [name state]
+                           (curator/write-path curator (str gc-base-path "/" name) state
+                                               :serializer :nippy :create-parent-zknodes? true)))
    :kv-store (pc/fnk [[:settings [:zookeeper base-path] kv-config]
                       [:state passwords]
                       curator]
@@ -508,15 +516,7 @@
                        latch (LeaderLatch. curator leader-latch-path router-id)
                        has-leadership? #(.hasLeadership latch)]
                    (.start latch)
-                   (leader-fn-factory router-id has-leadership? discovery min-routers)))
-   :read-gc-state-fn (pc/fnk [curator gc-base-path]
-                       (fn read-gc-state [name]
-                         (:data (curator/read-path curator (str gc-base-path "/" name)
-                                                   :nil-on-missing? true :serializer :nippy))))
-   :write-gc-state-fn (pc/fnk [curator gc-base-path]
-                        (fn write-gc-state [name state]
-                          (curator/write-path curator (str gc-base-path "/" name) state
-                                              :serializer :nippy :create-parent-zknodes? true)))})
+                   (leader-fn-factory router-id has-leadership? discovery min-routers)))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
@@ -775,12 +775,12 @@
                                                       scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
                                 {:exit-chan exit-chan
                                  :maintainer-chans maintainer-chan}))
-   :scheduler-broken-services-gc (pc/fnk [[:curator leader?-fn read-gc-state-fn write-gc-state-fn]
+   :scheduler-broken-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
                                           [:settings scheduler-gc-config]
                                           [:state clock scheduler]
                                           scheduler-maintainer]
                                    (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
-                                         service-gc-go-routine (partial service-gc-go-routine read-gc-state-fn write-gc-state-fn leader?-fn clock)]
+                                         service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                                      (scheduler/scheduler-broken-services-gc scheduler scheduler-state-chan scheduler-gc-config service-gc-go-routine)))
    :scheduler-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                   [:settings [:health-check-config health-check-timeout-ms failed-check-threshold] scheduler-syncer-interval-secs]
@@ -793,14 +793,14 @@
                                       scheduler scheduler-state-chan scheduler-syncer-interval-secs
                                       service-id->service-description-fn scheduler/available? http-client failed-check-threshold)
                                :scheduler-state-mult-chan scheduler-state-mult-chan)))
-   :scheduler-services-gc (pc/fnk [[:curator leader?-fn read-gc-state-fn write-gc-state-fn]
+   :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
                                    [:routines router-metrics-helpers service-id->service-description-fn]
                                    [:settings scheduler-gc-config]
                                    [:state clock scheduler]
                                    scheduler-maintainer]
                             (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
                                   {:keys [service-id->metrics-fn]} router-metrics-helpers
-                                  service-gc-go-routine (partial service-gc-go-routine read-gc-state-fn write-gc-state-fn leader?-fn clock)]
+                                  service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                               (scheduler/scheduler-services-gc
                                 scheduler scheduler-state-chan service-id->metrics-fn scheduler-gc-config service-gc-go-routine service-id->service-description-fn)))
    :service-chan-maintainer (pc/fnk [[:routines start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
