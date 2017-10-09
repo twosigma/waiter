@@ -15,8 +15,8 @@
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
             [waiter.auth.spnego :as spnego])
-  (:import (java.net URI)
-           (org.eclipse.jetty.client HttpClient)))
+  (:import java.net.URI
+           org.eclipse.jetty.client.HttpClient))
 
 (defn http-request
   "Wrapper over the qbits.jet.client.http/request function.
