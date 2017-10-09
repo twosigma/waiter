@@ -18,28 +18,6 @@
   (:import (java.net URI)
            (org.eclipse.jetty.client HttpClient)))
 
-(defprotocol MarathonApi
-  (agent-directory-content [_ host port directory]
-    "Lists files and directories contained in the path.")
-  (agent-state [this host port]
-    "Returns information about the frameworks, executors and the agent’s master. ")
-  (create-app [this descriptor]
-    "Create and start a new app specified by the descriptor.")
-  (delete-app [this app-id]
-    "Delete the app specified by the app-id.")
-  (get-app [this app-id]
-    "List the app specified by app-id.")
-  (get-apps [this]
-    "List all running apps including running and failed tasks.")
-  (get-deployments [this]
-    "List all running deployments.")
-  (get-info [this]
-    "Get info about the Marathon instance.")
-  (kill-task [this app-id task-id scale force]
-    "Kill the task task-id that belongs to the application app-id.")
-  (update-app [this app-id descriptor]
-    "Update the descriptor of an existing app specified by the app-id."))
-
 (defn http-request
   "Wrapper over the qbits.jet.client.http/request function.
    It performs a blocking read on the response and the response body.
@@ -76,72 +54,92 @@
         json/read-str
         walk/keywordize-keys)))
 
-(deftype MarathonApiImpl [^HttpClient http-client ^String marathon-url spnego-auth]
-  MarathonApi
-
-  (agent-directory-content [_ host port directory]
-    (http-request http-client (str "http://" host ":" port "/files/browse")
-                  :query-string {"path" directory}
-                  :request-method :get
-                  :spnego-auth spnego-auth
-                  :throw-exceptions false))
-
-  (agent-state [_ host port]
-    (http-request http-client (str "http://" host ":" port "/state.json")
-                  :request-method :get
-                  :spnego-auth spnego-auth
-                  :throw-exceptions false))
-
-  (create-app [_ descriptor]
-    (http-request http-client (str marathon-url "/v2/apps")
-                  :body (json/write-str descriptor)
-                  :content-type "application/json"
-                  :spnego-auth spnego-auth
-                  :request-method :post))
-
-  (delete-app [_ app-id]
-    (http-request http-client (str marathon-url "/v2/apps/" app-id)
-                  :content-type "application/json"
-                  :request-method :delete
-                  :spnego-auth spnego-auth))
-
-  (get-app [_ app-id]
-    (http-request http-client (str marathon-url "/v2/apps/" app-id)
-                  :request-method :get))
-
-  (get-apps [_]
-    (http-request http-client (str marathon-url "/v2/apps")
-                  :query-string {"embed" ["apps.lastTaskFailure" "apps.tasks"]}
-                  :request-method :get
-                  :spnego-auth spnego-auth))
-
-  (get-deployments [_]
-    (http-request http-client (str marathon-url "/v2/deployments")
-                  :request-method :get
-                  :spnego-auth spnego-auth))
-
-  (get-info [_]
-    (http-request http-client (str marathon-url "/v2/info")
-                  :request-method :get
-                  :spnego-auth spnego-auth))
-
-  (kill-task [_ app-id task-id scale force]
-    (http-request http-client (str marathon-url "/v2/apps/" app-id "/tasks/" task-id)
-                  :query-string {"force" force, "scale" scale}
-                  :request-method :delete
-                  :spnego-auth spnego-auth))
-
-  (update-app [_ app-id descriptor]
-    (http-request http-client (str marathon-url "/v2/apps/" app-id)
-                  :body (json/write-str descriptor)
-                  :content-type "application/json"
-                  :query-string {"force" true}
-                  :request-method :put
-                  :spnego-auth spnego-auth)))
+(defrecord MarathonApi [^HttpClient http-client ^String marathon-url spnego-auth])
 
 (defn marathon-rest-api-factory
-  "Factory method for MarathonRestApi."
+  "Factory method for MarathonApi."
   [http-options url]
   (let [http-client (http/client {:connect-timeout (:conn-timeout http-options)
                                   :idle-timeout (:socket-timeout http-options)})]
-    (->MarathonApiImpl http-client url (:spnego-auth http-options))))
+    (->MarathonApi http-client url (:spnego-auth http-options))))
+
+(defn agent-directory-content
+  "Lists files and directories contained in the path."
+  [{:keys [http-client spnego-auth]} host port directory]
+  (http-request http-client (str "http://" host ":" port "/files/browse")
+                :query-string {"path" directory}
+                :request-method :get
+                :spnego-auth spnego-auth
+                :throw-exceptions false))
+
+(defn agent-state
+  "Returns information about the frameworks, executors and the agent’s master."
+  [{:keys [http-client spnego-auth]} host port]
+  (http-request http-client (str "http://" host ":" port "/state.json")
+                :request-method :get
+                :spnego-auth spnego-auth
+                :throw-exceptions false))
+
+(defn create-app
+  "Create and start a new app specified by the descriptor."
+  [{:keys [http-client marathon-url spnego-auth]} descriptor]
+  (http-request http-client (str marathon-url "/v2/apps")
+                :body (json/write-str descriptor)
+                :content-type "application/json"
+                :spnego-auth spnego-auth
+                :request-method :post))
+
+(defn delete-app
+  "Delete the app specified by the app-id."
+  [{:keys [http-client marathon-url spnego-auth]} app-id]
+  (http-request http-client (str marathon-url "/v2/apps/" app-id)
+                :content-type "application/json"
+                :request-method :delete
+                :spnego-auth spnego-auth))
+
+(defn get-app
+  "List the app specified by app-id."
+  [{:keys [http-client marathon-url spnego-auth]} app-id]
+  (http-request http-client (str marathon-url "/v2/apps/" app-id)
+                :request-method :get
+                :spnego-auth spnego-auth))
+
+(defn get-apps
+  "List all running apps including running and failed tasks."
+  [{:keys [http-client marathon-url spnego-auth]}]
+  (http-request http-client (str marathon-url "/v2/apps")
+                :query-string {"embed" ["apps.lastTaskFailure" "apps.tasks"]}
+                :request-method :get
+                :spnego-auth spnego-auth))
+
+(defn get-deployments
+  "List all running deployments."
+  [{:keys [http-client marathon-url spnego-auth]}]
+  (http-request http-client (str marathon-url "/v2/deployments")
+                :request-method :get
+                :spnego-auth spnego-auth))
+
+(defn get-info
+  "Get info about the Marathon instance."
+  [{:keys [http-client marathon-url spnego-auth]}]
+  (http-request http-client (str marathon-url "/v2/info")
+                :request-method :get
+                :spnego-auth spnego-auth))
+
+(defn kill-task
+  "Kill the task task-id that belongs to the application app-id."
+  [{:keys [http-client marathon-url spnego-auth]} app-id task-id scale force]
+  (http-request http-client (str marathon-url "/v2/apps/" app-id "/tasks/" task-id)
+                :query-string {"force" force, "scale" scale}
+                :request-method :delete
+                :spnego-auth spnego-auth))
+
+(defn update-app
+  "Update the descriptor of an existing app specified by the app-id."
+  [{:keys [http-client marathon-url spnego-auth]} app-id descriptor]
+  (http-request http-client (str marathon-url "/v2/apps/" app-id)
+                :body (json/write-str descriptor)
+                :content-type "application/json"
+                :query-string {"force" true}
+                :request-method :put
+                :spnego-auth spnego-auth))
