@@ -516,7 +516,17 @@
                        latch (LeaderLatch. curator leader-latch-path router-id)
                        has-leadership? #(.hasLeadership latch)]
                    (.start latch)
-                   (leader-fn-factory router-id has-leadership? discovery min-routers)))})
+                   (leader-fn-factory router-id has-leadership? discovery min-routers)))
+   :synchronize-fn (pc/fnk [[:settings [:zookeeper base-path mutex-timeout-ms]]
+                            curator]
+                     (fn synchronize-fn [path f]
+                       (let [lock-path (str base-path "/" path)]
+                         (curator/synchronize curator lock-path mutex-timeout-ms f))))
+   :token-manager (pc/fnk [[:state clock]
+                           kv-store
+                           synchronize-fn]
+                    ;; TODO Shams use settings and pass it to new-token-manager
+                    (token/new-token-manager {:clock clock, :kv-store kv-store, :synchronize-fn synchronize-fn}))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
@@ -683,11 +693,6 @@
                                           validate-service-description-fn]
                                    (fn store-service-description [service-id service-description]
                                      (sd/store-core kv-store service-id service-description validate-service-description-fn)))
-   :synchronize-fn (pc/fnk [[:curator curator]
-                            [:settings [:zookeeper base-path mutex-timeout-ms]]]
-                     (fn synchronize-fn [path f]
-                       (let [lock-path (str base-path "/" path)]
-                         (curator/synchronize curator lock-path mutex-timeout-ms f))))
    :token->service-description-template (pc/fnk [[:curator kv-store]]
                                           (fn token->service-description-template [token]
                                             (sd/token->service-description-template kv-store token :error-on-missing false)))
@@ -1122,16 +1127,16 @@
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
    :status-handler-fn (pc/fnk []
                         (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
-   :token-handler-fn (pc/fnk [[:curator kv-store]
-                              [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
+   :token-handler-fn (pc/fnk [[:curator token-manager]
+                              [:routines make-inter-router-requests-sync-fn validate-service-description-fn]
                               [:settings hostname]
-                              [:state clock entitlement-manager]
+                              [:state entitlement-manager]
                               handle-secure-request-fn]
                        (fn token-handler-fn [request]
                          (handle-secure-request-fn
                            (fn inner-token-handler-fn [request]
                              (token/handle-token-request
-                               clock synchronize-fn kv-store hostname entitlement-manager make-inter-router-requests-sync-fn
+                               token-manager hostname entitlement-manager make-inter-router-requests-sync-fn
                                validate-service-description-fn request))
                            request)))
    :token-list-handler-fn (pc/fnk [[:curator kv-store]
@@ -1155,14 +1160,14 @@
                                    (fn service-refresh-handler [src-router-id request]
                                      (token/handle-refresh-token-request kv-store src-router-id request))
                                    request)))
-   :token-reindex-handler-fn (pc/fnk [[:curator kv-store]
-                                      [:routines list-tokens-fn make-inter-router-requests-sync-fn synchronize-fn]
+   :token-reindex-handler-fn (pc/fnk [[:curator token-manager]
+                                      [:routines list-tokens-fn make-inter-router-requests-sync-fn]
                                       handle-secure-request-fn]
                                (fn token-reindex-handler-fn [request]
                                  (handle-secure-request-fn
                                     (fn inner-token-handler-fn [request]
-                                      (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
-                                                                           kv-store list-tokens-fn request))
+                                      (token/handle-reindex-tokens-request
+                                        token-manager make-inter-router-requests-sync-fn list-tokens-fn request))
                                     request)))
    :waiter-auth-handler-fn (pc/fnk [handle-secure-request-fn]
                              (fn waiter-auth-handler-fn [request]
