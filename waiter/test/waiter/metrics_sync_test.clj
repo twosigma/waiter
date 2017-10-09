@@ -23,6 +23,11 @@
   (:import (qbits.jet.websocket WebSocket)
            (org.eclipse.jetty.websocket.client WebSocketClient)))
 
+(defn- keyset
+  "Returns the keys of the map as a set."
+  [m]
+  (-> m keys set))
+
 (defn- query-agent-state
   "Queries the agent state and returns the result in the response-chan."
   [agent-state response-chan]
@@ -240,15 +245,15 @@
         (await router-metrics-agent)
         (send router-metrics-agent query-agent-state response-chan)
         (let [out-router-metrics-state (async/<!! response-chan)
-              new-router-ids (utils/keyset router-id->http-endpoint)]
+              new-router-ids (keyset router-id->http-endpoint)]
           (is (= (select-keys (get-in in-router-metrics-state [:metrics :routers]) (keys router-id->http-endpoint))
                  (get-in out-router-metrics-state [:metrics :routers])))
-          (is (= new-router-ids (utils/keyset (get-in out-router-metrics-state [:metrics :routers]))))
-          (is (= (set/intersection (utils/keyset (:router-id->incoming-ws out-router-metrics-state)) new-router-ids)
-                 (utils/keyset (get-in out-router-metrics-state [:router-id->incoming-ws]))))
+          (is (= new-router-ids (keyset (get-in out-router-metrics-state [:metrics :routers]))))
+          (is (= (set/intersection (keyset (:router-id->incoming-ws out-router-metrics-state)) new-router-ids)
+                 (keyset (get-in out-router-metrics-state [:router-id->incoming-ws]))))
           (is (= (set/difference new-router-ids #{my-router-id "router-1"})
-                 (utils/keyset (get-in out-router-metrics-state [:router-id->outgoing-ws]))))
-          (let [old-outgoing-router-ids (utils/keyset (get-in in-router-metrics-state [:router-id->outgoing-ws]))
+                 (keyset (get-in out-router-metrics-state [:router-id->outgoing-ws]))))
+          (let [old-outgoing-router-ids (keyset (get-in in-router-metrics-state [:router-id->outgoing-ws]))
                 new-outgoing-router-ids (set/difference new-router-ids (set/union old-outgoing-router-ids #{my-router-id}))]
             (doseq [[router-id ws-request] (-> out-router-metrics-state :router-id->outgoing-ws seq)]
               (if (contains? new-outgoing-router-ids router-id)
@@ -308,15 +313,15 @@
       (await router-metrics-agent)
       (send router-metrics-agent query-agent-state response-chan)
       (let [out-router-metrics-state (async/<!! response-chan)
-            new-router-ids (utils/keyset router-id->http-endpoint)]
+            new-router-ids (keyset router-id->http-endpoint)]
         (is (= (select-keys (get-in in-router-metrics-state [:metrics :routers]) (keys router-id->http-endpoint))
                (get-in out-router-metrics-state [:metrics :routers])))
-        (is (= new-router-ids (utils/keyset (get-in out-router-metrics-state [:metrics :routers]))))
-        (is (= (set/intersection (utils/keyset (:router-id->incoming-ws out-router-metrics-state)) new-router-ids)
-               (utils/keyset (get-in out-router-metrics-state [:router-id->incoming-ws]))))
+        (is (= new-router-ids (keyset (get-in out-router-metrics-state [:metrics :routers]))))
+        (is (= (set/intersection (keyset (:router-id->incoming-ws out-router-metrics-state)) new-router-ids)
+               (keyset (get-in out-router-metrics-state [:router-id->incoming-ws]))))
         (is (= (set/difference new-router-ids #{my-router-id})
-               (utils/keyset (get-in out-router-metrics-state [:router-id->outgoing-ws]))))
-        (let [old-outgoing-router-ids (utils/keyset (get-in in-router-metrics-state [:router-id->outgoing-ws]))
+               (keyset (get-in out-router-metrics-state [:router-id->outgoing-ws]))))
+        (let [old-outgoing-router-ids (keyset (get-in in-router-metrics-state [:router-id->outgoing-ws]))
               new-outgoing-router-ids (set/difference new-router-ids (set/union old-outgoing-router-ids #{my-router-id}))]
           (doseq [[router-id ws-request] (-> out-router-metrics-state :router-id->outgoing-ws seq)]
             (if (contains? new-outgoing-router-ids router-id)

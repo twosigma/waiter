@@ -473,7 +473,3 @@
   [request]
   (boolean (get-in request [:headers "x-waiter-debug"])))
 
-(defn keyset
-  "Returns the keys of the map as a set."
-  [m]
-  (-> m keys set))

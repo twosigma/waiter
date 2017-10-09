@@ -163,7 +163,8 @@
   (with-catch
     router-metrics-state
     (let [router-ids-to-delete (set/difference (-> (get-in router-metrics-state [:metrics :routers])
-                                                   utils/keyset)
+                                                   keys
+                                                   set)
                                                (set router-ids))]
       (loop [[router-id-to-delete & remaining-ids] (seq router-ids-to-delete)
              loop-state router-metrics-state]
@@ -213,15 +214,16 @@
   (with-catch
     router-metrics-state
     (let [my-router-id (:router-id router-metrics-state)
-          known-router-ids (disj (utils/keyset router-id->http-endpoint) my-router-id)
-          prev-incoming-router-ids (utils/keyset router-id->incoming-ws)
-          prev-outgoing-router-ids (utils/keyset router-id->outgoing-ws)]
+          known-router-ids (disj (-> router-id->http-endpoint keys set) my-router-id)
+          prev-incoming-router-ids (-> router-id->incoming-ws keys set)
+          prev-outgoing-router-ids (-> router-id->outgoing-ws keys set)]
       (if (or (not= known-router-ids prev-incoming-router-ids) (not= known-router-ids prev-outgoing-router-ids))
         (let [router-id->incoming-ws' (cleanup-router-requests :router-id->incoming-ws known-router-ids encrypt router-metrics-state)
               router-id->outgoing-ws' (cleanup-router-requests :router-id->outgoing-ws known-router-ids encrypt router-metrics-state)
               new-outgoing-router-ids (->> router-metrics-state
                                            :router-id->outgoing-ws
-                                           utils/keyset
+                                           keys
+                                           set
                                            (set/difference known-router-ids))]
           (when (seq new-outgoing-router-ids)
             (cid/cinfo "metrics-router-syncer" "new routers:" new-outgoing-router-ids ", known routers" known-router-ids)
@@ -247,7 +249,8 @@
                 (let [ctrl (.ctrl socket)]
                   (listen-on-ctrl-chan ctrl :router-id->outgoing-ws router-id request-id encrypt router-metrics-agent)))))
           (-> router-metrics-state
-              (preserve-metrics-from-routers (set/union #{my-router-id} (utils/keyset router-id->http-endpoint)))
+              (preserve-metrics-from-routers
+                (set/union #{my-router-id} (-> router-id->http-endpoint keys set)))
               (assoc :router-id->incoming-ws router-id->incoming-ws'
                      :router-id->outgoing-ws router-id->outgoing-ws')))
         router-metrics-state))))
@@ -347,7 +350,8 @@
     (let [router-id->service-id->metrics (get-in @router-metrics-agent [:metrics :routers])
           service-ids (->> router-id->service-id->metrics
                            (vals)
-                           (map utils/keyset)
+                           (map keys)
+                           (map set)
                            (reduce set/union #{}))]
       (log/info "aggregating metrics for" (count service-ids) "services from" (count router-id->service-id->metrics)
                 "routers with distribution" (pc/map-vals count router-id->service-id->metrics))
