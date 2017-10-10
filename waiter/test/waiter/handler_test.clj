@@ -637,36 +637,59 @@
       (is (= 500 status)))))
 
 (deftest test-get-router-state
-  (let [get-router-state (wrap-handler-json-response get-router-state)]
+  (let [test-fn (wrap-handler-json-response get-router-state)
+        kv-store (kv/new-local-kv-store {})
+        leader?-fn (constantly true)
+        router-metrics-state-fn (fn [] {})]
     (testing "Getting router state"
       (testing "should handle exceptions gracefully"
         (let [state-chan (async/chan)
-              scheduler-chan (async/chan)
-              router-metrics-state-fn (fn [] {})
-              kv-store (kv/new-local-kv-store {})
-              leader?-fn (constantly true)
-              scheduler (reify ServiceScheduler (state [_] nil))]
+              scheduler-chan (async/chan)]
           (async/put! state-chan []) ; vector instead of a map to trigger an error
           (async/go
             (let [{:keys [response-chan]} (async/<! scheduler-chan)]
               (async/>! response-chan [])))
-          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler {})]
+          (let [request {}
+                {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
             (is (str/includes? (str body) "Internal error"))
             (is (= 500 status)))))
 
       (testing "display router state"
         (let [state-chan (async/chan)
-              scheduler-chan (async/chan)
-              router-metrics-state-fn (fn [] {})
-              kv-store (kv/new-local-kv-store {})
-              leader?-fn (constantly true)
-              scheduler (reify ServiceScheduler (state [_] nil))]
+              scheduler-chan (async/chan)]
           (async/put! state-chan {:state-data []}) ; vector instead of a map to trigger an error
           (async/go
             (let [{:keys [response-chan]} (async/<! scheduler-chan)]
               (async/>! response-chan {:state []})))
-          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler {})]
-            (is (every? #(str/includes? (str body) %1) ["state-data", "leader", "kv-store", "router-metrics-state", "statsd"])
+          (let [request {}
+                {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
+            (is (every? #(str/includes? (str body) %1) ["kv-store", "leader", "router-metrics-state", "scheduler", "state-data", "statsd"])
+                (str "Body did not include necessary JSON keys:\n" body))
+            (is (= 200 status)))))
+
+      (testing "display router state - embed scheduler"
+        (let [state-chan (async/chan)
+              scheduler-chan (async/chan)]
+          (async/put! state-chan {:state-data []}) ; vector instead of a map to trigger an error
+          (async/go
+            (let [{:keys [response-chan]} (async/<! scheduler-chan)]
+              (async/>! response-chan {:state []})))
+          (let [request {:query-string "embed=scheduler"}
+                {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
+            (is (every? #(str/includes? (str body) %1) ["scheduler", "state-data"])
+                (str "Body did not include necessary JSON keys:\n" body))
+            (is (= 200 status)))))
+
+      (testing "display router state - embed scheduler - multiple"
+        (let [state-chan (async/chan)
+              scheduler-chan (async/chan)]
+          (async/put! state-chan {:state-data []}) ; vector instead of a map to trigger an error
+          (async/go
+            (let [{:keys [response-chan]} (async/<! scheduler-chan)]
+              (async/>! response-chan {:state []})))
+          (let [request {:query-string "embed=router-metrics-state&embed=scheduler"}
+                {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
+            (is (every? #(str/includes? (str body) %1) ["router-metrics-state", "scheduler", "state-data"])
                 (str "Body did not include necessary JSON keys:\n" body))
             (is (= 200 status))))))))
 

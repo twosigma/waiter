@@ -25,7 +25,6 @@
             [ring.middleware.params :as ring-params]
             [waiter.async-request :as async-req]
             [waiter.authorization :as authz]
-            [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
@@ -493,25 +492,34 @@
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler request]
+  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request]
   (try
-    (let [timeout-ms 30000
+    (let [embed-param (-> request
+                          ring-params/params-request
+                          :params
+                          (get "embed"))
+          embed-pred (cond
+                       (string? embed-param) #{embed-param}
+                       (sequential? embed-param) (set embed-param)
+                       :else (constantly true))
+          timeout-ms 30000
           current-state (async/alt!!
                           state-chan ([state-data] state-data)
                           (async/timeout timeout-ms) ([_] {:message "Query for router state timed out"})
                           :priority true)
-          scheduler-state (let [response-chan (async/promise-chan)]
-                            (async/>!! scheduler-chan {:response-chan response-chan})
-                            (async/alt!!
-                              response-chan ([state] state)
-                              (async/timeout timeout-ms) ([_] {:message "Query for scheduler state timed out"})
-                              :priority true))]
-      (-> current-state
-          (assoc :leader (leader?-fn)
-                 :kv-store (kv/state kv-store)
-                 :router-metrics-state (router-metrics-state-fn)
-                 :scheduler scheduler-state
-                 :statsd (statsd/state))
+          retrieve-scheduler-state (fn retrieve-scheduler-state-fn []
+                                     (let [response-chan (async/promise-chan)]
+                                       (async/>!! scheduler-chan {:response-chan response-chan})
+                                       (async/alt!!
+                                         response-chan ([state] state)
+                                         (async/timeout timeout-ms) ([_] {:message "Query for scheduler state timed out"})
+                                         :priority true)))]
+      (-> (cond-> current-state
+                  (embed-pred "kv-store") (assoc :kv-store(kv/state kv-store))
+                  (embed-pred "leader") (assoc :leader (leader?-fn))
+                  (embed-pred "router-metrics-state") (assoc :router-metrics-state (router-metrics-state-fn))
+                  (embed-pred "scheduler") (assoc :scheduler (retrieve-scheduler-state))
+                  (embed-pred "statsd") (assoc :statsd (statsd/state)))
           (utils/map->streaming-json-response)))
     (catch Exception ex
       (utils/exception->response ex request))))
