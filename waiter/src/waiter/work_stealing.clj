@@ -174,8 +174,8 @@
 
 (defn start-work-stealing-balancer
   "Starts the work-stealing balancer for all services."
-  [instance-rpc-chan reserve-timeout-ms offer-help-interval-ms service-id->router-id->metrics make-inter-router-requests-fn
-   router-id service-id]
+  [instance-rpc-chan reserve-timeout-ms offer-help-interval-ms service-id->router-id->metrics
+   make-inter-router-requests-fn router-id service-id]
   (log/info "starting work-stealing balancer for" service-id)
   (letfn [(reserve-instance-fn
             [reservation-parameters response-chan]
@@ -219,10 +219,10 @@
                                                                      (utils/map->json-response)
                                                                      :body)
                                                            :method :post)
-                            (get target-router-id))
+                            (get target-router-id)
+                            async/<!)
                         response-result (if (and inter-router-response (<= 200 status 299))
                                           (-> inter-router-response
-                                              async/<!
                                               response->body
                                               async/<! ;; rely on http client library to close the body
                                               str
