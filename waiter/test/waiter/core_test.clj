@@ -1099,3 +1099,14 @@
 
       (testing "require-authentication"
         (is (= {:source :spnego-handler} (request-handler {:headers {}})))))))
+
+(deftest test-waiter-request?-fn
+  (testing "string hostname config"
+    (let [config {:settings {:hostname "waiter-host"}}
+          waiter-request?-fn ((:waiter-request?-fn routines) config)]
+      (is (waiter-request?-fn {:headers {"host" "waiter-host"}}))))
+  (testing "list hostname config"
+    (let [config {:settings {:hostname ["waiter-host-1" "waiter-host-2"]}}
+          waiter-request?-fn ((:waiter-request?-fn routines) config)]
+      (is (waiter-request?-fn {:headers {"host" "waiter-host-1"}}))
+      (is (waiter-request?-fn {:headers {"host" "waiter-host-2"}})))))

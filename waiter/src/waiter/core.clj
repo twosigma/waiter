@@ -700,8 +700,12 @@
    :waiter-request?-fn (pc/fnk [[:settings hostname]]
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
-                               waiter-router-ip (.getHostAddress local-router)]
-                           (waiter-request?-factory (set [hostname waiter-router-hostname waiter-router-ip]))))
+                               waiter-router-ip (.getHostAddress local-router)
+                               hostnames (if (sequential? hostname)
+                                           (clojure.set/union (set hostname)
+                                                              #{waiter-router-hostname waiter-router-ip})
+                                           (set [hostname waiter-router-hostname waiter-router-ip]))]
+                           (waiter-request?-factory hostnames)))
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
