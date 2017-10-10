@@ -702,9 +702,9 @@
                                waiter-router-hostname (.getCanonicalHostName local-router)
                                waiter-router-ip (.getHostAddress local-router)
                                hostnames (if (sequential? hostname)
-                                           (clojure.set/union (set hostname)
-                                                              #{waiter-router-hostname waiter-router-ip})
-                                           (set [hostname waiter-router-hostname waiter-router-ip]))]
+                                           (set/union (set hostname)
+                                                      #{waiter-router-hostname waiter-router-ip})
+                                           #{hostname waiter-router-hostname waiter-router-ip})]
                            (waiter-request?-factory hostnames)))
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
