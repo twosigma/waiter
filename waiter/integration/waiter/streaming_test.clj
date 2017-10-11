@@ -123,7 +123,7 @@
                               (fn [streaming-timeout-ms]
                                 (* streaming-timeout-ms 8))
                               (constantly 0)
-                              (fn [data-size-in-bytes] (int (/ data-size-in-bytes (* 4 1000))))
+                              (fn [data-size-in-bytes] (quot data-size-in-bytes (* 4 1000)))
                               (fn [total-bytes-read data-size-in-bytes]
                                 (is (< total-bytes-read data-size-in-bytes)))))))))
 
@@ -140,7 +140,7 @@
         (fn [streaming-timeout-ms]
           streaming-timeout-ms)
         (constantly 1)
-        (fn [data-size-in-bytes] (int (/ data-size-in-bytes (* 4 1000))))
+        (fn [data-size-in-bytes] (quot data-size-in-bytes (* 4 1000)))
         (fn [total-bytes-read data-size-in-bytes]
           (is (= total-bytes-read data-size-in-bytes)))))))
 
@@ -162,6 +162,6 @@
                               (fn [streaming-timeout-ms]
                                 (* streaming-timeout-ms 6))
                               (constantly 0)
-                              (fn [data-size-in-bytes] (int (/ data-size-in-bytes (* 4 1000))))
+                              (fn [data-size-in-bytes] (quot data-size-in-bytes (* 4 1000)))
                               (fn [total-bytes-read data-size-in-bytes]
                                 (is (< total-bytes-read data-size-in-bytes)))))))))
