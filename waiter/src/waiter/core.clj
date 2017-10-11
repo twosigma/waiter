@@ -701,10 +701,11 @@
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
                                waiter-router-ip (.getHostAddress local-router)
+                               ;; use (set [...]) instead of #{...} below as there may be duplicate values
                                hostnames (if (sequential? hostname)
                                            (set/union (set hostname)
-                                                      #{waiter-router-hostname waiter-router-ip})
-                                           #{hostname waiter-router-hostname waiter-router-ip})]
+                                                      (set [waiter-router-hostname waiter-router-ip]))
+                                           (set [hostname waiter-router-hostname waiter-router-ip]))]
                            (waiter-request?-factory hostnames)))
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
