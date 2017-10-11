@@ -13,6 +13,7 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [clojure.walk :as walk]
             [slingshot.slingshot :as ss]
             [waiter.marathon :refer :all]
             [waiter.marathon-api :as apps]
@@ -460,13 +461,14 @@
 (deftest test-retrieve-log-url
   (let [instance-id "service-id-1.instance-id-2"
         host "www.example.com"
-        mesos-agent-port 5051
+        mesos-slave-port 5051
         marathon-api (Object.)]
-    (with-redefs [apps/agent-state (fn [in-marathon-api in-host in-port]
-                                     (is (= marathon-api in-marathon-api))
-                                     (is (= host in-host))
-                                     (is (= mesos-agent-port in-port))
-                                     (let [response-body "
+    (with-redefs [apps/mesos-slave-state
+                  (fn [in-marathon-api in-host in-port]
+                    (is (= marathon-api in-marathon-api))
+                    (is (= host in-host))
+                    (is (= mesos-slave-port in-port))
+                    (let [response-body "
                                    {
                                     \"frameworks\": [{
                                                    \"role\": \"marathon\",
@@ -480,27 +482,28 @@
                                                                   }]
                                                    }]
                                     }"]
-                                       (json/read-str response-body)))]
-      (is (= "/path/to/instance2/directory" (retrieve-log-url marathon-api mesos-agent-port instance-id host))))))
+                      (-> response-body json/read-str walk/keywordize-keys)))]
+      (is (= "/path/to/instance2/directory" (retrieve-log-url marathon-api mesos-slave-port instance-id host))))))
 
 (deftest test-retrieve-directory-content-from-host
   (let [service-id "service-id-1"
         instance-id "service-id-1.instance-id-2"
         host "www.example.com"
-        mesos-agent-port 5051
+        mesos-slave-port 5051
         directory "/path/to/instance2/directory"
         marathon-api (Object.)]
-    (with-redefs [apps/agent-directory-content (fn [in-marathon-api in-host in-port in-directory]
-                                                 (is (= marathon-api in-marathon-api))
-                                                 (is (= host in-host))
-                                                 (is (= mesos-agent-port in-port))
-                                                 (is (= directory in-directory))
-                                                 (let [response-body "
+    (with-redefs [apps/mesos-slave-directory-content
+                  (fn [in-marathon-api in-host in-port in-directory]
+                    (is (= marathon-api in-marathon-api))
+                    (is (= host in-host))
+                    (is (= mesos-slave-port in-port))
+                    (is (= directory in-directory))
+                    (let [response-body "
                                    [{\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil1\", \"size\": 1000},
                                     {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir2\", \"size\": 2000},
                                     {\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil3\", \"size\": 3000},
                                     {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir4\", \"size\": 4000}]"]
-                                                   (json/read-str response-body)))]
+                      (-> response-body json/read-str walk/keywordize-keys)))]
       (let [expected-result (list {:name "fil1"
                                    :size 1000
                                    :type "file"
@@ -517,7 +520,7 @@
                                    :size 4000
                                    :type "directory"
                                    :path "/path/to/instance2/directory/dir4"})]
-        (is (= expected-result (retrieve-directory-content-from-host marathon-api mesos-agent-port service-id instance-id host directory)))))))
+        (is (= expected-result (retrieve-directory-content-from-host marathon-api mesos-slave-port service-id instance-id host directory)))))))
 
 (deftest test-marathon-descriptor
   (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
@@ -839,9 +842,9 @@
 (deftest test-extract-deployment-info
   (let [marathon-api (Object.)]
     (with-redefs [apps/get-deployments (constantly [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
-                                                  {"affectedApps" "waiter-app-4567", "id" "4567", "version" "v4567"}
-                                                  {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}
-                                                  {"affectedApps" "waiter-app-4321", "id" "4321", "version" "v4321"}])]
+                                                    {"affectedApps" "waiter-app-4567", "id" "4567", "version" "v4567"}
+                                                    {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}
+                                                    {"affectedApps" "waiter-app-4321", "id" "4321", "version" "v4321"}])]
       (testing "no deployments entry"
         (let [response {:body "{\"message\": \"App is locked by one or more deployments.\"}"}]
           (is (not (extract-deployment-info marathon-api response)))))

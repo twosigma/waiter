@@ -63,7 +63,7 @@
                                   :idle-timeout (:socket-timeout http-options)})]
     (->MarathonApi http-client url (:spnego-auth http-options))))
 
-(defn agent-directory-content
+(defn mesos-slave-directory-content
   "Lists files and directories contained in the path."
   [{:keys [http-client spnego-auth]} host port directory]
   (http-request http-client (str "http://" host ":" port "/files/browse")
@@ -72,7 +72,7 @@
                 :spnego-auth spnego-auth
                 :throw-exceptions false))
 
-(defn agent-state
+(defn mesos-slave-state
   "Returns information about the frameworks, executors and the agent’s master."
   [{:keys [http-client spnego-auth]} host port]
   (http-request http-client (str "http://" host ":" port "/state.json")

@@ -14,6 +14,7 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [clojure.walk :as walk]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as auth]
@@ -289,20 +290,22 @@
         (is (= status 400))
         (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"])))))
 
-    (with-redefs [apps/agent-directory-content (fn [_ in-host in-port in-directory]
-                                                 (is (= "test.host.com" in-host))
-                                                 (is (= 5051 in-port))
-                                                 (is (str/starts-with? in-directory "/path/to/instance"))
-                                                 (let [file-browse-response-body "
+    (with-redefs [apps/mesos-slave-directory-content
+                  (fn [_ in-host in-port in-directory]
+                    (is (= "test.host.com" in-host))
+                    (is (= 5051 in-port))
+                    (is (str/starts-with? in-directory "/path/to/instance"))
+                    (let [file-browse-response-body "
                                    [{\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil1\", \"size\": 1000},
                                     {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir2\", \"size\": 2000},
                                     {\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil3\", \"size\": 3000},
                                     {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir4\", \"size\": 4000}]"]
-                                                   (json/read-str file-browse-response-body)))
-                  apps/agent-state (fn [_ in-host in-port]
-                                     (is (= "test.host.com" in-host))
-                                     (is (= 5051 in-port))
-                                     (let [state-json-response-body "
+                      (-> file-browse-response-body json/read-str walk/keywordize-keys)))
+                  apps/mesos-slave-state
+                  (fn [_ in-host in-port]
+                    (is (= "test.host.com" in-host))
+                    (is (= 5051 in-port))
+                    (let [state-json-response-body "
                                    {
                                     \"frameworks\": [{
                                                    \"role\": \"marathon\",
@@ -316,7 +319,7 @@
                                                                   }]
                                                    }]
                                     }"]
-                                       (json/read-str state-json-response-body)))]
+                      (-> state-json-response-body json/read-str walk/keywordize-keys)))]
       (testing "Missing directory"
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}

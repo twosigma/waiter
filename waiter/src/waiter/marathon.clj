@@ -14,7 +14,6 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [clojure.walk :as walk]
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
             [waiter.marathon-api :as apps]
@@ -113,15 +112,16 @@
 
 (defn response-data->service-instances
   "Extracts the list of instances for a given app from the marathon response."
-  [marathon-response service-keys retrieve-framework-id-fn agent-directory service-id->failed-instances-transient-store]
+  [marathon-response service-keys retrieve-framework-id-fn slave-directory service-id->failed-instances-transient-store]
   (let [service-id (remove-slash-prefix (get-in marathon-response (conj service-keys :id)))
         framework-id (retrieve-framework-id-fn)
         common-extractor-fn (fn [instance-id marathon-task-response]
                               (let [{:keys [appId host message slaveId]} marathon-task-response
-                                    log-directory (str agent-directory "/" slaveId "/frameworks/" framework-id "/executors/" instance-id "/runs/latest")]
+                                    log-directory (str slave-directory "/" slaveId "/frameworks/" framework-id
+                                                       "/executors/" instance-id "/runs/latest")]
                                 (cond-> {:service-id (remove-slash-prefix appId)
                                          :host host}
-                                        (and agent-directory framework-id slaveId)
+                                        (and slave-directory framework-id slaveId)
                                         (assoc :log-directory log-directory)
 
                                         message
@@ -187,11 +187,11 @@
 
 (defn response-data->service->service-instances
   "Extracts the list of instances for a given app from the marathon apps-list."
-  [apps-list retrieve-framework-id-fn agent-directory service-id->failed-instances-transient-store]
+  [apps-list retrieve-framework-id-fn slave-directory service-id->failed-instances-transient-store]
   (let [service->service-instances (zipmap
                                      (map response->Service apps-list)
                                      (map #(response-data->service-instances
-                                             % [] retrieve-framework-id-fn agent-directory
+                                             % [] retrieve-framework-id-fn slave-directory
                                              service-id->failed-instances-transient-store)
                                           apps-list))]
     (scheduler/preserve-only-killed-instances-for-services! (map :id (keys service->service-instances)))
@@ -233,10 +233,10 @@
 
 (defn retrieve-log-url
   "Retrieve the directory path for the specified instance running on the specified host."
-  [marathon-api mesos-agent-port instance-id host]
+  [marathon-api mesos-slave-port instance-id host]
   (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
   (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
-  (let [response-parsed (walk/keywordize-keys (apps/agent-state marathon-api host mesos-agent-port))
+  (let [response-parsed (apps/mesos-slave-state marathon-api host mesos-slave-port)
         frameworks (concat (:completed_frameworks response-parsed) (:frameworks response-parsed))
         marathon-framework (first (filter #(or (= (:role %) "marathon") (= (:name %) "marathon")) frameworks))
         marathon-executors (concat (:completed_executors marathon-framework) (:executors marathon-framework))
@@ -245,24 +245,24 @@
 
 (defn retrieve-directory-content-from-host
   "Retrieve the content of the directory for the given instance on the specified host"
-  [marathon-api mesos-agent-port service-id instance-id host directory]
+  [marathon-api mesos-slave-port service-id instance-id host directory]
   (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {})))
   (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
   (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
   (when (str/blank? directory) (throw (ex-info "No directory found for instance!" {})))
-  (let [response-parsed (walk/keywordize-keys (apps/agent-directory-content marathon-api host mesos-agent-port directory))]
+  (let [response-parsed (apps/mesos-slave-directory-content marathon-api host mesos-slave-port directory)]
     (map (fn [entry]
            (merge {:name (subs (:path entry) (inc (count directory)))
                    :size (:size entry)}
                   (if (= (:nlink entry) 1)
                     {:type "file"
-                     :url (str "http://" host ":" mesos-agent-port "/files/download?path=" (:path entry))}
+                     :url (str "http://" host ":" mesos-slave-port "/files/download?path=" (:path entry))}
                     {:type "directory"
                      :path (:path entry)})))
          response-parsed)))
 
-(defrecord MarathonScheduler [marathon-api mesos-agent-port retrieve-framework-id-fn
-                              agent-directory home-path-prefix service-id->failed-instances-transient-store
+(defrecord MarathonScheduler [marathon-api mesos-slave-port retrieve-framework-id-fn
+                              slave-directory home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store force-kill-after-ms is-waiter-app?-fn]
 
   scheduler/ServiceScheduler
@@ -270,7 +270,7 @@
   (get-apps->instances [_]
     (let [apps (get-apps marathon-api is-waiter-app?-fn)]
       (response-data->service->service-instances
-        apps retrieve-framework-id-fn agent-directory
+        apps retrieve-framework-id-fn slave-directory
         service-id->failed-instances-transient-store)))
 
   (get-apps [_]
@@ -281,7 +281,7 @@
       (scheduler/retry-on-transient-server-exceptions
         (str "get-instances[" service-id "]")
         (let [marathon-response (apps/get-app marathon-api service-id)]
-          (response-data->service-instances marathon-response [:app] retrieve-framework-id-fn agent-directory
+          (response-data->service-instances marathon-response [:app] retrieve-framework-id-fn slave-directory
                                             service-id->failed-instances-transient-store)))
       (catch [:status 404] {}
         (log/warn "get-instances: service" service-id "does not exist!"))))
@@ -374,9 +374,9 @@
         (log/debug (:throwable &throw-context) "[autoscaler] Marathon unavailable"))))
 
   (retrieve-directory-content [_ service-id instance-id host directory]
-    (when mesos-agent-port
-      (let [log-directory (or directory (retrieve-log-url marathon-api mesos-agent-port instance-id host))]
-        (retrieve-directory-content-from-host marathon-api mesos-agent-port service-id instance-id host log-directory))))
+    (when mesos-slave-port
+      (let [log-directory (or directory (retrieve-log-url marathon-api mesos-slave-port instance-id host))]
+        (retrieve-directory-content-from-host marathon-api mesos-slave-port service-id instance-id host log-directory))))
 
   (service-id->state [_ service-id]
     {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)

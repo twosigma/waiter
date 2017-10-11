@@ -80,17 +80,17 @@
                                                                              (str marathon-url expected-url))]
                                                  (is (= expected-absolute-url in-request-url)))))]
 
-        (testing "agent-directory-content"
+        (testing "mesos-slave-directory-content"
           (let [host "www.host.com"
                 port 9876]
             (with-redefs [http-request (assert-endpoint-request-method :get (str "http://" host ":" port "/files/browse"))]
-              (agent-directory-content marathon-api host port "/some/directory"))))
+              (mesos-slave-directory-content marathon-api host port "/some/directory"))))
 
-        (testing "agent-state"
+        (testing "mesos-slave-state"
           (let [host "www.host.com"
                 port 9876]
             (with-redefs [http-request (assert-endpoint-request-method :get (str "http://" host ":" port "/state.json"))]
-              (agent-state marathon-api host port))))
+              (mesos-slave-state marathon-api host port))))
 
         (testing "create-app"
           (with-redefs [http-request (assert-endpoint-request-method :post "/v2/apps")]
