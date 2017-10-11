@@ -495,15 +495,7 @@
   [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request]
   (async/go
     (try
-      (let [embed-param (-> request
-                            ring-params/params-request
-                            :params
-                            (get "embed"))
-            embed-pred (cond
-                         (string? embed-param) #{embed-param}
-                         (sequential? embed-param) (set embed-param)
-                         :else (constantly true))
-            timeout-ms 30000
+      (let [timeout-ms 30000
             current-state (async/alt!
                             state-chan ([state-data] state-data)
                             (async/timeout timeout-ms) ([_] {:message "Query for router state timed out"})
@@ -516,12 +508,12 @@
                                              response-chan ([state] state)
                                              (async/timeout timeout-ms) ([_] {:message "Query for scheduler state timed out"})
                                              :priority true))))]
-        (-> (cond-> current-state
-                    (embed-pred "kv-store") (assoc :kv-store (kv/state kv-store))
-                    (embed-pred "leader") (assoc :leader (leader?-fn))
-                    (embed-pred "router-metrics-state") (assoc :router-metrics-state (router-metrics-state-fn))
-                    (embed-pred "scheduler") (assoc :scheduler (async/<! (retrieve-scheduler-state)))
-                    (embed-pred "statsd") (assoc :statsd (statsd/state)))
+        (-> current-state
+            (assoc :kv-store (kv/state kv-store)
+                   :leader (leader?-fn)
+                   :router-metrics-state (router-metrics-state-fn)
+                   :scheduler (async/<! (retrieve-scheduler-state))
+                   :statsd (statsd/state))
             (utils/map->streaming-json-response)))
       (catch Exception ex
         (utils/exception->response ex request)))))

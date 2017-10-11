@@ -677,21 +677,6 @@
                 {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
             (is (every? #(str/includes? (str body) %1) ["kv-store", "leader", "router-metrics-state", "scheduler", "state-data", "statsd"])
                 (str "Body did not include necessary JSON keys:\n" body))
-            (is (= 200 status))))
-
-        (doseq [embed-param ["kv-store" "leader" "router-metrics-state" "scheduler" "statsd"]]
-          (testing (str "display router state - embed " embed-param)
-            (let [request {:query-string (str "embed=" embed-param)}
-                  {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
-              (is (every? #(str/includes? (str body) %1) [embed-param, "state-data"])
-                  (str "Body did not include necessary JSON keys:\n" body))
-              (is (= 200 status)))))
-
-        (testing "display router state - embed scheduler - multiple"
-          (let [request {:query-string "embed=leader&embed=router-metrics-state&embed=scheduler"}
-                {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
-            (is (every? #(str/includes? (str body) %1) ["leader", "router-metrics-state", "scheduler", "state-data"])
-                (str "Body did not include necessary JSON keys:\n" body))
             (is (= 200 status)))))
 
       (finally
