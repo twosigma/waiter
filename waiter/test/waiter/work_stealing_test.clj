@@ -10,7 +10,9 @@
 ;;
 (ns waiter.work-stealing-test
   (:require [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.test :refer :all]
+            [clojure.walk :as walk]
             [waiter.utils :as utils]
             [waiter.test-helpers]
             [waiter.work-stealing :refer :all]))
@@ -300,3 +302,78 @@
       (is (not (contains? @released-instances-atom "test-instance-id-8")))
 
       (async/>!! exit-chan :exit))))
+
+(deftest test-start-work-stealing-balancer-offer-help-fn
+  (let [offer-help-fn-atom (atom nil)
+        router-id "test-router-id"
+        target-router-id "target-router-id"
+        service-id "test-service-id"
+        request-id "test-request-id"
+        instance-rpc-chan (async/chan 100)
+        reserve-timeout-ms 1000
+        offer-help-interval-ms 1000
+        service-id->router-id->metrics {}
+        make-inter-router-requests-fn-factory (fn [status response-map]
+                                                (fn [endpoint & {:keys [acceptable-router? body method]}]
+                                                  (is (= "work-stealing" endpoint))
+                                                  (is (acceptable-router? target-router-id))
+                                                  (is (not (acceptable-router? router-id)))
+                                                  (is (= (walk/stringify-keys
+                                                           {:request-id request-id
+                                                            :router-id router-id
+                                                            :service-id service-id
+                                                            :target-router-id target-router-id})
+                                                         (json/read-str body)))
+                                                  (is (= :post method))
+                                                  (let [response-chan (async/promise-chan)
+                                                        body-chan (async/promise-chan)]
+                                                    (async/>!! body-chan (json/write-str response-map))
+                                                    (async/>!! response-chan {:body body-chan, :status status})
+                                                    {target-router-id response-chan})))]
+    (with-redefs [work-stealing-balancer
+                  (fn [_ _ _ _ _ offer-help-fn _ _]
+                    (reset! offer-help-fn-atom offer-help-fn))]
+
+      (testing "2XX response - missing status"
+        (let [make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {})]
+          (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms service-id->router-id->metrics
+                                        make-inter-router-requests-fn router-id service-id)
+          (is @offer-help-fn-atom)
+          (let [offer-help-fn @offer-help-fn-atom
+                reservation-parameters {:request-id request-id :target-router-id target-router-id}
+                cleanup-chan (async/chan 1)]
+            (offer-help-fn reservation-parameters cleanup-chan)
+            (is (= {:request-id request-id, :status :work-stealing-error} (async/<!! cleanup-chan))))))
+
+      (testing "2XX response - success"
+        (let [make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {:response-status "successful"})]
+          (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms service-id->router-id->metrics
+                                        make-inter-router-requests-fn router-id service-id)
+          (is @offer-help-fn-atom)
+          (let [offer-help-fn @offer-help-fn-atom
+                reservation-parameters {:request-id request-id :target-router-id target-router-id}
+                cleanup-chan (async/chan 1)]
+            (offer-help-fn reservation-parameters cleanup-chan)
+            (is (= {:request-id request-id, :status :successful} (async/<!! cleanup-chan))))))
+
+      (testing "2XX response - failure"
+        (let [make-inter-router-requests-fn (make-inter-router-requests-fn-factory 200 {:response-status "failure"})]
+          (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms service-id->router-id->metrics
+                                        make-inter-router-requests-fn router-id service-id)
+          (is @offer-help-fn-atom)
+          (let [offer-help-fn @offer-help-fn-atom
+                reservation-parameters {:request-id request-id :target-router-id target-router-id}
+                cleanup-chan (async/chan 1)]
+            (offer-help-fn reservation-parameters cleanup-chan)
+            (is (= {:request-id request-id, :status :failure} (async/<!! cleanup-chan))))))
+
+      (testing "4XX response - failure"
+        (let [make-inter-router-requests-fn (make-inter-router-requests-fn-factory 400 {:response-status "failure"})]
+          (start-work-stealing-balancer instance-rpc-chan reserve-timeout-ms offer-help-interval-ms service-id->router-id->metrics
+                                        make-inter-router-requests-fn router-id service-id)
+          (is @offer-help-fn-atom)
+          (let [offer-help-fn @offer-help-fn-atom
+                reservation-parameters {:request-id request-id :target-router-id target-router-id}
+                cleanup-chan (async/chan 1)]
+            (offer-help-fn reservation-parameters cleanup-chan)
+            (is (= {:request-id request-id, :status :work-stealing-error} (async/<!! cleanup-chan)))))))))
