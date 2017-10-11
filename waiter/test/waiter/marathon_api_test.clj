@@ -64,58 +64,88 @@
                                      response-chan))]
         (is (thrown? ExceptionInfo (http-request http-client "some-url")))))))
 
+(deftest test-mesos-api
+  (let [http-client (Object.)
+        marathon-url "http://www.marathon.com:1234"
+        slave-port 9876
+        slave-directory "/some/directory"
+        mesos-api (mesos-api-factory http-client {} slave-port slave-directory)
+        assert-endpoint-request-method (fn [expected-method expected-url]
+                                         (fn [in-http-client in-request-url & {:keys [request-method]}]
+                                           (is (= http-client in-http-client))
+                                           (is (= expected-method request-method))
+                                           (let [expected-absolute-url (if (str/starts-with? expected-url "http://")
+                                                                         expected-url
+                                                                         (str marathon-url expected-url))]
+                                             (is (= expected-absolute-url in-request-url)))))]
+
+    (testing "mesos-directory-path"
+      (let [slave-id "salve-is"
+            framework-id "framework-id"
+            instance-id "instance-id"]
+        (is (= (str slave-directory "/" slave-id "/frameworks/" framework-id "/executors/" instance-id "/runs/latest")
+               (mesos-directory-path mesos-api slave-id framework-id instance-id)))
+        (is (nil? (mesos-directory-path mesos-api nil framework-id instance-id)))
+        (is (nil? (mesos-directory-path mesos-api slave-id nil instance-id)))
+        (is (nil? (mesos-directory-path mesos-api slave-id framework-id nil)))))
+
+    (testing "mesos-slave-directory-content"
+      (let [host "www.host.com"]
+        (with-redefs [http-request (assert-endpoint-request-method :get (str "http://" host ":" slave-port "/files/browse"))]
+          (mesos-slave-directory-content mesos-api host "/some/directory"))))
+
+    (testing "mesos-slave-directory-link"
+      (let [host "www.host.com"
+            directory "/some/directory/instance-1/runs"]
+        (is (= (str "http://" host ":" slave-port "/files/download?path=" directory)
+               (mesos-slave-directory-link mesos-api host directory)))
+        (is (nil? (mesos-slave-directory-link mesos-api nil directory)))
+        (is (nil? (mesos-slave-directory-link mesos-api host nil)))))
+
+    (testing "mesos-slave-state"
+      (let [host "www.host.com"]
+        (with-redefs [http-request (assert-endpoint-request-method :get (str "http://" host ":" slave-port "/state.json"))]
+          (mesos-slave-state mesos-api host))))))
+
 (deftest test-marathon-rest-api-endpoints
-  (let [http-client (Object.)]
-    (with-redefs [http/client (constantly http-client)]
-      (let [marathon-url "http://www.marathon.com:1234"
-            app-id "test-app-id"
-            task-id "test-app-id.test-task-id"
-            marathon-api (marathon-rest-api-factory {} marathon-url)
-            assert-endpoint-request-method (fn [expected-method expected-url]
-                                             (fn [in-http-client in-request-url & {:keys [request-method]}]
-                                               (is (= http-client in-http-client))
-                                               (is (= expected-method request-method))
-                                               (let [expected-absolute-url (if (str/starts-with? expected-url "http://")
-                                                                             expected-url
-                                                                             (str marathon-url expected-url))]
-                                                 (is (= expected-absolute-url in-request-url)))))]
+  (let [http-client (Object.)
+        marathon-url "http://www.marathon.com:1234"
+        app-id "test-app-id"
+        task-id "test-app-id.test-task-id"
+        marathon-api (marathon-rest-api-factory http-client {} marathon-url)
+        assert-endpoint-request-method (fn [expected-method expected-url]
+                                         (fn [in-http-client in-request-url & {:keys [request-method]}]
+                                           (is (= http-client in-http-client))
+                                           (is (= expected-method request-method))
+                                           (let [expected-absolute-url (if (str/starts-with? expected-url "http://")
+                                                                         expected-url
+                                                                         (str marathon-url expected-url))]
+                                             (is (= expected-absolute-url in-request-url)))))]
 
-        (testing "mesos-slave-directory-content"
-          (let [host "www.host.com"
-                port 9876]
-            (with-redefs [http-request (assert-endpoint-request-method :get (str "http://" host ":" port "/files/browse"))]
-              (mesos-slave-directory-content marathon-api host port "/some/directory"))))
+    (testing "create-app"
+      (with-redefs [http-request (assert-endpoint-request-method :post "/v2/apps")]
+        (create-app marathon-api {})))
 
-        (testing "mesos-slave-state"
-          (let [host "www.host.com"
-                port 9876]
-            (with-redefs [http-request (assert-endpoint-request-method :get (str "http://" host ":" port "/state.json"))]
-              (mesos-slave-state marathon-api host port))))
+    (testing "delete-app"
+      (with-redefs [http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id))]
+        (delete-app marathon-api app-id)))
 
-        (testing "create-app"
-          (with-redefs [http-request (assert-endpoint-request-method :post "/v2/apps")]
-            (create-app marathon-api {})))
+    (testing "get-apps"
+      (with-redefs [http-request (assert-endpoint-request-method :get "/v2/apps")]
+        (get-apps marathon-api)))
 
-        (testing "delete-app"
-          (with-redefs [http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id))]
-            (delete-app marathon-api app-id)))
+    (testing "get-deployments"
+      (with-redefs [http-request (assert-endpoint-request-method :get "/v2/deployments")]
+        (get-deployments marathon-api)))
 
-        (testing "get-apps"
-          (with-redefs [http-request (assert-endpoint-request-method :get "/v2/apps")]
-            (get-apps marathon-api)))
+    (testing "get-info"
+      (with-redefs [http-request (assert-endpoint-request-method :get "/v2/info")]
+        (get-info marathon-api)))
 
-        (testing "get-deployments"
-          (with-redefs [http-request (assert-endpoint-request-method :get "/v2/deployments")]
-            (get-deployments marathon-api)))
+    (testing "kill-task"
+      (with-redefs [http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id "/tasks/" task-id))]
+        (kill-task marathon-api app-id task-id false true)))
 
-        (testing "get-info"
-          (with-redefs [http-request (assert-endpoint-request-method :get "/v2/info")]
-            (get-info marathon-api)))
-
-        (testing "kill-task"
-          (with-redefs [http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id "/tasks/" task-id))]
-            (kill-task marathon-api app-id task-id false true)))
-
-        (testing "update-app"
-          (with-redefs [http-request (assert-endpoint-request-method :put (str "/v2/apps/" app-id))]
-            (update-app marathon-api app-id {})))))))
+    (testing "update-app"
+      (with-redefs [http-request (assert-endpoint-request-method :put (str "/v2/apps/" app-id))]
+        (update-app marathon-api app-id {})))))

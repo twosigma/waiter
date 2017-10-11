@@ -231,7 +231,7 @@
                                 marathon-response
                                 [:app]
                                 (fn [] framework-id)
-                                "/slave-dir"
+                                {:slave-directory "/slave-dir"}
                                 service-id->failed-instances-transient-store)]
           (is (= expected-response actual-response) (str name))
           (scheduler/preserve-only-killed-instances-for-services! [])
@@ -461,13 +461,11 @@
 (deftest test-retrieve-log-url
   (let [instance-id "service-id-1.instance-id-2"
         host "www.example.com"
-        mesos-slave-port 5051
-        marathon-api (Object.)]
+        mesos-api (Object.)]
     (with-redefs [apps/mesos-slave-state
-                  (fn [in-marathon-api in-host in-port]
-                    (is (= marathon-api in-marathon-api))
+                  (fn [in-mesos-api in-host]
+                    (is (= mesos-api in-mesos-api))
                     (is (= host in-host))
-                    (is (= mesos-slave-port in-port))
                     (let [response-body "
                                    {
                                     \"frameworks\": [{
@@ -483,7 +481,7 @@
                                                    }]
                                     }"]
                       (-> response-body json/read-str walk/keywordize-keys)))]
-      (is (= "/path/to/instance2/directory" (retrieve-log-url marathon-api mesos-slave-port instance-id host))))))
+      (is (= "/path/to/instance2/directory" (retrieve-log-url mesos-api instance-id host))))))
 
 (deftest test-retrieve-directory-content-from-host
   (let [service-id "service-id-1"
@@ -491,12 +489,11 @@
         host "www.example.com"
         mesos-slave-port 5051
         directory "/path/to/instance2/directory"
-        marathon-api (Object.)]
+        mesos-api (apps/mesos-api-factory (Object.) {} mesos-slave-port directory)]
     (with-redefs [apps/mesos-slave-directory-content
-                  (fn [in-marathon-api in-host in-port in-directory]
-                    (is (= marathon-api in-marathon-api))
+                  (fn [in-mesos-api in-host in-directory]
+                    (is (= mesos-api in-mesos-api))
                     (is (= host in-host))
-                    (is (= mesos-slave-port in-port))
                     (is (= directory in-directory))
                     (let [response-body "
                                    [{\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil1\", \"size\": 1000},
@@ -520,7 +517,7 @@
                                    :size 4000
                                    :type "directory"
                                    :path "/path/to/instance2/directory/dir4"})]
-        (is (= expected-result (retrieve-directory-content-from-host marathon-api mesos-slave-port service-id instance-id host directory)))))))
+        (is (= expected-result (retrieve-directory-content-from-host mesos-api service-id instance-id host directory)))))))
 
 (deftest test-marathon-descriptor
   (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
@@ -569,7 +566,7 @@
   (let [current-time (t/now)
         service-id "service-1"
         instance-id "service-1.A"
-        make-marathon-scheduler #(->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        make-marathon-scheduler #(->MarathonScheduler {} {} (fn [] nil) "/home/path/"
                                                       (atom {}) %1 %2 (constantly true))
         successful-kill-result {:instance-id instance-id :killed? true :service-id service-id}
         failed-kill-result {:instance-id instance-id :killed? false :service-id service-id}]
@@ -621,7 +618,7 @@
 
 (deftest test-service-id->state
   (let [service-id "service-id"
-        marathon-scheduler (->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        marathon-scheduler (->MarathonScheduler {} {} (fn [] nil) "/home/path/"
                                                 (atom {service-id [:failed-instances]})
                                                 (atom {service-id :kill-call-info})
                                                 100 (constantly true))
@@ -632,7 +629,7 @@
   (let [current-time (t/now)
         current-time-str (utils/date-to-str current-time)
         marathon-api (Object.)
-        marathon-scheduler (->MarathonScheduler marathon-api 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        marathon-scheduler (->MarathonScheduler marathon-api {} (fn [] nil) "/home/path/"
                                                 (atom {}) (atom {}) 60000 (constantly true))
         make-instance (fn [service-id instance-id]
                         {:id instance-id
@@ -822,7 +819,7 @@
                (process-kill-instance-request marathon-api service-id instance-id {})))))))
 
 (deftest test-delete-app
-  (let [scheduler (->MarathonScheduler {} nil nil nil nil (atom {}) (atom {}) nil nil)]
+  (let [scheduler (->MarathonScheduler {} {} nil nil (atom {}) (atom {}) nil nil)]
 
     (with-redefs [apps/delete-app (constantly {:deploymentId 12345})]
       (is (= {:result :deleted

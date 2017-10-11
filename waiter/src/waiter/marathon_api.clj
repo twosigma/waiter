@@ -54,31 +54,56 @@
         json/read-str
         walk/keywordize-keys)))
 
-(defrecord MarathonApi [^HttpClient http-client ^String marathon-url spnego-auth])
+(defn http-client-factory
+  "Creates a HttpClient."
+  [{:keys [conn-timeout socket-timeout]}]
+  (http/client {:connect-timeout conn-timeout, :idle-timeout socket-timeout}))
 
-(defn marathon-rest-api-factory
-  "Factory method for MarathonApi."
-  [http-options url]
-  (let [http-client (http/client {:connect-timeout (:conn-timeout http-options)
-                                  :idle-timeout (:socket-timeout http-options)})]
-    (->MarathonApi http-client url (:spnego-auth http-options))))
+
+(defrecord MesosApi [^HttpClient http-client spnego-auth slave-port slave-directory])
+
+(defn mesos-api-factory
+  "Factory method for MesosApi."
+  [http-client {:keys [spnego-auth]} slave-port slave-directory]
+  (->MesosApi http-client spnego-auth slave-port slave-directory))
+
+(defn mesos-directory-path
+  "Builds the sandbox directory path of the instance on a Mesos agent."
+  [{:keys [slave-directory]} slave-id framework-id instance-id]
+  (when (and slave-directory slave-id framework-id instance-id)
+    (str slave-directory "/" slave-id "/frameworks/" framework-id "/executors/" instance-id "/runs/latest")))
 
 (defn mesos-slave-directory-content
   "Lists files and directories contained in the path."
-  [{:keys [http-client spnego-auth]} host port directory]
-  (http-request http-client (str "http://" host ":" port "/files/browse")
+  [{:keys [http-client slave-port spnego-auth]} host directory]
+  (http-request http-client (str "http://" host ":" slave-port "/files/browse")
                 :query-string {"path" directory}
                 :request-method :get
                 :spnego-auth spnego-auth
                 :throw-exceptions false))
 
+(defn mesos-slave-directory-link
+  "Generates a download link to the directory on the specified mesos agent."
+  [{:keys [slave-port]} host directory]
+  (when (and slave-port host directory)
+    (str "http://" host ":" slave-port "/files/download?path=" directory)))
+
 (defn mesos-slave-state
   "Returns information about the frameworks, executors and the agent’s master."
-  [{:keys [http-client spnego-auth]} host port]
-  (http-request http-client (str "http://" host ":" port "/state.json")
-                :request-method :get
-                :spnego-auth spnego-auth
-                :throw-exceptions false))
+  [{:keys [http-client slave-port spnego-auth]} host]
+  (when (and slave-port host)
+    (http-request http-client (str "http://" host ":" slave-port "/state.json")
+                  :request-method :get
+                  :spnego-auth spnego-auth
+                  :throw-exceptions false)))
+
+
+(defrecord MarathonApi [^HttpClient http-client ^String marathon-url spnego-auth])
+
+(defn marathon-rest-api-factory
+  "Factory method for MarathonApi."
+  [http-client {:keys [spnego-auth]} url]
+  (->MarathonApi http-client url spnego-auth))
 
 (defn create-app
   "Create and start a new app specified by the descriptor."

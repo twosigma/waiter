@@ -258,7 +258,7 @@
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id]))))))
 
 (deftest test-service-view-logs-handler
-  (let [scheduler (marathon/->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
+  (let [scheduler (marathon/->MarathonScheduler (Object.) {:slave-port 5051} (fn [] nil) "/home/path/"
                                                 (atom {}) (atom {}) 0 (constantly true))
         configuration {:handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:prepend-waiter-url identity}
@@ -291,9 +291,8 @@
         (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"])))))
 
     (with-redefs [apps/mesos-slave-directory-content
-                  (fn [_ in-host in-port in-directory]
+                  (fn [_ in-host in-directory]
                     (is (= "test.host.com" in-host))
-                    (is (= 5051 in-port))
                     (is (str/starts-with? in-directory "/path/to/instance"))
                     (let [file-browse-response-body "
                                    [{\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil1\", \"size\": 1000},
@@ -302,9 +301,8 @@
                                     {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir4\", \"size\": 4000}]"]
                       (-> file-browse-response-body json/read-str walk/keywordize-keys)))
                   apps/mesos-slave-state
-                  (fn [_ in-host in-port]
+                  (fn [_ in-host]
                     (is (= "test.host.com" in-host))
-                    (is (= 5051 in-port))
                     (let [state-json-response-body "
                                    {
                                     \"frameworks\": [{
