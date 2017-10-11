@@ -428,9 +428,9 @@
                         (assoc current-state :continue-looping false :timeout-chan nil)
                         state-chan
                         (let [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->expired-instances]} args
-                              existing-service-ids-set (set (keys service-id->router-state))
-                              service-ids-set (set/union (-> service-id->healthy-instances (keys) (set))
-                                                         (-> service-id->unhealthy-instances (keys) (set)))
+                              existing-service-ids-set (-> service-id->router-state keys set)
+                              service-ids-set (into (-> service-id->healthy-instances keys set)
+                                                    (-> service-id->unhealthy-instances keys))
                               deleted-service-ids (set/difference existing-service-ids-set service-ids-set)
                               new-service-ids (set/difference service-ids-set existing-service-ids-set)
                               service-id->router-state' (pc/map-from-keys

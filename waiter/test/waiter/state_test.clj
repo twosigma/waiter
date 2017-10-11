@@ -301,7 +301,9 @@
               (is (empty? actual))
               (do
                 (is (every? (fn [[instance-id _]] (some #(= instance-id (:id %)) instances)) actual))
-                (is (every? (fn [[_ router-hash-list]] (= (set routers) (reduce #(conj %1 (first %2)) #{} router-hash-list))) actual))))))))))
+                (is (every? true?
+                            (for [[_ router-hash-list] actual]
+                              (= (set routers) (set (map first router-hash-list))))))))))))))
 
 ;; These tests are enumerated to document the minimum number of cases considered
 (deftest test-allocate-from-available-slots

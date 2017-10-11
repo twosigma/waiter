@@ -362,12 +362,11 @@
   "Queries the scheduler and builds a list of healthy and unhealthy instances for the specified service-id."
   [service-id service-instances]
   (when service-instances
-    (let [healthy-instances (vec (filter :healthy? service-instances))
-          unhealthy-instances (vec (clojure.set/difference (set service-instances) (set healthy-instances)))]
+    (let [{healthy-instances true, unhealthy-instances false} (group-by (comp boolean :healthy?) service-instances)]
       (log/trace "request-instances-for-app" service-id "has" (count healthy-instances) "healthy instance(s)"
                  "and" (count unhealthy-instances) " unhealthy instance(s).")
-      {:healthy-instances healthy-instances
-       :unhealthy-instances unhealthy-instances})))
+      {:healthy-instances (vec healthy-instances)
+       :unhealthy-instances (vec unhealthy-instances)})))
 
 (defn start-health-checks
   "Takes a map from service -> service instances and replaces each active instance with a ref which performs a
