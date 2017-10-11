@@ -948,7 +948,7 @@
                                 (fn [my-instances] (into {} (map (fn [instance] {instance concurrency-level}) my-instances)))
                                 (zipmap
                                   routers
-                                  (let [instances-partition (partition (int (/ (inc (count instances)) (count routers))) instances)]
+                                  (let [instances-partition (partition (quot (inc (count instances)) (count routers)) instances)]
                                     (map #(sort (:id (remove nil? %))) instances-partition)))))
           router-id "router.0"
           routers {router-id (str "http://www." router-id ".com")
@@ -1056,7 +1056,7 @@
                                 (fn [my-instances] (into {} (map (fn [instance] {instance concurrency-level}) my-instances)))
                                 (zipmap
                                   routers
-                                  (let [instances-partition (partition (int (/ (inc (count instances)) (count routers))) instances)]
+                                  (let [instances-partition (partition (quot (inc (count instances)) (count routers)) instances)]
                                     (map #(sort (:id (remove nil? %))) instances-partition)))))
           router-id "router.0"
           routers {router-id (str "http://www." router-id ".com")

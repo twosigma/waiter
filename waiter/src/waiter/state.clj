@@ -886,7 +886,7 @@
                            (assoc instance-id->assigned-slots instance-id 1)))]
     (let [num-instances-with-available-slots (count (filter pos? (vals initial-instance-id->available-slots)))
           min-slots-from-each-instance
-          (if (zero? num-instances-with-available-slots) 0 (int (/ target-slots num-instances-with-available-slots)))
+          (if (zero? num-instances-with-available-slots) 0 (quot target-slots num-instances-with-available-slots))
           initial-instance-id->assigned-slots
           (pc/map-from-keys #(min (get initial-instance-id->available-slots %) min-slots-from-each-instance)
                             (keys initial-instance-id->available-slots))
