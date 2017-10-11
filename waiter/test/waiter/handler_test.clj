@@ -23,6 +23,7 @@
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
+            [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
@@ -681,6 +682,87 @@
 
       (finally
         (reset! test-complete true)))))
+
+(deftest test-get-kv-store-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-handler-json-response get-kv-store-state)]
+    (testing "successful response"
+      (let [kv-store (kv/new-local-kv-store {})
+            state (-> (kv/state kv-store) walk/stringify-keys)
+            {:keys [body status]} (test-fn router-id kv-store {})]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+
+    (testing "exception response"
+      (let [kv-store (Object.)
+            {:keys [body status]} (test-fn router-id kv-store {})]
+        (is (= 500 status))
+        (is (str/includes? body "Waiter Error 500"))))))
+
+(deftest test-get-leader-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-handler-json-response get-leader-state)]
+    (testing "successful response"
+      (let [leader?-fn (constantly true)
+            state {"leader" (leader?-fn)}
+            {:keys [body status]} (test-fn router-id leader?-fn {})]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+
+    (testing "exception response"
+      (let [leader?-fn (fn [] (throw (Exception. "Test Exception")))
+            {:keys [body status]} (test-fn router-id leader?-fn {})]
+        (is (= 500 status))
+        (is (str/includes? body "Waiter Error 500"))))))
+
+(deftest test-get-maintainer-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-async-handler-json-response get-maintainer-state)]
+    (testing "successful response"
+      (let [state-chan (async/promise-chan)
+            state {"foo" "bar"}
+            _ (async/>!! state-chan state)
+            {:keys [body status]} (async/<!! (test-fn router-id state-chan {}))]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+
+(deftest test-get-router-metrics-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-handler-json-response get-router-metrics-state)]
+    (testing "successful response"
+      (let [state {"router-metrics" "foo"}
+            router-metrics-state-fn (constantly state)
+            {:keys [body status]} (test-fn router-id router-metrics-state-fn {})]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+
+    (testing "exception response"
+      (let [router-metrics-state-fn (fn [] (throw (Exception. "Test Exception")))
+            {:keys [body status]} (test-fn router-id router-metrics-state-fn {})]
+        (is (= 500 status))
+        (is (str/includes? body "Waiter Error 500"))))))
+
+(deftest test-get-scheduler-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-async-handler-json-response get-scheduler-state)]
+    (testing "successful response"
+      (let [scheduler-chan (async/promise-chan)
+            state {"foo" "bar"}
+            _ (async/go
+                (let [{:keys [response-chan]} (async/<! scheduler-chan)]
+                  (async/>! response-chan state)))
+            {:keys [body status]} (async/<!! (test-fn router-id scheduler-chan {}))]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+
+(deftest test-get-statsd-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-handler-json-response get-statsd-state)]
+    (testing "successful response"
+      (let [state (-> (statsd/state) walk/stringify-keys)
+            {:keys [body status]} (test-fn router-id {})]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-service-state
   (let [router-id "router-id"

@@ -845,6 +845,18 @@
            (exec-routes-mapper "/sim")))
     (is (= {:handler :display-state-handler-fn}
            (exec-routes-mapper "/state")))
+    (is (= {:handler :display-kv-store-state-handler-fn}
+           (exec-routes-mapper "/state/kv-store")))
+    (is (= {:handler :display-leader-state-handler-fn}
+           (exec-routes-mapper "/state/leader")))
+    (is (= {:handler :display-maintainer-state-handler-fn}
+           (exec-routes-mapper "/state/maintainer")))
+    (is (= {:handler :display-router-metrics-state-handler-fn}
+           (exec-routes-mapper "/state/router-metrics")))
+    (is (= {:handler :display-scheduler-state-handler-fn}
+           (exec-routes-mapper "/state/scheduler")))
+    (is (= {:handler :display-statsd-state-handler-fn}
+           (exec-routes-mapper "/state/statsd")))
     (is (= {:handler :service-state-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/state/test-service")))
     (is (= {:handler :status-handler-fn}

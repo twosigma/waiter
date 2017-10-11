@@ -385,15 +385,27 @@
         state-json (json/read-str state-body)]
     (walk/keywordize-keys state-json)))
 
-(defn router-state [waiter-url & {:keys [cookies] :or {cookies {}}}]
-  (let [state-body (:body (make-request waiter-url "/state" :verbose true :cookies cookies))]
-    (log/debug "router state:" state-body)
+(defn- retrieve-state-helper
+  "Fetches and returns the state at the specified endpoint."
+  [waiter-url endpoint & {:keys [cookies] :or {cookies {}}}]
+  (let [state-body (:body (make-request waiter-url endpoint :verbose true :cookies cookies))]
+    (log/debug endpoint "body:" state-body)
     (json/read-str state-body)))
+
+(defn kv-store-state
+  "Fetches and returns the kv-store state."
+  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  (retrieve-state-helper waiter-url "/state/kv-store" :cookies cookies))
+
+(defn maintainer-state
+  "Fetches and returns the maintainer state."
+  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  (retrieve-state-helper waiter-url "/state/maintainer" :cookies cookies))
 
 (defn routers
   [waiter-url]
-  (let [state-json (router-state waiter-url)
-        routers-raw (get state-json "routers" {})]
+  (let [state-json (maintainer-state waiter-url)
+        routers-raw (get-in state-json ["state" "routers"] {})]
     (log/debug "routers retrieved from /state:" routers-raw)
     (pc/map-vals (fn [router-url]
                    (cond-> router-url
@@ -716,12 +728,17 @@
   (:value (first (filter #(= "x-waiter-auth" (:name %)) (all-cookies waiter-url)))))
 
 (defn statsd-state
-  "Fetches and returns the statsd state for a specific router-id"
+  "Fetches and returns the statsd state."
+  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  (retrieve-state-helper waiter-url "/state/statsd" :cookies cookies))
+
+(defn router-statsd-state
+  "Fetches and returns the statsd state for a specific router-id."
   [waiter-url router-id]
   (let [router-endpoint (router-endpoint waiter-url router-id)
         cookies (all-cookies waiter-url)
-        router-state (router-state router-endpoint :cookies cookies)]
-    (get router-state "statsd")))
+        router-state (statsd-state router-endpoint :cookies cookies)]
+    (get router-state "state")))
 
 (defn router-service-state
   "Fetches and returns the service state from a particular router url"
