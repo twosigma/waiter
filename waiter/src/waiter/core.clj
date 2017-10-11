@@ -697,15 +697,13 @@
    :validate-service-description-fn (pc/fnk [[:state service-description-builder]]
                                       (fn validate-service-description [service-description]
                                         (sd/validate service-description-builder service-description {})))
-   :waiter-request?-fn (pc/fnk [[:settings hostname]]
+   :waiter-request?-fn (pc/fnk [[:settings {alternate-hostnames []} hostname]]
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
                                waiter-router-ip (.getHostAddress local-router)
                                ;; use (set [...]) instead of #{...} below as there may be duplicate values
-                               hostnames (if (sequential? hostname)
-                                           (set/union (set hostname)
-                                                      (set [waiter-router-hostname waiter-router-ip]))
-                                           (set [hostname waiter-router-hostname waiter-router-ip]))]
+                               hostnames (set (into [hostname waiter-router-hostname waiter-router-ip]
+                                                    alternate-hostnames))]
                            (waiter-request?-factory hostnames)))
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]

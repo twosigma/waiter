@@ -45,6 +45,7 @@
                                           (s/required-key :failed-check-threshold) schema/positive-int}
    (s/required-key :host) schema/non-empty-string
    (s/required-key :hostname) schema/non-empty-string
+   (s/optional-key :alternate-hostnames) [schema/non-empty-string]
    (s/required-key :instance-request-properties) {(s/required-key :async-check-interval-ms) schema/positive-int
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
                                                   (s/required-key :connection-timeout-ms) schema/positive-int

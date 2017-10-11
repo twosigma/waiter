@@ -110,6 +110,8 @@
 
  ;; Set the DNS name for your Waiter cluster:
  :hostname "waiter.example.com"
+ ;; Additional hostnames that Waiter should listen for requests on
+ :alternate-hostnames ["waiter-router.example.com"]
 
  ; ---------- Token Storage ----------
 
