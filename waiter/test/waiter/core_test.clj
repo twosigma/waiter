@@ -843,21 +843,21 @@
            (exec-routes-mapper "/settings")))
     (is (= {:handler :sim-request-handler}
            (exec-routes-mapper "/sim")))
-    (is (= {:handler :display-state-handler-fn}
+    (is (= {:handler :state-all-handler-fn}
            (exec-routes-mapper "/state")))
-    (is (= {:handler :display-kv-store-state-handler-fn}
+    (is (= {:handler :state-kv-store-handler-fn}
            (exec-routes-mapper "/state/kv-store")))
-    (is (= {:handler :display-leader-state-handler-fn}
+    (is (= {:handler :state-leader-handler-fn}
            (exec-routes-mapper "/state/leader")))
-    (is (= {:handler :display-maintainer-state-handler-fn}
+    (is (= {:handler :state-maintainer-handler-fn}
            (exec-routes-mapper "/state/maintainer")))
-    (is (= {:handler :display-router-metrics-state-handler-fn}
+    (is (= {:handler :state-router-metrics-handler-fn}
            (exec-routes-mapper "/state/router-metrics")))
-    (is (= {:handler :display-scheduler-state-handler-fn}
+    (is (= {:handler :state-scheduler-handler-fn}
            (exec-routes-mapper "/state/scheduler")))
-    (is (= {:handler :display-statsd-state-handler-fn}
+    (is (= {:handler :state-statsd-handler-fn}
            (exec-routes-mapper "/state/statsd")))
-    (is (= {:handler :service-state-handler-fn, :route-params {:service-id "test-service"}}
+    (is (= {:handler :state-service-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/state/test-service")))
     (is (= {:handler :status-handler-fn}
            (exec-routes-mapper "/status")))
