@@ -41,8 +41,9 @@
 
 (defn- run-handle-token-request
   [kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn request]
-  (handle-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn
-                        validate-service-description-fn request))
+  (let [token-manager (new-token-manager {:clock clock, :kv-store kv-store, :synchronize-fn synchronize-fn})]
+    (handle-token-request token-manager waiter-hostname entitlement-manager make-peer-requests-fn
+                          validate-service-description-fn request)))
 
 (deftest test-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
@@ -860,6 +861,7 @@
                          (locking lock
                            (f)))
         kv-store (kv/->LocalKeyValueStore (atom {}))
+        token-manager (new-token-manager {:clock clock, :kv-store kv-store, :synchronize-fn synchronize-fn})
         list-tokens-fn (fn [] ["token1" "token2" "token3"])]
     (let [inter-router-request-fn-called (atom nil)
           inter-router-request-fn (fn [path & {:keys [body]}]
@@ -868,7 +870,7 @@
                                       (is index)
                                       (reset! inter-router-request-fn-called true)))
           {:keys [status body]} (handle-reindex-tokens-request
-                                  synchronize-fn inter-router-request-fn kv-store list-tokens-fn
+                                  token-manager inter-router-request-fn list-tokens-fn
                                   {:request-method :post})
           json-response (json/read-str body)]
       (is (= 200 status))
@@ -878,7 +880,7 @@
     (let [inter-router-request-fn-called (atom nil)
           inter-router-request-fn (fn [] (reset! inter-router-request-fn-called true))
           {:keys [status body]} (handle-reindex-tokens-request
-                                  synchronize-fn inter-router-request-fn kv-store list-tokens-fn
+                                  token-manager inter-router-request-fn list-tokens-fn
                                   {:headers {"accept" "application/json"}, :request-method :get})
           json-response (json/read-str body)]
       (is (= 405 status))
