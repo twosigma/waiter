@@ -514,9 +514,11 @@
                         discovery]
                  (let [leader-latch-path (str base-path "/" leader-latch-relative-path)
                        latch (LeaderLatch. curator leader-latch-path router-id)
-                       has-leadership? #(.hasLeadership latch)]
-                   (.start latch)
-                   (leader-fn-factory router-id has-leadership? discovery min-routers)))})
+                       has-leadership? #(.hasLeadership latch)
+                       _ (.start latch)
+                       leader?-fn (leader-fn-factory router-id has-leadership? discovery min-routers)]
+                   (metrics/waiter-gauge #(if (leader?-fn) 1 0) "core" "leader")
+                   leader?-fn))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
