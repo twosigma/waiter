@@ -62,7 +62,7 @@
                                      UrlEncoded/encodeString)
                   max-age (-> age-in-days t/days t/in-seconds)
                   path "/"
-                  set-cookie-header (str name "=" encoded-cookie ";Max-Age=" max-age ";Path=" path)
+                  set-cookie-header (str name "=" encoded-cookie ";Max-Age=" max-age ";Path=" path ";HttpOnly=true")
                   existing-header (get-in response [:headers "set-cookie"])
                   new-header (cond
                                (nil? existing-header) set-cookie-header
