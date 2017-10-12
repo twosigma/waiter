@@ -924,7 +924,6 @@
    :display-state-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
                                       [:daemons router-state-maintainer scheduler-maintainer]
                                       [:routines router-metrics-helpers]
-                                      [:state scheduler]
                                       handle-secure-request-fn]
                                (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
                                      scheduler-query-chan (:query-chan scheduler-maintainer)
@@ -932,7 +931,7 @@
                                  (fn display-state-handler-fn [request]
                                    (handle-secure-request-fn
                                      (fn inner-display-state-handler-fn [request]
-                                       (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn kv-store leader?-fn scheduler request))
+                                       (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn kv-store leader?-fn request))
                                      request))))
    :favicon-handler-fn (pc/fnk []
                          (fn favicon-handler-fn [_]

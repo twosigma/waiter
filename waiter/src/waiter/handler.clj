@@ -25,7 +25,6 @@
             [ring.middleware.params :as ring-params]
             [waiter.async-request :as async-req]
             [waiter.authorization :as authz]
-            [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
@@ -493,28 +492,31 @@
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler request]
-  (try
-    (let [timeout-ms 30000
-          current-state (async/alt!!
-                          state-chan ([state-data] state-data)
-                          (async/timeout timeout-ms) ([_] {:message "Query for router state timed out"})
-                          :priority true)
-          scheduler-state (let [response-chan (async/promise-chan)]
-                            (async/>!! scheduler-chan {:response-chan response-chan})
-                            (async/alt!!
-                              response-chan ([state] state)
-                              (async/timeout timeout-ms) ([_] {:message "Query for scheduler state timed out"})
-                              :priority true))]
-      (-> current-state
-          (assoc :leader (leader?-fn)
-                 :kv-store (kv/state kv-store)
-                 :router-metrics-state (router-metrics-state-fn)
-                 :scheduler scheduler-state
-                 :statsd (statsd/state))
-          (utils/map->streaming-json-response)))
-    (catch Exception ex
-      (utils/exception->response ex request))))
+  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request]
+  (async/go
+    (try
+      (let [timeout-ms 30000
+            current-state (async/alt!
+                            state-chan ([state-data] state-data)
+                            (async/timeout timeout-ms) ([_] {:message "Query for router state timed out"})
+                            :priority true)
+            retrieve-scheduler-state (fn retrieve-scheduler-state-fn []
+                                       (async/go
+                                         (let [response-chan (async/promise-chan)]
+                                           (async/>! scheduler-chan {:response-chan response-chan})
+                                           (async/alt!
+                                             response-chan ([state] state)
+                                             (async/timeout timeout-ms) ([_] {:message "Query for scheduler state timed out"})
+                                             :priority true))))]
+        (-> current-state
+            (assoc :kv-store (kv/state kv-store)
+                   :leader (leader?-fn)
+                   :router-metrics-state (router-metrics-state-fn)
+                   :scheduler (async/<! (retrieve-scheduler-state))
+                   :statsd (statsd/state))
+            (utils/map->streaming-json-response)))
+      (catch Exception ex
+        (utils/exception->response ex request)))))
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."

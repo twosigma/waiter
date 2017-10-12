@@ -18,6 +18,7 @@
             [comb.template :as template]
             [full.async :as fa]
             [plumbing.core :as pc]
+            [waiter.async-utils :as au]
             [waiter.authorization :as authz]
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
@@ -25,8 +26,7 @@
             [waiter.test-helpers :refer :all])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
-           (java.io StringBufferInputStream StringReader)
-           (waiter.scheduler ServiceScheduler)))
+           (java.io StringBufferInputStream StringReader)))
 
 (deftest test-complete-async-handler
   (testing "missing-request-id"
@@ -637,38 +637,50 @@
       (is (= 500 status)))))
 
 (deftest test-get-router-state
-  (let [get-router-state (wrap-handler-json-response get-router-state)]
-    (testing "Getting router state"
-      (testing "should handle exceptions gracefully"
-        (let [state-chan (async/chan)
-              scheduler-chan (async/chan)
-              router-metrics-state-fn (fn [] {})
-              kv-store (kv/new-local-kv-store {})
-              leader?-fn (constantly true)
-              scheduler (reify ServiceScheduler (state [_] nil))]
-          (async/put! state-chan []) ; vector instead of a map to trigger an error
-          (async/go
-            (let [{:keys [response-chan]} (async/<! scheduler-chan)]
-              (async/>! response-chan [])))
-          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler {})]
-            (is (str/includes? (str body) "Internal error"))
-            (is (= 500 status)))))
+  (let [test-fn (fn [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request]
+                  (let [handler (wrap-async-handler-json-response get-router-state)]
+                    (-> (handler state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)
+                        async/<!!)))
+        kv-store (kv/new-local-kv-store {})
+        leader?-fn (constantly true)
+        router-metrics-state-fn (fn [] {})
+        state-chan (au/latest-chan)
+        scheduler-chan (au/latest-chan)
+        test-complete (atom false)]
 
-      (testing "display router state"
-        (let [state-chan (async/chan)
-              scheduler-chan (async/chan)
-              router-metrics-state-fn (fn [] {})
-              kv-store (kv/new-local-kv-store {})
-              leader?-fn (constantly true)
-              scheduler (reify ServiceScheduler (state [_] nil))]
-          (async/put! state-chan {:state-data []}) ; vector instead of a map to trigger an error
-          (async/go
-            (let [{:keys [response-chan]} (async/<! scheduler-chan)]
-              (async/>! response-chan {:state []})))
-          (let [{:keys [status body]} (get-router-state state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn scheduler {})]
-            (is (every? #(str/includes? (str body) %1) ["state-data", "leader", "kv-store", "router-metrics-state", "statsd"])
+    (async/go-loop []
+      (async/>! state-chan {:state-data {}})
+      (if @test-complete
+        (async/close! state-chan)
+        (recur)))
+
+    (async/go-loop []
+      (let [{:keys [response-chan]} (async/<! scheduler-chan)]
+        (when response-chan
+          (async/>! response-chan {:scheduler-data []})))
+      (if @test-complete
+        (async/close! scheduler-chan)
+        (recur)))
+
+    (try
+      (testing "Getting router state"
+        (testing "should handle exceptions gracefully"
+          (let [state-chan (async/chan)]
+            (async/put! state-chan []) ; vector instead of a map to trigger an error
+            (let [request {}
+                  {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
+              (is (str/includes? (str body) "Internal error"))
+              (is (= 500 status)))))
+
+        (testing "display router state"
+          (let [request {}
+                {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
+            (is (every? #(str/includes? (str body) %1) ["kv-store", "leader", "router-metrics-state", "scheduler", "state-data", "statsd"])
                 (str "Body did not include necessary JSON keys:\n" body))
-            (is (= 200 status))))))))
+            (is (= 200 status)))))
+
+      (finally
+        (reset! test-complete true)))))
 
 (deftest test-get-service-state
   (let [router-id "router-id"
@@ -918,7 +930,7 @@
                                           :target-url (str scheme "://www.example.com:6789/some-path")
                                           :token "www.example.com"}
                                          data))
-                                  (str "template:" content))) ]
+                                  (str "template:" content)))]
     (testing "unsupported request method"
       (let [request {:authorization/user "test-user"
                      :request-method :post
