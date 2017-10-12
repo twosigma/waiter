@@ -350,8 +350,13 @@
 (deftest ^:parallel ^:integration-fast basic-waiter-auth-test
   (testing-using-waiter-url
     (log/info "Basic waiter-auth test")
-    (let [{:keys [status body]} (make-request waiter-url "/waiter-auth")]
+    (let [{:keys [status body headers]} (make-request waiter-url "/waiter-auth")
+          set-cookie (get headers "set-cookie")]
       (is (= 200 status))
+      (is (str/includes? set-cookie "x-waiter-auth="))
+      (is (str/includes? set-cookie "Max-Age="))
+      (is (str/includes? set-cookie "Path=/"))
+      (is (str/includes? set-cookie "HttpOnly=true"))
       (is (= (System/getProperty "user.name") (str body))))))
 
 ; Marked explicit due to:

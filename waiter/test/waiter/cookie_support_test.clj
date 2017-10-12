@@ -41,7 +41,7 @@
   (is (= "a=b; c=d" (remove-cookie "a=b; x-waiter-auth=auth; c=d" "x-waiter-auth"))))
 
 (deftest test-add-encoded-cookie
-  (let [cookie-attrs ";Max-Age=864000;Path=/"
+  (let [cookie-attrs ";Max-Age=864000;Path=/;HttpOnly=true"
         user-cookie (str "user=" (UrlEncoded/encodeString "data:john") cookie-attrs)]
     (with-redefs [b64/encode (fn [^String data-string] (.getBytes data-string))
                   nippy/freeze (fn [input _] (str "data:" input))]
