@@ -462,8 +462,10 @@
                                atom))
    :task-threadpool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :thread-id->stack-state-atom (pc/fnk [] (atom {}))
-   :waiter-hostnames (pc/fnk [[:settings hostname {alternate-hostnames []}]]
-                             (set (conj alternate-hostnames hostname)))
+   :waiter-hostnames (pc/fnk [[:settings hostname]]
+                             (set (if (sequential? hostname)
+                                    hostname
+                                    [hostname])))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
                               http-client]
                        (let [websocket-client (WebSocketClient. ^HttpClient http-client)]
@@ -625,10 +627,11 @@
                                                  router-id async-request-store-atom make-http-request-fn instance-rpc-chan service-id metric-group
                                                  instance reason-map request-properties location response-headers)))
    :prepend-waiter-url (pc/fnk [[:settings port hostname]]
-                         (fn [endpoint-url]
-                           (if (str/blank? endpoint-url)
-                             endpoint-url
-                             (str "http://" hostname ":" port endpoint-url))))
+                         (let [hostname (if (sequential? hostname) (first hostname) hostname)]
+                           (fn [endpoint-url]
+                             (if (str/blank? endpoint-url)
+                               endpoint-url
+                               (str "http://" hostname ":" port endpoint-url)))))
    :request->descriptor-fn (pc/fnk [[:curator kv-store]
                                     [:settings metric-group-mappings service-description-defaults]
                                     [:state service-description-builder service-id-prefix waiter-hostnames]

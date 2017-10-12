@@ -17,8 +17,7 @@
             [waiter.utils :as utils]))
 
 (def settings-schema
-  {(s/optional-key :alternate-hostnames) [schema/non-empty-string]
-   (s/required-key :authenticator-config) (s/constrained
+  {(s/required-key :authenticator-config) (s/constrained
                                             {:kind s/Keyword
                                              s/Keyword schema/require-symbol-factory-fn}
                                             schema/contains-kind-sub-map?)
@@ -45,7 +44,7 @@
    (s/required-key :health-check-config) {(s/required-key :health-check-timeout-ms) schema/positive-int
                                           (s/required-key :failed-check-threshold) schema/positive-int}
    (s/required-key :host) schema/non-empty-string
-   (s/required-key :hostname) schema/non-empty-string
+   (s/required-key :hostname) (s/if sequential? [schema/non-empty-string] schema/non-empty-string)
    (s/required-key :instance-request-properties) {(s/required-key :async-check-interval-ms) schema/positive-int
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
                                                   (s/required-key :connection-timeout-ms) schema/positive-int

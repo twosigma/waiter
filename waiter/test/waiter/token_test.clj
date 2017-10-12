@@ -40,8 +40,8 @@
       true)))
 
 (defn- run-handle-token-request
-  [kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn request]
-  (handle-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn
+  [kv-store waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn request]
+  (handle-token-request clock synchronize-fn kv-store waiter-hostnames entitlement-manager make-peer-requests-fn
                         validate-service-description-fn request))
 
 (deftest test-handle-token-request
