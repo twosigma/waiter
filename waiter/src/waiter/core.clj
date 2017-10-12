@@ -514,15 +514,24 @@
                       [:state passwords]
                       curator]
                (kv/new-kv-store kv-config curator base-path passwords))
-   :leader?-fn (pc/fnk [[:settings [:cluster-config min-routers] [:zookeeper base-path leader-latch-relative-path]]
+   :leader?-fn (pc/fnk [[:settings [:cluster-config min-routers]]
                         [:state router-id]
-                        curator
-                        discovery]
-                 (let [leader-latch-path (str base-path "/" leader-latch-relative-path)
-                       latch (LeaderLatch. curator leader-latch-path router-id)
-                       has-leadership? #(.hasLeadership latch)]
-                   (.start latch)
-                   (leader-fn-factory router-id has-leadership? discovery min-routers)))})
+                        discovery
+                        leader-latch]
+                 (let [has-leadership? #(.hasLeadership leader-latch)]
+                   (leader-fn-factory router-id has-leadership? discovery min-routers)))
+   :leader-id-fn (pc/fnk [leader-latch]
+                   #(try
+                      (-> leader-latch .getLeader .getId)
+                      (catch Exception ex
+                        (log/error ex "unable to retrieve leader id"))))
+   :leader-latch (pc/fnk [[:settings [:zookeeper base-path leader-latch-relative-path]]
+                          [:state router-id]
+                          curator]
+                   (let [leader-latch-path (str base-path "/" leader-latch-relative-path)
+                         latch (LeaderLatch. curator leader-latch-path router-id)]
+                     (.start latch)
+                     latch))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
@@ -1125,13 +1134,13 @@
                                     (fn inner-kv-store-state-handler-fn [request]
                                       (handler/get-kv-store-state router-id kv-store request))
                                     request)))
-   :state-leader-handler-fn (pc/fnk [[:curator leader?-fn]
+   :state-leader-handler-fn (pc/fnk [[:curator leader?-fn leader-id-fn]
                                      [:state router-id]
                                      handle-secure-request-fn]
                               (fn leader-state-handler-fn [request]
                                 (handle-secure-request-fn
                                   (fn inner-leader-state-handler-fn [request]
-                                    (handler/get-leader-state router-id leader?-fn request))
+                                    (handler/get-leader-state router-id leader?-fn leader-id-fn request))
                                   request)))
    :state-maintainer-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                          [:state router-id]

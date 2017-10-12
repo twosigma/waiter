@@ -701,17 +701,18 @@
 
 (deftest test-get-leader-state
   (let [router-id "test-router-id"
+        leader-id-fn (constantly router-id)
         test-fn (wrap-handler-json-response get-leader-state)]
     (testing "successful response"
       (let [leader?-fn (constantly true)
-            state {"leader" (leader?-fn)}
-            {:keys [body status]} (test-fn router-id leader?-fn {})]
+            state {"leader?" (leader?-fn), "leader-id" (leader-id-fn)}
+            {:keys [body status]} (test-fn router-id leader?-fn leader-id-fn {})]
         (is (= 200 status))
         (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
 
     (testing "exception response"
       (let [leader?-fn (fn [] (throw (Exception. "Test Exception")))
-            {:keys [body status]} (test-fn router-id leader?-fn {})]
+            {:keys [body status]} (test-fn router-id leader?-fn leader-id-fn {})]
         (is (= 500 status))
         (is (str/includes? body "Waiter Error 500"))))))
 

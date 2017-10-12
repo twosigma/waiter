@@ -538,10 +538,11 @@
 
 (defn get-leader-state
   "Outputs the leader state."
-  [router-id leader?-fn request]
+  [router-id leader?-fn leader-id-fn request]
   (try
     (-> {:router-id router-id
-         :state {:leader (leader?-fn)}}
+         :state {:leader? (leader?-fn)
+                 :leader-id (leader-id-fn)}}
         (utils/map->streaming-json-response))
     (catch Exception ex
       (utils/exception->response ex request))))
