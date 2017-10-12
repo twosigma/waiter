@@ -640,14 +640,14 @@
   (defn request->descriptor
     "Extract the service descriptor from a request.
      It also performs the necessary authorization."
-    [service-description-defaults service-id-prefix kv-store waiter-hostname can-run-as? metric-group-mappings
+    [service-description-defaults service-id-prefix kv-store waiter-hostnames can-run-as? metric-group-mappings
      service-description-builder assoc-run-as-user-approved? request]
     (timers/start-stop-time!
       request->descriptor-timer
       (let [auth-user (:authorization/user request)
             service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
             {:keys [service-authentication-disabled service-description service-preauthorized] :as descriptor}
-            (sd/request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
+            (sd/request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostnames
                                     request metric-group-mappings service-description-builder service-approved?)
             {:strs [run-as-user permitted-user]} service-description]
         (when-not (or service-authentication-disabled

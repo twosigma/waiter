@@ -382,13 +382,13 @@
 (defn retrieve-token-from-service-description-or-hostname
   "Retrieve the token name from the service description map using the x-waiter-token key.
    If such a token is not found, then revert to using the host name (without the port) as the token."
-  [waiter-headers request-headers waiter-hostname]
+  [waiter-headers request-headers waiter-hostnames]
   (let [token-header (headers/get-waiter-header waiter-headers "token")
         host-header (get request-headers "host")
         hostname (first (str/split (str host-header) #":"))]
     (cond
       (not (str/blank? token-header)) {:token token-header, :source :waiter-header}
-      (and (not= waiter-hostname hostname) (not (str/blank? hostname))) {:token hostname, :source :host-header}
+      (and (not (contains? waiter-hostnames hostname)) (not (str/blank? hostname))) {:token hostname, :source :host-header}
       :else nil)))
 
 (defn token-preauthorized?
@@ -509,9 +509,9 @@
      :tokens service-description-template}))
 
 (defn- merge-service-description-sources
-  [descriptor kv-store waiter-hostname service-description-defaults]
+  [descriptor kv-store waiter-hostnames service-description-defaults]
   "Merges the sources for a service-description into the descriptor."
-  (let [sources (prepare-service-description-sources descriptor kv-store waiter-hostname service-description-defaults)]
+  (let [sources (prepare-service-description-sources descriptor kv-store waiter-hostnames service-description-defaults)]
     (assoc descriptor :sources sources)))
 
 (defn- sanitize-metadata [{:strs [metadata] :as service-description}]
@@ -597,11 +597,11 @@
   "Creates the service descriptor from the request.
    The result map contains the following elements:
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
-  [service-description-defaults service-id-prefix kv-store waiter-hostname request metric-group-mappings
+  [service-description-defaults service-id-prefix kv-store waiter-hostnames request metric-group-mappings
    service-description-builder assoc-run-as-user-approved?]
   (let [current-request-user (get request :authorization/user)]
     (-> (headers/split-headers (:headers request))
-        (merge-service-description-sources kv-store waiter-hostname service-description-defaults)
+        (merge-service-description-sources kv-store waiter-hostnames service-description-defaults)
         (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
                                           service-description-builder assoc-run-as-user-approved?)
         (merge-suspended kv-store))))

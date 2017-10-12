@@ -977,7 +977,7 @@
 (deftest test-handle-authentication-wrapper-fn
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         configuration {:curator {:kv-store kv-store}
-                       :settings {:hostname "www.waiter-router.com"}}
+                       :state {:waiter-hostnames #{"www.waiter-router.com"}}}
         handle-authentication-wrapper-fn ((:handle-authentication-wrapper-fn request-handlers) configuration)
         handler-response (Object.)
         execute-request (fn execute-request-fn [test-request]
@@ -1102,15 +1102,7 @@
 
 (deftest test-waiter-request?-fn
   (testing "string hostname config"
-    (let [config {:settings {:hostname "waiter-host"}}
+    (let [config {:state {:waiter-hostnames #{"waiter-host"}}}
           waiter-request?-fn ((:waiter-request?-fn routines) config)]
       (is (waiter-request?-fn {:headers {"host" "waiter-host"}}))
-      (is (not (waiter-request?-fn {:headers {"host" "waiter-host-1"}})))))
-
-  (testing "list hostname config"
-    (let [config {:settings {:hostname "waiter-host-1"
-                             :alternate-hostnames ["waiter-host-2"]}}
-          waiter-request?-fn ((:waiter-request?-fn routines) config)]
-      (is (waiter-request?-fn {:headers {"host" "waiter-host-1"}}))
-      (is (waiter-request?-fn {:headers {"host" "waiter-host-2"}}))
-      (is (not (waiter-request?-fn {:headers {"host" "waiter-host"}}))))))
+      (is (not (waiter-request?-fn {:headers {"host" "waiter-host-1"}}))))))
