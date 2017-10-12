@@ -16,6 +16,7 @@
             [clojure.string :as str]
             [metrics.core :as mc]
             [metrics.counters :as counters]
+            [metrics.gauges :as gauges]
             [metrics.histograms :as histograms]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
@@ -85,6 +86,11 @@
   "Creates a counter with waiter-specific naming scheme"
   [classifier & nested-path]
   `(counters/counter ~(metric-name (concat ["waiter" classifier "counters"] nested-path))))
+
+(defmacro waiter-gauge
+  "Creates a gauge with waiter-specific naming scheme"
+  [value-fn classifier & nested-path]
+  `(gauges/defgauge ~(metric-name (concat ["waiter" classifier "gauges"] nested-path)) ~value-fn))
 
 (defmacro waiter-meter
   "Creates a waiter-meter with waiter-specific naming scheme"
