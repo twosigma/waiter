@@ -16,7 +16,7 @@
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
-            [waiter.marathon-api :as apps]
+            [waiter.mesos :as mesos]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
@@ -76,7 +76,7 @@
       (let [deployment-ids (->> deployments
                                 (map #(get % "id"))
                                 set)
-            all-marathon-deployments (apps/get-deployments marathon-api)]
+            all-marathon-deployments (mesos/get-deployments marathon-api)]
         (->> all-marathon-deployments
              (filter (fn [{:strs [id]}] (contains? deployment-ids id)))
              vec)))
@@ -92,7 +92,7 @@
               {:instance-id instance-id, :killed? killed?, :message message, :service-id service-id, :status status})]
       (ss/try+
         (log/debug "killing instance" instance-id "from service" service-id)
-        (let [result (apps/kill-task marathon-api service-id instance-id scale force)
+        (let [result (mesos/kill-task marathon-api service-id instance-id scale force)
               kill-success? (and result (map? result) (contains? result :deploymentId))]
           (log/info "kill instance" instance-id "result" result)
           (let [message (if kill-success? "Successfully killed instance" "Unable to kill instance")
@@ -117,7 +117,7 @@
         framework-id (retrieve-framework-id-fn)
         common-extractor-fn (fn [instance-id marathon-task-response]
                               (let [{:keys [appId host message slaveId]} marathon-task-response
-                                    log-directory (apps/mesos-directory-path mesos-api slaveId framework-id instance-id)]
+                                    log-directory (mesos/build-sandbox-path mesos-api slaveId framework-id instance-id)]
                                 (cond-> {:service-id (remove-slash-prefix appId)
                                          :host host}
                                         log-directory
@@ -202,7 +202,7 @@
   "Makes a call with hardcoded embed parameters.
    Filters the apps to return only Waiter apps."
   [marathon-api is-waiter-app?-fn]
-  (let [apps (apps/get-apps marathon-api)]
+  (let [apps (mesos/get-apps marathon-api)]
     (filter #(is-waiter-app?-fn (app->waiter-service-id %)) (:apps apps))))
 
 (defn marathon-descriptor
@@ -235,7 +235,7 @@
   [mesos-api instance-id host]
   (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
   (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
-  (let [response-parsed (apps/mesos-slave-state mesos-api host)
+  (let [response-parsed (mesos/get-agent-state mesos-api host)
         frameworks (concat (:completed_frameworks response-parsed) (:frameworks response-parsed))
         marathon-framework (first (filter #(or (= (:role %) "marathon") (= (:name %) "marathon")) frameworks))
         marathon-executors (concat (:completed_executors marathon-framework) (:executors marathon-framework))
@@ -249,13 +249,13 @@
   (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
   (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
   (when (str/blank? directory) (throw (ex-info "No directory found for instance!" {})))
-  (let [response-parsed (apps/mesos-slave-directory-content mesos-api host directory)]
+  (let [response-parsed (mesos/list-directory-content mesos-api host directory)]
     (map (fn [entry]
            (merge {:name (subs (:path entry) (inc (count directory)))
                    :size (:size entry)}
                   (if (= (:nlink entry) 1)
                     {:type "file"
-                     :url (apps/mesos-slave-directory-link mesos-api host (:path entry))}
+                     :url (mesos/build-directory-download-link mesos-api host (:path entry))}
                     {:type "directory"
                      :path (:path entry)})))
          response-parsed)))
@@ -278,7 +278,7 @@
     (ss/try+
       (scheduler/retry-on-transient-server-exceptions
         (str "get-instances[" service-id "]")
-        (let [marathon-response (apps/get-app marathon-api service-id)]
+        (let [marathon-response (mesos/get-app marathon-api service-id)]
           (response-data->service-instances
             marathon-response [:app] retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store)))
       (catch [:status 404] {}
@@ -304,7 +304,7 @@
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
         (str "app-exists?[" service-id "]")
-        (apps/get-app marathon-api service-id))
+        (mesos/get-app marathon-api service-id))
       (catch [:status 404] _
         (log/warn "app-exists?: service" service-id "does not exist!"))))
 
@@ -318,7 +318,7 @@
             (log/info "Starting new app for" service-id "with descriptor" (dissoc marathon-descriptor :env))
             (scheduler/retry-on-transient-server-exceptions
               (str "create-app-if-new[" service-id "]")
-              (apps/create-app marathon-api marathon-descriptor))
+              (mesos/create-app marathon-api marathon-descriptor))
             (catch [:status 409] e
               (log/warn (ex-info "Conflict status when trying to start app. Is app starting up?"
                                  {:deployment-info (extract-deployment-info marathon-api e)
@@ -331,7 +331,7 @@
       (let [delete-result (scheduler/retry-on-transient-server-exceptions
                             (str "in delete-app[" service-id "]")
                             (log/info "deleting service" service-id)
-                            (apps/delete-app marathon-api service-id))]
+                            (mesos/delete-app marathon-api service-id))]
         (when delete-result
           (remove-failed-instances-for-service! service-id->failed-instances-transient-store service-id)
           (scheduler/remove-killed-instances-for-service! service-id)
@@ -357,12 +357,12 @@
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
         (str "in scale-app[" service-id "]")
-        (let [old-descriptor (:app (apps/get-app marathon-api service-id))
+        (let [old-descriptor (:app (mesos/get-app marathon-api service-id))
               new-descriptor (update-in
                                (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
                                [:instances]
                                (fn [_] instances))]
-          (apps/update-app marathon-api service-id new-descriptor)))
+          (mesos/update-app marathon-api service-id new-descriptor)))
       (catch [:status 409] e
         (log/warn "Marathon deployment conflict while scaling"
                   {:deployment-info (extract-deployment-info marathon-api e)
@@ -389,7 +389,7 @@
   [marathon-api]
   (utils/log-and-suppress-when-exception-thrown
     "Error in retrieving info from marathon."
-    (:frameworkId (apps/get-info marathon-api))))
+    (:frameworkId (mesos/get-info marathon-api))))
 
 (defn marathon-scheduler
   "Returns a new MarathonScheduler with the provided configuration. Validates the
@@ -405,9 +405,9 @@
          (not (str/blank? home-path-prefix))]}
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
-  (let [http-client (apps/http-client-factory http-options)
-        marathon-api (apps/marathon-rest-api-factory http-client http-options url)
-        mesos-api (apps/mesos-api-factory http-client http-options mesos-slave-port slave-directory)
+  (let [http-client (mesos/http-client-factory http-options)
+        marathon-api (mesos/marathon-rest-api-factory http-client http-options url)
+        mesos-api (mesos/mesos-api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})
         service-id->last-force-kill-store (atom {})
         retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)]

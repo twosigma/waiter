@@ -8,13 +8,13 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.marathon-api-test
+(ns waiter.mesos-test
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [qbits.jet.client.http :as http]
-            [waiter.marathon-api :refer :all])
+            [waiter.mesos :refer :all])
   (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-http-request
@@ -28,7 +28,7 @@
                                          body-chan (async/promise-chan)]
                                      (async/>!! body-chan (json/write-str expected-body))
                                      (async/>!! response-chan {:body body-chan, :status 200})
-                                               response-chan))]
+                                     response-chan))]
         (is (= expected-body (http-request http-client "some-url"))))))
 
   (testing "error-in-response"
@@ -79,33 +79,33 @@
                                                                          (str marathon-url expected-url))]
                                              (is (= expected-absolute-url in-request-url)))))]
 
-    (testing "mesos-directory-path"
+    (testing "build-sandbox-path"
       (let [slave-id "salve-is"
             framework-id "framework-id"
             instance-id "instance-id"]
         (is (= (str slave-directory "/" slave-id "/frameworks/" framework-id "/executors/" instance-id "/runs/latest")
-               (mesos-directory-path mesos-api slave-id framework-id instance-id)))
-        (is (nil? (mesos-directory-path mesos-api nil framework-id instance-id)))
-        (is (nil? (mesos-directory-path mesos-api slave-id nil instance-id)))
-        (is (nil? (mesos-directory-path mesos-api slave-id framework-id nil)))))
+               (build-sandbox-path mesos-api slave-id framework-id instance-id)))
+        (is (nil? (build-sandbox-path mesos-api nil framework-id instance-id)))
+        (is (nil? (build-sandbox-path mesos-api slave-id nil instance-id)))
+        (is (nil? (build-sandbox-path mesos-api slave-id framework-id nil)))))
 
-    (testing "mesos-slave-directory-content"
+    (testing "list-directory-content"
       (let [host "www.host.com"]
         (with-redefs [http-request (assert-endpoint-request-method :get (str "http://" host ":" slave-port "/files/browse"))]
-          (mesos-slave-directory-content mesos-api host "/some/directory"))))
+          (list-directory-content mesos-api host "/some/directory"))))
 
-    (testing "mesos-slave-directory-link"
+    (testing "build-directory-download-link"
       (let [host "www.host.com"
             directory "/some/directory/instance-1/runs"]
         (is (= (str "http://" host ":" slave-port "/files/download?path=" directory)
-               (mesos-slave-directory-link mesos-api host directory)))
-        (is (nil? (mesos-slave-directory-link mesos-api nil directory)))
-        (is (nil? (mesos-slave-directory-link mesos-api host nil)))))
+               (build-directory-download-link mesos-api host directory)))
+        (is (nil? (build-directory-download-link mesos-api nil directory)))
+        (is (nil? (build-directory-download-link mesos-api host nil)))))
 
-    (testing "mesos-slave-state"
+    (testing "get-agent-state"
       (let [host "www.host.com"]
         (with-redefs [http-request (assert-endpoint-request-method :get (str "http://" host ":" slave-port "/state.json"))]
-          (mesos-slave-state mesos-api host))))))
+          (get-agent-state mesos-api host))))))
 
 (deftest test-marathon-rest-api-endpoints
   (let [http-client (Object.)

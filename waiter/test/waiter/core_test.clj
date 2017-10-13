@@ -26,7 +26,7 @@
             [waiter.handler :as handler]
             [waiter.kv :as kv]
             [waiter.marathon :as marathon]
-            [waiter.marathon-api :as apps]
+            [waiter.mesos :as mesos]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
@@ -290,7 +290,7 @@
         (is (= status 400))
         (is (= "Missing host parameter" (get-in json-body ["waiter-error" "message"])))))
 
-    (with-redefs [apps/mesos-slave-directory-content
+    (with-redefs [mesos/list-directory-content
                   (fn [_ in-host in-directory]
                     (is (= "test.host.com" in-host))
                     (is (str/starts-with? in-directory "/path/to/instance"))
@@ -300,7 +300,7 @@
                                     {\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil3\", \"size\": 3000},
                                     {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir4\", \"size\": 4000}]"]
                       (-> file-browse-response-body json/read-str walk/keywordize-keys)))
-                  apps/mesos-slave-state
+                  mesos/get-agent-state
                   (fn [_ in-host]
                     (is (= "test.host.com" in-host))
                     (let [state-json-response-body "

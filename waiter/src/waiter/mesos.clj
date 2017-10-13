@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.marathon-api
+(ns waiter.mesos
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.walk :as walk]
@@ -61,13 +61,14 @@
   [http-client {:keys [spnego-auth]} slave-port slave-directory]
   (->MesosApi http-client spnego-auth slave-port slave-directory))
 
-(defn mesos-directory-path
+  (defn build-sandbox-path
   "Builds the sandbox directory path of the instance on a Mesos agent."
   [{:keys [slave-directory]} slave-id framework-id instance-id]
   (when (and slave-directory slave-id framework-id instance-id)
-    (str slave-directory "/" slave-id "/frameworks/" framework-id "/executors/" instance-id "/runs/latest")))
+    (str slave-directory "/" slave-id "/frameworks/" framework-id
+         "/executors/" instance-id "/runs/latest")))
 
-(defn mesos-slave-directory-content
+(defn list-directory-content
   "Lists files and directories contained in the path."
   [{:keys [http-client slave-port spnego-auth]} host directory]
   (http-request http-client (str "http://" host ":" slave-port "/files/browse")
@@ -76,13 +77,13 @@
                 :spnego-auth spnego-auth
                 :throw-exceptions false))
 
-(defn mesos-slave-directory-link
+(defn build-directory-download-link
   "Generates a download link to the directory on the specified mesos agent."
   [{:keys [slave-port]} host directory]
   (when (and slave-port host directory)
     (str "http://" host ":" slave-port "/files/download?path=" directory)))
 
-(defn mesos-slave-state
+(defn get-agent-state
   "Returns information about the frameworks, executors and the agent’s master."
   [{:keys [http-client slave-port spnego-auth]} host]
   (when (and slave-port host)

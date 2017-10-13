@@ -22,7 +22,7 @@
             [waiter.auth.authentication :as authentication]
             [waiter.auth.spnego :as spnego]
             [waiter.correlation-id :as cid]
-            [waiter.marathon-api :as apps]
+            [waiter.mesos :as mesos]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
   (:import (java.net HttpCookie URI)
@@ -432,12 +432,10 @@
   (setting waiter-url [:scheduler-config :marathon :url] :verbose verbose))
 
 (defn num-tasks-running [waiter-url service-id & {:keys [verbose prev-tasks-running] :or {verbose false prev-tasks-running -1}}]
-  (let [marathon-url (marathon-url waiter-url :verbose verbose)
-        marathon-api (apps/marathon-rest-api-factory {:conn-timeout 10000
-                                                      :socket-timeout 10000
-                                                      :spnego-auth use-spnego}
-                                                     marathon-url)
-        info-response (apps/get-app marathon-api service-id)
+  (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
+        marathon-url (marathon-url waiter-url :verbose verbose)
+        marathon-api (mesos/marathon-rest-api-factory http-client http-options marathon-url)
+        info-response (mesos/get-app marathon-api service-id)
         tasks-running' (get-in info-response [:app :tasksRunning])]
     (when (not= prev-tasks-running tasks-running')
       (log/debug service-id "has" tasks-running' "task(s) running."))
@@ -458,16 +456,14 @@
 (defn scale-app-to [waiter-url service-id target-instances]
   (let [marathon-url (marathon-url waiter-url)]
     (log/info service-id "being scaled to" target-instances "task(s).")
-    (let [marathon-api (apps/marathon-rest-api-factory {:conn-timeout 10000
-                                                        :socket-timeout 10000
-                                                        :spnego-auth use-spnego}
-                                                       marathon-url)
-          old-descriptor (:app (apps/get-app marathon-api service-id))
+    (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
+          marathon-api (mesos/marathon-rest-api-factory http-client http-options marathon-url)
+          old-descriptor (:app (mesos/get-app marathon-api service-id))
           new-descriptor (update-in
                            (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
                            [:instances]
                            (fn [_] target-instances))]
-      (with-out-str (apps/update-app marathon-api service-id new-descriptor)))))
+      (with-out-str (mesos/update-app marathon-api service-id new-descriptor)))))
 
 (defn delete-service
   ([waiter-url service-id-or-waiter-headers]
