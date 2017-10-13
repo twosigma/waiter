@@ -43,14 +43,6 @@
 
 ;;; Service instance blacklisting, work-stealing, access and creation
 
-(defn instance-rpc-message
-  "Prepares the message to send along the instance-rpc-chan."
-  [method service-id cid response-chan]
-  {:cid cid
-   :method method
-   :response-chan response-chan
-   :service-id service-id})
-
 ;; Attempt to blacklist instances
 (defmacro blacklist-instance!
   "Sends a rpc to the router state to blacklist the given instance.
@@ -58,7 +50,10 @@
   [instance-rpc-chan service-id instance-id blacklist-period-ms response-chan]
   `(let [response-chan# (async/promise-chan)]
      (log/info "Requesting blacklist channel for" ~service-id)
-     (->> (instance-rpc-message :blacklist ~service-id (cid/get-correlation-id) response-chan#)
+     (->> {:cid (cid/get-correlation-id)
+           :method :blacklist
+           :response-chan response-chan#
+           :service-id ~service-id}
           (async/put! ~instance-rpc-chan))
      (if-let [blacklist-chan# (async/<! response-chan#)]
        (do
@@ -91,7 +86,10 @@
   [instance-rpc-chan service-id offer-params]
   `(let [response-chan# (async/promise-chan)]
      (log/debug "Requesting offer channel for" ~service-id)
-     (->> (instance-rpc-message :offer ~service-id (cid/get-correlation-id) response-chan#)
+     (->> {:cid (cid/get-correlation-id)
+           :method :offer
+           :response-chan response-chan#
+           :service-id ~service-id}
           (async/put! ~instance-rpc-chan))
      (if-let [work-stealing-chan# (async/<! response-chan#)]
        (do
@@ -117,7 +115,10 @@
 (defmacro query-maintainer-channel-map!
   "Sends a rpc to retrieve the channel on which to query the state of the given service."
   [instance-rpc-chan service-id response-chan query-type]
-  `(->> (instance-rpc-message ~query-type ~service-id (cid/get-correlation-id) ~response-chan)
+  `(->> {:cid (cid/get-correlation-id)
+         :method ~query-type
+         :response-chan ~response-chan
+         :service-id ~service-id}
         (async/put! ~instance-rpc-chan)))
 
 (defmacro query-maintainer-channel-map-with-timeout!
@@ -163,7 +164,10 @@
   [instance-rpc-chan instance reservation-result]
   `(let [response-chan# (async/promise-chan)
          service-id# (scheduler/instance->service-id ~instance)]
-     (->> (instance-rpc-message :release service-id# (cid/get-correlation-id) response-chan#)
+     (->> {:cid (cid/get-correlation-id)
+           :method :release
+           :response-chan response-chan#
+           :service-id service-id#}
           (async/put! ~instance-rpc-chan))
      (if-let [release-chan# (async/<! response-chan#)]
        (when-not (au/offer! release-chan# [~instance ~reservation-result])
@@ -198,7 +202,10 @@
                      :work-stealing :reserve
                      :kill-instance :kill)]
        ;;TODO: handle back pressure
-       (->> (instance-rpc-message method# ~service-id (cid/get-correlation-id) response-chan#)
+       (->> {:cid (cid/get-correlation-id)
+             :method method#
+             :response-chan response-chan#
+             :service-id ~service-id}
             (async/put! ~instance-rpc-chan))
        (when-let [service-chan# (async/<! response-chan#)]
          (log/debug "found reservation channel for" ~service-id)

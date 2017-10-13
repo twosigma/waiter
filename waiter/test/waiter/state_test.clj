@@ -1339,7 +1339,10 @@
 
         (doseq [service-id ["service-2" "service-1" "service-3"]]
           (let [response-chan (async/promise-chan)]
-            (->> (service/instance-rpc-message :method service-id "cid" response-chan)
+            (->> {:cid "cid"
+                  :method :method
+                  :response-chan response-chan
+                  :service-id service-id}
                  (async/>!! request-chan))
             (is (= (str service-id "::method") (async/<!! response-chan)))))
 
