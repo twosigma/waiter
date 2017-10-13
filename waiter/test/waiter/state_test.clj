@@ -20,6 +20,7 @@
             [plumbing.core :as pc]
             [waiter.async-utils :as au]
             [waiter.discovery :as discovery]
+            [waiter.service :as service]
             [waiter.state :refer :all]
             [waiter.utils :as utils]))
 
@@ -845,7 +846,6 @@
                 :min-hosts 1
                 :using-marathon true}
         alive-started-at (.toString (t/now))
-        expired-started-at (.toString (t/minus (t/now) (t/millis 10000)))
         test-cases (list {:name "no-instances", :healthy-instances [], :unhealthy-instances [], :failed-instances [], :expected nil}
                          {:name "no-deployment-errors", :healthy-instances [:instance-one], :unhealthy-instances [], :failed-instances [], :expected nil}
                          {:name "healthy-and-unhealthy-instances", :healthy-instances [:instance-one],
@@ -1338,9 +1338,9 @@
           (start-service service-id))
 
         (doseq [service-id ["service-2" "service-1" "service-3"]]
-          (let [response-chan (async/promise-chan)
-                message [:method service-id "cid" response-chan]]
-            (async/>!! request-chan message)
+          (let [response-chan (async/promise-chan)]
+            (->> (service/instance-rpc-message :method service-id "cid" response-chan)
+                 (async/>!! request-chan))
             (is (= (str service-id "::method") (async/<!! response-chan)))))
 
         (async/>!! exit-chan :exit)))))

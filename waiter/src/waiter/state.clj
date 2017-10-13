@@ -692,9 +692,10 @@
    `(remove-service service-id channel-map)`.
 
    Requests for service-chan-responder channels is passed into request-chan
-      It is expected that elements on the channel have `[method service-id cid response-chan]`
-      The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`, or `release`,
-      the `service-id` is the app for the request and
+      It is expected that messages on the channel have a map with keys
+      `:cid`, `:method`, `:response-chan`, and `:service-id`.
+      The `method` should be either `:blacklist`, `:kill`, `:query-state`, `:reserve`, or `release`.
+      The `service-id` is the service for the request and
       `response-chan` will have the corresponding channel placed onto it by invoking
       `(retrieve-channel channel-map method)`.
 
@@ -760,16 +761,16 @@
 
                   request-chan
                   ([message]
-                    (let [[method service-id cid resp-chan] message]
+                    (let [{:keys [cid method response-chan service-id]} message]
                       (cid/cdebug cid "[service-chan-maintainer]" service-id "received request of type" method)
                       (let [channel-map (get service-id->channel-map service-id)]
                         (if channel-map
                           (let [method-chan (retrieve-channel channel-map method)]
-                            (async/put! resp-chan method-chan))
+                            (async/put! response-chan method-chan))
                           (do
                             (cid/cdebug cid "[service-chan-maintainer] no channel map found for" service-id)
                             (counters/inc! (metrics/service-counter service-id "maintainer" "not-found"))
-                            (async/close! resp-chan)))
+                            (async/close! response-chan)))
                         [service-id->channel-map last-state-update-time])))
 
                   query-service-maintainer-chan

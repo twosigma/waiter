@@ -43,15 +43,24 @@
 
 ;;; Service instance blacklisting, work-stealing, access and creation
 
+(defn instance-rpc-message
+  "Prepares the message to send along the instance-rpc-chan."
+  [method service-id cid response-chan]
+  {:cid cid
+   :method method
+   :response-chan response-chan
+   :service-id service-id})
+
 ;; Attempt to blacklist instances
 (defmacro blacklist-instance!
   "Sends a rpc to the router state to blacklist the given instance.
    Throws an exception if a blacklist channel cannot be found for the specfied service."
   [instance-rpc-chan service-id instance-id blacklist-period-ms response-chan]
-  `(let [chan-resp-chan# (async/chan)]
+  `(let [response-chan# (async/promise-chan)]
      (log/info "Requesting blacklist channel for" ~service-id)
-     (async/put! ~instance-rpc-chan [:blacklist ~service-id (cid/get-correlation-id) chan-resp-chan#])
-     (if-let [blacklist-chan# (async/<! chan-resp-chan#)]
+     (->> (instance-rpc-message :blacklist ~service-id (cid/get-correlation-id) response-chan#)
+          (async/put! ~instance-rpc-chan))
+     (if-let [blacklist-chan# (async/<! response-chan#)]
        (do
          (log/info "Received blacklist channel, making blacklist request.")
          (when-not (au/offer! blacklist-chan# [{:instance-id ~instance-id
@@ -80,10 +89,11 @@
   "Sends a rpc to the proxy state to offer the given instance.
    Throws an exception if a work-stealing channel cannot be found for the specfied service."
   [instance-rpc-chan service-id offer-params]
-  `(let [chan-resp-chan# (async/chan)]
+  `(let [response-chan# (async/promise-chan)]
      (log/debug "Requesting offer channel for" ~service-id)
-     (async/put! ~instance-rpc-chan [:offer ~service-id (cid/get-correlation-id) chan-resp-chan#])
-     (if-let [work-stealing-chan# (async/<! chan-resp-chan#)]
+     (->> (instance-rpc-message :offer ~service-id (cid/get-correlation-id) response-chan#)
+          (async/put! ~instance-rpc-chan))
+     (if-let [work-stealing-chan# (async/<! response-chan#)]
        (do
          (log/info "Received offer channel, making offer request.")
          (when-not (au/offer! work-stealing-chan# ~offer-params)
@@ -107,15 +117,16 @@
 (defmacro query-maintainer-channel-map!
   "Sends a rpc to retrieve the channel on which to query the state of the given service."
   [instance-rpc-chan service-id response-chan query-type]
-  `(async/put! ~instance-rpc-chan [~query-type ~service-id (cid/get-correlation-id) ~response-chan]))
+  `(->> (instance-rpc-message ~query-type ~service-id (cid/get-correlation-id) ~response-chan)
+        (async/put! ~instance-rpc-chan)))
 
 (defmacro query-maintainer-channel-map-with-timeout!
   "Sends a rpc to retrieve the channel on which to query the state of the given service."
   [instance-rpc-chan service-id timeout-ms query-type]
-  `(let [chan-resp-chan# (async/chan)]
-     (query-maintainer-channel-map! ~instance-rpc-chan ~service-id chan-resp-chan# ~query-type)
+  `(let [response-chan# (async/promise-chan)]
+     (query-maintainer-channel-map! ~instance-rpc-chan ~service-id response-chan# ~query-type)
      (async/alt!
-       chan-resp-chan# ([result-channel#] result-channel#)
+       response-chan# ([result-channel#] result-channel#)
        (async/timeout ~timeout-ms) ([ignore#] {:message "Request timed-out!"})
        :priority true)))
 
@@ -123,9 +134,9 @@
   "Sends a rpc to the router state to query the state of the given service.
    Throws an exception if a query channel cannot be found for the specfied service."
   [instance-rpc-chan service-id response-chan]
-  `(let [chan-resp-chan# (async/chan)]
-     (query-maintainer-channel-map! ~instance-rpc-chan ~service-id chan-resp-chan# :query-state)
-     (if-let [query-state-chan# (async/<! chan-resp-chan#)]
+  `(let [response-chan# (async/promise-chan)]
+     (query-maintainer-channel-map! ~instance-rpc-chan ~service-id response-chan# :query-state)
+     (if-let [query-state-chan# (async/<! response-chan#)]
        (when-not (au/offer! query-state-chan# {:cid (cid/get-correlation-id)
                                                :response-chan ~response-chan
                                                :service-id ~service-id})
@@ -150,10 +161,11 @@
   "Sends a rpc to the router state to release the lock on the given instance.
    Throws an exception if a release channel cannot be found for the specfied service."
   [instance-rpc-chan instance reservation-result]
-  `(let [chan-resp-chan# (async/chan)
+  `(let [response-chan# (async/promise-chan)
          service-id# (scheduler/instance->service-id ~instance)]
-     (async/put! ~instance-rpc-chan [:release service-id# (cid/get-correlation-id) chan-resp-chan#])
-     (if-let [release-chan# (async/<! chan-resp-chan#)]
+     (->> (instance-rpc-message :release service-id# (cid/get-correlation-id) response-chan#)
+          (async/put! ~instance-rpc-chan))
+     (if-let [release-chan# (async/<! response-chan#)]
        (when-not (au/offer! release-chan# [~instance ~reservation-result])
          (throw (ex-info "Unable to put instance on release-chan."
                          {:instance ~instance})))
@@ -179,15 +191,16 @@
   [instance-rpc-chan service-id reason-map exclude-ids-set timeout-in-millis]
   `(timers/start-stop-time!
      (metrics/service-timer ~service-id "get-task")
-     (let [chan-resp-chan# (async/chan)
+     (let [response-chan# (async/promise-chan)
            instance-resp-chan# (async/chan)
            method# (case (:reason ~reason-map)
                      :serve-request :reserve
                      :work-stealing :reserve
                      :kill-instance :kill)]
        ;;TODO: handle back pressure
-       (async/put! ~instance-rpc-chan [method# ~service-id (cid/get-correlation-id) chan-resp-chan#])
-       (when-let [service-chan# (async/<! chan-resp-chan#)]
+       (->> (instance-rpc-message method# ~service-id (cid/get-correlation-id) response-chan#)
+            (async/put! ~instance-rpc-chan))
+       (when-let [service-chan# (async/<! response-chan#)]
          (log/debug "found reservation channel for" ~service-id)
          (timers/start-stop-time!
            (metrics/service-timer ~service-id "reserve-instance")

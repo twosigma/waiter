@@ -20,9 +20,9 @@
     (try
       (loop [mock (first mock-fns)
              remaining (rest mock-fns)]
-        (let [[_ _ _ chan-resp-chan] (async/<!! instance-rpc-chan)
+        (let [{:keys [response-chan]} (async/<!! instance-rpc-chan)
                 c (async/chan 1)]
-          (async/>!! chan-resp-chan c)
+          (async/>!! response-chan c)
           (mock (async/<!! c)))
         (recur (first remaining) (rest remaining)))
       (catch Exception e
