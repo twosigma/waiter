@@ -45,7 +45,7 @@
                                         (is (= 200 (:status (make-request router-url)))))
                                       (log/debug "Done sending background requests"))]
             (try
-              (let [state (statsd-state waiter-url router-id)]
+              (let [state (router-statsd-state waiter-url router-id)]
                 (log/debug "State after request:" state)
                 (is (= {} state)))
               (finally

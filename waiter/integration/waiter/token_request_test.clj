@@ -155,8 +155,8 @@
       (log/info "ensuring tokens can no longer be retrieved on each router without include-deleted parameter")
       (doseq [token tokens-to-create]
         (doseq [[router-id router-url] (routers waiter-url)]
-          (let [router-state (router-state router-url :cookies cookies)
-                cache-data (get-in router-state [:kv-store :cache :data])
+          (let [router-state (kv-store-state router-url :cookies cookies)
+                cache-data (get-in router-state ["state" "cache" "data"])
                 token-cache-data (get cache-data (keyword token))]
             (is (nil? token-cache-data)
                 (str token " data not nil (" token-cache-data ") on " router-id ", cache data =" cache-data)))

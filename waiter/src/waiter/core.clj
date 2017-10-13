@@ -88,8 +88,14 @@
                      "service-id" :service-id-handler-fn
                      "settings" :display-settings-handler-fn
                      "sim" :sim-request-handler
-                     "state" {"" :display-state-handler-fn
-                              ["/" :service-id] :service-state-handler-fn}
+                     "state" {"" :state-all-handler-fn
+                              "/kv-store" :state-kv-store-handler-fn
+                              "/leader" :state-leader-handler-fn
+                              "/maintainer" :state-maintainer-handler-fn
+                              "/router-metrics" :state-router-metrics-handler-fn
+                              "/scheduler" :state-scheduler-handler-fn
+                              "/statsd" :state-statsd-handler-fn
+                              ["/" :service-id] :state-service-handler-fn}
                      "status" :status-handler-fn
                      "token" :token-handler-fn
                      "tokens" { "" :token-list-handler-fn
@@ -508,15 +514,24 @@
                       [:state passwords]
                       curator]
                (kv/new-kv-store kv-config curator base-path passwords))
-   :leader?-fn (pc/fnk [[:settings [:cluster-config min-routers] [:zookeeper base-path leader-latch-relative-path]]
+   :leader?-fn (pc/fnk [[:settings [:cluster-config min-routers]]
                         [:state router-id]
-                        curator
-                        discovery]
-                 (let [leader-latch-path (str base-path "/" leader-latch-relative-path)
-                       latch (LeaderLatch. curator leader-latch-path router-id)
-                       has-leadership? #(.hasLeadership latch)]
-                   (.start latch)
-                   (leader-fn-factory router-id has-leadership? discovery min-routers)))})
+                        discovery
+                        leader-latch]
+                 (let [has-leadership? #(.hasLeadership leader-latch)]
+                   (leader-fn-factory router-id has-leadership? discovery min-routers)))
+   :leader-id-fn (pc/fnk [leader-latch]
+                   #(try
+                      (-> leader-latch .getLeader .getId)
+                      (catch Exception ex
+                        (log/error ex "unable to retrieve leader id"))))
+   :leader-latch (pc/fnk [[:settings [:zookeeper base-path leader-latch-relative-path]]
+                          [:state router-id]
+                          curator]
+                   (let [leader-latch-path (str base-path "/" leader-latch-relative-path)
+                         latch (LeaderLatch. curator leader-latch-path router-id)]
+                     (.start latch)
+                     latch))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
@@ -921,18 +936,6 @@
                                       (fn inner-display-settings-handler-fn [_]
                                         (settings/display-settings settings))
                                       request)))
-   :display-state-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
-                                      [:daemons router-state-maintainer scheduler-maintainer]
-                                      [:routines router-metrics-helpers]
-                                      handle-secure-request-fn]
-                               (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
-                                     scheduler-query-chan (:query-chan scheduler-maintainer)
-                                     router-metrics-state-fn (:router-metrics-state-fn router-metrics-helpers)]
-                                 (fn display-state-handler-fn [request]
-                                   (handle-secure-request-fn
-                                     (fn inner-display-state-handler-fn [request]
-                                       (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn kv-store leader?-fn request))
-                                     request))))
    :favicon-handler-fn (pc/fnk []
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
@@ -1093,14 +1096,6 @@
                                       (handler/suspend-or-resume-service-handler
                                         kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :resume request))
                                     request)))
-   :service-state-handler-fn (pc/fnk [[:daemons state-query-chans]
-                                      [:state instance-rpc-chan router-id]
-                                      handle-secure-request-fn]
-                               (fn service-state-handler-fn [request]
-                                 (handle-secure-request-fn
-                                   (fn inner-service-state-handler-fn [{{:keys [service-id]} :route-params}]
-                                     (handler/get-service-state router-id instance-rpc-chan service-id state-query-chans request))
-                                   request)))
    :service-suspend-handler-fn (pc/fnk [[:curator kv-store]
                                         [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                         handle-secure-request-fn]
@@ -1119,6 +1114,76 @@
                                          (handler/service-view-logs-handler scheduler service-id prepend-waiter-url request))
                                        request)))
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
+   :state-all-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
+                                  [:daemons router-state-maintainer scheduler-maintainer]
+                                  [:routines router-metrics-helpers]
+                                  handle-secure-request-fn]
+                           (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
+                                 scheduler-query-chan (:query-chan scheduler-maintainer)
+                                 router-metrics-state-fn (:router-metrics-state-fn router-metrics-helpers)]
+                             (fn state-all-handler-fn [request]
+                               (handle-secure-request-fn
+                                 (fn inner-state-all-handler-fn [request]
+                                   (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn kv-store leader?-fn request))
+                                 request))))
+   :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
+                                       [:state router-id]
+                                       handle-secure-request-fn]
+                                (fn kv-store-state-handler-fn [request]
+                                  (handle-secure-request-fn
+                                    (fn inner-kv-store-state-handler-fn [request]
+                                      (handler/get-kv-store-state router-id kv-store request))
+                                    request)))
+   :state-leader-handler-fn (pc/fnk [[:curator leader?-fn leader-id-fn]
+                                     [:state router-id]
+                                     handle-secure-request-fn]
+                              (fn leader-state-handler-fn [request]
+                                (handle-secure-request-fn
+                                  (fn inner-leader-state-handler-fn [request]
+                                    (handler/get-leader-state router-id leader?-fn leader-id-fn request))
+                                  request)))
+   :state-maintainer-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                         [:state router-id]
+                                         handle-secure-request-fn]
+                                  (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
+                                    (fn maintainer-state-handler-fn [request]
+                                      (handle-secure-request-fn
+                                        (fn inner-maintainer-state-handler-fn [request]
+                                          (handler/get-maintainer-state router-id state-chan request))
+                                        request))))
+   :state-router-metrics-handler-fn (pc/fnk [[:routines router-metrics-helpers]
+                                             [:state router-id]
+                                             handle-secure-request-fn]
+                                      (let [router-metrics-state-fn (:router-metrics-state-fn router-metrics-helpers)]
+                                        (fn router-metrics-state-handler-fn [request]
+                                          (handle-secure-request-fn
+                                            (fn inner-router-metrics-state-handler-fn [request]
+                                              (handler/get-router-metrics-state router-id router-metrics-state-fn request))
+                                            request))))
+   :state-scheduler-handler-fn (pc/fnk [[:daemons scheduler-maintainer]
+                                        [:state router-id]
+                                        handle-secure-request-fn]
+                                 (let [scheduler-query-chan (:query-chan scheduler-maintainer)]
+                                   (fn scheduler-state-handler-fn [request]
+                                     (handle-secure-request-fn
+                                       (fn inner-scheduler-state-handler-fn [request]
+                                         (handler/get-scheduler-state router-id scheduler-query-chan request))
+                                       request))))
+   :state-service-handler-fn (pc/fnk [[:daemons state-query-chans]
+                                      [:state instance-rpc-chan router-id]
+                                      handle-secure-request-fn]
+                               (fn service-state-handler-fn [request]
+                                 (handle-secure-request-fn
+                                   (fn inner-service-state-handler-fn [{{:keys [service-id]} :route-params}]
+                                     (handler/get-service-state router-id instance-rpc-chan service-id state-query-chans request))
+                                   request)))
+   :state-statsd-handler-fn (pc/fnk [[:state router-id]
+                                     handle-secure-request-fn]
+                              (fn statsd-state-handler-fn [request]
+                                (handle-secure-request-fn
+                                  (fn inner-settings-handler-fn [request]
+                                    (handler/get-statsd-state router-id request))
+                                  request)))
    :status-handler-fn (pc/fnk []
                         (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
    :token-handler-fn (pc/fnk [[:curator kv-store]
@@ -1159,10 +1224,10 @@
                                       handle-secure-request-fn]
                                (fn token-reindex-handler-fn [request]
                                  (handle-secure-request-fn
-                                    (fn inner-token-handler-fn [request]
-                                      (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
-                                                                           kv-store list-tokens-fn request))
-                                    request)))
+                                   (fn inner-token-handler-fn [request]
+                                     (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
+                                                                          kv-store list-tokens-fn request))
+                                   request)))
    :waiter-auth-handler-fn (pc/fnk [handle-secure-request-fn]
                              (fn waiter-auth-handler-fn [request]
                                (handle-secure-request-fn
@@ -1196,7 +1261,7 @@
                                                 consent-expiry-days request))
                                             request)))
    :welcome-handler-fn (pc/fnk [handle-secure-request-fn settings]
-                               (partial handler/welcome-handler settings))
+                         (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]
                                       handle-inter-router-request-fn]
                                (fn work-stealing-handler-fn [request]
