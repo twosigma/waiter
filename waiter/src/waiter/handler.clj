@@ -222,7 +222,7 @@
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
-  [entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request]
+  [entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn service-id->metrics-fn request]
   (try
     (let [timeout-ms 30000
           current-state (async/alt!!
@@ -246,14 +246,16 @@
               retrieve-instance-counts (fn retrieve-instance-counts [service-id]
                                          {:healthy-instances (count (get-in current-state [:service-id->healthy-instances service-id]))
                                           :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
+              service-id->metrics (service-id->metrics-fn)
               include-effective-parameters? (utils/request-flag request-params "effective-parameters")
               response-data (map
                              (fn service-id->service-info [service-id]
                                (let [service-description (service-id->service-description-fn service-id :effective? false)]
                                  (cond->
-                                     {:service-id service-id
+                                     {:instance-counts (retrieve-instance-counts service-id)
+                                      :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
+                                      :service-id service-id
                                       :service-description service-description
-                                      :instance-counts (retrieve-instance-counts service-id)
                                       :url (prepend-waiter-url (str "/apps/" service-id))}
                                    include-effective-parameters? (assoc :effective-parameters
                                                                         (service-id->service-description-fn
@@ -339,9 +341,9 @@
                              (assoc :instances service-instance-maps
                                     :num-active-instances (count (:active-instances service-instance-maps)))
                              (not-empty aggregate-metrics-map)
-                             (update-in [:metrics :aggregate] (fn [_] aggregate-metrics-map))
+                             (assoc-in [:metrics :aggregate] aggregate-metrics-map)
                              (not-empty router->metrics)
-                             (update-in [:metrics :routers] (fn [_] router->metrics))
+                             (assoc-in [:metrics :routers] router->metrics)
                              (not-empty core-service-description)
                              (assoc :service-description core-service-description)
                              (not-empty (or (:overrides service-description-overrides) {}))

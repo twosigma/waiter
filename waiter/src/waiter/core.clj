@@ -1076,15 +1076,17 @@
                                   (handler/service-name-handler request request->descriptor-fn kv-store store-service-description-fn))
                                 request)))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
-                                     [:routines prepend-waiter-url service-id->service-description-fn]
+                                     [:routines prepend-waiter-url router-metrics-helpers service-id->service-description-fn]
                                      [:state entitlement-manager]
                                      handle-secure-request-fn]
-                              (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
+                              (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
+                                    {:keys [service-id->metrics-fn]} router-metrics-helpers]
                                 (fn service-list-handler-fn [request]
                                   (handle-secure-request-fn
                                     (fn inner-service-list-handler-fn [request]
                                       (handler/list-services-handler entitlement-manager state-chan prepend-waiter-url
-                                                                     service-id->service-description-fn request))
+                                                                     service-id->service-description-fn service-id->metrics-fn
+                                                                     request))
                                     request))))
    :service-override-handler-fn (pc/fnk [[:curator kv-store]
                                          [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]

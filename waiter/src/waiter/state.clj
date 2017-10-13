@@ -27,7 +27,8 @@
             [waiter.scheduler :as scheduler]
             [waiter.utils :as utils]
             [waiter.work-stealing :as work-stealing])
-  (:import clojure.lang.PersistentQueue))
+  (:import clojure.lang.PersistentQueue
+           (org.joda.time DateTime)))
 
 ;; Router state maintainers
 
@@ -771,8 +772,11 @@
 
                   request-chan
                   ([message]
-                    (let [{:keys [cid method response-chan service-id]} message]
+                    (let [{:keys [cid method reason response-chan service-id time]} message]
                       (cid/cdebug cid "[service-chan-maintainer]" service-id "received request of type" method)
+                      (when (and (= :reserve method) (= :serve-request reason) (instance? DateTime time))
+                        (-> (metrics/service-counter service-id "last-request-time")
+                            (metrics/reset-counter-if < (.getMillis time))))
                       (let [channel-map (get service-id->channel-map service-id)]
                         (if channel-map
                           (let [method-chan (retrieve-channel channel-map method)]

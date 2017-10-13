@@ -157,13 +157,13 @@
    The numeric values in each entry of the map come from corresponding codahale metrics."
   []
   (let [services-string "services"
+        included-counter-names ["in-flight" "last-request-time" "outstanding" "slots-available" "slots-in-use" "total"]
         metric-filter (reify MetricFilter
                         (matches [_ name _]
-                          (and (str/starts-with? name services-string)
-                               (or (and (str/includes? name "counters")
-                                        (some #(str/includes? name %)
-                                              ["slots-available" "slots-in-use" "in-flight" "outstanding" "total"]))
-                                   (and (str/includes? name "timers") (str/includes? name "process"))))))
+                          (-> (and (str/starts-with? name services-string)
+                                   (str/includes? name "counters")
+                                   (some #(str/includes? name %) included-counter-names))
+                              boolean)))
         service-id->metrics (-> (get-metrics mc/default-registry metric-filter)
                                 (get services-string))]
     (pc/map-vals (fn [metrics]
@@ -175,6 +175,7 @@
                      (-> transient-map
                          (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")
                          (assoc-if ["counters" "instance-counts" "slots-in-use"] "slots-in-use")
+                         (assoc-if ["counters" "last-request-time"] "last-request-time")
                          (assoc-if ["counters" "request-counts" "outstanding"] "outstanding")
                          (assoc-if ["counters" "request-counts" "total"] "total")
                          (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
@@ -205,14 +206,25 @@
   (get-metrics mc/default-registry (prefix-metrics-filter "jvm")))
 
 (defn update-counter
-  "Updates the counter to the size of the `new-coll`."
+  "Updates the counter to the size of the `new-coll`.
+   A data race is possible if two threads invoke this function concurrently."
   [counter old-coll new-coll]
   (counters/inc! counter (- (count new-coll) (count old-coll))))
 
 (defn reset-counter
-  "Resets the value of the counter to the new value."
+  "Resets the value of the counter to the new value.
+   A data race is possible if two threads invoke this function concurrently."
   [the-counter new-value]
   (counters/inc! the-counter (- (or new-value 0) (counters/value the-counter))))
+
+(defn reset-counter-if
+  "Resets the value of the counter to the new-value when
+   `(predicate current-value new-value)` returns a truthy value.
+   A data race is possible if two threads invoke this function concurrently."
+  [the-counter predicate new-value]
+  (let [cur-value (counters/value the-counter)]
+    (when (predicate cur-value new-value)
+      (counters/inc! the-counter (- new-value cur-value)))))
 
 (defn retrieve-local-stats-for-service
   "Returns a map containing local metrics for the specified service along with the service-id."
@@ -277,6 +289,7 @@
 
 (defn- merge-metrics
   "Merges all the metrics.
+   last-request-time metric is combined using the max operator.
    Timers and histograms will be combined using `merge-quantile-metrics`.
    Meters will be combined using `merge-rate-metrics`.
    Counters are combined using sum reduction.
@@ -287,6 +300,8 @@
                         (if (contains? accum-map entry-key)
                           (let [current-val (get accum-map entry-key)
                                 reduced-val (cond
+                                              ;; last-request-time metric
+                                              (str/includes? entry-key "last-request-time") (max current-val entry-val)
                                               ;; histograms and timers
                                               (is-quantile-metric? entry-val) (merge-quantile-metrics current-val entry-val)
                                               ;; meters

@@ -204,8 +204,10 @@
        ;;TODO: handle back pressure
        (->> {:cid (cid/get-correlation-id)
              :method method#
+             :reason (:reason ~reason-map)
              :response-chan response-chan#
-             :service-id ~service-id}
+             :service-id ~service-id
+             :time (:time ~reason-map)}
             (async/put! ~instance-rpc-chan))
        (when-let [service-chan# (async/<! response-chan#)]
          (log/debug "found reservation channel for" ~service-id)

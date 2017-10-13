@@ -412,8 +412,10 @@
                                      (= action :manage)
                                      (some #(= % service-id) test-user-services))))
         list-services-handler (wrap-handler-json-response list-services-handler)]
-    (let [service-id->service-description-fn
-          (fn [service-id & _] {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})]
+    (letfn [(service-id->service-description-fn [service-id & _]
+              {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})
+            (service-id->metrics-fn []
+              {})]
 
       (testing "list-services-handler:success-regular-user"
         (async/>!! state-chan {:service-id->healthy-instances {"service1" []
@@ -424,7 +426,8 @@
                                :service-id->unhealthy-instances {"service3" []
                                                                  "service5" []}})
         (let [{:keys [body headers status]}
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                     service-id->service-description-fn service-id->metrics-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -441,7 +444,8 @@
                                  :service-id->unhealthy-instances {"service3" []
                                                                    "service5" []}})
           (let [{:keys [body headers status]}
-                (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+                (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "content-type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -463,7 +467,8 @@
                                                                    "service5" []}})
           (let [{:keys [body headers status]}
 
-                (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+                (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "content-type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -476,7 +481,8 @@
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
               {:keys [body headers status]}
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                     service-id->service-description-fn service-id->metrics-fn request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "content-type")))
           (is (str/includes? (str body) exception-message))))
@@ -496,7 +502,8 @@
                                            (some #(= (str "service" %) service-id) (range 1 7)))))
               {:keys [body headers status]}
               ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                     service-id->service-description-fn service-id->metrics-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 7)))

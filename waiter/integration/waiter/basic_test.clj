@@ -190,6 +190,39 @@
       (is (= {:foo "bar", :baz "quux", :begindate "null", :enddate "null", :timestamp "20160713201333949"} value))
       (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-last-request-time
+  (testing-using-waiter-url
+    (let [num-iteration-requests 20
+          service-name (rand-name)
+          headers {:x-waiter-name service-name
+                   :x-waiter-cmd (kitchen-cmd "-p $PORT0")
+                   :x-waiter-concurrency-level num-iteration-requests}
+          {:keys [request-headers service-id] :as first-response}
+          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :http-method-fn http/get))]
+      (try
+        (assert-response-status first-response 200)
+        (dotimes [_ num-iteration-requests]
+          (-> (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
+              (assert-response-status 200)))
+        ;; allow some time to elapse to adjust for difference in server time
+        (Thread/sleep 2000)
+        (let [current-time-millis (System/currentTimeMillis)]
+          (Thread/sleep 2000)
+          (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
+          ;; allow some time to elapse to allow inter-router metrics syncing
+          (Thread/sleep 1000)
+          (let [service (service waiter-url service-id {})
+                service-metrics (-> (service-settings waiter-url service-id)
+                                     (get-in [:metrics :aggregate]))]
+            (is service)
+            (is (< current-time-millis (get service "last-request-time"))
+                (str {:current-time-millis current-time-millis, :service service}))
+            (is (= (get service "last-request-time")
+                   (get-in service-metrics [:counters :last-request-time]))
+                (str {:service service, :service-metrics service-metrics}))))
+        (finally
+          (delete-service waiter-url service-id))))))
+
 (deftest ^:parallel ^:integration-fast test-list-apps
   (testing-using-waiter-url
     (let [service-id (:service-id (make-request-with-debug-info
@@ -198,16 +231,19 @@
       (testing "without parameters"
         (let [service (service waiter-url service-id {})] ;; see my app as myself
           (is service)
+          (is (pos? (get service "last-request-time")))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "waiter user disabled" ;; see my app as myself
         (let [service (service waiter-url service-id {"force" "false"})]
           (is service)
+          (is (pos? (get service "last-request-time")))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "waiter user disabled and same user" ;; see my app as myself
         (let [service (service waiter-url service-id {"force" "false", "run-as-user" (retrieve-username)})]
           (is service)
+          (is (pos? (get service "last-request-time")))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "different run-as-user" ;; no such app
@@ -237,6 +273,7 @@
       (testing "list-apps-with-waiter-user-disabled-and-see-another-app" ;; can see another user's app
         (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
           (is service)
+          (is (pos? (get service "last-request-time")))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
       (delete-service waiter-url service-id))))
 
