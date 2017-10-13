@@ -537,10 +537,10 @@
                                           work-stealing-chan (async/chan 1)]
                                       (async/go
                                         (let [instance-rpc-content (async/<! instance-rpc-chan)
-                                              [mode service-id _ chan-resp-chan] instance-rpc-content]
-                                          (is (= :offer mode))
+                                              {:keys [method service-id response-chan]} instance-rpc-content]
+                                          (is (= :offer method))
                                           (is (= test-service-id service-id))
-                                          (async/>! chan-resp-chan work-stealing-chan)))
+                                          (async/>! response-chan work-stealing-chan)))
                                       (async/go
                                         (let [offer-params (async/<! work-stealing-chan)]
                                           (is (= test-service-id (:service-id offer-params)))
@@ -618,22 +618,22 @@
 
 (deftest test-work-stealing-handler-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
-        service-id "test-service-id"
+        test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
                          (json/write-str
                            {"cid" "test-cid"
-                            "instance" {"id" "test-instance-id", "service-id" service-id}
+                            "instance" {"id" "test-instance-id", "service-id" test-service-id}
                             "request-id" "test-request-id"
                             "router-id" "test-router-id"
-                            "service-id" service-id}))}
+                            "service-id" test-service-id}))}
         response-chan (work-stealing-handler instance-rpc-chan request)]
     (async/thread
-      (let [[method in-service-id correlation-id result-chan] (async/<!! instance-rpc-chan)]
+      (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :offer method))
-        (is (= service-id in-service-id))
-        (is correlation-id)
-        (is (instance? ManyToManyChannel result-chan))
-        (async/close! result-chan)))
+        (is (= test-service-id service-id))
+        (is cid)
+        (is (instance? ManyToManyChannel response-chan))
+        (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
       (is (= 500 status)))))
 
@@ -780,10 +780,10 @@
           start-instance-rpc-fn (fn []
                                   (async/go
                                     (dotimes [_ 2]
-                                      (let [[method _ _ resp-chan] (async/<! instance-rpc-chan)]
+                                      (let [{:keys [method response-chan]} (async/<! instance-rpc-chan)]
                                         (condp = method
-                                          :query-state (async/>! resp-chan query-state-chan)
-                                          :query-work-stealing (async/>! resp-chan query-work-stealing-chan))))))
+                                          :query-state (async/>! response-chan query-state-chan)
+                                          :query-work-stealing (async/>! response-chan query-work-stealing-chan))))))
           start-query-chan-fn (fn []
                                 (async/go
                                   (let [{:keys [response-chan]} (async/<! query-state-chan)]
@@ -1072,33 +1072,33 @@
 
 (deftest test-blacklist-instance-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
-        service-id "test-service-id"
+        test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
                          (json/write-str
-                           {"instance" {"id" "test-instance-id", "service-id" service-id}
+                           {"instance" {"id" "test-instance-id", "service-id" test-service-id}
                             "period-in-ms" 1000
                             "reason" "blacklist"}))}
         response-chan (blacklist-instance instance-rpc-chan request)]
     (async/thread
-      (let [[method in-service-id correlation-id result-chan] (async/<!! instance-rpc-chan)]
+      (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :blacklist method))
-        (is (= service-id in-service-id))
-        (is correlation-id)
-        (is (instance? ManyToManyChannel result-chan))
-        (async/close! result-chan)))
+        (is (= test-service-id service-id))
+        (is cid)
+        (is (instance? ManyToManyChannel response-chan))
+        (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
       (is (= 400 status)))))
 
 (deftest test-get-blacklisted-instances-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
-        service-id "test-service-id"
-        response-chan (get-blacklisted-instances instance-rpc-chan service-id {})]
+        test-service-id "test-service-id"
+        response-chan (get-blacklisted-instances instance-rpc-chan test-service-id {})]
     (async/thread
-      (let [[method in-service-id correlation-id result-chan] (async/<!! instance-rpc-chan)]
+      (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :query-state method))
-        (is (= service-id in-service-id))
-        (is correlation-id)
-        (is (instance? ManyToManyChannel result-chan))
-        (async/close! result-chan)))
+        (is (= test-service-id service-id))
+        (is cid)
+        (is (instance? ManyToManyChannel response-chan))
+        (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
       (is (= 500 status)))))

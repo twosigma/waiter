@@ -85,14 +85,14 @@
                  (-> (:app-info test-case) annotate-tasks-with-health-url app-info->task))))))))
 
 (defn- mock-blacklisting-instance
-  [instance-rpc-chan service-id callback-fn]
+  [instance-rpc-chan test-service-id callback-fn]
   (async/thread
     (try
-      (let [[operation in-service-id _ chan-resp-chan] (async/<!! instance-rpc-chan)
+      (let [{:keys [method response-chan service-id]} (async/<!! instance-rpc-chan)
             blacklist-chan (async/chan 1)]
-        (is (= :blacklist operation))
-        (is (= service-id in-service-id))
-        (async/>!! chan-resp-chan blacklist-chan)
+        (is (= :blacklist method))
+        (is (= test-service-id service-id))
+        (async/>!! response-chan blacklist-chan)
         (callback-fn (async/<!! blacklist-chan)))
       (catch Exception e
         (log/info e)
@@ -117,14 +117,14 @@
       (async/<!! (async/timeout 10)))))
 
 (defn- mock-offering-instance
-  [instance-rpc-chan service-id callback-fn]
+  [instance-rpc-chan test-service-id callback-fn]
   (async/thread
     (try
-      (let [[operation in-service-id _ chan-resp-chan] (async/<!! instance-rpc-chan)
+      (let [{:keys [method response-chan service-id]} (async/<!! instance-rpc-chan)
             offer-chan (async/chan 1)]
-        (is (= :offer operation))
-        (is (= service-id in-service-id))
-        (async/>!! chan-resp-chan offer-chan)
+        (is (= :offer method))
+        (is (= test-service-id service-id))
+        (async/>!! response-chan offer-chan)
         (callback-fn (async/<!! offer-chan)))
       (catch Exception e
         (log/info e)
@@ -154,40 +154,40 @@
 (deftest test-query-maintainer-channel-map-with-timeout!
   (testing "basic query-state success"
     (let [instance-rpc-chan (async/chan 1)
-          service-id "test-id"
+          test-service-id "test-id"
           result-query-chan (async/chan 1)]
       (async/thread
-        (let [[operation in-service-id _ chan-resp-chan] (async/<!! instance-rpc-chan)]
-          (is (= :query-key operation))
-          (is (= service-id in-service-id))
-          (is (not (nil? chan-resp-chan)))
-          (async/>!! chan-resp-chan result-query-chan)))
+        (let [{:keys [method response-chan service-id]} (async/<!! instance-rpc-chan)]
+          (is (= :query-key method))
+          (is (= test-service-id service-id))
+          (is (not (nil? response-chan)))
+          (async/>!! response-chan result-query-chan)))
       (async/<!! ;; wait for the go-block to complete execution
         (async/go
-          (let [result-chan (query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id 1000 :query-key)]
+          (let [result-chan (query-maintainer-channel-map-with-timeout! instance-rpc-chan test-service-id 1000 :query-key)]
             (is (= result-query-chan result-chan)))))))
   (testing "basic query-state timeout"
     (let [instance-rpc-chan (async/chan 1)
-          service-id "test-id"]
+          test-service-id "test-id"]
       (async/thread
-        (let [[operation in-service-id _ chan-resp-chan] (async/<!! instance-rpc-chan)]
-          (is (= :query-key operation))
-          (is (= service-id in-service-id))
-          (is (not (nil? chan-resp-chan)))))
+        (let [{:keys [method response-chan service-id]} (async/<!! instance-rpc-chan)]
+          (is (= :query-key method))
+          (is (= test-service-id service-id))
+          (is (not (nil? response-chan)))))
       (async/<!! ;; wait for the go-block to complete execution
         (async/go
-          (let [result-chan (query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id 100 :query-key)]
+          (let [result-chan (query-maintainer-channel-map-with-timeout! instance-rpc-chan test-service-id 100 :query-key)]
             (is (= {:message "Request timed-out!"} result-chan))))))))
 
 (defn- mock-query-state-instance
-  [instance-rpc-chan service-id callback-fn]
+  [instance-rpc-chan test-service-id callback-fn]
   (async/thread
     (try
-      (let [[operation in-service-id _ chan-resp-chan] (async/<!! instance-rpc-chan)
+      (let [{:keys [method response-chan service-id]} (async/<!! instance-rpc-chan)
             query-state-chan (async/chan 1)]
-        (is (= :query-state operation))
-        (is (= service-id in-service-id))
-        (async/>!! chan-resp-chan query-state-chan)
+        (is (= :query-state method))
+        (is (= test-service-id service-id))
+        (async/>!! response-chan query-state-chan)
         (callback-fn (async/<!! query-state-chan)))
       (catch Exception e
         (log/info e)
