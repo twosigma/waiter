@@ -311,7 +311,7 @@
     (doseq [{:keys [name service-desc request-headers waiter-hostname expected]} test-cases]
       (testing (str "Test " name)
         (let [{:keys [source token]}
-              (retrieve-token-from-service-description-or-hostname service-desc request-headers waiter-hostname)]
+              (retrieve-token-from-service-description-or-hostname service-desc request-headers #{waiter-hostname})]
           (when-not (= expected token)
             (log/info name ": expected=" expected ", actual=" token "with source:" source))
           (is (= expected token)))))))
@@ -375,7 +375,8 @@
   (let [test-user "test-header-user"
         token-user "token-user"
         kv-store (Object.)
-        waiter-hostname "waiter-hostname.app.example.com"]
+        waiter-hostname "waiter-hostname.app.example.com"
+        waiter-hostnames #{waiter-hostname}]
     (with-redefs [token->service-description-template (fn [_ token & _]
                                                         (if (and token (not (str/includes? token "no-token")))
                                                           (cond-> {"name" token, "cmd" token-user, "version" "token", "owner" "token-owner"}
@@ -559,7 +560,7 @@
             (let [actual (prepare-service-description-sources
                            {:waiter-headers waiter-headers
                             :passthrough-headers passthrough-headers}
-                           kv-store waiter-hostname service-description-defaults)]
+                           kv-store waiter-hostnames service-description-defaults)]
               (when (not= expected actual)
                 (log/info name)
                 (log/info "Expected: " (into (sorted-map) expected))

@@ -108,8 +108,11 @@
  ;; Set the port:
  :port 9091
 
- ;; Set the DNS name for your Waiter cluster:
- :hostname "waiter.example.com"
+ ;; The DNS name for the Waiter cluster, which can be:
+ ;; - a non-empty string
+ ;; - a non-empty vector of strings, in which case the first element is the primary hostname
+ :hostname ["waiter.example.com"
+            "waiter-alternate.example.com"]
 
  ; ---------- Token Storage ----------
 

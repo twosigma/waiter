@@ -185,8 +185,8 @@
 
 (defn- handle-delete-token-request
   "Deletes the token configuration if found."
-  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn {:keys [headers] :as request}]
-  (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)
+  [clock synchronize-fn kv-store waiter-hostnames entitlement-manager make-peer-requests-fn {:keys [headers] :as request}]
+  (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
         authenticated-user (get request :authorization/user)
         request-params (:query-params (ring-params/params-request request))
         hard-delete (utils/request-flag request-params "hard-delete")]
@@ -226,10 +226,10 @@
 (defn- handle-get-token-request
   "Returns the configuration if found.
    Anyone can see the configuration, b/c it shouldn't contain any sensitive data."
-  [kv-store waiter-hostname {:keys [headers] :as request}]
+  [kv-store waiter-hostnames {:keys [headers] :as request}]
   (let [request-params (:query-params (ring-params/params-request request))
         include-deleted (utils/request-flag request-params "include-deleted")
-        {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostname)
+        {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
         {:keys [service-description-template token-metadata]} token-description]
     (if (and service-description-template (not-empty service-description-template))
@@ -247,7 +247,7 @@
 (defn- handle-post-token-request
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
+  [clock synchronize-fn kv-store waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
    {:keys [headers] :as request}]
   (let [request-params (:query-params (ring-params/params-request request))
         authenticated-user (get request :authorization/user)
@@ -262,7 +262,7 @@
         version-etag (get headers "if-match")]
     (when (str/blank? token)
       (throw (ex-info "Must provide the token" {:status 400})))
-    (when (= waiter-hostname token)
+    (when (contains? waiter-hostnames token)
       (throw (ex-info "Token name is reserved" {:status 403 :token token})))
     (when-not (re-matches valid-token-re token)
       (throw (ex-info "Token must match pattern"
@@ -350,14 +350,14 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store waiter-hostname entitlement-manager make-peer-requests-fn validate-service-description-fn
+  [clock synchronize-fn kv-store waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
    {:keys [request-method] :as request}]
   (try
     (case request-method
-      :delete (handle-delete-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager
+      :delete (handle-delete-token-request clock synchronize-fn kv-store waiter-hostnames entitlement-manager
                                            make-peer-requests-fn request)
-      :get (handle-get-token-request kv-store waiter-hostname request)
-      :post (handle-post-token-request clock synchronize-fn kv-store waiter-hostname entitlement-manager
+      :get (handle-get-token-request kv-store waiter-hostnames request)
+      :post (handle-post-token-request clock synchronize-fn kv-store waiter-hostnames entitlement-manager
                                        make-peer-requests-fn validate-service-description-fn request)
       (throw (ex-info "Invalid request method" {:request-method request-method, :status 405})))
     (catch Exception ex

@@ -131,6 +131,10 @@
   (is (some? (s/check settings-schema (settings-with-missing-kind-sub-map :scheduler-config))))
   (is (some? (s/check settings-schema (settings-with-missing-kind-sub-map :service-description-builder-config)))))
 
+(deftest test-empty-hostname-vector
+  (let [settings (assoc (load-full-settings) :hostname [])]
+    (is (some? (s/check settings-schema settings)))))
+
 (deftest test-deep-merge-settings
   (testing "Deep merging of configuration settings"
 

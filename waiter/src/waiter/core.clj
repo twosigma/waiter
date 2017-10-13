@@ -468,6 +468,10 @@
                                atom))
    :task-threadpool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :thread-id->stack-state-atom (pc/fnk [] (atom {}))
+   :waiter-hostnames (pc/fnk [[:settings hostname]]
+                             (set (if (sequential? hostname)
+                                    hostname
+                                    [hostname])))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
                               http-client]
                        (let [websocket-client (WebSocketClient. ^HttpClient http-client)]
@@ -638,17 +642,18 @@
                                                  router-id async-request-store-atom make-http-request-fn instance-rpc-chan service-id metric-group
                                                  instance reason-map request-properties location response-headers)))
    :prepend-waiter-url (pc/fnk [[:settings port hostname]]
-                         (fn [endpoint-url]
-                           (if (str/blank? endpoint-url)
-                             endpoint-url
-                             (str "http://" hostname ":" port endpoint-url))))
+                         (let [hostname (if (sequential? hostname) (first hostname) hostname)]
+                           (fn [endpoint-url]
+                             (if (str/blank? endpoint-url)
+                               endpoint-url
+                               (str "http://" hostname ":" port endpoint-url)))))
    :request->descriptor-fn (pc/fnk [[:curator kv-store]
-                                    [:settings metric-group-mappings service-description-defaults hostname]
-                                    [:state service-description-builder service-id-prefix]
+                                    [:settings metric-group-mappings service-description-defaults]
+                                    [:state service-description-builder service-id-prefix waiter-hostnames]
                                     assoc-run-as-user-approved?
                                     can-run-as?-fn]
                              (fn request->descriptor-fn [request]
-                               (pr/request->descriptor service-description-defaults service-id-prefix kv-store hostname can-run-as?-fn
+                               (pr/request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostnames can-run-as?-fn
                                                        metric-group-mappings service-description-builder assoc-run-as-user-approved? request)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]
@@ -712,15 +717,12 @@
    :validate-service-description-fn (pc/fnk [[:state service-description-builder]]
                                       (fn validate-service-description [service-description]
                                         (sd/validate service-description-builder service-description {})))
-   :waiter-request?-fn (pc/fnk [[:settings hostname]]
+   :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
                                waiter-router-ip (.getHostAddress local-router)
                                ;; use (set [...]) instead of #{...} below as there may be duplicate values
-                               hostnames (if (sequential? hostname)
-                                           (set/union (set hostname)
-                                                      (set [waiter-router-hostname waiter-router-ip]))
-                                           (set [hostname waiter-router-hostname waiter-router-ip]))]
+                               hostnames (set/union waiter-hostnames (set [waiter-router-hostname waiter-router-ip]))]
                            (waiter-request?-factory hostnames)))
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
@@ -941,10 +943,10 @@
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
                             :content-type "image/png"}))
    :handle-authentication-wrapper-fn (pc/fnk [[:curator kv-store]
-                                              [:settings hostname]]
+                                              [:state waiter-hostnames]]
                                        (fn handle-authentication-wrapper-fn [request-handler {:keys [headers] :as request}]
                                          (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
-                                               {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers hostname)
+                                               {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
                                                {:strs [authentication] :as service-description} (and token (sd/token->service-description-template kv-store token :error-on-missing false))
                                                authentication-disabled? (= authentication "disabled")]
                                            (cond
@@ -1188,14 +1190,13 @@
                         (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
    :token-handler-fn (pc/fnk [[:curator kv-store]
                               [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
-                              [:settings hostname]
-                              [:state clock entitlement-manager]
+                              [:state clock entitlement-manager waiter-hostnames]
                               handle-secure-request-fn]
                        (fn token-handler-fn [request]
                          (handle-secure-request-fn
                            (fn inner-token-handler-fn [request]
                              (token/handle-token-request
-                               clock synchronize-fn kv-store hostname entitlement-manager make-inter-router-requests-sync-fn
+                               clock synchronize-fn kv-store waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn
                                validate-service-description-fn request))
                            request)))
    :token-list-handler-fn (pc/fnk [[:curator kv-store]
