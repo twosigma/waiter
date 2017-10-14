@@ -1118,3 +1118,21 @@
           waiter-request?-fn ((:waiter-request?-fn routines) config)]
       (is (waiter-request?-fn {:headers {"host" "waiter-host"}}))
       (is (not (waiter-request?-fn {:headers {"host" "waiter-host-1"}}))))))
+
+(deftest test-wrap-error-handling
+  (let [handler-sync (fn [_] {:status 200})
+        handler-async (fn [_] (async/go {:status 200}))
+        handler-sync-error (fn [_] (throw (ex-info "" {:status 400})))
+        handler-async-error (fn [_] (async/go (ex-info "" {:status 400})))]
+    (testing "sync, no error"
+      (let [{:keys [status]} ((wrap-error-handling handler-sync) {})]
+        (is (= 200 status))))
+    (testing "async, no error"
+      (let [{:keys [status]} (async/<!! ((wrap-error-handling handler-async) {}))]
+        (is (= 200 status))))
+    (testing "sync, error"
+      (let [{:keys [status]} ((wrap-error-handling handler-sync-error) {})]
+        (is (= 400 status))))
+    (testing "async, error"
+      (let [{:keys [status]} (async/<!! ((wrap-error-handling handler-async-error) {}))]
+        (is (= 400 status))))))

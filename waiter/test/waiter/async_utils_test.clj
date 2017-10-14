@@ -300,3 +300,8 @@
     (test-priority-data out 5)
     (test-priority-data out 2)
     (test-priority-data out 4)))
+
+(deftest test-chan?
+  (is (chan? (async/chan)))
+  (is (not (chan? nil)))
+  (is (not (chan? {}))))

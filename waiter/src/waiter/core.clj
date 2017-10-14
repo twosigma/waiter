@@ -178,6 +178,22 @@
         (assoc :support-info support-info)
         handler)))
 
+(defn wrap-error-handling
+  "Catches any uncaught exceptions and returns an error response."
+  [handler]
+  (fn wrap-error-handling-fn [request]
+    (try
+      (let [response (handler request)]
+        (if (au/chan? response)
+          (async/go
+            (try
+              (<? response)
+              (catch Exception e
+                (utils/exception->response e request))))
+          response))
+      (catch Exception e
+        (utils/exception->response e request)))))
+
 (defn- make-blacklist-request
   [make-inter-router-requests-fn blacklist-period-ms dest-router-id dest-endpoint {:keys [id] :as instance} reason]
   (log/info "peer communication requesting" dest-router-id "to blacklist" id "via endpoint" dest-endpoint)
