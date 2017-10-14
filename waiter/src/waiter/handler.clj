@@ -679,7 +679,7 @@
           (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-success"))
           (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-success"))
           (-> {:body (str "Added cookie " cookie-name), :headers {}, :status 200}
-              (add-encoded-cookie cookie-name cookie-value consent-expiry-days)))))
+              (add-encoded-cookie cookie-name cookie-value (-> consent-expiry-days t/days t/in-secs))))))
     (catch Exception ex
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-error"))

@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+    <title>Login - Waiter</title>
+    <meta http-equiv="x-ua-compatible" content="IE=edge" />
+    <style type="text/css">
+   html {
+     font-family: 'Lato', 'Helvetica Neue', Arial, Helvetica, sans-serif;
+     color: rgba(0,0,0,.87);
+   }
+
+   .main-content {
+     margin: auto;
+     margin-top: 4em;
+     width: 800px;
+   }
+
+   .main-note {
+     color: #0e566c;
+     text-align: center;
+   }
+
+    </style>
+</head>
+<body>
+
+<div class="main-content">
+    <h2 class="main-note">
+        Login to Waiter
+    </h2>
+    <div>
+        <p>Choose a provider:</p>
+        <% (doseq [[provider-key provider] providers] %>
+            <li><a href="/waiter-auth/oauth/<%= (name provider-key) %>/redirect/<%= path %><% (when query-string %><%= (str \? query-string) %><% ) %>"><%= (display-name provider) %></a></li>
+        <% ) %>
+    </div>
+</div>
+
+</body>
+</html>

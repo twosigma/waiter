@@ -176,7 +176,8 @@
 
 (def settings-defaults
   {:authenticator-config {:kind :one-user
-                          :one-user {:factory-fn 'waiter.auth.authentication/one-user-authenticator}}
+                          :one-user {:factory-fn 'waiter.auth.authentication/one-user-authenticator}
+                          :oauth {:factory-fn 'waiter.auth.oauth/oauth-authenticator}}
    :cors-config {:kind :patterns
                  :patterns {:factory-fn 'waiter.cors/pattern-based-validator
                             :allowed-origins []}

@@ -107,7 +107,7 @@
                                      :async-result-handler-fn
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-status-handler-fn}
-                     "waiter-auth" :waiter-auth-handler-fn
+                     "waiter-auth" {true :waiter-auth-handler-fn}
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
                      "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
@@ -443,9 +443,11 @@
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
-   :authenticator (pc/fnk [[:settings authenticator-config]
+   :authenticator (pc/fnk [[:settings authenticator-config host port]
                            passwords]
-                    (utils/create-component authenticator-config :context {:password (first passwords)}))
+                    (utils/create-component authenticator-config :context {:password (first passwords)
+                                                                           :host host
+                                                                           :port port}))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
@@ -1250,15 +1252,18 @@
                              (fn waiter-auth-handler-fn [request]
                                (handle-secure-request-fn
                                  (fn inner-waiter-auth-handler-fn [request]
-                                   {:body (str (:authorization/user request)), :status 200})
+                                   {:content-type "application/json"
+                                    :body (json/write-str {:user (:authorization/user request)
+                                                           :principal (:authenticated-principal request)})
+                                    :status 200})
                                  request)))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->token-description]
                                                    [:settings consent-expiry-days]
                                                    [:state clock passwords]
                                                    handle-secure-request-fn]
                                             (let [password (first passwords)]
-                                              (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
-                                                        (cookie-support/add-encoded-cookie response password cookie-name value expiry-days))
+                                              (letfn [(add-encoded-cookie [response cookie-name value max-age]
+                                                        (cookie-support/add-encoded-cookie response password cookie-name value max-age))
                                                       (consent-cookie-value [mode service-id token token-metadata]
                                                         (sd/consent-cookie-value clock mode service-id token token-metadata))]
                                                 (fn waiter-acknowledge-consent-handler-fn [request]

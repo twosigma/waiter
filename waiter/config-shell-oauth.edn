@@ -1,0 +1,36 @@
+{
+ ; ---------- Cluster ----------
+
+ :zookeeper {
+             ;; Use an in-process ZK (not for production use):
+             :connect-string :in-process}
+
+ ; ---------- Network ----------
+
+ ;; Set the bind address to a specific IP:
+ :host "localhost"
+
+ ;; Set the port:
+ :port #config/env-int "WAITER_PORT"
+
+ ; ---------- Security ----------
+
+ :authenticator-config {:kind :oauth
+                        :oauth {:factory-fn waiter.auth.oauth/oauth-authenticator
+                                :providers {:kinds [:github :google]
+                                            :github {:factory-fn waiter.auth.oauth/map->GitHubOAuthProvider
+                                                     :client-id #config/env "GITHUB_OAUTH_CLIENT_ID"
+                                                     :client-secret #config/env "GITHUB_OAUTH_CLIENT_SECRET"}
+                                            :google {:factory-fn waiter.auth.oauth/map->GoogleOAuthProvider
+                                                     :client-id #config/env "GOOGLE_OAUTH_CLIENT_ID"
+                                                     :client-secret #config/env "GOOGLE_OAUTH_CLIENT_SECRET"}}
+                                :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {
+                    ;; :kind :shell simply schedules instances on your local machine (for testing purposes only):
+                    :kind :shell}
+
+ ; ---------- CORS ----------
+ :cors-config {:kind :allow-all}}

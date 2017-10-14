@@ -30,9 +30,9 @@
      - either issue a 401 challenge asking the client to authenticate itself,
      - or upon successful authentication populate the request with :authorization/user and :authenticated-principal"))
 
-(defn- add-cached-auth
+(defn add-cached-auth
   [response password principal]
-  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (System/currentTimeMillis)] 1))
+  (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (System/currentTimeMillis)] (-> 1 t/days t/in-seconds)))
 
 (defn handle-request-auth
   "Invokes the given request-handler on the given request, adding the necessary
