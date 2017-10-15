@@ -93,9 +93,17 @@
   (redirect [_ {:keys [query-string] {:keys [path]} :route-params}]
     (fa/go-try
       (let [token (random-str)
-            state (-> {:path (str \/ path)
-                       :token token
-                       :query-string query-string}
+            query-string' (when query-string
+                            (str \? query-string))
+            hash (when (and query-string' (str/includes? query-string' "_waiter_hash="))
+                   (-> (subs query-string' (+ (str/index-of query-string' "_waiter_hash=")
+                                              (count "_waiter_hash=")))
+                       (UrlEncoded/decodeString)))
+            query-string'' (if (and query-string' hash)
+                             (subs query-string' 0 (dec (str/index-of query-string' "_waiter_hash=")))
+                             query-string')
+            state (-> {:location (str \/ path query-string'' hash)
+                       :token token}
                       json/write-str)
             {:strs [authorization_endpoint]} (fa/<? (google-discovery-document http-client))
             _ (when-not authorization_endpoint
@@ -113,10 +121,10 @@
   (authenticate [_ request]
     (fa/go-try
       (let [{:strs [code state]} (:params (ring-params/params-request request))
-            {:strs [path query-string token]} (try (-> state
-                                                       json/read-str)
-                                                   (catch Exception e
-                                                     (throw (ex-info "Couldn't parse state from Google" {:status 403}))))
+            {:strs [location token]} (try (-> state
+                                              json/read-str)
+                                          (catch Exception e
+                                            (throw (ex-info "Couldn't parse state from Google" {:status 403}))))
             _ (verify-oauth-cookie request token password)
             {:strs [token_endpoint]} (fa/<? (google-discovery-document http-client))
             _ (when-not token_endpoint
@@ -150,8 +158,7 @@
             _ (when-not (and (not (str/blank? email)) email_verified)
                 (throw (ex-info "Can't get email from Google" {:status 403})))]
         (-> {:status 307
-             :headers {"location" (cond-> path
-                                    (not (str/blank? query-string)) (str \? query-string))}}
+             :headers {"location" location}}
             (auth/add-cached-auth password email))))))
 
 ; See https://developer.github.com/apps/building-integrations/setting-up-and-registering-github-apps/identifying-users-for-github-apps/

@@ -31,10 +31,25 @@
     <div>
         <p>Choose a provider:</p>
         <% (doseq [[provider-key provider] providers] %>
-            <li><a href="/waiter-auth/oauth/<%= (name provider-key) %>/redirect/<%= path %><% (when query-string %><%= (str \? query-string) %><% ) %>"><%= (display-name provider) %></a></li>
+            <li><a class="redirect" href="/waiter-auth/oauth/<%= (name provider-key) %>/redirect/<%= path %><% (when query-string %><%= (str \? query-string) %><% ) %>"><%= (display-name provider) %></a></li>
         <% ) %>
     </div>
 </div>
+
+<script>
+if (location.hash) {
+    var redirectLinks = document.getElementsByClassName('redirect');
+    for (var i = 0; i < redirectLinks.length; i++) {
+        <% (when query-string %>
+            redirectLinks[i].href += "&_waiter_hash=" + encodeURIComponent(location.hash);
+        <% ) %>
+        <% (when-not query-string %>
+            redirectLinks[i].href += "?_waiter_hash=" + encodeURIComponent(location.hash);
+        <% ) %>
+
+    }
+}
+</script>
 
 </body>
 </html>
