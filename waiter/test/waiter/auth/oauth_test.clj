@@ -111,11 +111,11 @@
         (is (= body "handler"))))))
 
 (deftest test-github-provider
-  (let [authenticate-uri "http://authenticate"
+  (let [authenticate-uri-fn (constantly "http://authenticate")
         client-id "client-id"
         client-secret "client-secret"
         password [:cached "password"]
-        provider (map->GitHubOAuthProvider {:authenticate-uri authenticate-uri
+        provider (map->GitHubOAuthProvider {:authenticate-uri-fn authenticate-uri-fn
                                             :client-id client-id
                                             :client-secret client-secret
                                             :password password})
@@ -168,11 +168,11 @@
                                          :query-string "a=1&_waiter_hash=%23b%3D2"}))))
 
 (deftest test-google-provider
-  (let [authenticate-uri "http://authenticate"
+  (let [authenticate-uri-fn (constantly "http://authenticate")
         client-id "client-id"
         client-secret "client-secret"
         password [:cached "password"]
-        provider (map->GoogleOAuthProvider {:authenticate-uri authenticate-uri
+        provider (map->GoogleOAuthProvider {:authenticate-uri-fn authenticate-uri-fn
                                             :client-id client-id
                                             :client-secret client-secret
                                             :password password})

@@ -517,7 +517,7 @@
                         (fn [nanos] (statsd/histo! metric-group "process" nanos))
                         (let [instance-request-properties (prepare-request-properties instance-request-properties waiter-headers)
                               start-new-service-fn (fn start-new-service-in-process [] (start-new-service-fn descriptor))
-                              request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
+                              request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme))
                               priority (determine-priority-fn waiter-headers)
                               reason-map (cond-> {:reason :serve-request
                                                   :state {:initial (metrics/retrieve-local-stats-for-service service-id)}

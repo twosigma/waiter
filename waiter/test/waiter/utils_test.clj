@@ -566,3 +566,11 @@
     (is (= "text/plain" (request->content-type {:headers {"accept" "*/*"}})))
     (is (= "text/plain" (request->content-type {:headers {"accept" ""}})))
     (is (= "text/plain" (request->content-type {})))))
+
+(deftest test-request->scheme
+  (is (= "http" (request->scheme {:scheme :http})))
+  (is (= "https" (request->scheme {:scheme :https})))
+  (is (= "http" (request->scheme {:scheme :http :headers {"x-forwarded-proto" "http"}})))
+  (is (= "https" (request->scheme {:scheme :http :headers {"x-forwarded-proto" "https"}})))
+  (is (= "http" (request->scheme {:scheme :https :headers {"x-forwarded-proto" "http"}})))
+  (is (= "https" (request->scheme {:scheme :https :headers {"x-forwarded-proto" "https"}}))))

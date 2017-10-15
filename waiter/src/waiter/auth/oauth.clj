@@ -105,10 +105,10 @@
     (str \/ path query-string'' hash)))
 
 ; See https://developers.google.com/identity/protocols/OpenIDConnect#authenticatingtheuser
-(defrecord GoogleOAuthProvider [authenticate-uri client-id client-secret http-client password]
+(defrecord GoogleOAuthProvider [authenticate-uri-fn client-id client-secret http-client password]
   OAuthProvider
   (display-name [_] "Google")
-  (redirect [_ {:keys [query-string] {:keys [path]} :route-params}]
+  (redirect [_ {:keys [query-string] {:keys [path]} :route-params :as request}]
     (fa/go-try
       (let [token (random-str)
             state (-> {:location (make-location {:path path
@@ -122,7 +122,7 @@
                                {"client_id" client-id
                                 "nonce" (random-str)
                                 "response_type" "code"
-                                "redirect_uri" authenticate-uri
+                                "redirect_uri" (authenticate-uri-fn request)
                                 "scope" "openid email"
                                 "state" state})]
         (-> {:status 307
@@ -144,7 +144,7 @@
                                                                       "client_secret" client-secret
                                                                       "code" code
                                                                       "grant_type" "authorization_code"
-                                                                      "redirect_uri" authenticate-uri}}))
+                                                                      "redirect_uri" (authenticate-uri-fn request)}}))
             _  (when-not (= status 200)
                  (throw (ex-info "Invalid token response from Google" {:status 403})))
             {:strs [id_token] :as response} (try
@@ -172,10 +172,10 @@
             (auth/add-cached-auth password email))))))
 
 ; See https://developer.github.com/apps/building-integrations/setting-up-and-registering-github-apps/identifying-users-for-github-apps/
-(defrecord GitHubOAuthProvider [authenticate-uri client-id client-secret http-client password]
+(defrecord GitHubOAuthProvider [authenticate-uri-fn client-id client-secret http-client password]
   OAuthProvider
   (display-name [_] "GitHub")
-  (redirect [_ {:keys [query-string] {:keys [path]} :route-params}]
+  (redirect [_ {:keys [query-string] {:keys [path]} :route-params :as request}]
     (fa/go-try
       (let [token (random-str)
             state (-> {:location (make-location {:path path
@@ -185,12 +185,11 @@
             location (make-uri "https://github.com/login/oauth/authorize"
                                {"client_id" client-id
                                 "scope" "user:email"
-                                "redirect_uri" authenticate-uri
+                                "redirect_uri" (authenticate-uri-fn request)
                                 "state" state})]
         (-> {:status 307
              :headers {"location" location}}
             (cookie-support/add-encoded-cookie password OAUTH-COOKIE-NAME token (-> 15 t/minutes t/in-seconds))))))
-
   (authenticate [_ request]
     (fa/go-try
       (let [{:strs [code state]} (:params (ring-params/params-request request))
@@ -249,7 +248,7 @@
   [uri]
   (let [route-map ["/waiter-auth/oauth" {["/providers/" [#".*" :path]] :provider-list
                                          "/" {[:provider "/redirect/" [#".*" :path]] :redirect
-                                              [:provider "/authenticate"] :authenticate} }]]
+                                              [:provider "/authenticate"] :authenticate}}]]
     (bidi/match-route route-map uri)))
 
 (defn wrap-oauth
@@ -288,15 +287,17 @@
 
 (defn oauth-authenticator
   "Factory function for creating OAuthAuthenticator"
-  [{:keys [host password port providers run-as-user]}]
+  [{:keys [password providers run-as-user]}]
   (let [http-client (make-http-client) {:keys [kinds]} providers
         enabled-providers (pc/map-from-keys
                             (fn [kind]
-                              (let [base-uri (str "http://" host ":" port "/waiter-auth/oauth/" (name kind))
-                                    authenticate-uri (str base-uri "/authenticate")]
+                              (let [authenticate-uri-fn (fn authenticate-uri-fn
+                                                          [{{:strs [host]} :headers :as request}]
+                                                          (str (utils/request->scheme request) "://"
+                                                               host "/waiter-auth/oauth/" (name kind) "/authenticate"))]
                                 (utils/create-component (assoc providers :kind kind)
                                                         :context {:http-client http-client
-                                                                  :authenticate-uri authenticate-uri})))
+                                                                  :authenticate-uri-fn authenticate-uri-fn})))
                             kinds)]
     (map->OAuthAuthenticator {:password password
                               :providers enabled-providers

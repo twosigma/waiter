@@ -408,7 +408,7 @@
   "Extracts the scheme from the request."
   [{:keys [headers scheme]}]
   (let [{:strs [x-forwarded-proto]} headers]
-    (or x-forwarded-proto scheme)))
+    (or x-forwarded-proto (when scheme (name scheme)))))
 
 (defn same-origin
   "Returns true if the host and origin are non-nil and are equivalent."
@@ -416,7 +416,7 @@
   (let [{:strs [host origin]} headers
         scheme (request->scheme request)]
     (when (and host origin scheme)
-      (= origin (str (name scheme) "://" host)))))
+      (= origin (str scheme "://" host)))))
 
 (defn create-component
   "Creates a component based on the specified :kind"

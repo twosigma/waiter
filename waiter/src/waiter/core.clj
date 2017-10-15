@@ -443,11 +443,9 @@
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
-   :authenticator (pc/fnk [[:settings authenticator-config host port]
+   :authenticator (pc/fnk [[:settings authenticator-config]
                            passwords]
-                    (utils/create-component authenticator-config :context {:password (first passwords)
-                                                                           :host host
-                                                                           :port port}))
+                    (utils/create-component authenticator-config :context {:password (first passwords)}))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))

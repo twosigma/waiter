@@ -710,7 +710,7 @@
                                :consent-expiry-days consent-expiry-days
                                :service-description-template service-description-template
                                :service-id service-id
-                               :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
+                               :target-url (str (utils/request->scheme request) "://" host-header "/" path
                                                 (when (not (str/blank? query-string)) (str "?" query-string)))
                                :token token})
          :headers {"content-type" "text/html"}
