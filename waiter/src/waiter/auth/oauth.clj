@@ -55,8 +55,7 @@
   (let [cookie-value (cookie-support/cookie-value (get headers "cookie") OAUTH-COOKIE-NAME)
         decoded-cookie-value (cookie-support/decode-cookie cookie-value password)]
     (when-not (= expected-cookie-value decoded-cookie-value)
-      (throw (ex-info "Invalid OAuth cookie" {:status 403})))
-    (log/info "state cookie matched")))
+      (throw (ex-info "Invalid OAuth cookie" {:status 403})))))
 
 (defprotocol OAuthProvider
   "An OAuth provider"
@@ -79,12 +78,30 @@
           (throw (ex-info "Couldn't retrieve Google discovery document" {:status 403})))))))
 
 (defn make-uri
+  "Takes a URI and adds a formatted query-string from query parameters in a map."
   [uri query-params]
   (str uri "?"
        (->> query-params
            (map (fn [[name value]]
                   (str name "=" (UrlEncoded/encodeString value))))
             (str/join "&"))))
+
+(defn make-location
+  "Given a path and query-string, return the value for the Location header
+  after successful authentication.
+  Assumes the URL fragment (hash) is passed at the end of query-string under a special
+  query parameter '_waiter_hash'."
+  [{:keys [path query-string]}]
+  (let [query-string' (when query-string
+                        (str \? query-string))
+        hash (when (and query-string' (str/includes? query-string' "_waiter_hash="))
+               (-> (subs query-string' (+ (str/index-of query-string' "_waiter_hash=")
+                                          (count "_waiter_hash=")))
+                   (UrlEncoded/decodeString)))
+        query-string'' (if (and query-string' hash)
+                         (subs query-string' 0 (dec (str/index-of query-string' "_waiter_hash=")))
+                         query-string')]
+    (str \/ path query-string'' hash)))
 
 ; See https://developers.google.com/identity/protocols/OpenIDConnect#authenticatingtheuser
 (defrecord GoogleOAuthProvider [authenticate-uri client-id client-secret http-client password]
@@ -93,16 +110,8 @@
   (redirect [_ {:keys [query-string] {:keys [path]} :route-params}]
     (fa/go-try
       (let [token (random-str)
-            query-string' (when query-string
-                            (str \? query-string))
-            hash (when (and query-string' (str/includes? query-string' "_waiter_hash="))
-                   (-> (subs query-string' (+ (str/index-of query-string' "_waiter_hash=")
-                                              (count "_waiter_hash=")))
-                       (UrlEncoded/decodeString)))
-            query-string'' (if (and query-string' hash)
-                             (subs query-string' 0 (dec (str/index-of query-string' "_waiter_hash=")))
-                             query-string')
-            state (-> {:location (str \/ path query-string'' hash)
+            state (-> {:location (make-location {:path path
+                                                 :query-string query-string})
                        :token token}
                       json/write-str)
             {:strs [authorization_endpoint]} (fa/<? (google-discovery-document http-client))
@@ -124,7 +133,7 @@
             {:strs [location token]} (try (-> state
                                               json/read-str)
                                           (catch Exception e
-                                            (throw (ex-info "Couldn't parse state from Google" {:status 403}))))
+                                            (throw (ex-info "Couldn't parse state from Google" {:status 403} e))))
             _ (verify-oauth-cookie request token password)
             {:strs [token_endpoint]} (fa/<? (google-discovery-document http-client))
             _ (when-not token_endpoint
@@ -140,7 +149,7 @@
             {:strs [id_token] :as response} (try
                                      (json/read-str (async/<! body))
                                      (catch Exception e
-                                       (throw (ex-info "Couldn't parse JSON from Google" {:status 403}))))
+                                       (throw (ex-info "Couldn't parse JSON from Google" {:status 403} e))))
             _ (log/info "google response" response)
             _  (when-not id_token
                  (throw (ex-info "Missing id token from Google" {:status 403})))
@@ -154,7 +163,7 @@
                                                  json/read-str)
                                              (catch Exception e
                                                (throw (ex-info "Coudln't parse id token from Google"
-                                                               {:status 403}))))
+                                                               {:status 403} e))))
             _ (when-not (and (not (str/blank? email)) email_verified)
                 (throw (ex-info "Can't get email from Google" {:status 403})))]
         (-> {:status 307
@@ -165,9 +174,13 @@
 (defrecord GitHubOAuthProvider [authenticate-uri client-id client-secret http-client password]
   OAuthProvider
   (display-name [_] "GitHub")
-  (redirect [_ _]
+  (redirect [_ {:keys [query-string] {:keys [path]} :route-params}]
     (fa/go-try
-      (let [state (random-str)
+      (let [token (random-str)
+            state (-> {:location (make-location {:path path
+                                                 :query-string query-string})
+                       :token token}
+                      json/write-str)
             location (make-uri "https://github.com/login/oauth/authorize"
                                {"client_id" client-id
                                 "scope" "user:email"
@@ -175,12 +188,16 @@
                                 "state" state})]
         (-> {:status 307
              :headers {"location" location}}
-            (cookie-support/add-encoded-cookie password OAUTH-COOKIE-NAME state (-> 15 t/minutes t/in-seconds))))))
+            (cookie-support/add-encoded-cookie password OAUTH-COOKIE-NAME token (-> 15 t/minutes t/in-seconds))))))
 
   (authenticate [_ request]
     (fa/go-try
       (let [{:strs [code state]} (:params (ring-params/params-request request))
-            _ (verify-oauth-cookie request state password)
+            {:strs [location token]} (try (-> state
+                                              json/read-str)
+                                          (catch Exception e
+                                            (throw (ex-info "Couldn't parse state from GitHub" {:status 403} e))))
+            _ (verify-oauth-cookie request token password)
             {:keys [body status]} (async/<! (http/post http-client "https://github.com/login/oauth/access_token"
                                                        {:form-params {"client_id" client-id
                                                                       "client_secret" client-secret
@@ -200,7 +217,7 @@
             response-body (async/<! body)
             emails (try (json/read-str response-body)
                         (catch Exception e
-                          (throw (ex-info "Invalid JSON from GitHub" {:status 403}))))
+                          (throw (ex-info "Invalid JSON from GitHub" {:status 403} e))))
             email (->> emails
                        (keep (fn [{:strs [email primary verified]}]
                                (when (and primary verified)
@@ -209,7 +226,7 @@
             _ (when-not email
                 (throw (ex-info "Can't get email from GitHub" {:status 403})))]
         (-> {:status 307
-             :headers {"location" "finalredirect"}}
+             :headers {"location" location}}
             (auth/add-cached-auth password email))))))
 
 (defn provider-list-handler
