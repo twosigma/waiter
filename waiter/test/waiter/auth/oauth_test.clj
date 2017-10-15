@@ -110,7 +110,6 @@
         (is (= 200 status))
         (is (= body "handler"))))))
 
-
 (deftest test-github-provider
   (let [authenticate-uri "http://authenticate"
         client-id "client-id"
@@ -120,8 +119,10 @@
                                             :client-id client-id
                                             :client-secret client-secret
                                             :password password})
-        state "state"
-        cookie (str OAUTH-COOKIE-NAME "=" (-> (cs/encode-cookie state password)
+        token "abc123"
+        state {:location "/path?a=1"
+               :token token}
+        cookie (str OAUTH-COOKIE-NAME "=" (-> (cs/encode-cookie token password)
                                               UrlEncoded/encodeString))]
     (testing "redirect"
       (let [{{:strs [set-cookie location]} :headers :keys [status]} (fa/<?? (redirect provider {}))]
@@ -129,7 +130,7 @@
         (is (= status 307))
         (is set-cookie)))
     (testing "authenticate"
-      (with-redefs [random-str (fn [] state)
+      (with-redefs [random-str (fn [] token)
                     http/post (fn [_ _ _]
                                 (async/go {:body (async/go "access_token=accesstoken&token_type=bearer")
                                            :status 200}))
@@ -142,7 +143,10 @@
                                   :status 200}))]
         (let [{{:strs [location]} :headers :keys [status] :as response}
               (fa/<?? (authenticate provider {:headers {"cookie" cookie}
-                                              :query-string "code=code&state=state"}))]
+                                              :query-string (str "code=code&state="
+                                                                 (-> state
+                                                                     json/write-str
+                                                                     UrlEncoded/encodeString))}))]
           (is location)
           (is (= status 307)))))))
 
@@ -151,6 +155,17 @@
   (is (= "http://test?a=1&b=2" (make-uri "http://test" {"a" "1"
                                                         "b" "2"})))
   (is (= "http://test?message=hello+world" (make-uri "http://test" {"message" "hello world"}))))
+
+(deftest test-make-location
+  (is (= "/path" (make-location {:path "path"})))
+  (is (= "/path?a=1" (make-location {:path "path"
+                                     :query-string "a=1"})))
+  (is (= "/path?a=1&b=2" (make-location {:path "path"
+                                         :query-string "a=1&b=2"})))
+  (is (= "/path#b=2" (make-location {:path "path"
+                                     :query-string "_waiter_hash=%23b%3D2"})))
+  (is (= "/path?a=1#b=2" (make-location {:path "path"
+                                         :query-string "a=1&_waiter_hash=%23b%3D2"}))))
 
 (deftest test-google-provider
   (let [authenticate-uri "http://authenticate"
@@ -162,8 +177,7 @@
                                             :client-secret client-secret
                                             :password password})
         token "abc123"
-        state {:path "/path"
-               :query-string "a=1"
+        state {:location "/path?a=1"
                :token token}
         cookie (str OAUTH-COOKIE-NAME "=" (-> (cs/encode-cookie token password)
                                               UrlEncoded/encodeString))]

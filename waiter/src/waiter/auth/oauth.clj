@@ -35,6 +35,7 @@
 (def secure-random (SecureRandom.))
 
 (def OAUTH-COOKIE-NAME "x-waiter-oauth")
+(def HASH-QUERY-PARAM-NAME "_waiter_hash")
 
 (defn make-http-client
   "Instantiates and returns a new HttpClient without a cookie store"
@@ -48,7 +49,7 @@
   []
   (let [bytes (byte-array 1024)
         _ (.nextBytes secure-random bytes)]
-        (digest/sha1 bytes)))
+    (digest/sha1 bytes)))
 
 (defn verify-oauth-cookie
   [{:keys [headers]} expected-cookie-value password]
@@ -82,24 +83,24 @@
   [uri query-params]
   (str uri "?"
        (->> query-params
-           (map (fn [[name value]]
-                  (str name "=" (UrlEncoded/encodeString value))))
+            (map (fn [[name value]]
+                   (str name "=" (UrlEncoded/encodeString value))))
             (str/join "&"))))
 
 (defn make-location
   "Given a path and query-string, return the value for the Location header
   after successful authentication.
   Assumes the URL fragment (hash) is passed at the end of query-string under a special
-  query parameter '_waiter_hash'."
+  query parameter HASH-QUERY-PARAM-NAME."
   [{:keys [path query-string]}]
   (let [query-string' (when query-string
                         (str \? query-string))
-        hash (when (and query-string' (str/includes? query-string' "_waiter_hash="))
-               (-> (subs query-string' (+ (str/index-of query-string' "_waiter_hash=")
-                                          (count "_waiter_hash=")))
+        hash (when (and query-string' (str/includes? query-string' (str HASH-QUERY-PARAM-NAME \=)))
+               (-> (subs query-string' (+ (str/index-of query-string' (str HASH-QUERY-PARAM-NAME \=))
+                                          (count (str HASH-QUERY-PARAM-NAME \=))))
                    (UrlEncoded/decodeString)))
         query-string'' (if (and query-string' hash)
-                         (subs query-string' 0 (dec (str/index-of query-string' "_waiter_hash=")))
+                         (subs query-string' 0 (dec (str/index-of query-string' (str HASH-QUERY-PARAM-NAME \=))))
                          query-string')]
     (str \/ path query-string'' hash)))
 
@@ -147,9 +148,9 @@
             _  (when-not (= status 200)
                  (throw (ex-info "Invalid token response from Google" {:status 403})))
             {:strs [id_token] :as response} (try
-                                     (json/read-str (async/<! body))
-                                     (catch Exception e
-                                       (throw (ex-info "Couldn't parse JSON from Google" {:status 403} e))))
+                                              (json/read-str (async/<! body))
+                                              (catch Exception e
+                                                (throw (ex-info "Couldn't parse JSON from Google" {:status 403} e))))
             _ (log/info "google response" response)
             _  (when-not id_token
                  (throw (ex-info "Missing id token from Google" {:status 403})))
@@ -236,6 +237,7 @@
     :get {:body (template/eval (slurp (io/resource "web/oauth.html"))
                                {:providers providers
                                 :display-name (fn [provider] (display-name provider))
+                                :hash-query-param-name HASH-QUERY-PARAM-NAME
                                 :path path
                                 :query-string query-string})}
     (throw (ex-info "Invalid request method"

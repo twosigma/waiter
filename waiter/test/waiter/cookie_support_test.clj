@@ -41,20 +41,20 @@
   (is (= "a=b; c=d" (remove-cookie "a=b; x-waiter-auth=auth; c=d" "x-waiter-auth"))))
 
 (deftest test-add-encoded-cookie
-  (let [cookie-attrs ";Max-Age=864000;Path=/;HttpOnly=true"
+  (let [cookie-attrs ";Max-Age=86400;Path=/;HttpOnly=true"
         user-cookie (str "user=" (UrlEncoded/encodeString "data:john") cookie-attrs)]
     (with-redefs [b64/encode (fn [^String data-string] (.getBytes data-string))
                   nippy/freeze (fn [input _] (str "data:" input))]
       (is (= {:headers {"set-cookie" user-cookie}}
-             (add-encoded-cookie {} [:cached "password"] "user" "john" 10)))
+             (add-encoded-cookie {} [:cached "password"] "user" "john" 86400)))
       (is (= {:headers {"set-cookie" ["foo=bar" user-cookie]}}
-             (add-encoded-cookie {:headers {"set-cookie" "foo=bar"}} [:cached "password"] "user" "john" 10)))
+             (add-encoded-cookie {:headers {"set-cookie" "foo=bar"}} [:cached "password"] "user" "john" 86400)))
       (is (= {:headers {"set-cookie" ["foo=bar" "baz=quux" user-cookie]}}
-             (add-encoded-cookie {:headers {"set-cookie" ["foo=bar" "baz=quux"]}} [:cached "password"] "user" "john" 10)))
+             (add-encoded-cookie {:headers {"set-cookie" ["foo=bar" "baz=quux"]}} [:cached "password"] "user" "john" 86400)))
       (let [response-chan (async/promise-chan)]
         (async/>!! response-chan {})
         (is (= {:headers {"set-cookie" user-cookie}}
-               (async/<!! (add-encoded-cookie response-chan [:cached "password"] "user" "john" 10))))))))
+               (async/<!! (add-encoded-cookie response-chan [:cached "password"] "user" "john" 86400))))))))
 
 (deftest test-decode-cookie
   (with-redefs [b64/decode (fn [value-bytes] (String. ^bytes value-bytes "utf-8"))

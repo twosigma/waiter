@@ -41,10 +41,10 @@ if (location.hash) {
     var redirectLinks = document.getElementsByClassName('redirect');
     for (var i = 0; i < redirectLinks.length; i++) {
         <% (when query-string %>
-            redirectLinks[i].href += "&_waiter_hash=" + encodeURIComponent(location.hash);
+            redirectLinks[i].href += "&_<%= hash-query-param-name %>=" + encodeURIComponent(location.hash);
         <% ) %>
         <% (when-not query-string %>
-            redirectLinks[i].href += "?_waiter_hash=" + encodeURIComponent(location.hash);
+            redirectLinks[i].href += "?_<%= hash-query-param-name %>=" + encodeURIComponent(location.hash);
         <% ) %>
 
     }

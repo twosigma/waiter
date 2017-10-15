@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.handler-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -818,9 +819,10 @@
                                           (str "service-" (count service-description) "." (count (str service-description))))
         test-user "test-user"
         test-service-id (service-description->service-id (assoc test-service-description "permitted-user" test-user "run-as-user" test-user))
-        add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
-                             (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-days}))
         consent-expiry-days 1
+        consent-expiry-seconds (-> consent-expiry-days t/days t/in-seconds)
+        add-encoded-cookie (fn [response cookie-name cookie-value max-age]
+                             (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-seconds}))
         consent-cookie-value (fn consent-cookie-value [mode service-id token {:strs [owner]}]
                                (when mode
                                  (-> [mode (clock)]
@@ -947,7 +949,7 @@
                      :params {"mode" "service", "service-id" test-service-id}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 200 status))
-        (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-days}} cookie))
+        (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-seconds}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))
 
@@ -959,7 +961,7 @@
                      :params {"mode" "service", "service-id" test-service-id}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 200 status))
-        (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-days}} cookie))
+        (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-seconds}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))
 
@@ -972,7 +974,7 @@
                      :params {"mode" "token"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 200 status))
-        (is (= {"x-waiter-consent" {:value ["token" current-time-ms test-token "user"], :age consent-expiry-days}} cookie))
+        (is (= {"x-waiter-consent" {:value ["token" current-time-ms test-token "user"], :age consent-expiry-seconds}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))
 
@@ -984,7 +986,7 @@
                      :params {"mode" "token"}}
             {:keys [body cookie headers status]} (acknowledge-consent-handler-fn request)]
         (is (= 200 status))
-        (is (= {"x-waiter-consent" {:value ["token" current-time-ms test-token "user"], :age consent-expiry-days}} cookie))
+        (is (= {"x-waiter-consent" {:value ["token" current-time-ms test-token "user"], :age consent-expiry-seconds}} cookie))
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))))
 

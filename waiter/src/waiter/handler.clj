@@ -642,18 +642,18 @@
           {:strs [mode service-id] :as params} params]
       (when-not (str/blank? origin)
         (when-not (utils/same-origin request)
-          (throw (ex-info "Origin is not the same as the host" 
+          (throw (ex-info "Origin is not the same as the host"
                           {:host host
                            :origin origin
                            :status 400}))))
       (when (and (not (str/blank? origin)) (not (str/blank? referer)))
         (when-not (str/starts-with? referer origin)
-          (throw (ex-info "Referer does not start with origin" 
+          (throw (ex-info "Referer does not start with origin"
                           {:origin origin
                            :referer referer
                            :status 400}))))
       (when-not (= x-requested-with "XMLHttpRequest")
-        (throw (ex-info "Header x-requested-with does not match expected value" 
+        (throw (ex-info "Header x-requested-with does not match expected value"
                         {:actual x-requested-with
                          :expected "XMLHttpRequest"
                          :status 400})))
@@ -679,7 +679,7 @@
           (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-success"))
           (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-success"))
           (-> {:body (str "Added cookie " cookie-name), :headers {}, :status 200}
-              (add-encoded-cookie cookie-name cookie-value (-> consent-expiry-days t/days t/in-secs))))))
+              (add-encoded-cookie cookie-name cookie-value (-> consent-expiry-days t/days t/in-seconds))))))
     (catch Exception ex
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-error"))

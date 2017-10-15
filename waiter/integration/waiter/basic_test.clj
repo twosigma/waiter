@@ -349,13 +349,18 @@
   (testing-using-waiter-url
     (log/info "Basic waiter-auth test")
     (let [{:keys [status body headers]} (make-request waiter-url "/waiter-auth")
-          set-cookie (get headers "set-cookie")]
+          set-cookie (get headers "set-cookie")
+          parsed-json (-> (try (json/read-str body)
+                               (catch Exception _
+                                 (is false (str "Unable to parse JSON\n:" body))))
+                          (walk/keywordize-keys))]
       (is (= 200 status))
       (is (str/includes? set-cookie "x-waiter-auth="))
       (is (str/includes? set-cookie "Max-Age="))
       (is (str/includes? set-cookie "Path=/"))
       (is (str/includes? set-cookie "HttpOnly=true"))
-      (is (= (System/getProperty "user.name") (str body))))))
+      (is (= {:user (System/getProperty "user.name")
+              :principal (System/getProperty "user.name")} parsed-json)))))
 
 ; Marked explicit due to:
 ;   FAIL in (test-killed-instances)
