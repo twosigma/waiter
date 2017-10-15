@@ -13,7 +13,6 @@
             [clj-time.core :as t]
             [clj-time.format :as f]
             [clojure.core.cache :as cache]
-            [clojure.data.codec.base64 :as b64]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
