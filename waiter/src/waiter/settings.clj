@@ -60,6 +60,7 @@
                                                            (s/required-key :ttl) schema/positive-int}
                                   s/Keyword schema/require-symbol-factory-fn}
                                  schema/contains-kind-sub-map?)
+   (s/required-key :last-request-times-publish-interval-ms) schema/positive-int
    (s/optional-key :messages) {s/Keyword s/Str}
    (s/required-key :metric-group-mappings) schema/valid-metric-group-mappings
    (s/required-key :metrics-config) {(s/required-key :inter-router-metrics-idle-timeout-ms) schema/positive-int
@@ -212,6 +213,7 @@
                        :ttl 60}
                :encrypt true
                :relative-path "tokens"}
+   :last-request-times-publish-interval-ms 1000
    :messages {:backend-request-failed "Request to service backend failed"
               :backend-request-timed-out "Request to service backend timed out"
               :bad-startup-command "Invalid startup command"

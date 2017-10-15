@@ -706,6 +706,21 @@
         (is (= 500 status))
         (is (str/includes? body "Waiter Error 500"))))))
 
+(deftest test-get-last-request-times-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-handler-json-response get-last-request-times-state)]
+    (testing "successful response"
+      (let [last-request-time-state {"foo" 1234, "bar" 7890}
+            last-request-time-agent (agent last-request-time-state)
+            {:keys [body status]} (test-fn router-id last-request-time-agent {})]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" last-request-time-state}))))
+
+    (testing "exception response"
+      (let [{:keys [body status]} (test-fn router-id nil {})]
+        (is (= 500 status))
+        (is (str/includes? body "Waiter Error 500"))))))
+
 (deftest test-get-leader-state
   (let [router-id "test-router-id"
         leader-id-fn (constantly router-id)
@@ -774,9 +789,10 @@
 
 (deftest test-get-service-state
   (let [router-id "router-id"
-        service-id "service-1"]
+        service-id "service-1"
+        last-request-times-agent (agent {service-id "foo"})]
     (testing "returns 400 for missing service id"
-      (is (= 400 (:status (async/<!! (get-service-state router-id nil "" {} {}))))))
+      (is (= 400 (:status (async/<!! (get-service-state router-id nil last-request-times-agent "" {} {}))))))
     (let [instance-rpc-chan (async/chan 1)
           query-state-chan (async/chan 1)
           query-work-stealing-chan (async/chan 1)
@@ -805,10 +821,12 @@
       (start-instance-rpc-fn)
       (start-query-chan-fn)
       (start-maintainer-fn)
-      (let [response (async/<!! (get-service-state router-id instance-rpc-chan service-id {:maintainer-state maintainer-state-chan} {}))
+      (let [response (async/<!! (get-service-state router-id instance-rpc-chan last-request-times-agent
+                                                   service-id {:maintainer-state maintainer-state-chan} {}))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))
+        (is (= (get @last-request-times-agent service-id) (get-in service-state [:state :last-request-times-agent])))
         (is (= work-stealing-state (get-in service-state [:state :work-stealing-state])))
         (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))))))
 

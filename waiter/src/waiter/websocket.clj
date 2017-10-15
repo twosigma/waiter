@@ -215,7 +215,7 @@
   "Writes byte data to the resp-chan.
    It is assumed the body is an input stream.
    The function buffers bytes, and pushes byte input streams onto the channel until the body input stream is exhausted."
-  [request response descriptor {:keys [streaming-timeout-ms]} reservation-status-promise request-close-chan
+  [request response descriptor {:keys [streaming-timeout-ms]} reservation-status-promise request-close-chan last-request-time-agent
    {:keys [requests-streaming requests-waiting-to-stream stream-back-pressure stream-read-body stream-onto-resp-chan throughput-meter]}]
   (let [{:keys [service-description service-id]} descriptor
         {:strs [metric-group]} service-description]
@@ -227,6 +227,7 @@
       (stream-helper "client" client-in "instance" instance-out streaming-timeout-ms reservation-status-promise
                      :instance-error request-close-chan stream-read-body stream-back-pressure
                      (fn ws-bytes-uploaded [bytes-streamed]
+                       (send last-request-time-agent metrics/update-last-request-time service-id (t/now))
                        (histograms/update! (metrics/service-histogram service-id "request-size") bytes-streamed)
                        (statsd/inc! metric-group "request_bytes" bytes-streamed))))
     ;; launch go-block to stream data from instance to client
@@ -288,8 +289,8 @@
 (defn process-response!
   "Processes a response resulting from a websocket request.
    It includes asynchronously streaming the content."
-  [instance-request-properties descriptor _ request _ _ reservation-status-promise confirm-live-connection-with-abort
-   request-state-chan response]
+  [last-request-time-agent instance-request-properties descriptor _ request _ _ reservation-status-promise
+   confirm-live-connection-with-abort request-state-chan response]
   (let [{:keys [service-description service-id]} descriptor
         {:strs [metric-group]} service-description
         request-close-promise-chan (async/promise-chan)
@@ -333,7 +334,7 @@
     (try
       ;; stream data between client and instance
       (stream-response request response descriptor instance-request-properties reservation-status-promise
-                       request-close-promise-chan metrics-map)
+                       request-close-promise-chan last-request-time-agent metrics-map)
 
       ;; force close connection when cookie expires
       (let [auth-time (:authorization/time request)

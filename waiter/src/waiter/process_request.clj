@@ -473,7 +473,7 @@
     "Process the incoming request and stream back the response."
     [router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
      instance-request-properties handlers prepend-waiter-url determine-priority-fn process-backend-response-fn
-     process-exception-fn request-abort-callback-factory
+     process-exception-fn request-abort-callback-factory last-request-time-agent
      {:keys [ctrl] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
@@ -496,7 +496,9 @@
           (try
             (confirm-live-connection-without-abort)
             (let [{:keys [service-id service-description] :as descriptor} (request->descriptor-fn request)
-                  {:strs [metric-group]} service-description]
+                  {:strs [metric-group]} service-description
+                  request-time (t/now)]
+              (send last-request-time-agent metrics/update-last-request-time service-id request-time)
               (loop [[handler & remaining-handlers] handlers]
                 (if handler
                   (let [response (handler request descriptor)]
@@ -521,7 +523,7 @@
                               priority (determine-priority-fn waiter-headers)
                               reason-map (cond-> {:reason :serve-request
                                                   :state {:initial (metrics/retrieve-local-stats-for-service service-id)}
-                                                  :time (t/now)
+                                                  :time request-time
                                                   :cid (cid/get-correlation-id)
                                                   :request-id request-id}
                                                  priority (assoc :priority priority))

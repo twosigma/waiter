@@ -772,11 +772,8 @@
 
                   request-chan
                   ([message]
-                    (let [{:keys [cid method reason response-chan service-id time]} message]
+                    (let [{:keys [cid method response-chan service-id]} message]
                       (cid/cdebug cid "[service-chan-maintainer]" service-id "received request of type" method)
-                      (when (and (= :reserve method) (= :serve-request reason) (instance? DateTime time))
-                        (-> (metrics/service-counter service-id "last-request-time")
-                            (metrics/reset-counter-if < (.getMillis time))))
                       (let [channel-map (get service-id->channel-map service-id)]
                         (if channel-map
                           (let [method-chan (retrieve-channel channel-map method)]

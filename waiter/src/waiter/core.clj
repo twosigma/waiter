@@ -454,6 +454,7 @@
    :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
                   (http-client-factory connection-timeout-ms))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
+   :last-request-time-agent (pc/fnk [] (agent {}))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
                       passwords (password-store/retrieve-passwords password-provider)
@@ -778,9 +779,13 @@
                                      service-gc-go-routine (partial service-gc-go-routine read-state-fn write-state-fn leader?-fn clock)
                                      scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
                                      {:keys [service-id->metrics-fn]} router-metrics-helpers
-                                     {:keys [service-id->metrics-chan] :as metrics-gc-chans} (metrics/transient-metrics-gc scheduler-state-chan service-gc-go-routine metrics-config)]
+                                     {:keys [service-id->metrics-chan] :as metrics-gc-chans}
+                                     (metrics/transient-metrics-gc scheduler-state-chan service-gc-go-routine metrics-config)]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
                                  metrics-gc-chans))
+   :last-request-times-publisher (pc/fnk [[:settings last-request-times-publish-interval-ms]
+                                          [:state last-request-time-agent]]
+                                   (metrics/start-last-request-times-publisher last-request-time-agent last-request-times-publish-interval-ms))
    :messages (pc/fnk [[:settings {messages nil}]]
                (when messages
                  (utils/load-messages messages)))
@@ -934,7 +939,7 @@
                                         (utils/exception->response e request))))))
    :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
-                                          [:state instance-rpc-chan passwords router-id websocket-client]]
+                                          [:state instance-rpc-chan last-request-time-agent passwords router-id websocket-client]]
                                    (fn default-websocket-handler-fn [request]
                                      (let [password (first passwords)
                                            process-handlers []
@@ -942,11 +947,17 @@
                                                              [instance request request-properties passthrough-headers end-route metric-group]
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
                                                                               passthrough-headers end-route metric-group))]
-                                       (letfn [(process-request-fn [request]
+                                       (letfn [(process-backend-fn [instance-request-properties descriptor instance request
+                                                                    reason-map response-headers reservation-status-promise
+                                                                    confirm-live-connection-with-abort request-state-chan response]
+                                                 (ws/process-response! last-request-time-agent instance-request-properties descriptor instance
+                                                                       request reason-map response-headers reservation-status-promise
+                                                                       confirm-live-connection-with-abort request-state-chan response))
+                                               (process-request-fn [request]
                                                  (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
                                                              instance-request-properties process-handlers prepend-waiter-url
-                                                             determine-priority-fn ws/process-response! ws/process-exception-in-request
-                                                             ws/abort-request-callback-factory request))]
+                                                             determine-priority-fn process-backend-fn ws/process-exception-in-request
+                                                             ws/abort-request-callback-factory last-request-time-agent request))]
                                          (ws/request-handler password process-request-fn request)))))
    :display-settings-handler-fn (pc/fnk [handle-secure-request-fn settings]
                                   (fn display-settings-handler-fn [request]
@@ -1032,7 +1043,7 @@
    :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
                                  prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
-                                [:state http-client instance-rpc-chan router-id]
+                                [:state http-client instance-rpc-chan last-request-time-agent router-id]
                                 handle-authentication-wrapper-fn handle-secure-request-fn]
                          (let [process-handlers [pr/handle-suspended-service pr/handle-too-many-requests]
                                make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
@@ -1047,7 +1058,7 @@
                                      (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
                                                  instance-request-properties process-handlers prepend-waiter-url
                                                  determine-priority-fn process-response-fn pr/process-exception-in-http-request
-                                                 pr/abort-http-request-callback-factory request))
+                                                 pr/abort-http-request-callback-factory last-request-time-agent request))
                                    request))
                                request))))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
@@ -1154,6 +1165,13 @@
                                     (fn inner-kv-store-state-handler-fn [request]
                                       (handler/get-kv-store-state router-id kv-store request))
                                     request)))
+   :state-last-request-times-handler-fn (pc/fnk [[:state last-request-time-agent router-id]
+                                                 handle-secure-request-fn]
+                                          (fn last-request-times-state-handler-fn [request]
+                                            (handle-secure-request-fn
+                                              (fn inner-last-request-times-state-handler-fn [request]
+                                                (handler/get-last-request-times-state router-id last-request-time-agent request))
+                                              request)))
    :state-leader-handler-fn (pc/fnk [[:curator leader?-fn leader-id-fn]
                                      [:state router-id]
                                      handle-secure-request-fn]
@@ -1190,12 +1208,13 @@
                                          (handler/get-scheduler-state router-id scheduler-query-chan request))
                                        request))))
    :state-service-handler-fn (pc/fnk [[:daemons state-query-chans]
-                                      [:state instance-rpc-chan router-id]
+                                      [:state instance-rpc-chan last-request-time-agent router-id]
                                       handle-secure-request-fn]
                                (fn service-state-handler-fn [request]
                                  (handle-secure-request-fn
                                    (fn inner-service-state-handler-fn [{{:keys [service-id]} :route-params}]
-                                     (handler/get-service-state router-id instance-rpc-chan service-id state-query-chans request))
+                                     (handler/get-service-state router-id instance-rpc-chan last-request-time-agent
+                                                                service-id state-query-chans request))
                                    request)))
    :state-statsd-handler-fn (pc/fnk [[:state router-id]
                                      handle-secure-request-fn]

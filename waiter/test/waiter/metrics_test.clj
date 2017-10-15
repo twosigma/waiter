@@ -23,7 +23,9 @@
             [waiter.metrics :refer :all]
             [waiter.test-helpers :as test-helpers]
             [waiter.utils :as utils])
-  (:import (com.codahale.metrics MetricFilter)))
+  (:import (com.codahale.metrics MetricFilter)
+           (java.util.concurrent CountDownLatch)
+           (org.joda.time DateTime)))
 
 (deftest test-compress-strings
   (is (= ["a"] (compress-strings ["a"] ".")))
@@ -447,3 +449,65 @@
           (is (= 1 (count nanos)))
           (is (< 95000000 (first nanos)))
           (is (= (first nanos) @elapsed-nanos)))))))
+
+(deftest test-update-last-request-time
+  (let [^DateTime current-time (t/now)
+        current-time-millis (.getMillis current-time)]
+    (is (= {"foo" current-time-millis}
+           (update-last-request-time {} "foo" current-time)))
+    (is (= {"foo" current-time-millis, "bar" 1010101}
+           (update-last-request-time {"foo" (- current-time-millis 1000), "bar" 1010101}
+                                     "foo" current-time)))
+    (is (= {"foo" current-time-millis, "bar" 1010101}
+           (update-last-request-time {"foo" current-time-millis, "bar" 1010101}
+                                     "foo" current-time)))
+    (is (= {"foo" (+ current-time-millis 1000), "bar" 1010101}
+           (update-last-request-time {"foo" (+ current-time-millis 1000), "bar" 1010101}
+                                     "foo" current-time)))))
+
+(deftest test-cleanup-last-request-times
+  (is (= {}
+         (cleanup-last-request-times
+           {"foo" 1, "bar" 2, "baz" 3} "cid"
+           {"foo" 1, "bar" 2, "baz" 3})))
+  (is (= {"bar" 2}
+         (cleanup-last-request-times
+           {"foo" 1, "bar" 2, "baz" 3} "cid"
+           {"foo" 1, "bar" 1, "baz" 4})))
+  (is (= {"foo" 1, "bar" 2, "baz" 3}
+         (cleanup-last-request-times
+           {"foo" 1, "bar" 2, "baz" 3} "cid"
+           {"fee" 1, "fie" 2, "foe" 3, "fum" 4})))
+  (is (= {"foo" 1, "baz" 3}
+         (cleanup-last-request-times
+           {"foo" 1, "bar" 2, "baz" 3} "cid"
+           {"fee" 1, "fie" 2, "foe" 3, "fum" 4, "foo" 0, "bar" 2}))))
+
+(deftest test-publish-last-request-times!
+  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))
+        last-request-times-agent (agent {"service-1" 1, "service-2" 1})
+        publish-complete-latch (CountDownLatch. 1)]
+    (.removeMatching mc/default-registry all-metrics-match-filter)
+
+    (publish-last-request-times! last-request-times-agent)
+    (is (= 1 (counters/value (service-counter "service-1" "last-request-time"))))
+    (is (= 1 (counters/value (service-counter "service-2" "last-request-time"))))
+
+    (send last-request-times-agent assoc "service-2" 2 "service-3" 3)
+    (await last-request-times-agent)
+
+    (send last-request-times-agent
+          (fn [service-id->last-request-time]
+            ;; ensure assoc happens after publish
+            (.await publish-complete-latch)
+            (assoc service-id->last-request-time "service-2" 1 "service-3" 4)))
+
+    (publish-last-request-times! last-request-times-agent)
+    (is (= 1 (counters/value (service-counter "service-1" "last-request-time"))))
+    (is (= 2 (counters/value (service-counter "service-2" "last-request-time"))))
+    (is (= 3 (counters/value (service-counter "service-3" "last-request-time"))))
+
+    (.countDown publish-complete-latch)
+    (await last-request-times-agent)
+
+    (is (= {"service-3" 4} @last-request-times-agent) "Agent not gc-ed")))

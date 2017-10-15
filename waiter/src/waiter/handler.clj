@@ -538,6 +538,16 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
+(defn get-last-request-times-state
+  "Outputs the last-request-time state."
+  [router-id last-request-time-agent request]
+  (try
+    (-> {:router-id router-id
+         :state @last-request-time-agent}
+        (utils/map->streaming-json-response))
+    (catch Exception ex
+      (utils/exception->response ex request))))
+
 (defn get-leader-state
   "Outputs the leader state."
   [router-id leader?-fn leader-id-fn request]
@@ -593,21 +603,23 @@
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."
-  [router-id instance-rpc-chan service-id query-chans request]
+  [router-id instance-rpc-chan last-request-times-agent service-id query-chans request]
   (async/go
     (try
       (if (str/blank? service-id)
         (throw (ex-info "Missing service-id" {:status 400}))
         (let [timeout-ms (-> 10 t/seconds t/in-millis)
               _ (log/info "waiting for response from query-state channel...")
-              responder-state-chan (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-state)
+              responder-state-chan
+              (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-state)
               _ (log/info "waiting for response from query-work-stealing channel...")
-              work-stealing-state-chan (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-work-stealing)
+              work-stealing-state-chan
+              (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-work-stealing)
               [query-chans initial-result]
               (loop [[[entry-key entry-value] & remaining] [[:responder-state responder-state-chan]
                                                             [:work-stealing-state work-stealing-state-chan]]
                      query-chans query-chans
-                     initial-result {}]
+                     initial-result {:last-request-times-agent (get @last-request-times-agent service-id)}]
                 (if entry-key
                   (if (map? entry-value)
                     (recur remaining query-chans (assoc initial-result entry-key entry-value))

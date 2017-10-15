@@ -192,9 +192,13 @@
 
 (deftest ^:parallel ^:integration-fast test-last-request-time
   (testing-using-waiter-url
-    (let [num-iteration-requests 20
+    (let [waiter-settings (waiter-settings waiter-url)
+          last-request-times-publish-interval-ms (get-in waiter-settings [:last-request-times-publish-interval-ms])
+          metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])
+          num-iteration-requests 20
           service-name (rand-name)
-          headers {:x-waiter-name service-name
+          headers {:x-kitchen-delay-ms 1000
+                   :x-waiter-name service-name
                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")
                    :x-waiter-concurrency-level num-iteration-requests}
           {:keys [request-headers service-id] :as first-response}
@@ -204,13 +208,10 @@
         (dotimes [_ num-iteration-requests]
           (-> (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
               (assert-response-status 200)))
-        ;; allow some time to elapse to adjust for difference in server time
-        (Thread/sleep 2000)
         (let [current-time-millis (System/currentTimeMillis)]
-          (Thread/sleep 2000)
           (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
           ;; allow some time to elapse to allow inter-router metrics syncing
-          (Thread/sleep 1000)
+          (Thread/sleep (+ last-request-times-publish-interval-ms metrics-sync-interval-ms))
           (let [service (service waiter-url service-id {})
                 service-metrics (-> (service-settings waiter-url service-id)
                                      (get-in [:metrics :aggregate]))]
