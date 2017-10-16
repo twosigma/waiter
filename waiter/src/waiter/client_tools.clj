@@ -22,7 +22,7 @@
             [waiter.auth.authentication :as authentication]
             [waiter.auth.spnego :as spnego]
             [waiter.correlation-id :as cid]
-            [waiter.mesos :as mesos]
+            [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
   (:import (java.net HttpCookie URI)
@@ -434,8 +434,8 @@
 (defn num-tasks-running [waiter-url service-id & {:keys [verbose prev-tasks-running] :or {verbose false prev-tasks-running -1}}]
   (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
         marathon-url (marathon-url waiter-url :verbose verbose)
-        marathon-api (mesos/marathon-rest-api-factory http-client http-options marathon-url)
-        info-response (mesos/get-app marathon-api service-id)
+        marathon-api (marathon/api-factory http-client http-options marathon-url)
+        info-response (marathon/get-app marathon-api service-id)
         tasks-running' (get-in info-response [:app :tasksRunning])]
     (when (not= prev-tasks-running tasks-running')
       (log/debug service-id "has" tasks-running' "task(s) running."))
@@ -457,13 +457,13 @@
   (let [marathon-url (marathon-url waiter-url)]
     (log/info service-id "being scaled to" target-instances "task(s).")
     (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
-          marathon-api (mesos/marathon-rest-api-factory http-client http-options marathon-url)
-          old-descriptor (:app (mesos/get-app marathon-api service-id))
+          marathon-api (marathon/api-factory http-client http-options marathon-url)
+          old-descriptor (:app (marathon/get-app marathon-api service-id))
           new-descriptor (update-in
                            (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
                            [:instances]
                            (fn [_] target-instances))]
-      (with-out-str (mesos/update-app marathon-api service-id new-descriptor)))))
+      (with-out-str (marathon/update-app marathon-api service-id new-descriptor)))))
 
 (defn delete-service
   ([waiter-url service-id-or-waiter-headers]

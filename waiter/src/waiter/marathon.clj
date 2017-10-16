@@ -16,7 +16,9 @@
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
-            [waiter.mesos :as mesos]
+            [waiter.mesos.marathon :as marathon]
+            [waiter.mesos.mesos :as mesos]
+            [waiter.mesos.utils :as mutils]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
@@ -76,7 +78,7 @@
       (let [deployment-ids (->> deployments
                                 (map #(get % "id"))
                                 set)
-            all-marathon-deployments (mesos/get-deployments marathon-api)]
+            all-marathon-deployments (marathon/get-deployments marathon-api)]
         (->> all-marathon-deployments
              (filter (fn [{:strs [id]}] (contains? deployment-ids id)))
              vec)))
@@ -92,7 +94,7 @@
               {:instance-id instance-id, :killed? killed?, :message message, :service-id service-id, :status status})]
       (ss/try+
         (log/debug "killing instance" instance-id "from service" service-id)
-        (let [result (mesos/kill-task marathon-api service-id instance-id scale force)
+        (let [result (marathon/kill-task marathon-api service-id instance-id scale force)
               kill-success? (and result (map? result) (contains? result :deploymentId))]
           (log/info "kill instance" instance-id "result" result)
           (let [message (if kill-success? "Successfully killed instance" "Unable to kill instance")
@@ -101,7 +103,7 @@
         (catch [:status 409] e
           (log/info "kill instance" instance-id "failed as it is locked by one or more deployments"
                     {:deployment-info (extract-deployment-info marathon-api e)
-                     :kill-params kill-params} )
+                     :kill-params kill-params})
           (make-kill-response false "Locked by one or more deployments" 409))
         (catch map? {:keys [body status]}
           (log/info "kill instance" instance-id "returned" status body)
@@ -202,7 +204,7 @@
   "Makes a call with hardcoded embed parameters.
    Filters the apps to return only Waiter apps."
   [marathon-api is-waiter-app?-fn]
-  (let [apps (mesos/get-apps marathon-api)]
+  (let [apps (marathon/get-apps marathon-api)]
     (filter #(is-waiter-app?-fn (app->waiter-service-id %)) (:apps apps))))
 
 (defn marathon-descriptor
@@ -278,7 +280,7 @@
     (ss/try+
       (scheduler/retry-on-transient-server-exceptions
         (str "get-instances[" service-id "]")
-        (let [marathon-response (mesos/get-app marathon-api service-id)]
+        (let [marathon-response (marathon/get-app marathon-api service-id)]
           (response-data->service-instances
             marathon-response [:app] retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store)))
       (catch [:status 404] {}
@@ -288,7 +290,7 @@
     (let [current-time (t/now)
           {:keys [kill-failing-since] :or {kill-failing-since current-time}}
           (get @service-id->kill-info-store service-id)
-          use-force (t/after? current-time (t/plus kill-failing-since (t/millis force-kill-after-ms))) 
+          use-force (t/after? current-time (t/plus kill-failing-since (t/millis force-kill-after-ms)))
           _ (when use-force
               (log/info "using force killing" id "as kills have been failing since" (utils/date-to-str kill-failing-since)))
           params {:force use-force, :scale true}
@@ -296,7 +298,7 @@
       (if killed?
         (do (swap! service-id->kill-info-store dissoc service-id)
             (scheduler/process-instance-killed! instance))
-        (swap! service-id->kill-info-store update-in [service-id :kill-failing-since] 
+        (swap! service-id->kill-info-store update-in [service-id :kill-failing-since]
                (fn [existing-time] (or existing-time current-time))))
       kill-result))
 
@@ -304,7 +306,7 @@
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
         (str "app-exists?[" service-id "]")
-        (mesos/get-app marathon-api service-id))
+        (marathon/get-app marathon-api service-id))
       (catch [:status 404] _
         (log/warn "app-exists?: service" service-id "does not exist!"))))
 
@@ -318,7 +320,7 @@
             (log/info "Starting new app for" service-id "with descriptor" (dissoc marathon-descriptor :env))
             (scheduler/retry-on-transient-server-exceptions
               (str "create-app-if-new[" service-id "]")
-              (mesos/create-app marathon-api marathon-descriptor))
+              (marathon/create-app marathon-api marathon-descriptor))
             (catch [:status 409] e
               (log/warn (ex-info "Conflict status when trying to start app. Is app starting up?"
                                  {:deployment-info (extract-deployment-info marathon-api e)
@@ -331,7 +333,7 @@
       (let [delete-result (scheduler/retry-on-transient-server-exceptions
                             (str "in delete-app[" service-id "]")
                             (log/info "deleting service" service-id)
-                            (mesos/delete-app marathon-api service-id))]
+                            (marathon/delete-app marathon-api service-id))]
         (when delete-result
           (remove-failed-instances-for-service! service-id->failed-instances-transient-store service-id)
           (scheduler/remove-killed-instances-for-service! service-id)
@@ -348,7 +350,7 @@
       (catch [:status 409] e
         (log/warn "Marathon deployment conflict while deleting"
                   {:deployment-info (extract-deployment-info marathon-api e)
-                   :service-id service-id} ))
+                   :service-id service-id}))
       (catch [:status 503] {}
         (log/warn "[delete-app] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[delete-app] Marathon unavailable"))))
@@ -357,12 +359,12 @@
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
         (str "in scale-app[" service-id "]")
-        (let [old-descriptor (:app (mesos/get-app marathon-api service-id))
+        (let [old-descriptor (:app (marathon/get-app marathon-api service-id))
               new-descriptor (update-in
                                (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
                                [:instances]
                                (fn [_] instances))]
-          (mesos/update-app marathon-api service-id new-descriptor)))
+          (marathon/update-app marathon-api service-id new-descriptor)))
       (catch [:status 409] e
         (log/warn "Marathon deployment conflict while scaling"
                   {:deployment-info (extract-deployment-info marathon-api e)
@@ -389,7 +391,7 @@
   [marathon-api]
   (utils/log-and-suppress-when-exception-thrown
     "Error in retrieving info from marathon."
-    (:frameworkId (mesos/get-info marathon-api))))
+    (:frameworkId (marathon/get-info marathon-api))))
 
 (defn marathon-scheduler
   "Returns a new MarathonScheduler with the provided configuration. Validates the
@@ -405,9 +407,9 @@
          (not (str/blank? home-path-prefix))]}
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
-  (let [http-client (mesos/http-client-factory http-options)
-        marathon-api (mesos/marathon-rest-api-factory http-client http-options url)
-        mesos-api (mesos/mesos-api-factory http-client http-options mesos-slave-port slave-directory)
+  (let [http-client (mutils/http-client-factory http-options)
+        marathon-api (marathon/api-factory http-client http-options url)
+        mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})
         service-id->last-force-kill-store (atom {})
         retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)]

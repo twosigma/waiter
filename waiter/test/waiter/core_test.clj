@@ -26,7 +26,7 @@
             [waiter.handler :as handler]
             [waiter.kv :as kv]
             [waiter.marathon :as marathon]
-            [waiter.mesos :as mesos]
+            [waiter.mesos.mesos :as mesos]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
