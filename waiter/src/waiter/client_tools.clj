@@ -17,18 +17,16 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [marathonclj.common :as mc]
-            [marathonclj.rest.apps :as apps]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as authentication]
             [waiter.auth.spnego :as spnego]
             [waiter.correlation-id :as cid]
+            [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
   (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
-           (marathonclj.common Connection)
            (org.eclipse.jetty.util HttpCookieStore$Empty)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
@@ -434,9 +432,10 @@
   (setting waiter-url [:scheduler-config :marathon :url] :verbose verbose))
 
 (defn num-tasks-running [waiter-url service-id & {:keys [verbose prev-tasks-running] :or {verbose false prev-tasks-running -1}}]
-  (let [marathon-url (marathon-url waiter-url :verbose verbose)
-        info-response (binding [mc/*mconn* (atom (Connection. marathon-url {:spnego-auth use-spnego}))]
-                        (apps/get-app service-id))
+  (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
+        marathon-url (marathon-url waiter-url :verbose verbose)
+        marathon-api (marathon/api-factory http-client http-options marathon-url)
+        info-response (marathon/get-app marathon-api service-id)
         tasks-running' (get-in info-response [:app :tasksRunning])]
     (when (not= prev-tasks-running tasks-running')
       (log/debug service-id "has" tasks-running' "task(s) running."))
@@ -457,14 +456,14 @@
 (defn scale-app-to [waiter-url service-id target-instances]
   (let [marathon-url (marathon-url waiter-url)]
     (log/info service-id "being scaled to" target-instances "task(s).")
-    (let [old-descriptor (binding [mc/*mconn* (atom (Connection. marathon-url {:spnego-auth use-spnego}))]
-                           (:app (apps/get-app service-id)))
+    (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
+          marathon-api (marathon/api-factory http-client http-options marathon-url)
+          old-descriptor (:app (marathon/get-app marathon-api service-id))
           new-descriptor (update-in
                            (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
                            [:instances]
                            (fn [_] target-instances))]
-      (with-out-str (binding [mc/*mconn* (atom (Connection. marathon-url {:spnego-auth use-spnego}))]
-                      (apps/update-app service-id new-descriptor "force" "true"))))))
+      (marathon/update-app marathon-api service-id new-descriptor))))
 
 (defn delete-service
   ([waiter-url service-id-or-waiter-headers]

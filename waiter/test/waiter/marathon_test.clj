@@ -9,14 +9,15 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.marathon-test
-  (:require [clj-http.client :as http]
-            [clj-time.core :as t]
+  (:require [clj-time.core :as t]
+            [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
-            [marathonclj.rest.apps :as apps]
-            [marathonclj.rest.deployments :as md]
+            [clojure.walk :as walk]
             [slingshot.slingshot :as ss]
             [waiter.marathon :refer :all]
+            [waiter.mesos.marathon :as marathon]
+            [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
             [waiter.utils :as utils])
   (:import waiter.marathon.MarathonScheduler))
@@ -231,7 +232,7 @@
                                 marathon-response
                                 [:app]
                                 (fn [] framework-id)
-                                "/slave-dir"
+                                {:slave-directory "/slave-dir"}
                                 service-id->failed-instances-transient-store)]
           (is (= expected-response actual-response) (str name))
           (scheduler/preserve-only-killed-instances-for-services! [])
@@ -461,10 +462,12 @@
 (deftest test-retrieve-log-url
   (let [instance-id "service-id-1.instance-id-2"
         host "www.example.com"
-        mesos-slave-port 5051]
-    (with-redefs [http/get (fn [url _]
-                             (is (every? #(str/includes? url %) [host "5051" "state.json"]))
-                             (let [response-body "
+        mesos-api (Object.)]
+    (with-redefs [mesos/get-agent-state
+                  (fn [in-mesos-api in-host]
+                    (is (= mesos-api in-mesos-api))
+                    (is (= host in-host))
+                    (let [response-body "
                                    {
                                     \"frameworks\": [{
                                                    \"role\": \"marathon\",
@@ -478,23 +481,27 @@
                                                                   }]
                                                    }]
                                     }"]
-                               {:body response-body}))]
-      (is (= "/path/to/instance2/directory" (retrieve-log-url {} mesos-slave-port instance-id host))))))
+                      (-> response-body json/read-str walk/keywordize-keys)))]
+      (is (= "/path/to/instance2/directory" (retrieve-log-url mesos-api instance-id host))))))
 
 (deftest test-retrieve-directory-content-from-host
   (let [service-id "service-id-1"
         instance-id "service-id-1.instance-id-2"
         host "www.example.com"
         mesos-slave-port 5051
-        directory "/path/to/instance2/directory"]
-    (with-redefs [http/get (fn [url _]
-                             (is (every? #(str/includes? url %) [host "5051" "files/browse?path="]))
-                             (let [response-body "
+        directory "/path/to/instance2/directory"
+        mesos-api (mesos/api-factory (Object.) {} mesos-slave-port directory)]
+    (with-redefs [mesos/list-directory-content
+                  (fn [in-mesos-api in-host in-directory]
+                    (is (= mesos-api in-mesos-api))
+                    (is (= host in-host))
+                    (is (= directory in-directory))
+                    (let [response-body "
                                    [{\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil1\", \"size\": 1000},
                                     {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir2\", \"size\": 2000},
                                     {\"nlink\": 1, \"path\": \"/path/to/instance2/directory/fil3\", \"size\": 3000},
                                     {\"nlink\": 2, \"path\": \"/path/to/instance2/directory/dir4\", \"size\": 4000}]"]
-                               {:body response-body}))]
+                      (-> response-body json/read-str walk/keywordize-keys)))]
       (let [expected-result (list {:name "fil1"
                                    :size 1000
                                    :type "file"
@@ -511,7 +518,7 @@
                                    :size 4000
                                    :type "directory"
                                    :path "/path/to/instance2/directory/dir4"})]
-        (is (= expected-result (retrieve-directory-content-from-host {} mesos-slave-port service-id instance-id host directory)))))))
+        (is (= expected-result (retrieve-directory-content-from-host mesos-api service-id instance-id host directory)))))))
 
 (deftest test-marathon-descriptor
   (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
@@ -560,7 +567,7 @@
   (let [current-time (t/now)
         service-id "service-1"
         instance-id "service-1.A"
-        make-marathon-scheduler #(->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        make-marathon-scheduler #(->MarathonScheduler {} {} (fn [] nil) "/home/path/"
                                                       (atom {}) %1 %2 (constantly true))
         successful-kill-result {:instance-id instance-id :killed? true :service-id service-id}
         failed-kill-result {:instance-id instance-id :killed? false :service-id service-id}]
@@ -569,7 +576,7 @@
       (testing "normal-kill"
         (let [service-id->kill-info-store (atom {})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
+          (with-redefs [process-kill-instance-request (fn [_ in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
                                                         (is (= {:force false, :scale true} params))
@@ -580,7 +587,7 @@
       (testing "failed-kill"
         (let [service-id->kill-info-store (atom {})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
+          (with-redefs [process-kill-instance-request (fn [_ in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
                                                         (is (= {:force false, :scale true} params))
@@ -591,7 +598,7 @@
       (testing "not-yet-forced"
         (let [service-id->kill-info-store (atom {service-id {:kill-failing-since (t/minus current-time (t/millis 500))}})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
+          (with-redefs [process-kill-instance-request (fn [_ in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
                                                         (is (= {:force false, :scale true} params))
@@ -602,7 +609,7 @@
       (testing "forced-kill"
         (let [service-id->kill-info-store (atom {service-id {:kill-failing-since (t/minus current-time (t/millis 1500))}})
               marathon-scheduler (make-marathon-scheduler service-id->kill-info-store 1000)]
-          (with-redefs [process-kill-instance-request (fn [in-service-id in-instance-id params]
+          (with-redefs [process-kill-instance-request (fn [_ in-service-id in-instance-id params]
                                                         (is (= service-id in-service-id))
                                                         (is (= instance-id in-instance-id))
                                                         (is (= {:force true, :scale true} params))
@@ -612,7 +619,7 @@
 
 (deftest test-service-id->state
   (let [service-id "service-id"
-        marathon-scheduler (->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        marathon-scheduler (->MarathonScheduler {} {} (fn [] nil) "/home/path/"
                                                 (atom {service-id [:failed-instances]})
                                                 (atom {service-id :kill-call-info})
                                                 100 (constantly true))
@@ -622,15 +629,16 @@
 (deftest test-killed-instances-transient-store
   (let [current-time (t/now)
         current-time-str (utils/date-to-str current-time)
-        marathon-scheduler (->MarathonScheduler {} 5051 (fn [] nil) "/slave/directory" "/home/path/"
+        marathon-api (Object.)
+        marathon-scheduler (->MarathonScheduler marathon-api {} (fn [] nil) "/home/path/"
                                                 (atom {}) (atom {}) 60000 (constantly true))
         make-instance (fn [service-id instance-id]
                         {:id instance-id
                          :service-id service-id})]
-    (with-redefs [apps/kill-task (fn [service-id instance-id scale-key scale-value force-key force-value]
-                                   (is (= [scale-key scale-value force-key force-value]
-                                          ["scale" "true" "force" "false"]))
-                                   {:service-id service-id, :instance-id instance-id, :killed? true, :deploymentId "12982340972"})
+    (with-redefs [marathon/kill-task (fn [in-marathon-api service-id instance-id scale-value force-value]
+                                       (is (= marathon-api in-marathon-api))
+                                       (is (= [scale-value force-value] [true false]))
+                                       {:service-id service-id, :instance-id instance-id, :killed? true, :deploymentId "12982340972"})
                   t/now (fn [] current-time)]
       (testing "tracking-instance-killed"
 
@@ -758,101 +766,108 @@
                                           :url "url"}))))))
 
 (deftest test-process-kill-instance-request
-  (let [service-id "test-service-id"
+  (let [marathon-api (Object.)
+        service-id "test-service-id"
         instance-id "instance-id"]
     (testing "successful-delete"
-      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
-                                     (is (= service-id in-service-id))
-                                     (is (= instance-id in-instance-id))
-                                     (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
-                                     {:deploymentId "12982340972"})]
+      (with-redefs [marathon/kill-task (fn [in-marathon-api in-service-id in-instance-id scale-value force-value]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         (is (= instance-id in-instance-id))
+                                         (is (= [scale-value force-value] [true false]))
+                                         {:deploymentId "12982340972"})]
         (is (= {:instance-id instance-id :killed? true :message "Successfully killed instance" :service-id service-id, :status 200}
-               (process-kill-instance-request service-id instance-id {})))))
+               (process-kill-instance-request marathon-api service-id instance-id {})))))
 
     (testing "unsuccessful-delete"
-      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
-                                     (is (= service-id in-service-id))
-                                     (is (= instance-id in-instance-id))
-                                     (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
-                                     {:failed true})]
+      (with-redefs [marathon/kill-task (fn [in-marathon-api in-service-id in-instance-id scale-value force-value]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         (is (= instance-id in-instance-id))
+                                         (is (= [scale-value force-value] [true false]))
+                                         {:failed true})]
         (is (= {:instance-id instance-id :killed? false :message "Unable to kill instance" :service-id service-id, :status 500}
-               (process-kill-instance-request service-id instance-id {})))))
+               (process-kill-instance-request marathon-api service-id instance-id {})))))
 
     (testing "deployment-conflict"
-      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
-                                     (is (= service-id in-service-id))
-                                     (is (= instance-id in-instance-id))
-                                     (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
-                                     (ss/throw+ {:status 409}))]
+      (with-redefs [marathon/kill-task (fn [in-marathon-api in-service-id in-instance-id scale-value force-value]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         (is (= instance-id in-instance-id))
+                                         (is (= [scale-value force-value] [true false]))
+                                         (ss/throw+ {:status 409}))]
         (is (= {:instance-id instance-id :killed? false :message "Locked by one or more deployments" :service-id service-id, :status 409}
-               (process-kill-instance-request service-id instance-id {})))))
+               (process-kill-instance-request marathon-api service-id instance-id {})))))
 
     (testing "marathon-404"
-      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
-                                     (is (= service-id in-service-id))
-                                     (is (= instance-id in-instance-id))
-                                     (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
-                                     (ss/throw+ {:body "Not Found", :status 404}))]
+      (with-redefs [marathon/kill-task (fn [in-marathon-api in-service-id in-instance-id scale-value force-value]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         (is (= instance-id in-instance-id))
+                                         (is (= [scale-value force-value] [true false]))
+                                         (ss/throw+ {:body "Not Found", :status 404}))]
         (is (= {:instance-id instance-id :killed? false :message "Not Found" :service-id service-id, :status 404}
-               (process-kill-instance-request service-id instance-id {})))))
+               (process-kill-instance-request marathon-api service-id instance-id {})))))
 
     (testing "exception-while-killing"
-      (with-redefs [apps/kill-task (fn [in-service-id in-instance-id scale-key scale-value force-key force-value]
-                                     (is (= service-id in-service-id))
-                                     (is (= instance-id in-instance-id))
-                                     (is (= [scale-key scale-value force-key force-value] ["scale" "true" "force" "false"]))
-                                     (throw (Exception. "exception from test")))]
+      (with-redefs [marathon/kill-task (fn [in-marathon-api in-service-id in-instance-id scale-value force-value]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         (is (= instance-id in-instance-id))
+                                         (is (= [scale-value force-value] [true false]))
+                                         (throw (Exception. "exception from test")))]
         (is (= {:instance-id instance-id :killed? false :message "exception from test" :service-id service-id, :status 500}
-               (process-kill-instance-request service-id instance-id {})))))))
+               (process-kill-instance-request marathon-api service-id instance-id {})))))))
 
 (deftest test-delete-app
-  (let [scheduler (->MarathonScheduler {} nil nil nil nil (atom {}) (atom {}) nil nil)]
+  (let [scheduler (->MarathonScheduler {} {} nil nil (atom {}) (atom {}) nil nil)]
 
-    (with-redefs [apps/delete-app (constantly {:deploymentId 12345})]
+    (with-redefs [marathon/delete-app (constantly {:deploymentId 12345})]
       (is (= {:result :deleted
               :message "Marathon deleted with deploymentId 12345"}
              (scheduler/delete-app scheduler "foo"))))
 
-    (with-redefs [apps/delete-app (constantly {})]
+    (with-redefs [marathon/delete-app (constantly {})]
       (is (= {:result :error
               :message "Marathon did not provide deploymentId for delete request"}
              (scheduler/delete-app scheduler "foo"))))
 
-    (with-redefs [apps/delete-app (fn [_] (ss/throw+ {:status 404}))]
+    (with-redefs [marathon/delete-app (fn [_ _] (ss/throw+ {:status 404}))]
       (is (= {:result :no-such-service-exists
               :message "Marathon reports service does not exist"}
              (scheduler/delete-app scheduler "foo"))))))
 
 (deftest test-extract-deployment-info
-  (with-redefs [md/get-deployments (constantly [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
-                                                {"affectedApps" "waiter-app-4567", "id" "4567", "version" "v4567"}
-                                                {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}
-                                                {"affectedApps" "waiter-app-4321", "id" "4321", "version" "v4321"}])]
-    (testing "no deployments entry"
-      (let [response {:body "{\"message\": \"App is locked by one or more deployments.\"}"}]
-        (is (not (extract-deployment-info response)))))
+  (let [marathon-api (Object.)]
+    (with-redefs [marathon/get-deployments (constantly [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
+                                                        {"affectedApps" "waiter-app-4567", "id" "4567", "version" "v4567"}
+                                                        {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}
+                                                        {"affectedApps" "waiter-app-4321", "id" "4321", "version" "v4321"}])]
+      (testing "no deployments entry"
+        (let [response {:body "{\"message\": \"App is locked by one or more deployments.\"}"}]
+          (is (not (extract-deployment-info marathon-api response)))))
 
-    (testing "no deployments listed"
-      (let [response {:body "{\"deployments\": [],
+      (testing "no deployments listed"
+        (let [response {:body "{\"deployments\": [],
                             \"message\": \"App is locked by one or more deployments.\"}"}]
-        (is (not (extract-deployment-info response)))))
+          (is (not (extract-deployment-info marathon-api response)))))
 
-    (testing "single deployment"
-      (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}],
+      (testing "single deployment"
+        (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}],
                             \"message\": \"App is locked by one or more deployments.\"}"}]
-        (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}]
-               (extract-deployment-info response)))))
+          (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}]
+                 (extract-deployment-info marathon-api response)))))
 
-    (testing "multiple deployments"
-      (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}],
+      (testing "multiple deployments"
+        (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}],
                             \"message\": \"App is locked by one or more deployments.\"}"}]
-        (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
-                {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}]
-               (extract-deployment-info response)))))
+          (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
+                  {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}]
+                 (extract-deployment-info marathon-api response)))))
 
-    (testing "multiple deployments, one without info"
-      (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}, {\"id\":\"9876\"}],
+      (testing "multiple deployments, one without info"
+        (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}, {\"id\":\"9876\"}],
                             \"message\": \"App is locked by one or more deployments.\"}"}]
-        (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
-                {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}]
-               (extract-deployment-info response)))))))
+          (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
+                  {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}]
+                 (extract-deployment-info marathon-api response))))))))
