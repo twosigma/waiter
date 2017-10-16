@@ -14,7 +14,8 @@
             [clojure.tools.logging :as log]
             [metrics.core]
             [metrics.histograms :as histograms]
-            [slingshot.slingshot :refer [throw+ try+]]))
+            [slingshot.slingshot :refer [throw+ try+]])
+  (:import clojure.core.async.impl.channels.ManyToManyChannel))
 
 (defn sliding-buffer-chan [n]
   (async/chan (async/sliding-buffer n)))
@@ -176,3 +177,8 @@
           (ex-handler e)
           (log/error e "Fatal exception in timing-out-pipeline"))))
     out))
+
+(defn chan?
+  "Determines if v is a channel."
+  [v]
+  (instance? ManyToManyChannel v))

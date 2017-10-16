@@ -70,6 +70,7 @@
                          handlers] ; Insist that all systems are running before we start server
                   (let [options (merge websocket-config
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
+                                                          core/wrap-error-handling
                                                           core/correlation-id-middleware
                                                           (core/wrap-support-info support-info)
                                                           consume-request-stream)
