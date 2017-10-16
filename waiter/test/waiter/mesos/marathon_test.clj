@@ -12,7 +12,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.mesos.marathon :refer :all]
-            [waiter.mesos.utils :as mutils]))
+            [waiter.mesos.utils :as mesos-utils]))
 
 (deftest test-marathon-rest-api-endpoints
   (let [http-client (Object.)
@@ -30,29 +30,29 @@
                                              (is (= expected-absolute-url in-request-url)))))]
 
     (testing "create-app"
-      (with-redefs [mutils/http-request (assert-endpoint-request-method :post "/v2/apps")]
+      (with-redefs [mesos-utils/http-request (assert-endpoint-request-method :post "/v2/apps")]
         (create-app marathon-api {})))
 
     (testing "delete-app"
-      (with-redefs [mutils/http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id))]
+      (with-redefs [mesos-utils/http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id))]
         (delete-app marathon-api app-id)))
 
     (testing "get-apps"
-      (with-redefs [mutils/http-request (assert-endpoint-request-method :get "/v2/apps")]
+      (with-redefs [mesos-utils/http-request (assert-endpoint-request-method :get "/v2/apps")]
         (get-apps marathon-api)))
 
     (testing "get-deployments"
-      (with-redefs [mutils/http-request (assert-endpoint-request-method :get "/v2/deployments")]
+      (with-redefs [mesos-utils/http-request (assert-endpoint-request-method :get "/v2/deployments")]
         (get-deployments marathon-api)))
 
     (testing "get-info"
-      (with-redefs [mutils/http-request (assert-endpoint-request-method :get "/v2/info")]
+      (with-redefs [mesos-utils/http-request (assert-endpoint-request-method :get "/v2/info")]
         (get-info marathon-api)))
 
     (testing "kill-task"
-      (with-redefs [mutils/http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id "/tasks/" task-id))]
+      (with-redefs [mesos-utils/http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id "/tasks/" task-id))]
         (kill-task marathon-api app-id task-id false true)))
 
     (testing "update-app"
-      (with-redefs [mutils/http-request (assert-endpoint-request-method :put (str "/v2/apps/" app-id))]
+      (with-redefs [mesos-utils/http-request (assert-endpoint-request-method :put (str "/v2/apps/" app-id))]
         (update-app marathon-api app-id {})))))

@@ -14,7 +14,7 @@
             [clojure.test :refer :all]
             [qbits.jet.client.http :as http]
             [waiter.mesos.utils :refer :all])
-  (:import (clojure.lang ExceptionInfo)))
+  (:import clojure.lang.ExceptionInfo))
 
 (deftest test-http-request
   (testing "successful-response"

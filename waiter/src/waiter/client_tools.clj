@@ -463,7 +463,7 @@
                            (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
                            [:instances]
                            (fn [_] target-instances))]
-      (with-out-str (marathon/update-app marathon-api service-id new-descriptor)))))
+      (marathon/update-app marathon-api service-id new-descriptor))))
 
 (defn delete-service
   ([waiter-url service-id-or-waiter-headers]

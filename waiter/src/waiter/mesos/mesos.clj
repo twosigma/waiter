@@ -9,7 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.mesos.mesos
-  (:require [waiter.mesos.utils :as mutils])
+  (:require [waiter.mesos.utils :as mesos-utils])
   (:import org.eclipse.jetty.client.HttpClient))
 
 (defrecord MesosApi [^HttpClient http-client spnego-auth slave-port slave-directory])
@@ -29,11 +29,11 @@
 (defn list-directory-content
   "Lists files and directories contained in the path."
   [{:keys [http-client slave-port spnego-auth]} host directory]
-  (mutils/http-request http-client (str "http://" host ":" slave-port "/files/browse")
-                       :query-string {"path" directory}
-                       :request-method :get
-                       :spnego-auth spnego-auth
-                       :throw-exceptions false))
+  (mesos-utils/http-request http-client (str "http://" host ":" slave-port "/files/browse")
+                            :query-string {"path" directory}
+                            :request-method :get
+                            :spnego-auth spnego-auth
+                            :throw-exceptions false))
 
 (defn build-directory-download-link
   "Generates a download link to the directory on the specified mesos agent."
@@ -45,7 +45,7 @@
   "Returns information about the frameworks, executors and the agent’s master."
   [{:keys [http-client slave-port spnego-auth]} host]
   (when (and slave-port host)
-    (mutils/http-request http-client (str "http://" host ":" slave-port "/state.json")
-                         :request-method :get
-                         :spnego-auth spnego-auth
-                         :throw-exceptions false)))
+    (mesos-utils/http-request http-client (str "http://" host ":" slave-port "/state.json")
+                              :request-method :get
+                              :spnego-auth spnego-auth
+                              :throw-exceptions false)))

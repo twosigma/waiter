@@ -12,7 +12,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.mesos.mesos :refer :all]
-            [waiter.mesos.utils :as mutils]))
+            [waiter.mesos.utils :as mesos-utils]))
 
 (deftest test-mesos-api
   (let [http-client (Object.)
@@ -41,7 +41,7 @@
 
     (testing "list-directory-content"
       (let [host "www.host.com"]
-        (with-redefs [mutils/http-request
+        (with-redefs [mesos-utils/http-request
                       (assert-endpoint-request-method :get (str "http://" host ":" slave-port "/files/browse"))]
           (list-directory-content mesos-api host "/some/directory"))))
 
@@ -55,6 +55,6 @@
 
     (testing "get-agent-state"
       (let [host "www.host.com"]
-        (with-redefs [mutils/http-request
+        (with-redefs [mesos-utils/http-request
                       (assert-endpoint-request-method :get (str "http://" host ":" slave-port "/state.json"))]
           (get-agent-state mesos-api host))))))
