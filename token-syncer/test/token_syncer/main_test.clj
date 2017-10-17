@@ -13,17 +13,20 @@
             [token-syncer.main :refer :all]))
 
 (deftest test-parse-cli-options
-  (is (= ["Failed to validate \"-c abcd\": Must provide at least two different semi-colon separated cluster urls"]
+  (is (= ["Unknown option: \"-c\""]
          (:errors (parse-cli-options ["-c" "abcd"]))))
-  (is (= ["Failed to validate \"-c abcd;abcd\": Must provide at least two different semi-colon separated cluster urls"]
-         (:errors (parse-cli-options ["-c" "abcd;abcd"]))))
-  (is (= {:cluster-urls ["abcd" "efgh"], :connection-timeout-ms 1000, :idle-timeout-ms 30000}
-         (:options (parse-cli-options ["-c" "abcd;efgh"]))))
-  (is (= {:cluster-urls [], :connection-timeout-ms 1000, :help true, :idle-timeout-ms 30000}
+  (is (= ["Unknown option: \"-c\""]
+         (:errors (parse-cli-options ["-c" "abcd,abcd"]))))
+  (is (= {:connection-timeout-ms 1000, :idle-timeout-ms 30000}
+         (:options (parse-cli-options ["-c" "abcd,efgh"]))))
+  (is (= {:connection-timeout-ms 1000, :help true, :idle-timeout-ms 30000}
          (:options (parse-cli-options ["-h"]))))
-  (is (= {:cluster-urls [], :connection-timeout-ms 1000, :idle-timeout-ms 10000}
+  (is (= {:connection-timeout-ms 1000, :idle-timeout-ms 10000}
          (:options (parse-cli-options ["-i" "10000"]))))
-  (is (= {:cluster-urls [], :connection-timeout-ms 10000, :idle-timeout-ms 30000}
+  (is (= {:connection-timeout-ms 10000, :idle-timeout-ms 30000}
          (:options (parse-cli-options ["-t" "10000"]))))
-  (is (= {:cluster-urls [], :connection-timeout-ms 10000, :idle-timeout-ms 20000}
-         (:options (parse-cli-options ["-i" "20000" "-t" "10000"])))))
+  (is (= {:connection-timeout-ms 10000, :idle-timeout-ms 20000}
+         (:options (parse-cli-options ["-i" "20000" "-t" "10000"]))))
+  (let [parsed-arguments (parse-cli-options ["-i" "20000" "-t" "10000" "c1.com" "c2.com" "c2.com"])]
+    (is (= ["c1.com" "c2.com" "c2.com"] (:arguments parsed-arguments)))
+    (is (= {:connection-timeout-ms 10000, :idle-timeout-ms 20000} (:options parsed-arguments)))))

@@ -18,7 +18,7 @@
   (:import (org.eclipse.jetty.client HttpClient))
   (:gen-class))
 
-(defn ^HttpClient http-client-wrapper-factory
+(defn ^HttpClient http-client-factory
   "Creates an instance of HttpClient with the specified timeout."
   [{:keys [connection-timeout-ms idle-timeout-ms]}]
   (let [http-client (http/client {:connect-timeout connection-timeout-ms
@@ -38,11 +38,7 @@
 (defn parse-cli-options
   "Parses and returns the cli options passed to the token syncer."
   [args]
-  (->> [["-c" "--cluster-urls urls" "The semi-colon separated cluster urls"
-         :default []
-         :parse-fn #(str/split % #";")
-         :validate [#(> (count (set %)) 1) "Must provide at least two different semi-colon separated cluster urls"]]
-        ["-h" "--help"]
+  (->> [["-h" "--help"]
         ["-i" "--idle-timeout-ms timeout" "The idle timeout in milliseconds"
          :default 30000
          :parse-fn #(Integer/parseInt %)
@@ -66,20 +62,32 @@
   [& args]
   (setup-exception-handler)
   (log/info "Command-line arguments:" (vec args))
-  (let [{:keys [errors options summary]} (parse-cli-options args)
-        {:keys [cluster-urls help]} options]
+  (let [{:keys [arguments errors options summary]} (parse-cli-options args)
+        {:keys [help]} options
+        cluster-urls arguments]
     (try
-      (if help
+      (cond
+        help
         (log/info summary)
+
+        (seq errors)
         (do
-          (when (seq errors)
-            (doseq [error-message errors]
-              (log/error error-message))
-            (exit 1 "Error in parsing arguments"))
-          (let [http-client-wrapper (http-client-wrapper-factory options)
-                sync-result (syncer/sync-tokens http-client-wrapper cluster-urls)]
-            (log/info (-> sync-result pp/pprint with-out-str str/trim))
-            (exit 0 "Exiting."))))
+          (doseq [error-message errors]
+            (log/error error-message)
+            (println System/err error-message))
+          (exit 1 "Error in parsing arguments"))
+
+        (> (-> cluster-urls set count) 1)
+        (exit 1 (str "Must provide at least two different cluster urls, provided:" cluster-urls))
+
+        :else
+        (let [http-client-wrapper (http-client-factory options)
+              sync-result (syncer/sync-tokens http-client-wrapper cluster-urls)
+              exit-code (if (zero? (get-in sync-result [:summary :sync :error] 0))
+                          0
+                          1)]
+          (log/info (-> sync-result pp/pprint with-out-str str/trim))
+          (exit exit-code (str "Exiting with code " exit-code))))
       (catch Exception e
         (log/error e "Error in syncing tokens")
         (exit 1 (str "Encountered error starting token-syncer: " (.getMessage e)))))))

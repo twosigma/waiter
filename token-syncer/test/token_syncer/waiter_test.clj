@@ -15,10 +15,12 @@
             [qbits.jet.client.http :as http]
             [token-syncer.waiter :refer :all]))
 
-(defn- send-response
+(defn- send-json-response
   [body-data & {:keys [headers status]}]
   (let [body-chan (async/promise-chan)]
-    (async/put! body-chan body-data)
+    (->> body-data
+         json/write-str
+         (async/put! body-chan))
     (cond-> {:body body-chan
              :headers (or headers {})}
             status (assoc :status status))))
@@ -87,19 +89,19 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= [:headers {"accept" "application/json"}] in-options))
-                                          {:error error})]
+                                          (throw error))]
           (is (thrown-with-msg? Exception #"exception from test"
                                 (load-token-list http-client-wrapper test-cluster-url))))))
 
     (testing "successful response"
-      (let [token-response (json/write-str [{:owner "test-1", :token "token-1"}
-                                            {:owner "test-2", :token "token-2"}
-                                            {:owner "test-3", :token "token-3"}])]
+      (let [token-response [{:owner "test-1", :token "token-1"}
+                            {:owner "test-2", :token "token-2"}
+                            {:owner "test-3", :token "token-3"}]]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= [:headers {"accept" "application/json"}] in-options))
-                                          (send-response token-response :status 200))]
+                                          (send-json-response token-response :status 200))]
           (is (= #{"token-1" "token-2" "token-3"}
                  (load-token-list http-client-wrapper test-cluster-url))))))))
 
@@ -109,7 +111,7 @@
         test-token "lorem-ipsum"
         expected-options {:headers {"accept" "application/json"
                                     "x-waiter-token" test-token}
-                          :query-params {"include-deleted" "true"}}]
+                          :query-params {"include" ["deleted" "metadata"]}}]
 
     (testing "error in response"
       (let [error (Exception. "exception from test")]
@@ -117,13 +119,12 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          {:error error})]
+                                          (throw error))]
           (is (= {:error error}
                  (load-token http-client-wrapper test-cluster-url test-token))))))
 
     (testing "successful response"
-      (let [token-response (json/write-str {:foo :bar
-                                            :lorem :ipsum})
+      (let [token-response {"foo" "bar", "lorem" "ipsum"}
             current-time-ms (-> (System/currentTimeMillis)
                                 (mod 1000)
                                 (* 1000))
@@ -132,27 +133,27 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          (send-response token-response
-                                                         :headers {"etag" last-modified-str}
-                                                         :status 200))]
+                                          (send-json-response token-response
+                                                              :headers {"etag" last-modified-str}
+                                                              :status 200))]
           (is (= {:description {"foo" "bar",
                                 "lorem" "ipsum"}
                   :headers {"etag" last-modified-str}
-                  :last-modified-etag current-time-ms
-                  :status 200}
+                  :status 200
+                  :token-etag current-time-ms}
                  (load-token http-client-wrapper test-cluster-url test-token))))))))
 
 (deftest test-store-token
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
-        test-last-modified-etag (System/currentTimeMillis)
+        test-token-etag (System/currentTimeMillis)
         test-description {"foo" "bar"
                           "lorem" "ipsum"}
         expected-options {:body (json/write-str (assoc test-description :token test-token))
                           :headers {"accept" "application/json"
-                                    "if-match" test-last-modified-etag}
-                          :method http/post
+                                    "if-match" test-token-etag}
+                          :method :post
                           :query-params {"update-mode" "admin"}}]
 
     (testing "error in response"
@@ -161,42 +162,42 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          {:error error})]
+                                          (throw error))]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (store-token http-client-wrapper test-cluster-url test-token test-last-modified-etag
+                                (store-token http-client-wrapper test-cluster-url test-token test-token-etag
                                              test-description))))))
 
     (testing "error in status code"
-      (let [token-response "token response"]
+      (let [token-response {"message" "failed"}]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          (send-response token-response :status 300))]
+                                          (send-json-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token store failed"
-                                (store-token http-client-wrapper test-cluster-url test-token test-last-modified-etag
+                                (store-token http-client-wrapper test-cluster-url test-token test-token-etag
                                              test-description))))))
 
     (testing "successful response"
-      (let [token-response "token response"]
+      (let [token-response {"message" "success"}]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          (send-response token-response :status 200))]
+                                          (send-json-response token-response :status 200))]
           (is (= {:body token-response, :headers {}, :status 200}
-                 (store-token http-client-wrapper test-cluster-url test-token test-last-modified-etag
+                 (store-token http-client-wrapper test-cluster-url test-token test-token-etag
                               test-description))))))))
 
 (deftest test-hard-delete-token
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
-        test-last-modified-etag (System/currentTimeMillis)
+        test-token-etag (System/currentTimeMillis)
         expected-options {:headers {"accept" "application/json"
-                                    "if-match" test-last-modified-etag
+                                    "if-match" test-token-etag
                                     "x-waiter-token" test-token}
-                          :method http/delete
+                          :method :delete
                           :query-params {"hard-delete" "true"}}]
 
     (testing "error in response"
@@ -205,28 +206,28 @@
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          {:error error})]
+                                          (throw error))]
           (is (thrown-with-msg? Exception #"exception from test"
                                 (hard-delete-token http-client-wrapper test-cluster-url test-token
-                                                   test-last-modified-etag))))))
+                                                   test-token-etag))))))
 
     (testing "error in status code"
-      (let [token-response "token response"]
+      (let [token-response {"message" "failed"}]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          (send-response token-response :status 300))]
+                                          (send-json-response token-response :status 300))]
           (is (thrown-with-msg? Exception #"Token hard-delete failed"
                                 (hard-delete-token http-client-wrapper test-cluster-url test-token
-                                                   test-last-modified-etag))))))
+                                                   test-token-etag))))))
 
     (testing "successful response"
-      (let [token-response "token response"]
+      (let [token-response {"message" "success"}]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= expected-options (apply hash-map in-options)))
-                                          (send-response token-response :status 200))]
+                                          (send-json-response token-response :status 200))]
           (is (= {:body token-response, :headers {}, :status 200}
-                 (hard-delete-token http-client-wrapper test-cluster-url test-token test-last-modified-etag))))))))
+                 (hard-delete-token http-client-wrapper test-cluster-url test-token test-token-etag))))))))

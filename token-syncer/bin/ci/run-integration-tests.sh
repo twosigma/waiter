@@ -10,6 +10,8 @@
 
 set -ev
 
+function timeout() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+
 function wait_for_server {
     URI=${1}
     while ! curl -s ${URI} >/dev/null;
@@ -39,18 +41,16 @@ do
   bin/run-using-shell-scheduler.sh ${waiter_port} &
   WAITER_URI="http://127.0.0.1:${waiter_port}"
   timeout 180s bash -c "wait_for_server ${WAITER_URI}"
-  WAITER_URIS="${WAITER_URI};${WAITER_URIS}"
+  WAITER_URIS="${WAITER_URI},${WAITER_URIS}"
 done
 
 popd
 
 # Run the integration tests
 export WAITER_URIS="${WAITER_URIS%?}"
-${SYNCER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
-
-# If there were failures, dump the logs
-if [ "$test_failures" = true ]; then
-    echo "integration tests failed -- dumping logs"
-    tail -n +1 -- log/*.log
-    exit 1
-fi
+${SYNCER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || {
+  # If there were failures, dump the logs
+  echo "integration tests failed -- dumping logs"
+  tail -n +1 -- log/*.log
+  exit 1
+}

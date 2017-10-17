@@ -31,10 +31,10 @@ WAITER_DIR=${DIR}/../../waiter
 TEST_COMMAND=${1:-test}
 TEST_SELECTOR=${2:-integration}
 
-export WAITER_URIS=${WAITER_URIS:-http://127.0.0.1:9091;http://127.0.0.1:9092}
+export WAITER_URIS=${WAITER_URIS:-http://127.0.0.1:9091,http://127.0.0.1:9092}
 
 # Wait for waiter to be listening
-for WAITER_URI in ${WAITER_URIS//;/ }
+for WAITER_URI in ${WAITER_URIS//,/ }
 do
   timeout 180s bash -c "wait_for_server ${WAITER_URI}"
   if [ $? -ne 0 ]; then

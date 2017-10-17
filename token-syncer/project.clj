@@ -12,6 +12,7 @@
   :aliases {"test" ["with-profile" "+test" "test"]}
   :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
 [cc.qbits/jet "0.7.10-20180124_201515-g857338f"]
+                 [clj-time "0.12.0"]
                  [commons-codec/commons-codec "1.10"]
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/data.json "0.2.6"]
@@ -22,13 +23,7 @@
   :main ^:skip-aot token-syncer.main
   :plugins [[lein-voom "0.1.0-20171225_233657-g7962d1d"]]
   :profiles {:default {:jvm-opts ["-Dlog4j.configuration=log4j.properties"]}
-             :test {:jvm-opts ["-Dlog4j.configuration=log4j-test.properties"
-                               "-XX:+PrintAdaptiveSizePolicy"
-                               "-XX:+PrintGCDetails"
-                               "-XX:+PrintGCTimeStamps"
-                               "-XX:+PrintReferenceGC"
-                               "-Xmx512m"
-                               "-Xloggc:log/gc.log"]}
+             :test {:jvm-opts ["-Dlog4j.configuration=log4j-test.properties"]}
              :uberjar {:aot :all}}
   :resource-paths ["resources"]
   :target-path "target/%s"
