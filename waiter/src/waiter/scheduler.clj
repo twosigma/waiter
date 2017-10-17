@@ -119,7 +119,10 @@
                                     (ss/try+
                                       {:success (f)}
                                       (catch #(contains? retry-status-codes (:status %)) e
-                                        (log/warn (str "Scheduler unavailable (Error code:" (:status e) ").") msg)
+                                        (log/warn (str "scheduler unavailable (error code:" (:status e) ").") msg)
+                                        (ss/throw+ e))
+                                      (catch ConnectException e
+                                        (log/warn "connection to scheduler failed." msg)
                                         (ss/throw+ e))
                                       (catch Throwable th
                                         {:error th})
