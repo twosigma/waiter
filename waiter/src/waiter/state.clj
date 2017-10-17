@@ -270,10 +270,11 @@
    work-stealing-received-in-flight-counter requests-outstanding-counter {:keys [cid instance response-chan router-id] :as data}]
   (cid/cdebug cid "received work-stealing instance" (:id instance) "from" router-id)
   (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "offers"))
-  (if (pos?
-        (utils/compute-help-required
-          (counters/value slots-in-use-counter) (counters/value slots-available-counter)
-          (counters/value work-stealing-received-in-flight-counter) (counters/value requests-outstanding-counter)))
+  (if (utils/requires-help?
+        (counters/value slots-in-use-counter)
+        (counters/value slots-available-counter)
+        (counters/value work-stealing-received-in-flight-counter)
+        (counters/value requests-outstanding-counter))
     (do
       (cid/cdebug cid "accepting work-stealing instance" (:id instance) "from" router-id)
       (counters/inc! work-stealing-received-in-flight-counter)
@@ -286,7 +287,10 @@
        :response :promptly-rejected})))
 
 (defn handle-reserve-instance-request
-  "Handles a reserve request."
+  "Handles a reserve request.
+   Work-stealing offers are used with higher priority to enable releasing it quickly when the request is done.
+   Instances from the available slots are looked up only when there are no work-stealing offers,
+   this is expected to be the common case."
   [{:keys [deployment-error id->instance instance-id->state request-id->work-stealer sorted-instance-ids work-stealing-queue] :as current-state}
    service-id update-slot-state-fn [{:keys [cid request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (if deployment-error  ; if a deployment error is associated with the state, return the error immediately instead of an instance

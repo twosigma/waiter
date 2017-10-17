@@ -374,7 +374,7 @@
   "Computes the number of slots (requests that can be made to instances) of help required at a router given the values for:
      outstanding: the number of outstanding requests at the router;
      slots-available: the number of slots available (where available = not in use and not blacklisted) from those assigned
-                      to the router by the distrbution algorithm;
+                      to the router by the distribution algorithm;
      slots-in-use: the number of slots used by the router from those that were assigned to it by the distribution
                    algorithm at some point in time, it may include slots from instances that the router no longer owns; and
      slots-offered: the number of slots offered as help to the router from other routers via work-stealing.
@@ -388,6 +388,22 @@
    (compute-help-required slots-in-use slots-available slots-offered outstanding))
   ([slots-in-use slots-available slots-offered outstanding]
    (- outstanding (+ slots-in-use slots-available slots-offered))))
+
+(defn requires-help?
+  "Determines whether a given router needs help based on the values of:
+     outstanding: the number of outstanding requests at the router;
+     slots-available: the number of slots available (where available = not in use and not blacklisted) from those assigned
+                      to the router by the distribution algorithm;
+     slots-in-use: the number of slots used by the router from those that were assigned to it by the distribution
+                   algorithm at some point in time, it may include slots from instances that the router no longer owns; and
+     slots-offered: the number of slots offered as help to the router from other routers via work-stealing.
+   It returns true if there are no slots available and `compute-help-required` returns a positive value."
+  ([{:strs [outstanding slots-available slots-in-use slots-offered]
+     :or {outstanding 0, slots-available 0, slots-in-use 0, slots-offered 0}}]
+   (requires-help? slots-in-use slots-available slots-offered outstanding))
+  ([slots-in-use slots-available slots-offered outstanding]
+   (and (zero? slots-available)
+        (pos? (compute-help-required slots-in-use slots-available slots-offered outstanding)))))
 
 (let [messages (atom {})]
   (defn message
