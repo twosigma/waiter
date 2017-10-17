@@ -248,7 +248,7 @@
                     ;; :kind :shell simply schedules instances on your local machine (for testing purposes only):
                     ;:kind :shell
                     :shell {
-                            :factory-fn waiter.scheduler.shell-scheduler/shell-scheduler
+                            :factory-fn waiter.scheduler.shell/shell-scheduler
 
                             ;; The interval (milliseconds) at which instance health will be checked:
                             :health-check-interval-ms 10000

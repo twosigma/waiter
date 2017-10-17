@@ -2,9 +2,8 @@
   (:require [clojure.java.shell :as sh]
             [clojure.string :as str]
             [clojure.test :refer :all]
-            [waiter.scheduler.shell-scheduler :refer :all]
-            [waiter.test-helpers :refer :all]
-            [waiter.utils :as utils])
+            [waiter.scheduler.shell :refer :all]
+            [waiter.test-helpers :refer :all])
   (:import (java.nio.file Files
                           Paths)
            java.nio.file.attribute.FileAttribute))

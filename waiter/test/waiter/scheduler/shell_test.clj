@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.scheduler.shell-scheduler-test
+(ns waiter.scheduler.shell-test
   (:require [clj-time.core :as t]
             [clj-time.format :as f]
             [clojure.core.async :as async]
@@ -17,14 +17,12 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
-            [waiter.client-tools :as ct]
             [waiter.scheduler :as scheduler]
-            [waiter.scheduler.shell-scheduler :refer :all]
-            [waiter.test-helpers :as th]
+            [waiter.scheduler.shell :refer :all]
             [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
            java.util.concurrent.TimeUnit
-           waiter.scheduler.shell_scheduler.ShellScheduler))
+           waiter.scheduler.shell.ShellScheduler))
 
 (defn work-dir
   "Returns the canonical path for the ./scheduler directory"
@@ -73,34 +71,34 @@
 
 (deftest test-update-task-stats
   (testing "1 healthy"
-    (let [{:keys [service id->instance]} (update-task-stats {:service {}
-                                                             :id->instance {"foo" {:healthy? true}}})]
+    (let [{:keys [service]} (update-task-stats {:service {}
+                                                :id->instance {"foo" {:healthy? true}}})]
       (is (= {:healthy 1
               :unhealthy 0
               :running 1
               :staged 0} (:task-stats service)))
       (is (= 1 (:task-count service)))))
   (testing "1 unhealthy"
-    (let [{:keys [service id->instance]} (update-task-stats {:service {}
-                                                             :id->instance {"foo" {:healthy? false}}})]
+    (let [{:keys [service]} (update-task-stats {:service {}
+                                                :id->instance {"foo" {:healthy? false}}})]
       (is (= {:healthy 0
               :unhealthy 1
               :running 1
               :staged 0} (:task-stats service)))
       (is (= 1 (:task-count service)))))
   (testing "1 healthy, 1 unhealthy"
-    (let [{:keys [service id->instance]} (update-task-stats {:service {}
-                                                             :id->instance {"foo" {:healthy? true}
-                                                                            "bar" {:healthy? false}}})]
+    (let [{:keys [service]} (update-task-stats {:service {}
+                                                :id->instance {"foo" {:healthy? true}
+                                                               "bar" {:healthy? false}}})]
       (is (= {:healthy 1
               :unhealthy 1
               :running 2
               :staged 0} (:task-stats service)))
       (testing "1 healthy, 1 unhealthy, 1 killed"
-        (let [{:keys [service id->instance]} (update-task-stats {:service {}
-                                                                 :id->instance {"foo" {:healthy? true}
-                                                                                "bar" {:healthy? false}
-                                                                                "baz" {:healthy? false :killed? true}}})]
+        (let [{:keys [service]} (update-task-stats {:service {}
+                                                    :id->instance {"foo" {:healthy? true}
+                                                                   "bar" {:healthy? false}
+                                                                   "baz" {:healthy? false :killed? true}}})]
           (is (= {:healthy 1
                   :unhealthy 1
                   :running 2

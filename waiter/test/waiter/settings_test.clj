@@ -162,7 +162,7 @@
       (let [defaults {:scheduler-config {:kind :foo
                                          :foo {:bar 1
                                                :baz 2}
-                                         :shell {:factory-fn 'waiter.scheduler.shell-scheduler/shell-scheduler
+                                         :shell {:factory-fn 'waiter.scheduler.shell/shell-scheduler
                                                  :health-check-interval-ms 10000
                                                  :health-check-timeout-ms 200
                                                  :port-grace-period-ms 120000
@@ -172,7 +172,7 @@
         (is (= {:scheduler-config {:kind :shell
                                    :foo {:bar 1
                                          :baz 2}
-                                   :shell {:factory-fn 'waiter.scheduler.shell-scheduler/shell-scheduler
+                                   :shell {:factory-fn 'waiter.scheduler.shell/shell-scheduler
                                            :health-check-interval-ms 10000
                                            :health-check-timeout-ms 200
                                            :port-grace-period-ms 120000
@@ -184,7 +184,7 @@
       (let [defaults {:scheduler-config {:kind :foo
                                          :foo {:bar 1
                                                :baz 2}
-                                         :shell {:factory-fn 'waiter.scheduler.shell-scheduler/shell-scheduler
+                                         :shell {:factory-fn 'waiter.scheduler.shell/shell-scheduler
                                                  :health-check-interval-ms 10000
                                                  :health-check-timeout-ms 200
                                                  :port-grace-period-ms 120000
@@ -195,7 +195,7 @@
         (is (= {:scheduler-config {:kind :shell
                                    :foo {:bar 1
                                          :baz 2}
-                                   :shell {:factory-fn 'waiter.scheduler.shell-scheduler/shell-scheduler
+                                   :shell {:factory-fn 'waiter.scheduler.shell/shell-scheduler
                                            :health-check-interval-ms 1
                                            :health-check-timeout-ms 200
                                            :port-grace-period-ms 120000
