@@ -198,17 +198,17 @@
       (testing "without parameters"
         (let [service (service waiter-url service-id {})] ;; see my app as myself
           (is service)
-          (is (< 0 (get-in service ["service-description" "cpus"])) service)))
+          (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "waiter user disabled" ;; see my app as myself
         (let [service (service waiter-url service-id {"force" "false"})]
           (is service)
-          (is (< 0 (get-in service ["service-description" "cpus"])) service)))
+          (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "waiter user disabled and same user" ;; see my app as myself
         (let [service (service waiter-url service-id {"force" "false", "run-as-user" (retrieve-username)})]
           (is service)
-          (is (< 0 (get-in service ["service-description" "cpus"])) service)))
+          (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "different run-as-user" ;; no such app
         (let [service (service waiter-url service-id {"run-as-user" "test-user"}
@@ -237,7 +237,7 @@
       (testing "list-apps-with-waiter-user-disabled-and-see-another-app" ;; can see another user's app
         (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
           (is service)
-          (is (< 0 (get-in service ["service-description" "cpus"])) service)))
+          (is (pos? (get-in service ["service-description" "cpus"])) service)))
       (delete-service waiter-url service-id))))
 
 ; Marked explicit due to:
@@ -275,7 +275,7 @@
                                           :interval 2
                                           :timeout 30)))
                            services))]
-          (is (every? #(and % (< 0 (get-in % ["service-description" "cpus"]))) services)
+          (is (every? #(and % (pos? (get-in % ["service-description" "cpus"]))) services)
               (str "Cannot find service: " service-id " in at least one router."))))
 
       (testing "service-deleted-from-all-routers"
@@ -335,14 +335,12 @@
                                            :body (json/write-str overrides))]
         (is (= 200 status)))
       (let [service-settings (service-settings waiter-url service-id)
-            service-description (:service-description service-settings)
             service-description-overrides (-> service-settings :service-description-overrides :overrides)]
         (is (= overrides service-description-overrides)))
       (let [{:keys [status]} (make-request waiter-url (str "/apps/" service-id "/override")
                                            :http-method-fn http/delete)]
         (is (= 200 status)))
       (let [service-settings (service-settings waiter-url service-id)
-            service-description (:service-description service-settings)
             service-description-overrides (-> service-settings :service-description-overrides :overrides)]
         (is (not service-description-overrides)))
       (delete-service waiter-url service-id))))
@@ -493,7 +491,7 @@
     (testing "application/json explicit"
       (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"accept" "application/json"})
             {:strs [waiter-error]} (try (json/read-str body)
-                                        (catch Throwable e
+                                        (catch Throwable _
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
         (is (= 404 status))
         (is (= "application/json" (get headers "content-type")))
@@ -503,7 +501,7 @@
     (testing "application/json implied by content-type"
       (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"content-type" "application/json"})
             {:strs [waiter-error]} (try (json/read-str body)
-                                        (catch Throwable e
+                                        (catch Throwable _
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
         (is (= 404 status))
         (is (= "application/json" (get headers "content-type")))
@@ -514,7 +512,7 @@
       (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"accept" "application/json"})
             {:keys [messages support-info]} (waiter-settings waiter-url)
             {:strs [waiter-error]} (try (json/read-str body)
-                                        (catch Throwable e
+                                        (catch Throwable _
                                           (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
 
         (is (= 404 status))
