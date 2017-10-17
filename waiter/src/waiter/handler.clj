@@ -29,7 +29,7 @@
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
-            [waiter.scheduler.scheduler :as scheduler]
+            [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]

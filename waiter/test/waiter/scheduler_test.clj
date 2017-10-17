@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.scheduler.scheduler-test
+(ns waiter.scheduler-test
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.string :as str]
@@ -17,7 +17,7 @@
             [slingshot.slingshot :as ss]
             [waiter.core :as core]
             [waiter.curator :as curator]
-            [waiter.scheduler.scheduler :refer :all]
+            [waiter.scheduler :refer :all]
             [waiter.utils :as utils]))
 
 (deftest test-record-Service

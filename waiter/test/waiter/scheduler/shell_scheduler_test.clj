@@ -18,7 +18,7 @@
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :as ct]
-            [waiter.scheduler.scheduler :as scheduler]
+            [waiter.scheduler :as scheduler]
             [waiter.scheduler.shell-scheduler :refer :all]
             [waiter.test-helpers :as th]
             [waiter.utils :as utils])

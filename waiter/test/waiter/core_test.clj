@@ -28,7 +28,7 @@
             [waiter.scheduler.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.metrics :as metrics]
-            [waiter.scheduler.scheduler :as scheduler]
+            [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.test-helpers :refer :all]
             [waiter.utils :as utils])

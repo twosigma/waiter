@@ -20,7 +20,7 @@
             [waiter.async-utils :as au]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
-            [waiter.scheduler.scheduler :as scheduler]
+            [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.utils :as utils])
   (:import (org.joda.time DateTime)))

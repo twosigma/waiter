@@ -25,7 +25,7 @@
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
-            [waiter.scheduler.scheduler :as scheduler]
+            [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder URLEncoder)

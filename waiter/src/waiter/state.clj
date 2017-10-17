@@ -24,7 +24,7 @@
             [waiter.correlation-id :as cid]
             [waiter.discovery :as discovery]
             [waiter.metrics :as metrics]
-            [waiter.scheduler.scheduler :as scheduler]
+            [waiter.scheduler :as scheduler]
             [waiter.utils :as utils]
             [slingshot.slingshot :refer [try+]])
   (:import clojure.lang.PersistentQueue))

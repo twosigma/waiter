@@ -20,7 +20,7 @@
             [waiter.mesos.mesos :as mesos]
             [waiter.mesos.utils :as mesos-utils]
             [waiter.metrics :as metrics]
-            [waiter.scheduler.scheduler :as scheduler]
+            [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.utils :as utils]))
 

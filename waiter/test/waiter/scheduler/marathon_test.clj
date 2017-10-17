@@ -18,7 +18,7 @@
             [waiter.scheduler.marathon :refer :all]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
-            [waiter.scheduler.scheduler :as scheduler]
+            [waiter.scheduler :as scheduler]
             [waiter.utils :as utils])
   (:import waiter.scheduler.marathon.MarathonScheduler))
 

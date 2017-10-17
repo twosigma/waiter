@@ -18,7 +18,7 @@
             [waiter.correlation-id :as cid]
             [waiter.mocks :refer :all]
             [waiter.scaling :refer :all]
-            [waiter.scheduler.scheduler :as scheduler])
+            [waiter.scheduler :as scheduler])
   (:import (java.util.concurrent CountDownLatch)))
 
 (defn- retrieve-state-fn
