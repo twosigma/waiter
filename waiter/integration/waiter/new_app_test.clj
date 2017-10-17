@@ -9,11 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.new-app-test
-  (:require [clojure.data.json :as json]
-            [clojure.string :as str]
-            [clojure.test :refer :all]
+  (:require [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [clojure.walk :as walk]
             [waiter.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-new-app
@@ -21,9 +18,24 @@
     (let [headers {:x-kitchen-echo "true"
                    :x-waiter-name (rand-name)}
           lorem-ipsum "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
-          {:keys [service-id body]}
+          {:keys [body cookies router-id service-id] :as response}
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :body lorem-ipsum))]
+      (assert-response-status response 200)
       (is (= lorem-ipsum body))
+
+      (let [router-endpoint (router-endpoint waiter-url router-id)]
+        (testing "service state with valid service-id"
+          (let [settings (service-state router-endpoint service-id :cookies cookies)]
+            (is (= router-id (get settings :router-id)) (str settings))
+            (is (get-in settings [:state :app-maintainer-state :maintainer-chan-available]) (str settings))
+            (is (= 1 (get-in settings [:state :autoscaler-state :healthy-instances])) (str settings))))
+
+        (testing "service state with invalid service-id"
+          (let [settings (service-state router-endpoint (str "invalid-" service-id) :cookies cookies)]
+            (is (= router-id (get settings :router-id)) (str settings))
+            (is (not (get-in settings [:state :app-maintainer-state :maintainer-chan-available])) (str settings))
+            (is (empty? (get-in settings [:state :autoscaler-state])) (str settings)))))
+
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-slow test-new-app-gc
