@@ -2,7 +2,7 @@
   (:require [clojure.java.shell :as sh]
             [clojure.string :as str]
             [clojure.test :refer :all]
-            [waiter.shell-scheduler :refer :all]
+            [waiter.scheduler.shell-scheduler :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.utils :as utils])
   (:import (java.nio.file Files

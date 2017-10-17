@@ -22,7 +22,7 @@
             [waiter.authorization :as authz]
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
-            [waiter.scheduler :as scheduler]
+            [waiter.scheduler.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)

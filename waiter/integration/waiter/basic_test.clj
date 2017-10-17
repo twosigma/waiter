@@ -249,10 +249,10 @@
 ; "java.net.SocketInputStream.socketRead(SocketInputStream.java:116)"
 ; ...
 ; "marathonclj.rest.apps$delete_app.invoke(apps.clj:17)",
-; "waiter.marathon.MarathonScheduler$fn__18236.invoke(marathon.clj:260)",
-; "waiter.scheduler$retry_on_transient_server_exceptions_fn$fn__17306.invoke(scheduler.clj:91)"
+; "waiter.scheduler.marathon.MarathonScheduler$fn__18236.invoke(marathon.clj:260)",
+; "waiter.scheduler.scheduler$retry_on_transient_server_exceptions_fn$fn__17306.invoke(scheduler.clj:91)"
 ; ...
-; "waiter.marathon.MarathonScheduler.delete_app(marathon.clj:257)",
+; "waiter.scheduler.marathon.MarathonScheduler.delete_app(marathon.clj:257)",
 ; "waiter.core$delete_app_handler.invokeStatic(core.clj:410)"
 ; ...
 (deftest ^:parallel ^:integration-fast ^:explicit test-delete-app

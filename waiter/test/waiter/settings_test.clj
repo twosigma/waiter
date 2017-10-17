@@ -140,7 +140,7 @@
 
     (testing "should support partial configuration of :kind implementations"
       (let [defaults {:scheduler-config {:kind :marathon
-                                         :marathon {:factory-fn 'waiter.marathon/marathon-scheduler
+                                         :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                                     :home-path-prefix "/home/"
                                                     :http-options {:conn-timeout 10000
                                                                    :socket-timeout 10000}
@@ -149,7 +149,7 @@
             configured {:scheduler-config {:kind :marathon
                                            :marathon {:url "http://marathon.example.com:8080"}}}]
         (is (= {:scheduler-config {:kind :marathon
-                                   :marathon {:factory-fn 'waiter.marathon/marathon-scheduler
+                                   :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                               :home-path-prefix "/home/"
                                               :http-options {:conn-timeout 10000
                                                              :socket-timeout 10000}
@@ -162,7 +162,7 @@
       (let [defaults {:scheduler-config {:kind :foo
                                          :foo {:bar 1
                                                :baz 2}
-                                         :shell {:factory-fn 'waiter.shell-scheduler/shell-scheduler
+                                         :shell {:factory-fn 'waiter.scheduler.shell-scheduler/shell-scheduler
                                                  :health-check-interval-ms 10000
                                                  :health-check-timeout-ms 200
                                                  :port-grace-period-ms 120000
@@ -172,7 +172,7 @@
         (is (= {:scheduler-config {:kind :shell
                                    :foo {:bar 1
                                          :baz 2}
-                                   :shell {:factory-fn 'waiter.shell-scheduler/shell-scheduler
+                                   :shell {:factory-fn 'waiter.scheduler.shell-scheduler/shell-scheduler
                                            :health-check-interval-ms 10000
                                            :health-check-timeout-ms 200
                                            :port-grace-period-ms 120000
@@ -184,7 +184,7 @@
       (let [defaults {:scheduler-config {:kind :foo
                                          :foo {:bar 1
                                                :baz 2}
-                                         :shell {:factory-fn 'waiter.shell-scheduler/shell-scheduler
+                                         :shell {:factory-fn 'waiter.scheduler.shell-scheduler/shell-scheduler
                                                  :health-check-interval-ms 10000
                                                  :health-check-timeout-ms 200
                                                  :port-grace-period-ms 120000
@@ -195,7 +195,7 @@
         (is (= {:scheduler-config {:kind :shell
                                    :foo {:bar 1
                                          :baz 2}
-                                   :shell {:factory-fn 'waiter.shell-scheduler/shell-scheduler
+                                   :shell {:factory-fn 'waiter.scheduler.shell-scheduler/shell-scheduler
                                            :health-check-interval-ms 1
                                            :health-check-timeout-ms 200
                                            :port-grace-period-ms 120000

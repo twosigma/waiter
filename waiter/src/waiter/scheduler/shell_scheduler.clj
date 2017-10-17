@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.shell-scheduler
+(ns waiter.scheduler.shell-scheduler
   (:require [clj-time.core :as t]
             [clj-time.format :as f]
             [clojure.core.async :as async]
@@ -20,7 +20,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [schema.core :as s]
-            [waiter.scheduler :as scheduler]
+            [waiter.scheduler.scheduler :as scheduler]
             [waiter.schema :as schema]
             [waiter.service-description :as sd]
             [waiter.utils :as utils]
@@ -522,8 +522,8 @@
 ;   service-id -> {:service service
 ;                  :id->instance id->instance}
 ;
-; Each service is a waiter.scheduler/Service record, and each instance is a
-; waiter.scheduler/ServiceInstance record, with some ShellScheduler-specific
+; Each service is a waiter.scheduler.scheduler/Service record, and each instance is a
+; waiter.scheduler.scheduler/ServiceInstance record, with some ShellScheduler-specific
 ; metadata fields added using keywords namespaced with :shell-scheduler/*:
 ;
 ;   :shell-scheduler/mem

@@ -8,19 +8,19 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.marathon-test
+(ns waiter.scheduler.marathon-test
   (:require [clj-time.core :as t]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [slingshot.slingshot :as ss]
-            [waiter.marathon :refer :all]
+            [waiter.scheduler.marathon :refer :all]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
-            [waiter.scheduler :as scheduler]
+            [waiter.scheduler.scheduler :as scheduler]
             [waiter.utils :as utils])
-  (:import waiter.marathon.MarathonScheduler))
+  (:import waiter.scheduler.marathon.MarathonScheduler))
 
 (deftest test-response-data->service-instances
   (let [test-cases (list {

@@ -20,7 +20,7 @@
             [waiter.async-utils :as au]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
-            [waiter.scheduler :as scheduler]
+            [waiter.scheduler.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
   (:import java.util.concurrent.ExecutorService))
