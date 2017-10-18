@@ -18,7 +18,6 @@
             [taoensso.nippy :as nippy]
             [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
-           java.nio.charset.StandardCharsets
            org.eclipse.jetty.util.UrlEncoded))
 
 (defn url-decode

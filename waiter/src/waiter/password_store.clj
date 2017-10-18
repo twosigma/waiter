@@ -9,8 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.password-store
-  (:require [clojure.tools.logging :as log]
-            [waiter.utils :as utils]))
+  (:require [clojure.tools.logging :as log]))
 
 (defprotocol PasswordProvider
   "A simple protocol for providing passwords."

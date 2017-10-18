@@ -25,8 +25,6 @@
            [java.util.concurrent TimeoutException]
            [org.joda.time DateTime]))
 
-(def ^:const default-protocol "http")
-
 (defrecord Service
   [^String id
    instances
