@@ -131,7 +131,6 @@
                                  offerable-slots (-> (router-id->metrics router-id)
                                                      (utils/compute-help-required)
                                                      (unchecked-negate))
-                                 offered-slots (count request-id->work-stealer)
                                  router-id->help-required (-> router-id->metrics
                                                               (dissoc router-id)
                                                               (router-id->metrics->router-id->help-required))]
@@ -146,7 +145,7 @@
                                      (log/debug label "no work-stealing offers this iteration"
                                                 {:metrics (router-id->metrics router-id)
                                                  :slots {:offerable offerable-slots
-                                                         :offered offered-slots}})
+                                                         :offered (count request-id->work-stealer)}})
                                      current-state))
                                  (assoc :timeout-chan (timeout-chan-factory)))))
 
@@ -154,7 +153,6 @@
                          ([data]
                            (let [{:keys [response-chan]} data
                                  router-id->metrics (service-id->router-id->metrics service-id)
-                                 offered-slots (count request-id->work-stealer)
                                  offerable-slots (-> (router-id->metrics router-id)
                                                      (utils/compute-help-required)
                                                      (unchecked-negate))
@@ -167,7 +165,7 @@
                                                            (assoc :router-id->help-required router-id->help-required
                                                                   :router-id->metrics router-id->metrics
                                                                   :slots {:offerable offerable-slots
-                                                                          :offered offered-slots})))
+                                                                          :offered (count request-id->work-stealer)})))
                              current-state))
 
                          :priority true)]
