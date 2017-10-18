@@ -513,7 +513,7 @@
                          (if service-id
                            (let [scheduler-state (service-id->state scheduler service-id)
                                  health-check-context (get current-state service-id)]
-                             (async/>! response-chan (merge scheduler-state health-check-context)))
+                             (async/>! response-chan (merge {} scheduler-state health-check-context)))
                            (async/>! response-chan (conj (state scheduler) {:service-id->health-check-context current-state})))
                          current-state)
 
