@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.shell-scheduler
+(ns waiter.scheduler.shell
   (:require [clj-time.core :as t]
             [clj-time.format :as f]
             [clojure.core.async :as async]

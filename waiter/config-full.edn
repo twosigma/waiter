@@ -224,7 +224,7 @@
                     :marathon {
                                ;; Custom implementations should specify a :factory-fn
                                ;; that returns an instance of waiter.scheduler.ServiceScheduler:
-                               :factory-fn waiter.marathon/marathon-scheduler
+                               :factory-fn waiter.scheduler.marathon/marathon-scheduler
 
                                ;; The location of home directories on your Mesos agents;
                                ;; the HOME environment variable is set by joining this and the run-as-user:
@@ -248,7 +248,7 @@
                     ;; :kind :shell simply schedules instances on your local machine (for testing purposes only):
                     ;:kind :shell
                     :shell {
-                            :factory-fn waiter.shell-scheduler/shell-scheduler
+                            :factory-fn waiter.scheduler.shell/shell-scheduler
 
                             ;; The interval (milliseconds) at which instance health will be checked:
                             :health-check-interval-ms 10000

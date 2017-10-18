@@ -241,14 +241,14 @@
              ; throttles the rate at which kill requests are sent to the scheduler
              :inter-kill-request-wait-time-ms 1000}
    :scheduler-config {:kind :marathon
-                      :marathon {:factory-fn 'waiter.marathon/marathon-scheduler
+                      :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                  :home-path-prefix "/home/"
                                  :http-options {:conn-timeout 10000
                                                 :socket-timeout 10000
                                                 :spnego-auth true}
                                  :force-kill-after-ms 60000
                                  :framework-id-ttl 900000}
-                      :shell {:factory-fn 'waiter.shell-scheduler/shell-scheduler
+                      :shell {:factory-fn 'waiter.scheduler.shell/shell-scheduler
                               :failed-instance-retry-interval-ms 5000
                               :health-check-interval-ms 5000
                               :health-check-timeout-ms 200
