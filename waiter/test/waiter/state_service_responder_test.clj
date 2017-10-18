@@ -1873,12 +1873,13 @@
                            :work-stealing-queue (make-queue [(make-work-stealing-data "cid-7" "testabcd.h4" response-chan-2 "test-router-1")])}
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 10 initial-state)]
-        ; release a success async
+        ; release a success async, it also triggers release of the work-stealing head
         (release-instance-fn release-instance-chan "testabcd.h3" 4 :success-async)
         (check-state-fn query-state-chan
                         (-> initial-state
                             (assoc-in [:instance-id->request-id->use-reason-map "testabcd.h3" "req-4" :variant] :async-request)
-                            (utils/dissoc-in [:instance-id->consecutive-failures "testabcd.h3"])))
+                            (utils/dissoc-in [:instance-id->consecutive-failures "testabcd.h3"])
+                            (assoc :work-stealing-queue (make-queue []))))
         ; no writes on response channel
         (is (async/>!! response-chan-1 :dummy-data))
         (is (= :dummy-data (async/<!! response-chan-1)))
@@ -1888,7 +1889,8 @@
                         (-> initial-state
                             (utils/dissoc-in [:instance-id->request-id->use-reason-map "testabcd.h3" "req-4"])
                             (utils/dissoc-in [:instance-id->consecutive-failures "testabcd.h3"])
-                            (utils/dissoc-in [:request-id->work-stealer "req-4"])))
+                            (utils/dissoc-in [:request-id->work-stealer "req-4"])
+                            (assoc :work-stealing-queue (make-queue []))))
         (is (= :success (async/<!! response-chan-1))) ; work-stealing instance released successfully
         (async/>!! exit-chan :exit)))
 
@@ -2097,5 +2099,42 @@
                                                              (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
                                                              (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy}))))))
 
+
+        (async/>!! exit-chan :exit)))
+
+    (deftest test-start-service-chan-responder-work-stealing-reject
+      (let [response-chan-1 (async/promise-chan)
+            response-chan-2 (async/promise-chan)
+            initial-state {:instance-id->blacklist-expiry-time {}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}}
+                           :instance-id->consecutive-failures {}
+                           :instance-id->state (-> {}
+                                                   (update-slot-state-fn "testabcd.h1" 1 1 #{:healthy}))
+                           :work-stealing-queue (make-queue [(make-work-stealing-data "cid-17" "testabcd.h4" response-chan-1 "test-router-1")
+                                                             (make-work-stealing-data "cid-18" "testabcd.h5" response-chan-2 "test-router-2")])}
+            {:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan]}
+            (launch-service-chan-responder 20 initial-state)]
+
+        (testing "trigger cleanup of work-stealing queue when releasing instance"
+          (release-instance-fn release-instance-chan "testabcd.h1" 16 :success)
+          (check-state-fn query-state-chan (-> initial-state
+                                               (assoc :instance-id->request-id->use-reason-map {}
+                                                      :instance-id->state (-> {}
+                                                                              (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy}))
+                                                      :work-stealing-queue (make-queue [(make-work-stealing-data "cid-18" "testabcd.h5" response-chan-2 "test-router-2")]))))
+
+          (async/>!! response-chan-1 :from-test)
+          (is (= :rejected (async/<!! response-chan-1))))
+
+        (testing "trigger cleanup of work-stealing queue when attempting to kill instance"
+          (check-request-instance-fn kill-instance-chan :no-matching-instance-found :mode :kill-instance)
+          (check-state-fn query-state-chan (-> initial-state
+                                               (assoc :instance-id->request-id->use-reason-map {}
+                                                      :instance-id->state (-> {}
+                                                                              (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy}))
+                                                      :work-stealing-queue (make-queue []))))
+
+          (async/>!! response-chan-2 :from-test)
+          (is (= :rejected (async/<!! response-chan-2))))
 
         (async/>!! exit-chan :exit)))))
