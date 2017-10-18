@@ -19,7 +19,8 @@
             [waiter.curator :as curator]
             [waiter.scheduler :refer :all]
             [waiter.utils :as utils])
-  (:import (java.net ConnectException)))
+  (:import (java.net ConnectException SocketTimeoutException)
+           (java.util.concurrent TimeoutException)))
 
 (deftest test-record-Service
   (let [test-instance-1 (->Service "service1-id" 100 100 {:running 0, :healthy 0, :unhealthy 0, :staged 0})
@@ -363,6 +364,28 @@
       (is (= call-result (retry-on-transient-server-exceptions "test" (function))))
       (is (= 3 @call-counter))))
 
+  (testing "successful-result-on-socket-timeout-exceptions"
+    (let [call-counter (atom 0)
+          call-result {:foo :bar}
+          function (fn []
+                     (swap! call-counter inc)
+                     (when (< @call-counter 3)
+                       (throw (SocketTimeoutException. "test")))
+                     call-result)]
+      (is (= call-result (retry-on-transient-server-exceptions "test" (function))))
+      (is (= 3 @call-counter))))
+
+  (testing "successful-result-on-timeout-exceptions"
+    (let [call-counter (atom 0)
+          call-result {:foo :bar}
+          function (fn []
+                     (swap! call-counter inc)
+                     (when (< @call-counter 3)
+                       (throw (TimeoutException. "test")))
+                     call-result)]
+      (is (= call-result (retry-on-transient-server-exceptions "test" (function))))
+      (is (= 3 @call-counter))))
+
   (testing "failure-on-non-transient-exception-throw"
     (let [call-counter (atom 0)
           function (fn [] (swap! call-counter inc) (throw (Exception. "test")))]
@@ -376,6 +399,22 @@
           function (fn [] (swap! call-counter inc) (throw (ConnectException. "test")))]
       (is (thrown-with-msg?
             ConnectException #"test"
+            (retry-on-transient-server-exceptions "test" (function))))
+      (is (= 5 @call-counter))))
+
+  (testing "failure-on-non-transient-socket-timeout-exception-throw"
+    (let [call-counter (atom 0)
+          function (fn [] (swap! call-counter inc) (throw (SocketTimeoutException. "test")))]
+      (is (thrown-with-msg?
+            SocketTimeoutException #"test"
+            (retry-on-transient-server-exceptions "test" (function))))
+      (is (= 5 @call-counter))))
+
+  (testing "failure-on-non-transient-timeout-exception-throw"
+    (let [call-counter (atom 0)
+          function (fn [] (swap! call-counter inc) (throw (TimeoutException. "test")))]
+      (is (thrown-with-msg?
+            TimeoutException #"test"
             (retry-on-transient-server-exceptions "test" (function))))
       (is (= 5 @call-counter))))
 

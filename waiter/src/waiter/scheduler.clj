@@ -124,6 +124,12 @@
                                       (catch ConnectException e
                                         (log/warn "connection to scheduler failed." msg)
                                         (ss/throw+ e))
+                                      (catch SocketTimeoutException e
+                                        (log/warn "socket timeout in connection to scheduler." msg)
+                                        (ss/throw+ e))
+                                      (catch TimeoutException e
+                                        (log/warn "timeout in connection to scheduler." msg)
+                                        (ss/throw+ e))
                                       (catch Throwable th
                                         {:error th})
                                       (catch #(not (nil? %)) _
