@@ -265,12 +265,14 @@
           :sorted-instance-ids sorted-instance-ids)))))
 
 (defn handle-work-stealing-offer
-  "Handles a work-stealing offer.  Response may be nil if there's no immediate response."
+  "Handles a work-stealing offer.
+   It returns a map with the following keys: current-state', response-chan, response.
+   The entry for response may be nil if there's no immediate response."
   [{:keys [work-stealing-queue] :as current-state} service-id slots-in-use-counter slots-available-counter 
    work-stealing-received-in-flight-counter requests-outstanding-counter {:keys [cid instance response-chan router-id] :as data}]
   (cid/cdebug cid "received work-stealing instance" (:id instance) "from" router-id)
   (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "offers"))
-  (if (utils/requires-help?
+  (if (utils/help-required?
         (counters/value slots-in-use-counter)
         (counters/value slots-available-counter)
         (counters/value work-stealing-received-in-flight-counter)
@@ -300,7 +302,7 @@
     (if-let [{:keys [instance router-id] :as work-stealer-data} (first work-stealing-queue)]
       ; using instance offered via work-stealing
       (let [instance-id (:id instance)]
-        (cid/cdebug (str cid "|" (:cid work-stealer-data)) "offering work-stealing instance" instance-id)
+        (cid/cdebug (str cid "|" (:cid work-stealer-data)) "using work-stealing instance" instance-id)
         (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "accepts"))
         {:current-state' (-> current-state
                              (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
@@ -449,20 +451,23 @@
       current-state)))
 
 (defn release-unneeded-work-stealing-offers!
-  "Clean up the work-stealing queue."
-  [current-state service-id slots-in-use-counter slots-available-counter work-stealing-received-in-flight-counter requests-outstanding-counter]
+  "Releases the head of the work-stealing queue if no help is required."
+  [current-state service-id slots-in-use-counter slots-available-counter work-stealing-received-in-flight-counter
+   requests-outstanding-counter]
   (update-in current-state
              [:work-stealing-queue]
              (fn [work-stealing-queue]
                (when work-stealing-queue
-                 (if (neg? (utils/compute-help-required
-                             (counters/value slots-in-use-counter) (counters/value slots-available-counter)
-                             (counters/value work-stealing-received-in-flight-counter) (counters/value requests-outstanding-counter)))
-                   (do
+                 (if (utils/help-required?
+                       (counters/value slots-in-use-counter)
+                       (counters/value slots-available-counter)
+                       (counters/value work-stealing-received-in-flight-counter)
+                       (counters/value requests-outstanding-counter))
+                   work-stealing-queue
+                   (let [offer (first work-stealing-queue)]
                      (log/info "service-chan-responder deleting a work-stealing offer since help deemed unnecessary")
-                     (complete-work-stealing-offer! service-id (first work-stealing-queue) :rejected work-stealing-received-in-flight-counter)
-                     (pop work-stealing-queue))
-                   work-stealing-queue)))))
+                     (complete-work-stealing-offer! service-id offer :rejected work-stealing-received-in-flight-counter)
+                     (pop work-stealing-queue)))))))
 
 (defn start-service-chan-responder
   "go block that maintains the available instances for one service.
@@ -562,8 +567,9 @@
 
                          work-stealing-chan
                          (let [{:keys [current-state' response-chan response]}
-                               (handle-work-stealing-offer current-state service-id slots-in-use-counter slots-available-counter
-                                                           work-stealing-received-in-flight-counter requests-outstanding-counter data)]
+                               (handle-work-stealing-offer
+                                 current-state service-id slots-in-use-counter slots-available-counter
+                                 work-stealing-received-in-flight-counter requests-outstanding-counter data)]
                            (when response
                              (async/>! response-chan response))
                            current-state')

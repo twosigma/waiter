@@ -27,7 +27,7 @@
   [router->metrics]
   (->> router->metrics
        (pc/map-vals (fn [metrics]
-                      (when (utils/requires-help? metrics)
+                      (when (utils/help-required? metrics)
                         (utils/compute-help-required metrics))))
        (utils/filterm (fn [[_ help-required]]
                         (and help-required (pos? help-required))))))
@@ -35,14 +35,14 @@
 (defn- make-work-stealing-offers
   "Makes work-stealing offers to victim routers when the current router has idle slots.
    Routers which are more heavily loaded preferentially receive help offers."
-  [label offer-help-fn reserve-instance-fn {:keys [iteration] :as current-state} stealable-slots
+  [label offer-help-fn reserve-instance-fn {:keys [iteration] :as current-state} offerable-slots
    router-id->help-required cleanup-chan router-id service-id]
   (async/go
     (loop [counter 0
            iteration-state current-state
            router-id->help-required router-id->help-required]
       (let [iter-label (str label ".iter" iteration)]
-        (if (and (< counter stealable-slots) (seq router-id->help-required))
+        (if (and (< counter offerable-slots) (seq router-id->help-required))
           (let [request-id (str service-id "." router-id ".ws" iteration ".offer" counter)
                 reservation-parameters {:cid request-id, :request-id request-id}
                 response-chan (async/promise-chan)
@@ -69,11 +69,11 @@
                          (update-in router-id->help-required [target-router-id] dec))))
               (do
                 (when (pos? counter)
-                  (log/info iter-label "no more instances to offer, offered" counter "of" stealable-slots "slots"))
+                  (log/info iter-label "no more instances to offer, offered" counter "of" offerable-slots "slots"))
                 iteration-state)))
           (do
             (if (pos? counter)
-              (log/info iter-label "exhausted help offers, offered" counter "of" stealable-slots "slots"))
+              (log/info iter-label "exhausted help offers, offered" counter "of" offerable-slots "slots"))
             iteration-state))))))
 
 (defn work-stealing-balancer
@@ -128,25 +128,24 @@
                          ([_]
                            (let [router-id->metrics (service-id->router-id->metrics service-id)
                                  _ (log/trace label "received metrics from" (count router-id->metrics) "routers")
-                                 extra-slots (-> (router-id->metrics router-id)
-                                                 (utils/compute-help-required)
-                                                 (unchecked-negate))
+                                 offerable-slots (-> (router-id->metrics router-id)
+                                                     (utils/compute-help-required)
+                                                     (unchecked-negate))
                                  offered-slots (count request-id->work-stealer)
-                                 stealable-slots (- extra-slots offered-slots)
                                  router-id->help-required (-> router-id->metrics
                                                               (dissoc router-id)
                                                               (router-id->metrics->router-id->help-required))]
-                             (log/trace label "can make up to" stealable-slots "work-stealing offers this iteration")
-                             (-> (if (and (pos? stealable-slots)
+                             (log/trace label "can make up to" offerable-slots "work-stealing offers this iteration")
+                             (-> (if (and (pos? offerable-slots)
                                           (seq router-id->help-required))
                                    (async/<!
                                      (make-work-stealing-offers
-                                       label offer-help-fn reserve-instance-fn current-state stealable-slots
+                                       label offer-help-fn reserve-instance-fn current-state offerable-slots
                                        router-id->help-required cleanup-chan router-id service-id))
                                    (do
                                      (log/debug label "no work-stealing offers this iteration"
                                                 {:metrics (router-id->metrics router-id)
-                                                 :slots {:extra extra-slots
+                                                 :slots {:offerable offerable-slots
                                                          :offered offered-slots}})
                                      current-state))
                                  (assoc :timeout-chan (timeout-chan-factory)))))
@@ -156,9 +155,9 @@
                            (let [{:keys [response-chan]} data
                                  router-id->metrics (service-id->router-id->metrics service-id)
                                  offered-slots (count request-id->work-stealer)
-                                 extra-slots (-> (router-id->metrics router-id)
-                                                 (utils/compute-help-required)
-                                                 (unchecked-negate))
+                                 offerable-slots (-> (router-id->metrics router-id)
+                                                     (utils/compute-help-required)
+                                                     (unchecked-negate))
                                  router-id->help-required (-> router-id->metrics
                                                               (dissoc router-id)
                                                               (router-id->metrics->router-id->help-required))]
@@ -167,7 +166,7 @@
                                                            (dissoc :timeout-chan)
                                                            (assoc :router-id->help-required router-id->help-required
                                                                   :router-id->metrics router-id->metrics
-                                                                  :slots {:extra extra-slots
+                                                                  :slots {:offerable offerable-slots
                                                                           :offered offered-slots})))
                              current-state))
 

@@ -117,7 +117,7 @@
       (reset! metrics-atom {"router-1" (make-metrics {:outstanding 10, :slots-available 20})
                             "router-2" (make-metrics {:slots-available 20})})
       (check-work-stealing-balancer-query-state query-chan {:iteration 10, :request-id->work-stealer {},
-                                                            :slots {:extra 0, :offered 0}})
+                                                            :slots {:offerable 0, :offered 0}})
       (is (= 0 @reserve-instance-counter))
       (async/>!! exit-chan :exit)))
 
@@ -141,7 +141,7 @@
                             "router-2" (make-metrics {:slots-available 20})})
       (async/>!! custom-timeout-chan :custom-timeout)
       (check-work-stealing-balancer-query-state
-        query-chan {:iteration 11, :request-id->work-stealer {}, :slots {:extra 5, :offered 0}})
+        query-chan {:iteration 11, :request-id->work-stealer {}, :slots {:offerable 5, :offered 0}})
       (is (= 1 @reserve-instance-counter))
       (async/>!! exit-chan :exit)))
 
@@ -178,7 +178,7 @@
                                                             :request-id->work-stealer
                                                             (-> {}
                                                                 (populate-request-id->workstealer 10 0 "router-1" "test-instance-id-1"))
-                                                            :slots {:extra 5, :offered 1}})
+                                                            :slots {:offerable 5, :offered 1}})
 
       (is (pos? @reserve-instance-counter))
       (is (contains? @request-id->cleanup-chan-atom "test-service-id.test-router-id.ws10.offer0"))
@@ -186,8 +186,72 @@
       (response-callback "test-service-id.test-router-id.ws10.offer0" :success)
       (async/>!! custom-timeout-chan :custom-timeout)
       (check-work-stealing-balancer-query-state
-        query-chan {:iteration 14, :request-id->work-stealer {}, :slots {:extra 5, :offered 0}})
+        query-chan {:iteration 14, :request-id->work-stealer {}, :slots {:offerable 5, :offered 0}})
       (is (contains? @released-instances-atom "test-instance-id-1"))
+
+      (async/>!! exit-chan :exit)))
+
+  (deftest test-work-stealing-balancer-multiple-instances-available-incremental-reservation
+    (let [available-slots 7
+          initial-state {:iteration 10, :request-id->work-stealer {}}
+          request-id->cleanup-chan-atom (atom {})
+          offer-help-fn (fn [{:keys [request-id]} cleanup-chan]
+                          (swap! request-id->cleanup-chan-atom assoc request-id cleanup-chan))
+          released-instances-atom (atom #{})
+          release-instance-fn (fn [reservation-result]
+                                (swap! released-instances-atom conj (get-in reservation-result [:instance :id])))
+          reserve-instance-counter (atom 0)
+          reserve-instance-fn (fn [_ response-chan]
+                                (swap! reserve-instance-counter inc)
+                                (if (<= @reserve-instance-counter available-slots)
+                                  (async/>!! response-chan {:id (str "test-instance-id-" @reserve-instance-counter)})
+                                  (async/>!! response-chan :no-instance-found)))
+          _ (reset! metrics-atom nil)
+          custom-timeout-chan (async/chan 1)
+          timeout-chan-factory (constantly custom-timeout-chan)
+          {:keys [exit-chan query-chan]}
+          (work-stealing-balancer initial-state timeout-chan-factory service-id->router-id->metrics reserve-instance-fn
+                                  release-instance-fn offer-help-fn router-id service-id)]
+
+      (reset! metrics-atom {router-id (make-metrics {:outstanding 10, :slots-available 15})
+                            "router-1" (make-metrics {:outstanding 1})
+                            "router-2" (make-metrics {:outstanding 1})})
+      (async/>!! custom-timeout-chan :custom-timeout)
+      (check-work-stealing-balancer-query-state
+        query-chan {:iteration 11
+                    :request-id->work-stealer
+                    (-> {}
+                        (populate-request-id->workstealer 10 0 "router-2" "test-instance-id-1")
+                        (populate-request-id->workstealer 10 1 "router-1" "test-instance-id-2"))
+                    :slots {:offerable 5, :offered 2}})
+
+      (is (= 2 @reserve-instance-counter))
+      (is (contains? @request-id->cleanup-chan-atom (make-request-id 10 0)))
+      (is (contains? @request-id->cleanup-chan-atom (make-request-id 10 1)))
+
+      (reset! metrics-atom {router-id (make-metrics {:outstanding 10, :slots-available 13})
+                            "router-1" (make-metrics {:outstanding 0})
+                            "router-2" (make-metrics {:outstanding 0})
+                            "router-3" (make-metrics {:outstanding 4})
+                            "router-4" (make-metrics {:outstanding 3})})
+      (async/>!! custom-timeout-chan :custom-timeout)
+      (check-work-stealing-balancer-query-state
+        query-chan {:iteration 13
+                    :request-id->work-stealer
+                    (-> {}
+                        (populate-request-id->workstealer 10 0 "router-2" "test-instance-id-1")
+                        (populate-request-id->workstealer 10 1 "router-1" "test-instance-id-2")
+                        (populate-request-id->workstealer 12 0 "router-3" "test-instance-id-3")
+                        (populate-request-id->workstealer 12 1 "router-4" "test-instance-id-4")
+                        (populate-request-id->workstealer 12 2 "router-3" "test-instance-id-5"))
+                    :slots {:offerable 3, :offered 5}})
+
+      (is (= 5 @reserve-instance-counter))
+      (is (contains? @request-id->cleanup-chan-atom (make-request-id 10 0)))
+      (is (contains? @request-id->cleanup-chan-atom (make-request-id 10 1)))
+      (is (contains? @request-id->cleanup-chan-atom (make-request-id 12 0)))
+      (is (contains? @request-id->cleanup-chan-atom (make-request-id 12 1)))
+      (is (contains? @request-id->cleanup-chan-atom (make-request-id 12 2)))
 
       (async/>!! exit-chan :exit)))
 
@@ -229,7 +293,7 @@
                         (populate-request-id->workstealer 10 2 "router-1" "test-instance-id-3")
                         (populate-request-id->workstealer 10 3 "router-2" "test-instance-id-4")
                         (populate-request-id->workstealer 10 4 "router-1" "test-instance-id-5"))
-                    :slots {:extra 5, :offered 5}})
+                    :slots {:offerable 5, :offered 5}})
 
       (is (= 5 @reserve-instance-counter))
       (is (contains? @request-id->cleanup-chan-atom (make-request-id 10 0)))
@@ -247,7 +311,7 @@
                         (populate-request-id->workstealer 10 1 "router-2" "test-instance-id-2")
                         (populate-request-id->workstealer 10 3 "router-2" "test-instance-id-4")
                         (populate-request-id->workstealer 10 4 "router-1" "test-instance-id-5"))
-                    :slots {:extra 5, :offered 3}})
+                    :slots {:offerable 5, :offered 3}})
       (is (contains? @released-instances-atom "test-instance-id-1"))
       (is (not (contains? @released-instances-atom "test-instance-id-2")))
       (is (contains? @released-instances-atom "test-instance-id-3"))
@@ -270,7 +334,7 @@
                         (populate-request-id->workstealer 10 4 "router-1" "test-instance-id-5")
                         (populate-request-id->workstealer 15 0 "router-4" "test-instance-id-6")
                         (populate-request-id->workstealer 15 1 "router-4" "test-instance-id-7"))
-                    :slots {:extra 5, :offered 5}})
+                    :slots {:offerable 5, :offered 5}})
 
       (response-callback (make-request-id 10 1) :success)
       (response-callback (make-request-id 10 3) :success)
@@ -281,7 +345,7 @@
                     (-> {}
                         (populate-request-id->workstealer 10 4 "router-1" "test-instance-id-5")
                         (populate-request-id->workstealer 15 0 "router-4" "test-instance-id-6"))
-                    :slots {:extra 5, :offered 2}})
+                    :slots {:offerable 5, :offered 2}})
 
       (async/>!! custom-timeout-chan :custom-timeout)
       (check-work-stealing-balancer-query-state
@@ -290,7 +354,7 @@
                     (-> {}
                         (populate-request-id->workstealer 10 4 "router-1" "test-instance-id-5")
                         (populate-request-id->workstealer 15 0 "router-4" "test-instance-id-6"))
-                    :slots {:extra 5, :offered 2}})
+                    :slots {:offerable 5, :offered 2}})
       (is (contains? @released-instances-atom "test-instance-id-1"))
       (is (contains? @released-instances-atom "test-instance-id-2"))
       (is (contains? @released-instances-atom "test-instance-id-3"))
