@@ -300,7 +300,7 @@
      :response-chan resp-chan
      :response deployment-error}
     (if-let [{:keys [instance router-id] :as work-stealer-data} (first work-stealing-queue)]
-      ; using instance offered via work-stealing
+      ; using instance received via work-stealing
       (let [instance-id (:id instance)]
         (cid/cdebug (str cid "|" (:cid work-stealer-data)) "using work-stealing instance" instance-id)
         (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "accepts"))
@@ -355,7 +355,7 @@
               (cond-> (-> current-state
                           (update-in [:instance-id->request-id->use-reason-map] #(utils/dissoc-in % [instance-id request-id]))
                           (update-in [:instance-id->state instance-id] sanitize-instance-state))
-                ; instance offered from work-stealing, do not change slot state
+                ; instance received from work-stealing, do not change slot state
                 (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
                 ; mark instance as no longer locked.
                 (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))

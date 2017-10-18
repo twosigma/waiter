@@ -18,12 +18,12 @@
             [waiter.work-stealing :refer :all]))
 
 (defn- make-metrics
-  [{:keys [outstanding slots-available slots-in-use slots-offered]
-    :or {outstanding 0, slots-available 0, slots-in-use 0, slots-offered 0}}]
+  [{:keys [outstanding slots-available slots-in-use slots-received]
+    :or {outstanding 0, slots-available 0, slots-in-use 0, slots-received 0}}]
   {"outstanding" outstanding
    "slots-available" slots-available
    "slots-in-use" slots-in-use
-   "slots-offered" slots-offered})
+   "slots-received" slots-received})
 
 (deftest test-router-id->metrics->router-id->help-required
   (testing "nil-input"
@@ -54,10 +54,10 @@
               "router-2B" (make-metrics {:outstanding 5, :slots-available 2})
               "router-3" (make-metrics {:outstanding 2, :slots-available 5})
               "router-4" (make-metrics {})
-              "router-5" (make-metrics {:outstanding 10, :slots-available 20, :slots-offered 15})
-              "router-6" (make-metrics {:outstanding 20, :slots-available 10, :slots-offered 15})
-              "router-7A" (make-metrics {:outstanding 20, :slots-available 0, :slots-offered 15})
-              "router-7B" (make-metrics {:outstanding 40, :slots-available 20, :slots-offered 15})})))))
+              "router-5" (make-metrics {:outstanding 10, :slots-available 20, :slots-received 15})
+              "router-6" (make-metrics {:outstanding 20, :slots-available 10, :slots-received 15})
+              "router-7A" (make-metrics {:outstanding 20, :slots-available 0, :slots-received 15})
+              "router-7B" (make-metrics {:outstanding 40, :slots-available 20, :slots-received 15})})))))
 
 (defmacro check-work-stealing-balancer-query-state [query-chan expected-result]
   `(let [response-chan# (async/chan 1)
