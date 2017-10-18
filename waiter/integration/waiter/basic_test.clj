@@ -195,6 +195,7 @@
     (let [waiter-settings (waiter-settings waiter-url)
           last-request-times-publish-interval-ms (get-in waiter-settings [:last-request-times-publish-interval-ms])
           metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])
+          last-request-publish-wait-time-ms (+ last-request-times-publish-interval-ms metrics-sync-interval-ms)
           num-iteration-requests 20
           service-name (rand-name)
           headers {:x-kitchen-delay-ms 1000
@@ -208,16 +209,18 @@
         (dotimes [_ num-iteration-requests]
           (-> (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
               (assert-response-status 200)))
-        (let [current-time-millis (System/currentTimeMillis)]
+        (Thread/sleep last-request-publish-wait-time-ms)
+        (let [current-last-request-time (-> (service-settings waiter-url service-id)
+                                            (get-in [:metrics :aggregate :counters :last-request-time]))]
           (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
           ;; allow some time to elapse to allow inter-router metrics syncing
-          (Thread/sleep (+ last-request-times-publish-interval-ms metrics-sync-interval-ms))
+          (Thread/sleep last-request-publish-wait-time-ms)
           (let [service (service waiter-url service-id {})
                 service-metrics (-> (service-settings waiter-url service-id)
                                      (get-in [:metrics :aggregate]))]
             (is service)
-            (is (< current-time-millis (get service "last-request-time"))
-                (str {:current-time-millis current-time-millis, :service service}))
+            (is (< current-last-request-time (get service "last-request-time"))
+                (str {:current-last-request-time current-last-request-time, :service service}))
             (is (= (get service "last-request-time")
                    (get-in service-metrics [:counters :last-request-time]))
                 (str {:service service, :service-metrics service-metrics}))))
