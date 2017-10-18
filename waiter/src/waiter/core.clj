@@ -822,13 +822,13 @@
                                      (scheduler/scheduler-broken-services-gc scheduler scheduler-state-chan scheduler-gc-config service-gc-go-routine)))
    :scheduler-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                   [:settings [:health-check-config health-check-timeout-ms failed-check-threshold] scheduler-syncer-interval-secs]
-                                  [:state scheduler]]
+                                  [:state clock scheduler]]
                            (let [scheduler-state-chan (au/latest-chan)
                                  scheduler-state-mult-chan (async/mult scheduler-state-chan)
                                  http-client (http/client {:connect-timeout health-check-timeout-ms
                                                            :idle-timeout health-check-timeout-ms})]
                              (assoc (scheduler/start-scheduler-syncer
-                                      scheduler scheduler-state-chan scheduler-syncer-interval-secs
+                                      clock scheduler scheduler-state-chan scheduler-syncer-interval-secs
                                       service-id->service-description-fn scheduler/available? http-client failed-check-threshold)
                                :scheduler-state-mult-chan scheduler-state-mult-chan)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]

@@ -219,7 +219,8 @@
           (is (= #{"service6faulty", "service7", "service8stayalive", "service9stayalive"} @available-services-atom)))))))
 
 (deftest test-scheduler-syncer
-  (let [scheduler-state-chan (async/chan 1)
+  (let [clock t/now
+        scheduler-state-chan (async/chan 1)
         scheduler-syncer-interval-secs 1
         service-id->service-description-fn (fn [id] {"health-check-url" (str "/" id)})
         started-at "2014-09-14T002446.965Z"
@@ -240,8 +241,10 @@
                                                                   :status 200}
                                  :else {:healthy? false
                                         :status 400})))
-        {:keys [exit-chan query-chan]} (start-scheduler-syncer scheduler scheduler-state-chan scheduler-syncer-interval-secs
-                                                               service-id->service-description-fn available? {} 5)]
+        start-time-ms (-> (clock) .getMillis)
+        {:keys [exit-chan query-chan]}
+        (start-scheduler-syncer clock scheduler scheduler-state-chan scheduler-syncer-interval-secs
+                                service-id->service-description-fn available? {} 5)]
     (Thread/sleep (* 1000 scheduler-syncer-interval-secs))
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-apps update-apps-msg))
@@ -267,12 +270,15 @@
           _ (async/>!! query-chan {:response-chan response-chan :service-id "1"})
           response (async/alt!!
                      response-chan ([state] state)
-                     (async/timeout 10000) ([_] {:message "Request timed out!"}))]
-      (doseq [required-key [:instance-id->failed-health-check-count
+                     (async/timeout 10000) ([_] {:message "Request timed out!"}))
+          end-time-ms (-> (clock) .getMillis)]
+       (doseq [required-key [:instance-id->failed-health-check-count
                             :instance-id->tracked-failed-instance
                             :instance-id->unhealthy-instance
+                            :last-update-time
                             :service-specific-state]]
-        (is (contains? response required-key))))
+        (is (contains? response required-key)))
+      (is (<= start-time-ms (-> response :last-update-time .getMillis) end-time-ms)))
     (async/>!! exit-chan :exit)))
 
 (deftest test-start-health-checks
