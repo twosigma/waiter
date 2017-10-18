@@ -826,10 +826,11 @@
                            (let [scheduler-state-chan (au/latest-chan)
                                  scheduler-state-mult-chan (async/mult scheduler-state-chan)
                                  http-client (http/client {:connect-timeout health-check-timeout-ms
-                                                           :idle-timeout health-check-timeout-ms})]
+                                                           :idle-timeout health-check-timeout-ms})
+                                 timeout-chan (chime/chime-ch (utils/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))]
                              (assoc (scheduler/start-scheduler-syncer
-                                      clock scheduler scheduler-state-chan scheduler-syncer-interval-secs
-                                      service-id->service-description-fn scheduler/available? http-client failed-check-threshold)
+                                      clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
+                                      scheduler/available? http-client failed-check-threshold)
                                :scheduler-state-mult-chan scheduler-state-mult-chan)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
                                    [:routines router-metrics-helpers service-id->service-description-fn]
