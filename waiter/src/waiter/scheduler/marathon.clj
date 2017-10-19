@@ -17,14 +17,14 @@
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
+            [waiter.async-utils :as au]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.mesos.utils :as mesos-utils]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils])
-  (:import (clojure.core.async.impl.channels ManyToManyChannel)))
+            [waiter.utils :as utils]))
 
 (defn- remove-slash-prefix
   "Returns the input string after stripping out any preceding slashes."
@@ -66,7 +66,7 @@
 (defn- get-deployment-info
   "Extracts the deployments section from the response body if it exists."
   [{:keys [body]}]
-  (-> (if (instance? ManyToManyChannel body)
+  (-> (if (au/chan? body)
         (async/<!! body)
         body)
       str
