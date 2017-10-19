@@ -370,25 +370,6 @@
   (let [data-bytes (data->byte-array byte-buffer)]
     (nippy/thaw data-bytes {:password decryption-key, :compressor compression/lzma2-compressor})))
 
-(defn compute-help-required
-  "Computes the number of slots (requests that can be made to instances) of help required at a router given the values for:
-     outstanding: the number of outstanding requests at the router;
-     slots-available: the number of slots available (where available = not in use and not blacklisted) from those assigned
-                      to the router by the distrbution algorithm;
-     slots-in-use: the number of slots used by the router from those that were assigned to it by the distribution
-                   algorithm at some point in time, it may include slots from instances that the router no longer owns; and
-     slots-offered: the number of slots offered as help to the router from other routers via work-stealing.
-   The slots-in-use allows us to account for instances being used by a router that it no longer owns.
-   If the function returns positive, say +x, it means the router needs x slots of help to service requests.
-   If the function returns zero, it means the router does not need help.
-   If the function returns negative, say -x, then the router needs no help and has x extra unused slots that were
-   either assigned to it by the distribution algorithm or received from work-stealing offers."
-  ([{:strs [outstanding slots-available slots-in-use slots-offered]
-     :or {outstanding 0, slots-available 0, slots-in-use 0, slots-offered 0}}]
-   (compute-help-required slots-in-use slots-available slots-offered outstanding))
-  ([slots-in-use slots-available slots-offered outstanding]
-   (- outstanding (+ slots-in-use slots-available slots-offered))))
-
 (let [messages (atom {})]
   (defn message
     "Returns the message corresponding to the provided key"

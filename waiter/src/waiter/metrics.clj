@@ -153,7 +153,7 @@
   "Retrieves the core set of metrics used by the routers to make decisions based on aggregate metrics.
    The returned data has the format service-id->core-metrics-map
    The core-metrics-map is a flat map that has the following string keys:
-     slots-offered (via work-stealing), slots-assigned, slots-available, slots-in-use, outstanding and total.
+     slots-received (via work-stealing), slots-assigned, slots-available, slots-in-use, outstanding and total.
    The numeric values in each entry of the map come from corresponding codahale metrics."
   []
   (let [services-string "services"
@@ -177,7 +177,7 @@
                          (assoc-if ["counters" "instance-counts" "slots-in-use"] "slots-in-use")
                          (assoc-if ["counters" "request-counts" "outstanding"] "outstanding")
                          (assoc-if ["counters" "request-counts" "total"] "total")
-                         (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-offered")
+                         (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
                          (persistent!))))
                  service-id->metrics)))
 
