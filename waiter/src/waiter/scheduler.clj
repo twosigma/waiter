@@ -13,6 +13,8 @@
             [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [metrics.counters :as counters]
+            [metrics.meters :as meters]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
@@ -376,11 +378,11 @@
     (if-not service
       service->service-instances'
       (let [{:strs [health-check-url]} (service-id->service-description-fn (:id service))
-            update-unhealthy-instance (fn [instance status error] 
+            update-unhealthy-instance (fn [instance status error]
                                         (-> instance
                                             (assoc :healthy? false
                                                    :health-check-status status)
-                                            (update :flags 
+                                            (update :flags
                                                     (fn [flags]
                                                       (cond-> flags
                                                         (not= error :connect-exception)
@@ -498,15 +500,13 @@
                 :instance-id->failed-health-check-count {...}}
 
   and sends the data to the router state maintainer."
-  [scheduler scheduler-state-chan scheduler-syncer-interval-secs
-   service-id->service-description-fn available? http-client failed-check-threshold]
+  [clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn available? http-client failed-check-threshold]
   (log/info "Starting scheduler syncer")
   (let [exit-chan (async/chan 1)
-        state-query-chan (async/chan 32)
-        timeout-chan (chime/chime-ch (utils/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))]
+        state-query-chan (async/chan 32)]
     (async/go
       (try
-        (loop [current-state {}]
+        (loop [{:keys [last-update-time service-id->health-check-context] :as current-state} {}]
           (when-let [next-state
                      (async/alt!
                        exit-chan
@@ -519,21 +519,29 @@
                        ([{:keys [response-chan service-id]}]
                          (if service-id
                            (let [scheduler-state (service-id->state scheduler service-id)
-                                 health-check-context (get current-state service-id)]
-                             (async/>! response-chan (merge {} scheduler-state health-check-context)))
-                           (async/>! response-chan (conj (state scheduler) {:service-id->health-check-context current-state})))
+                                 health-check-context (service-id->health-check-context service-id)]
+                             (async/>! response-chan (-> {:last-update-time last-update-time}
+                                                         (merge scheduler-state health-check-context))))
+                           (async/>! response-chan (merge current-state (state scheduler))))
                          current-state)
 
                        timeout-chan
                        ([]
-                         (timers/start-stop-time!
-                           (metrics/waiter-timer "state" "scheduler-sync")
-                           (let [{:keys [service-id->health-check-context scheduler-messages]}
-                                 (update-scheduler-state scheduler service-id->service-description-fn available?
-                                                         http-client failed-check-threshold current-state)]
-                             (when scheduler-messages
-                               (async/>! scheduler-state-chan scheduler-messages))
-                             service-id->health-check-context)))
+                         (try
+                           (timers/start-stop-time!
+                             (metrics/waiter-timer "state" "scheduler-sync")
+                             (let [{:keys [service-id->health-check-context scheduler-messages]}
+                                   (update-scheduler-state scheduler service-id->service-description-fn available?
+                                                           http-client failed-check-threshold service-id->health-check-context)]
+                               (when scheduler-messages
+                                 (async/>! scheduler-state-chan scheduler-messages))
+                               {:last-update-time (clock)
+                                :service-id->health-check-context service-id->health-check-context}))
+                           (catch Throwable th
+                             (log/error th "scheduler-syncer unable to receive updates")
+                             (counters/inc! (metrics/waiter-counter "state" "scheduler-sync" "errors"))
+                             (meters/mark! (metrics/waiter-meter "state" "scheduler-sync" "error-rate"))
+                             current-state)))
                        :priority true)]
             (recur next-state)))
         (catch Exception e

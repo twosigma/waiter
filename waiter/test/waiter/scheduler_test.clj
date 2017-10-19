@@ -221,40 +221,42 @@
           (is (= #{"service6faulty", "service7", "service8stayalive", "service9stayalive"} @available-services-atom)))))))
 
 (deftest test-scheduler-syncer
-  (let [scheduler-state-chan (async/chan 1)
-        scheduler-syncer-interval-secs 1
+  (let [clock t/now
+        scheduler-state-chan (async/chan 1)
+        timeout-chan (async/chan 1)
         service-id->service-description-fn (fn [id] {"health-check-url" (str "/" id)})
         started-at "2014-09-14T002446.965Z"
-        instance1 (->ServiceInstance "1.1" "1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
-        instance2 (->ServiceInstance "1.2" "1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
-        instance3 (->ServiceInstance "1.3" "1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
+        instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
+        instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
+        instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
         scheduler (reify ServiceScheduler
                     (get-apps->instances [_]
-                      {(->Service "1" {} {} {}) {:active-instances [instance1 instance2 instance3]
-                                                 :failed-instances []}})
+                      {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
+                                                  :failed-instances []}})
                     (service-id->state [_ _]
                       {:service-specific-state []})
                     (state [_]
                       {:state []}))
         available? (fn [{:keys [id]} url _]
                      (async/go (cond
-                                 (and (= "1.1" id) (= "/1" url)) {:healthy? true
-                                                                  :status 200}
+                                 (and (= "s1.i1" id) (= "/s1" url)) {:healthy? true
+                                                                     :status 200}
                                  :else {:healthy? false
                                         :status 400})))
-        {:keys [exit-chan query-chan]} (start-scheduler-syncer scheduler scheduler-state-chan scheduler-syncer-interval-secs
-                                                               service-id->service-description-fn available? {} 5)]
-    (Thread/sleep (* 1000 scheduler-syncer-interval-secs))
+        start-time-ms (-> (clock) .getMillis)
+        {:keys [exit-chan query-chan]}
+        (start-scheduler-syncer clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn available? {} 5)]
+    (async/>!! timeout-chan :timeout)
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-apps update-apps-msg))
-      (is (= (list "1") (:available-apps update-apps)))
+      (is (= (list "s1") (:available-apps update-apps)))
       (is (= :update-app-instances update-instances-msg))
       (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
-      (is (= [(assoc instance3 
-                     :healthy? false 
-                     :health-check-status 400
-                     :flags #{:has-connected :has-responded})] (:unhealthy-instances update-instances)))
-      (is (= "1" (:service-id update-instances))))
+      (is (= [(assoc instance3
+                :healthy? false
+                :health-check-status 400
+                :flags #{:has-connected :has-responded})] (:unhealthy-instances update-instances)))
+      (is (= "s1" (:service-id update-instances))))
     ;; Retrieves scheduler state without service-id
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan})
@@ -263,18 +265,30 @@
                      (async/timeout 10000) ([_] {:message "Request timed out!"}))]
       (doseq [required-key [:service-id->health-check-context
                             :state]]
-        (is (contains? response required-key))))
+        (is (contains? response required-key)))
+      (is (= {"s1"
+              {:instance-id->unhealthy-instance {"s1.i3" (assoc instance3
+                                                           :healthy? false
+                                                           :health-check-status 400
+                                                           :flags #{:has-connected :has-responded})},
+               :instance-id->tracked-failed-instance {},
+               :instance-id->failed-health-check-count {"s1.i3" 1}}}
+             (:service-id->health-check-context response))))
     ;; Retrieves scheduler state with service-id
     (let [response-chan (async/promise-chan)
-          _ (async/>!! query-chan {:response-chan response-chan :service-id "1"})
+          _ (async/>!! query-chan {:response-chan response-chan :service-id "s1"})
           response (async/alt!!
                      response-chan ([state] state)
-                     (async/timeout 10000) ([_] {:message "Request timed out!"}))]
+                     (async/timeout 10000) ([_] {:message "Request timed out!"}))
+          end-time-ms (-> (clock) .getMillis)]
       (doseq [required-key [:instance-id->failed-health-check-count
                             :instance-id->tracked-failed-instance
                             :instance-id->unhealthy-instance
+                            :last-update-time
                             :service-specific-state]]
-        (is (contains? response required-key))))
+        (is (contains? response required-key)))
+      (is (nil? (:service-id->health-check-context response)))
+      (is (<= start-time-ms (-> response :last-update-time .getMillis) end-time-ms)))
     (async/>!! exit-chan :exit)))
 
 (deftest test-start-health-checks
