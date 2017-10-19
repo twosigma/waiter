@@ -88,16 +88,15 @@
                      "service-id" :service-id-handler-fn
                      "settings" :display-settings-handler-fn
                      "sim" :sim-request-handler
-                     "state" (array-map ;; maintain key order, explicitly use array-map when size > 8
-                               "" :state-all-handler-fn
-                               "/kv-store" :state-kv-store-handler-fn
-                               "/last-request-times" :state-last-request-times-handler-fn
-                               "/leader" :state-leader-handler-fn
-                               "/maintainer" :state-maintainer-handler-fn
-                               "/router-metrics" :state-router-metrics-handler-fn
-                               "/scheduler" :state-scheduler-handler-fn
-                               "/statsd" :state-statsd-handler-fn
-                               ["/" :service-id] :state-service-handler-fn)
+                     "state" [["" :state-all-handler-fn]
+                              ["/kv-store" :state-kv-store-handler-fn]
+                              ["/last-request-times" :state-last-request-times-handler-fn]
+                              ["/leader" :state-leader-handler-fn]
+                              ["/maintainer" :state-maintainer-handler-fn]
+                              ["/router-metrics" :state-router-metrics-handler-fn]
+                              ["/scheduler" :state-scheduler-handler-fn]
+                              ["/statsd" :state-statsd-handler-fn]
+                              [["/" :service-id] :state-service-handler-fn]]
                      "status" :status-handler-fn
                      "token" :token-handler-fn
                      "tokens" { "" :token-list-handler-fn
