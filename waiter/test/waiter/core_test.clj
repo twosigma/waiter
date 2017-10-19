@@ -855,6 +855,8 @@
            (exec-routes-mapper "/state")))
     (is (= {:handler :state-kv-store-handler-fn}
            (exec-routes-mapper "/state/kv-store")))
+    (is (= {:handler :state-last-request-times-handler-fn}
+           (exec-routes-mapper "/state/last-request-times")))
     (is (= {:handler :state-leader-handler-fn}
            (exec-routes-mapper "/state/leader")))
     (is (= {:handler :state-maintainer-handler-fn}

@@ -204,7 +204,8 @@
                    :x-waiter-concurrency-level num-iteration-requests}
           {:keys [request-headers service-id] :as first-response}
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :http-method-fn http/get))]
-      (try
+      (with-service-cleanup
+        service-id
         (assert-response-status first-response 200)
         (dotimes [_ num-iteration-requests]
           (-> (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
@@ -217,15 +218,13 @@
           (Thread/sleep last-request-publish-wait-time-ms)
           (let [service (service waiter-url service-id {})
                 service-metrics (-> (service-settings waiter-url service-id)
-                                     (get-in [:metrics :aggregate]))]
+                                    (get-in [:metrics :aggregate]))]
             (is service)
             (is (< current-last-request-time (get service "last-request-time"))
                 (str {:current-last-request-time current-last-request-time, :service service}))
             (is (= (get service "last-request-time")
                    (get-in service-metrics [:counters :last-request-time]))
-                (str {:service service, :service-metrics service-metrics}))))
-        (finally
-          (delete-service waiter-url service-id))))))
+                (str {:service service, :service-metrics service-metrics}))))))))
 
 (deftest ^:parallel ^:integration-fast test-list-apps
   (testing-using-waiter-url

@@ -497,7 +497,7 @@
    the existing value."
   [last-request-times-agent]
   (let [service-id->last-request-time-to-publish @last-request-times-agent
-        correlation-id (str "last-request-times-" (utils/unique-identifier))]
+        correlation-id (str "last-request-times-" (System/currentTimeMillis))]
     (try
       (cid/cdebug correlation-id "updating last request times for"
                  (count service-id->last-request-time-to-publish) "services")
