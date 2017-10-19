@@ -451,58 +451,92 @@
           (is (= (first nanos) @elapsed-nanos)))))))
 
 (deftest test-update-last-request-time
-  (let [^DateTime current-time (t/now)
-        current-time-millis (.getMillis current-time)]
-    (is (= {"foo" current-time-millis}
-           (update-last-request-time {} "foo" current-time)))
-    (is (= {"foo" current-time-millis, "bar" 1010101}
-           (update-last-request-time {"foo" (- current-time-millis 1000), "bar" 1010101}
-                                     "foo" current-time)))
-    (is (= {"foo" current-time-millis, "bar" 1010101}
-           (update-last-request-time {"foo" current-time-millis, "bar" 1010101}
-                                     "foo" current-time)))
-    (is (= {"foo" (+ current-time-millis 1000), "bar" 1010101}
-           (update-last-request-time {"foo" (+ current-time-millis 1000), "bar" 1010101}
-                                     "foo" current-time)))))
+  (let [time-1 (DateTime. 1000)
+        time-2 (DateTime. 2000)
+        time-3 (DateTime. 3000)
+        time-4 (DateTime. 2500)]
+    (is (= {:pending {:service-id->last-request-time {"foo" time-2}}}
+           (update-last-request-time {} "foo" time-2)))
+    (is (= {:pending {:service-id->last-request-time {"foo" time-2, "bar" time-4}}}
+           (update-last-request-time
+             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-4}}}
+             "foo" time-2)))
+    (is (= {:pending {:service-id->last-request-time {"foo" time-2, "bar" time-4}}}
+           (update-last-request-time
+             {:pending {:service-id->last-request-time {"foo" time-2, "bar" time-4}}}
+             "foo" time-2)))
+    (is (= {:pending {:service-id->last-request-time {"foo" time-3, "bar" time-4}}}
+           (update-last-request-time
+             {:pending {:service-id->last-request-time {"foo" time-3, "bar" time-4}}}
+             "foo" time-2)))))
 
 (deftest test-cleanup-last-request-times
-  (is (= {}
-         (cleanup-last-request-times
-           {"foo" 1, "bar" 2, "baz" 3} "cid"
-           {"foo" 1, "bar" 2, "baz" 3})))
-  (is (= {"bar" 2}
-         (cleanup-last-request-times
-           {"foo" 1, "bar" 2, "baz" 3} "cid"
-           {"foo" 1, "bar" 1, "baz" 4})))
-  (is (= {"foo" 1, "bar" 2, "baz" 3}
-         (cleanup-last-request-times
-           {"foo" 1, "bar" 2, "baz" 3} "cid"
-           {"fee" 1, "fie" 2, "foe" 3, "fum" 4})))
-  (is (= {"foo" 1, "baz" 3}
-         (cleanup-last-request-times
-           {"foo" 1, "bar" 2, "baz" 3} "cid"
-           {"fee" 1, "fie" 2, "foe" 3, "fum" 4, "foo" 0, "bar" 2}))))
+  (let [publish-time (t/now)
+        time-0 (DateTime. 0)
+        time-1 (DateTime. 1)
+        time-2 (DateTime. 2)
+        time-3 (DateTime. 3)
+        time-4 (DateTime. 4)]
+    (is (= {:last-published {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}
+                             :time publish-time}
+            :pending {:service-id->last-request-time {}}}
+           (cleanup-last-request-times
+             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
+             "cid" publish-time {"foo" time-1, "bar" time-2, "baz" time-3})))
+    (is (= {:last-published {:service-id->last-request-time {"foo" time-1, "bar" time-1, "baz" time-4}
+                             :time publish-time}
+            :pending {:service-id->last-request-time {"bar" time-2}}}
+           (cleanup-last-request-times
+             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
+             "cid" publish-time {"foo" time-1, "bar" time-1, "baz" time-4})))
+    (is (= {:last-published {:service-id->last-request-time {"fee" time-1, "fie" time-2, "foe" time-3, "fum" time-4}
+                             :time publish-time}
+            :pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
+           (cleanup-last-request-times
+             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
+             "cid" publish-time {"fee" time-1, "fie" time-2, "foe" time-3, "fum" time-4})))
+    (is (= {:last-published {:service-id->last-request-time
+                             {"fee" time-1, "fie" time-2, "foe" time-3, "fum" time-4, "foo" time-0, "bar" time-2}
+                             :time publish-time}
+            :pending {:service-id->last-request-time {"foo" time-1, "baz" time-3}}}
+           (cleanup-last-request-times
+             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
+             "cid" publish-time
+             {"fee" time-1, "fie" time-2, "foe" time-3, "fum" time-4, "foo" time-0, "bar" time-2})))))
 
 (deftest test-publish-last-request-times!
   (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))
-        last-request-times-agent (agent {"service-1" 1, "service-2" 1})
-        publish-complete-latch (CountDownLatch. 1)]
+        time-1 (DateTime. 1)
+        time-2 (DateTime. 2)
+        time-3 (DateTime. 3)
+        time-4 (DateTime. 4)
+        last-request-times-agent (agent {:pending {:service-id->last-request-time {"service-1" time-1, "service-2" time-1}}})
+        publish-complete-latch (CountDownLatch. 1)
+        publish-time-1 (t/minus (t/now) (t/minutes 2))
+        publish-time-2 (t/plus time-1 (t/minutes 2))]
     (.removeMatching mc/default-registry all-metrics-match-filter)
 
-    (publish-last-request-times! last-request-times-agent)
+    (publish-last-request-times! last-request-times-agent publish-time-1)
     (is (= 1 (counters/value (service-counter "service-1" "last-request-time"))))
     (is (= 1 (counters/value (service-counter "service-2" "last-request-time"))))
 
-    (send last-request-times-agent assoc "service-2" 2 "service-3" 3)
+    (send last-request-times-agent
+          update-in [:pending :service-id->last-request-time]
+          assoc "service-2" time-2 "service-3" time-3)
     (await last-request-times-agent)
+    (is (= {:last-published {:service-id->last-request-time {"service-1" time-1, "service-2" time-1}
+                             :time publish-time-1}
+            :pending {:service-id->last-request-time {"service-2" time-2 "service-3" time-3}}}
+           @last-request-times-agent))
 
     (send last-request-times-agent
-          (fn [service-id->last-request-time]
+          (fn [agent-state]
             ;; ensure assoc happens after publish
             (.await publish-complete-latch)
-            (assoc service-id->last-request-time "service-2" 1 "service-3" 4)))
+            (update-in agent-state [:pending :service-id->last-request-time]
+                       assoc "service-2" time-1 "service-3" time-4)))
 
-    (publish-last-request-times! last-request-times-agent)
+    (publish-last-request-times! last-request-times-agent publish-time-2)
     (is (= 1 (counters/value (service-counter "service-1" "last-request-time"))))
     (is (= 2 (counters/value (service-counter "service-2" "last-request-time"))))
     (is (= 3 (counters/value (service-counter "service-3" "last-request-time"))))
@@ -510,4 +544,8 @@
     (.countDown publish-complete-latch)
     (await last-request-times-agent)
 
-    (is (= {"service-3" 4} @last-request-times-agent) "Agent not gc-ed")))
+    (is (= {:last-published {:service-id->last-request-time {"service-2" time-2, "service-3" time-3}
+                             :time publish-time-2}
+            :pending {:service-id->last-request-time {"service-3" time-4}}}
+           @last-request-times-agent)
+        "Agent not gc-ed")))

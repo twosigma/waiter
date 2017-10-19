@@ -456,7 +456,9 @@
    :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
                   (http-client-factory connection-timeout-ms))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
-   :last-request-time-agent (pc/fnk [] (agent {}))
+   :last-request-time-agent (pc/fnk [] (agent {:last-published {:service-id->last-request-time {}
+                                                                :time nil}
+                                               :pending {:service-id->last-request-time {}}}))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
                       passwords (password-store/retrieve-passwords password-provider)

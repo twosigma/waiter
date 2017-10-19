@@ -27,8 +27,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.utils :as utils]
             [waiter.work-stealing :as work-stealing])
-  (:import clojure.lang.PersistentQueue
-           (org.joda.time DateTime)))
+  (:import clojure.lang.PersistentQueue))
 
 ;; Router state maintainers
 

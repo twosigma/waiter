@@ -790,7 +790,8 @@
 (deftest test-get-service-state
   (let [router-id "router-id"
         service-id "service-1"
-        last-request-times-agent (agent {service-id "foo"})]
+        last-request-times-agent (agent {:last-published {:time "foo"}
+                                         :service-id->last-request-time {service-id "bar"}})]
     (testing "returns 400 for missing service id"
       (is (= 400 (:status (async/<!! (get-service-state router-id nil last-request-times-agent "" {} {}))))))
     (let [instance-rpc-chan (async/chan 1)
@@ -826,7 +827,8 @@
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))
-        (is (= (get @last-request-times-agent service-id) (get-in service-state [:state :last-request-times-agent])))
+        (is (= {:last-published-time "foo", :last-request-time "bar"}
+               (get-in service-state [:state :last-request-times-agent])))
         (is (= work-stealing-state (get-in service-state [:state :work-stealing-state])))
         (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))))))
 

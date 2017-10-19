@@ -476,7 +476,7 @@
             (-> request (:body) (slurp) (json/read-str) (walk/keywordize-keys))]
         (log/info "received work-stealing offer" (:id instance) "of" service-id "from" router-id)
         (if-not (and cid instance request-id router-id service-id)
-          (throw (ex-info "Missing one of cid, instance, request-id, router-id or service-id" 
+          (throw (ex-info "Missing one of cid, instance, request-id, router-id or service-id"
                           (assoc request-body-map :status 400)))
           (let [response-chan (async/promise-chan)
                 offer-params {:cid cid
@@ -615,11 +615,17 @@
               _ (log/info "waiting for response from query-work-stealing channel...")
               work-stealing-state-chan
               (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-work-stealing)
+              last-request-time-state (let [{:keys [last-published service-id->last-request-time]
+                                             :or {last-published {}
+                                                  service-id->last-request-time {}}}
+                                            @last-request-times-agent]
+                                        {:last-published-time (:time last-published)
+                                         :last-request-time (service-id->last-request-time service-id)})
               [query-chans initial-result]
               (loop [[[entry-key entry-value] & remaining] [[:responder-state responder-state-chan]
                                                             [:work-stealing-state work-stealing-state-chan]]
                      query-chans query-chans
-                     initial-result {:last-request-times-agent (get @last-request-times-agent service-id)}]
+                     initial-result {:last-request-times-agent last-request-time-state}]
                 (if entry-key
                   (if (map? entry-value)
                     (recur remaining query-chans (assoc initial-result entry-key entry-value))
@@ -656,18 +662,18 @@
           {:strs [mode service-id] :as params} params]
       (when-not (str/blank? origin)
         (when-not (utils/same-origin request)
-          (throw (ex-info "Origin is not the same as the host" 
+          (throw (ex-info "Origin is not the same as the host"
                           {:host host
                            :origin origin
                            :status 400}))))
       (when (and (not (str/blank? origin)) (not (str/blank? referer)))
         (when-not (str/starts-with? referer origin)
-          (throw (ex-info "Referer does not start with origin" 
+          (throw (ex-info "Referer does not start with origin"
                           {:origin origin
                            :referer referer
                            :status 400}))))
       (when-not (= x-requested-with "XMLHttpRequest")
-        (throw (ex-info "Header x-requested-with does not match expected value" 
+        (throw (ex-info "Header x-requested-with does not match expected value"
                         {:actual x-requested-with
                          :expected "XMLHttpRequest"
                          :status 400})))

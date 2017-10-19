@@ -463,25 +463,31 @@
 (defn update-last-request-time
   "Updates the last-request-time epoch time in the service-id->last-request-time to the maximum
    of the current last request time and the provided last-request-datetime in epoch millis."
-  [service-id->last-request-time service-id ^DateTime last-request-datetime]
-  (let [current-last-request-time (get service-id->last-request-time service-id 0)
-        candidate-last-request-time (.getMillis last-request-datetime)]
-    (if (< current-last-request-time candidate-last-request-time)
-      (assoc service-id->last-request-time service-id candidate-last-request-time)
-      service-id->last-request-time)))
+  [agent-state service-id ^DateTime candidate-last-request-time]
+  (let [current-last-request-time (get-in agent-state [:pending :service-id->last-request-time service-id])]
+    (if (or (nil? current-last-request-time)
+            (< (.getMillis current-last-request-time)
+               (.getMillis candidate-last-request-time)))
+      (update-in agent-state [:pending :service-id->last-request-time]
+              assoc service-id candidate-last-request-time)
+      agent-state)))
 
 (defn cleanup-last-request-times
   "Removes stale entries in service-id->last-request-time based on entries provided in
    published-service-id->last-request-time. Services who have more recent last request
    times than those have been published will not be gc-ed."
-  [service-id->last-request-time correlation-id published-service-id->last-request-time]
+  [agent-state correlation-id publish-time
+   published-service-id->last-request-time]
   (cid/cdebug correlation-id "triggering gc of services")
-  (let [service-id->last-request-time'
+  (let [service-id->last-request-time (get-in agent-state [:pending :service-id->last-request-time])
+        service-id->last-request-time'
         (reduce
-          (fn [acc-service-id->last-request-time [service-id last-request-time]]
-            (let [existing-last-request-time (get acc-service-id->last-request-time service-id)]
+          (fn [acc-service-id->last-request-time [service-id candidate-last-request-time]]
+            (let [current-last-request-time (get acc-service-id->last-request-time service-id)]
               (cond-> acc-service-id->last-request-time
-                      (and existing-last-request-time (<= existing-last-request-time last-request-time))
+                      (and current-last-request-time
+                           (<= (.getMillis current-last-request-time)
+                               (.getMillis candidate-last-request-time)))
                       (dissoc service-id))))
           service-id->last-request-time
           published-service-id->last-request-time)
@@ -489,25 +495,28 @@
                              (count service-id->last-request-time'))]
     (when (pos? num-items-cleaned)
       (cid/cinfo correlation-id "gc-ed" num-items-cleaned "services"))
-    service-id->last-request-time'))
+    (assoc agent-state
+      :last-published {:service-id->last-request-time published-service-id->last-request-time
+                       :time publish-time}
+      :pending {:service-id->last-request-time service-id->last-request-time'})))
 
 (defn publish-last-request-times!
   "Publishes the current last request time values from the last-request-times-agent into the
    local metrics. The metric value is updated only if the new last request time is older than
    the existing value."
-  [last-request-times-agent]
-  (let [service-id->last-request-time-to-publish @last-request-times-agent
-        correlation-id (str "last-request-times-" (System/currentTimeMillis))]
+  [last-request-times-agent current-time]
+  (let [service-id->last-request-time (get-in @last-request-times-agent [:pending :service-id->last-request-time])
+        correlation-id (str "last-request-times-" (.getMillis current-time))]
     (try
       (cid/cdebug correlation-id "updating last request times for"
-                 (count service-id->last-request-time-to-publish) "services")
-      (doseq [[service-id last-request-time] service-id->last-request-time-to-publish]
+                  (count service-id->last-request-time) "services")
+      (doseq [[service-id last-request-time] service-id->last-request-time]
         (-> (service-counter service-id "last-request-time")
-            (reset-counter-if < last-request-time)))
+            (reset-counter-if < (.getMillis last-request-time))))
       (cid/cdebug correlation-id "updated last request times for"
-                 (count service-id->last-request-time-to-publish) "services")
+                  (count service-id->last-request-time) "services")
       (send last-request-times-agent cleanup-last-request-times correlation-id
-            service-id->last-request-time-to-publish)
+            current-time service-id->last-request-time)
       (catch Exception ex
         (cid/cerror correlation-id ex "error in publishing last request times")))))
 
@@ -518,4 +527,4 @@
   (utils/start-timer-task
     (t/millis publish-interval-ms)
     (fn last-request-times-publisher []
-      (publish-last-request-times! last-request-times-agent))))
+      (publish-last-request-times! last-request-times-agent (t/now)))))
