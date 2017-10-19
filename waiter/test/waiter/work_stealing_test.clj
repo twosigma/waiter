@@ -25,6 +25,38 @@
    "slots-in-use" slots-in-use
    "slots-received" slots-received})
 
+(deftest test-compute-help-required
+  (is (= -6 (compute-help-required {"outstanding" 6, "slots-available" 2, "slots-in-use" 10, "slots-received" 0})))
+  (is (= -10 (compute-help-required {"outstanding" 6, "slots-available" 2, "slots-in-use" 14, "slots-received" 0})))
+  (is (= 0 (compute-help-required {"outstanding" 10, "slots-available" 10, "slots-in-use" 0, "slots-received" 0})))
+  (is (= 0 (compute-help-required {"outstanding" 14, "slots-available" 10, "slots-in-use" 4, "slots-received" 0})))
+
+  (is (= 13 (compute-help-required {"outstanding" 25, "slots-available" 2, "slots-in-use" 10, "slots-received" 0})))
+  (is (= 9 (compute-help-required {"outstanding" 25, "slots-available" 2, "slots-in-use" 14, "slots-received" 0})))
+  (is (= 15 (compute-help-required {"outstanding" 25, "slots-available" 10, "slots-in-use" 0, "slots-received" 0})))
+  (is (= 11 (compute-help-required {"outstanding" 25, "slots-available" 10, "slots-in-use" 4, "slots-received" 0})))
+
+  (is (= 1 (compute-help-required {"outstanding" 25, "slots-available" 2, "slots-in-use" 10, "slots-received" 12})))
+  (is (= -3 (compute-help-required {"outstanding" 25, "slots-available" 2, "slots-in-use" 14, "slots-received" 12})))
+  (is (= 3 (compute-help-required {"outstanding" 25, "slots-available" 10, "slots-in-use" 0, "slots-received" 12})))
+  (is (= -1 (compute-help-required {"outstanding" 25, "slots-available" 10, "slots-in-use" 4, "slots-received" 12}))))
+
+(deftest test-help-required?
+  (is (false? (help-required? {"outstanding" 6, "slots-available" 2, "slots-in-use" 10, "slots-received" 0})))
+  (is (false? (help-required? {"outstanding" 6, "slots-available" 2, "slots-in-use" 14, "slots-received" 0})))
+  (is (false? (help-required? {"outstanding" 10, "slots-available" 10, "slots-in-use" 0, "slots-received" 0})))
+  (is (false? (help-required? {"outstanding" 14, "slots-available" 10, "slots-in-use" 4, "slots-received" 0})))
+
+  (is (false? (help-required? {"outstanding" 25, "slots-available" 1, "slots-in-use" 10, "slots-received" 0})))
+  (is (true? (help-required? {"outstanding" 25, "slots-available" 0, "slots-in-use" 14, "slots-received" 0})))
+  (is (false? (help-required? {"outstanding" 25, "slots-available" 10, "slots-in-use" 0, "slots-received" 0})))
+  (is (true? (help-required? {"outstanding" 25, "slots-available" 0, "slots-in-use" 4, "slots-received" 0})))
+
+  (is (false? (help-required? {"outstanding" 25, "slots-available" 2, "slots-in-use" 10, "slots-received" 12})))
+  (is (false? (help-required? {"outstanding" 25, "slots-available" 2, "slots-in-use" 14, "slots-received" 12})))
+  (is (false? (help-required? {"outstanding" 25, "slots-available" 10, "slots-in-use" 0, "slots-received" 12})))
+  (is (false? (help-required? {"outstanding" 25, "slots-available" 10, "slots-in-use" 4, "slots-received" 12}))))
+
 (deftest test-router-id->metrics->router-id->help-required
   (testing "nil-input"
     (is (= {}

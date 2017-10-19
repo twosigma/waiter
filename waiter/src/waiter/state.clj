@@ -26,7 +26,7 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.utils :as utils]
-            [slingshot.slingshot :refer [try+]])
+            [waiter.work-stealing :as work-stealing])
   (:import clojure.lang.PersistentQueue))
 
 ;; Router state maintainers
@@ -272,11 +272,11 @@
    work-stealing-received-in-flight-counter requests-outstanding-counter {:keys [cid instance response-chan router-id] :as data}]
   (cid/cdebug cid "received work-stealing instance" (:id instance) "from" router-id)
   (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "offers"))
-  (if (utils/help-required?
-        (counters/value slots-in-use-counter)
-        (counters/value slots-available-counter)
-        (counters/value work-stealing-received-in-flight-counter)
-        (counters/value requests-outstanding-counter))
+  (if (work-stealing/help-required?
+        {"outstanding" (counters/value requests-outstanding-counter)
+         "slots-available" (counters/value slots-available-counter)
+         "slots-in-use" (counters/value slots-in-use-counter)
+         "slots-received" (counters/value work-stealing-received-in-flight-counter)})
     (do
       (cid/cdebug cid "accepting work-stealing instance" (:id instance) "from" router-id)
       (counters/inc! work-stealing-received-in-flight-counter)
@@ -458,11 +458,11 @@
              [:work-stealing-queue]
              (fn [work-stealing-queue]
                (when work-stealing-queue
-                 (if (utils/help-required?
-                       (counters/value slots-in-use-counter)
-                       (counters/value slots-available-counter)
-                       (counters/value work-stealing-received-in-flight-counter)
-                       (counters/value requests-outstanding-counter))
+                 (if (work-stealing/help-required?
+                       {"outstanding" (counters/value requests-outstanding-counter)
+                        "slots-available" (counters/value slots-available-counter)
+                        "slots-in-use" (counters/value slots-in-use-counter)
+                        "slots-received" (counters/value work-stealing-received-in-flight-counter)})
                    work-stealing-queue
                    (let [offer (first work-stealing-queue)]
                      (log/info "service-chan-responder deleting a work-stealing offer since help deemed unnecessary")
