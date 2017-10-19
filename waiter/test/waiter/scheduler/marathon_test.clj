@@ -10,6 +10,7 @@
 ;;
 (ns waiter.scheduler.marathon-test
   (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -838,36 +839,40 @@
              (scheduler/delete-app scheduler "foo"))))))
 
 (deftest test-extract-deployment-info
-  (let [marathon-api (Object.)]
+  (let [marathon-api (Object.)
+        prepare-response (fn [body]
+                           (let [body-chan (async/promise-chan)]
+                             (async/>!! body-chan body)
+                             {:body body-chan}))]
     (with-redefs [marathon/get-deployments (constantly [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
                                                         {"affectedApps" "waiter-app-4567", "id" "4567", "version" "v4567"}
                                                         {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}
                                                         {"affectedApps" "waiter-app-4321", "id" "4321", "version" "v4321"}])]
       (testing "no deployments entry"
-        (let [response {:body "{\"message\": \"App is locked by one or more deployments.\"}"}]
+        (let [response (prepare-response "{\"message\": \"App is locked by one or more deployments.\"}")]
           (is (not (extract-deployment-info marathon-api response)))))
 
       (testing "no deployments listed"
-        (let [response {:body "{\"deployments\": [],
-                            \"message\": \"App is locked by one or more deployments.\"}"}]
+        (let [response (prepare-response "{\"deployments\": [],
+                                           \"message\": \"App is locked by one or more deployments.\"}")]
           (is (not (extract-deployment-info marathon-api response)))))
 
       (testing "single deployment"
-        (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}],
-                            \"message\": \"App is locked by one or more deployments.\"}"}]
+        (let [response (prepare-response "{\"deployments\": [{\"id\":\"1234\"}],
+                                           \"message\": \"App is locked by one or more deployments.\"}")]
           (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}]
                  (extract-deployment-info marathon-api response)))))
 
       (testing "multiple deployments"
         (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}],
-                            \"message\": \"App is locked by one or more deployments.\"}"}]
+                                \"message\": \"App is locked by one or more deployments.\"}"}]
           (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
                   {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}]
                  (extract-deployment-info marathon-api response)))))
 
       (testing "multiple deployments, one without info"
-        (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}, {\"id\":\"9876\"}],
-                            \"message\": \"App is locked by one or more deployments.\"}"}]
+        (let [response (prepare-response "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}, {\"id\":\"9876\"}],
+                                           \"message\": \"App is locked by one or more deployments.\"}")]
           (is (= [{"affectedApps" "waiter-app-1234", "id" "1234", "version" "v1234"}
                   {"affectedApps" "waiter-app-3829", "id" "3829", "version" "v3829"}]
                  (extract-deployment-info marathon-api response))))))))

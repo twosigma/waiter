@@ -10,12 +10,14 @@
 ;;
 (ns waiter.scheduler.marathon
   (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.core.memoize :as memo]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
+            [waiter.async-utils :as au]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.mesos.utils :as mesos-utils]
@@ -64,7 +66,9 @@
 (defn- get-deployment-info
   "Extracts the deployments section from the response body if it exists."
   [{:keys [body]}]
-  (-> body
+  (-> (if (au/chan? body)
+        (async/<!! body)
+        body)
       str
       json/read-str
       (get "deployments")
