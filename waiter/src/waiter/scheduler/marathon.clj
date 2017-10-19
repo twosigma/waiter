@@ -10,6 +10,7 @@
 ;;
 (ns waiter.scheduler.marathon
   (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.core.memoize :as memo]
             [clojure.data.json :as json]
             [clojure.string :as str]
@@ -22,7 +23,8 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils]))
+            [waiter.utils :as utils])
+  (:import (clojure.core.async.impl.channels ManyToManyChannel)))
 
 (defn- remove-slash-prefix
   "Returns the input string after stripping out any preceding slashes."
@@ -64,7 +66,9 @@
 (defn- get-deployment-info
   "Extracts the deployments section from the response body if it exists."
   [{:keys [body]}]
-  (-> body
+  (-> (if (instance? ManyToManyChannel body)
+        (async/<!! body)
+        body)
       str
       json/read-str
       (get "deployments")
