@@ -27,6 +27,9 @@
                   :exclusions [prismatic/schema ring/ring-core]]
                  ^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
                  [cc.qbits/jet "0.7.10-20170801_153701-gf517b70"]
+                 ^{:voom {:repo "https://github.com/twosigma/clj-http.git" :branch "waiter-patch"}}
+                 [clj-http "1.0.2-20170524_085846-g161c42f"
+                  :exclusions [commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.12.0"
                   :exclusions
                   [joda-time]]
@@ -75,6 +78,7 @@
                  [org.clojure/tools.reader "0.10.0"]
                  [org.slf4j/slf4j-log4j12 "1.7.21"
                   :exclusions [log4j]]
+                 [potemkin "0.4.1"]
                  [prismatic/plumbing "0.5.3"]
                  [prismatic/schema "1.1.3"]
                  [ring/ring-core "1.5.0"
