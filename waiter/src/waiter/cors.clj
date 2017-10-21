@@ -27,12 +27,14 @@
 (defn preflight-handler [cors-validator max-age request]
   (when-not (preflight-request? request)
     (throw (ex-info "Not a preflight request" {})))
-  (let [{:keys [headers]} request
+  (let [{:keys [headers request-method]} request
         {:strs [origin]} headers]
     (when-not origin
-      (throw (ex-info "No origin provided" {:headers headers})))
+      (throw (ex-info "No origin provided" {:status 403})))
     (when-not (preflight-allowed? cors-validator request)
-      (throw (ex-info "Request not allowed" {:request request})))
+      (throw (ex-info "Cross-origin request not allowed" {:origin origin
+                                                          :request-method request-method
+                                                          :status 403})))
     (let [{:strs [access-control-request-headers]} headers]
       {:status 200
        :headers {"Access-Control-Allow-Origin" origin
@@ -43,7 +45,7 @@
 
 (defn handler [request-handler cors-validator]
   (fn [req]
-    (let [{:keys [headers]} req
+    (let [{:keys [headers request-method]} req
           {:strs [origin]} headers
           bless #(if (and origin (request-allowed? cors-validator req))
                    (update-in % [:headers] assoc
@@ -53,8 +55,10 @@
       (-> req
           (#(if (or (not origin) (request-allowed? cors-validator %))
               (request-handler %)
-              {:status 403
-               :body (str "Cross-origin request not allowed from " origin)}))
+              (throw (ex-info "Cross-origin request not allowed"
+                              {:origin origin
+                               :request-method request-method
+                               :status 403}))))
           (#(if (map? %)
               (bless %)
               (async/go (bless (async/<! %)))))))))

@@ -932,7 +932,7 @@
                                     (try
                                       (cors/preflight-handler cors-validator max-age request)
                                       (catch Exception e
-                                        (utils/exception->response (ex-info "Error in CORS pre-flight handler" {} e) request))))))
+                                        (utils/exception->response e request))))))
    :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
                                           [:state instance-rpc-chan passwords router-id websocket-client]]

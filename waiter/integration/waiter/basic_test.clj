@@ -461,12 +461,30 @@
 (deftest ^:parallel ^:integration-fast test-cors-request-allowed
   (testing-using-waiter-url
     (let [{{:keys [kind]} :cors-config} (waiter-settings waiter-url)]
-      (when (= kind "allow-all")
-        ; Hit an endpoint that is guarded by CORS validation.
-        ; There's nothing special about /state, any CORS validated endpoint will do.
-        (let [{:keys [status] :as response} (make-request waiter-url "/state"
-                                                          :headers {"origin" "example.com"})]
-          (is (= 200 status) response))))))
+      (if (= kind "allow-all")
+        (testing "cors allowed"
+          ; Hit an endpoint that is guarded by CORS validation.
+          ; There's nothing special about /state, any CORS validated endpoint will do.
+          (let [{:keys [status] :as response} (make-request waiter-url "/state"
+                                                            :headers {"origin" "example.com"})]
+            (is (= 200 status) response)))
+        (testing "cors not allowed"
+          (let [{:keys [status] :as response} (make-request waiter-url "/state"
+                                                            :http-method-fn http/get
+                                                            :headers {"origin" "badorigin.com"})]
+            (is (= 403 status) response))
+          (let [{:keys [status] :as response} (make-request waiter-url "/state"
+                                                            :http-method-fn http/post
+                                                            :headers {"origin" "badorigin.com"})]
+            (is (= 403 status) response))
+          (let [options (fn ([client url request-map]
+                             (http/request client
+                                           (into {:method :options :url url}
+                                                 request-map))))
+                {:keys [status] :as response} (make-request waiter-url "/state"
+                                                            :http-method-fn options
+                                                            :headers {"origin" "badorigin.com"})]
+            (is (= 403 status) response)))))))
 
 (deftest ^:parallel ^:integration-fast test-error-handling
   (testing-using-waiter-url
