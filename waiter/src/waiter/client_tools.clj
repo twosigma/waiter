@@ -51,10 +51,11 @@
 (defn colored-time [time-string] (yellow time-string))
 
 (defn try-parse-json
-  [body]
-  (try (json/read-str body)
-       (catch Exception e
-         (throw (ex-info "Couldn't parse JSON" {:body body} e)))))
+  [s]
+  (try
+    (json/read-str s)
+    (catch Exception e
+      (throw (ex-info "Couldn't parse JSON" {:string s} e)))))
 
 (defn execute-command [& args]
   (let [shell-output (apply shell/sh args)]

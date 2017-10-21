@@ -53,7 +53,7 @@
       (log/debug (count tests) "running test(s):" tests))
     (log-memory-info))
 
-  (defmethod clojure.test/report :begin-test-var [m]
+  (defmethod report :begin-test-var [m]
     (let [test-name (full-test-name m)]
       @replaced-layout
       (with-test-out
@@ -61,12 +61,24 @@
       (swap! running-tests #(assoc % test-name (str (t/now))))
       (log-running-tests)))
 
-  (defmethod clojure.test/report :end-test-var [m]
+  (defmethod report :end-test-var [m]
     (let [test-name (full-test-name m)]
       (with-test-out
         (println \tab (blue "FINISH:") test-name @*report-counters*))
       (swap! running-tests #(dissoc % test-name))
       (log-running-tests))))
+
+;; Overrides the default reporter for :error so that the ex-data of
+;; an exception is printed.  The default report doesn't print the ex-data.
+(defmethod report :error
+  [m]
+  (with-test-out
+    (inc-report-counter :error)
+    (println "\nERROR in" (testing-vars-str m))
+    (when (seq *testing-contexts*) (println (testing-contexts-str)))
+    (when-let [message (:message m)] (println message))
+    (println "expected:" (pr-str (:expected m)))
+    (print "  actual: " (pr-str (:actual m)))))
 
 (defn- elapsed-millis [start-nanos finish-nanos]
   (->
