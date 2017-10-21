@@ -18,6 +18,8 @@
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as auth]
             [waiter.auth.oauth :refer :all]
+            [waiter.auth.oauth.github :refer :all]
+            [waiter.auth.oauth.google :refer :all]
             [waiter.cookie-support :as cs]
             [waiter.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
@@ -39,10 +41,10 @@
 (deftest test-oauth-authenticator
   (let [config {:factory-fn waiter.auth.oauth/oauth-authenticator
                 :providers {:kinds [:github :google]
-                            :github {:factory-fn 'waiter.auth.oauth/map->GitHubOAuthProvider
+                            :github {:factory-fn 'waiter.auth.oauth.github/map->GitHubOAuthProvider
                                      :client-id ""
                                      :client-secret ""}
-                            :google {:factory-fn 'waiter.auth.oauth/map->GoogleOAuthProvider
+                            :google {:factory-fn 'waiter.auth.oauth.google/map->GoogleOAuthProvider
                                      :client-id ""
                                      :client-secret ""}}
                 :run-as-user "user"

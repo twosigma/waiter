@@ -10,21 +10,15 @@
 ;;
 (ns waiter.auth.oauth
   (:require [bidi.bidi :as bidi]
-            [clj-time.core :as t]
-            [clojure.core.async :as async]
-            [clojure.data.codec.base64 :as b64]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [comb.template :as template]
             [digest]
-            [full.async :as fa]
             [plumbing.core :as pc]
             [plumbing.graph :as graph]
             [qbits.jet.client.http :as http]
-            [ring.middleware.params :as ring-params]
-            [ring.util.codec :as ring-codec]
             [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cookie-support]
             [waiter.utils :as utils])
@@ -67,17 +61,6 @@
   (authenticate [this request]
     "Handles the response from the OAuth provider.  Returns an async response."))
 
-(defn google-discovery-document
-  "Gets Google's discovery document."
-  [http-client]
-  (fa/go-try
-    (let [discovery-uri "https://accounts.google.com/.well-known/openid-configuration"
-          {:keys [body]} (async/<! (http/get http-client discovery-uri {:headers {"accept" "application/json"}}))]
-      (try
-        (json/read-str (async/<! body))
-        (catch Exception e
-          (throw (ex-info "Couldn't retrieve Google discovery document" {:status 403})))))))
-
 (defn make-uri
   "Takes a URI and adds a formatted query-string from query parameters in a map."
   [uri query-params]
@@ -103,131 +86,6 @@
                          (subs query-string' 0 (dec (str/index-of query-string' (str HASH-QUERY-PARAM-NAME \=))))
                          query-string')]
     (str \/ path query-string'' hash)))
-
-; See https://developers.google.com/identity/protocols/OpenIDConnect#authenticatingtheuser
-(defrecord GoogleOAuthProvider [authenticate-uri-fn client-id client-secret http-client password]
-  OAuthProvider
-  (display-name [_] "Google")
-  (redirect [_ {:keys [query-string] {:keys [path]} :route-params :as request}]
-    (fa/go-try
-      (let [token (random-str)
-            state (-> {:location (make-location {:path path
-                                                 :query-string query-string})
-                       :token token}
-                      json/write-str)
-            {:strs [authorization_endpoint]} (fa/<? (google-discovery-document http-client))
-            _ (when-not authorization_endpoint
-                (throw (ex-info "Couldn't get Google authorization endpoint" {:status 403})))
-            location (make-uri authorization_endpoint
-                               {"client_id" client-id
-                                "nonce" (random-str)
-                                "response_type" "code"
-                                "redirect_uri" (authenticate-uri-fn request)
-                                "scope" "openid email"
-                                "state" state})]
-        (-> {:status 307
-             :headers {"location" location}}
-            (cookie-support/add-encoded-cookie password OAUTH-COOKIE-NAME token (-> 15 t/minutes t/in-seconds))))))
-  (authenticate [_ request]
-    (fa/go-try
-      (let [{:strs [code state]} (:params (ring-params/params-request request))
-            {:strs [location token]} (try (-> state
-                                              json/read-str)
-                                          (catch Exception e
-                                            (throw (ex-info "Couldn't parse state from Google" {:status 403} e))))
-            _ (verify-oauth-cookie request token password)
-            {:strs [token_endpoint]} (fa/<? (google-discovery-document http-client))
-            _ (when-not token_endpoint
-                (throw (ex-info "Couldn't get Google token endpoint" {:status 403})))
-            {:keys [body status]} (async/<! (http/post http-client token_endpoint
-                                                       {:form-params {"client_id" client-id
-                                                                      "client_secret" client-secret
-                                                                      "code" code
-                                                                      "grant_type" "authorization_code"
-                                                                      "redirect_uri" (authenticate-uri-fn request)}}))
-            _  (when-not (= status 200)
-                 (throw (ex-info "Invalid token response from Google" {:status 403})))
-            {:strs [id_token] :as response} (try
-                                              (json/read-str (async/<! body))
-                                              (catch Exception e
-                                                (throw (ex-info "Couldn't parse JSON from Google" {:status 403} e))))
-            _ (log/info "google response" response)
-            _  (when-not id_token
-                 (throw (ex-info "Missing id token from Google" {:status 403})))
-            {:strs [email email_verified]} (try
-                                             (-> id_token
-                                                 (str/split #"\.")
-                                                 second
-                                                 .getBytes
-                                                 b64/decode
-                                                 String.
-                                                 json/read-str)
-                                             (catch Exception e
-                                               (throw (ex-info "Coudln't parse id token from Google"
-                                                               {:status 403} e))))
-            _ (when-not (and (not (str/blank? email)) email_verified)
-                (throw (ex-info "Can't get email from Google" {:status 403})))]
-        (-> {:status 307
-             :headers {"location" location}}
-            (auth/add-cached-auth password email))))))
-
-; See https://developer.github.com/apps/building-integrations/setting-up-and-registering-github-apps/identifying-users-for-github-apps/
-(defrecord GitHubOAuthProvider [authenticate-uri-fn client-id client-secret http-client password]
-  OAuthProvider
-  (display-name [_] "GitHub")
-  (redirect [_ {:keys [query-string] {:keys [path]} :route-params :as request}]
-    (fa/go-try
-      (let [token (random-str)
-            state (-> {:location (make-location {:path path
-                                                 :query-string query-string})
-                       :token token}
-                      json/write-str)
-            location (make-uri "https://github.com/login/oauth/authorize"
-                               {"client_id" client-id
-                                "scope" "user:email"
-                                "redirect_uri" (authenticate-uri-fn request)
-                                "state" state})]
-        (-> {:status 307
-             :headers {"location" location}}
-            (cookie-support/add-encoded-cookie password OAUTH-COOKIE-NAME token (-> 15 t/minutes t/in-seconds))))))
-  (authenticate [_ request]
-    (fa/go-try
-      (let [{:strs [code state]} (:params (ring-params/params-request request))
-            {:strs [location token]} (try (-> state
-                                              json/read-str)
-                                          (catch Exception e
-                                            (throw (ex-info "Couldn't parse state from GitHub" {:status 403} e))))
-            _ (verify-oauth-cookie request token password)
-            {:keys [body status]} (async/<! (http/post http-client "https://github.com/login/oauth/access_token"
-                                                       {:form-params {"client_id" client-id
-                                                                      "client_secret" client-secret
-                                                                      "code" code
-                                                                      "state" state}}))
-            _  (when-not (= status 200)
-                 (throw (ex-info "Invalid access token response from GitHub" {:status 403})))
-            access-token-body (async/<! body)
-            {:strs [access_token]} (-> access-token-body
-                                       (ring-codec/form-decode))
-            _  (when (str/blank? access_token)
-                 (throw (ex-info "Invalid access token from GitHub" {:status 403})))
-            {:keys [body status]} (async/<! (http/get http-client "https://api.github.com/user/emails"
-                                                      {:headers {"authorization" (str "token " access_token)}}))
-            _ (when-not (= status 200)
-                (throw (ex-info "Invalid user API response from GitHub" {:status 403})))
-            response-body (async/<! body)
-            emails (try (json/read-str response-body)
-                        (catch Exception e
-                          (throw (ex-info "Invalid JSON from GitHub" {:status 403} e))))
-            email (->> emails
-                       (keep (fn [{:strs [email primary verified]}]
-                               (when (and primary verified)
-                                 email)))
-                       first)
-            _ (when-not email
-                (throw (ex-info "Can't get email from GitHub" {:status 403})))]
-        (-> {:status 307
-             :headers {"location" location}}
-            (auth/add-cached-auth password email))))))
 
 (defn provider-list-handler
   "Responds with a login page listing available OAuth providers."
