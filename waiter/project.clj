@@ -115,7 +115,16 @@
              :test {:jvm-opts
                     [~(str "-Dwaiter.test.kitchen.cmd=" (or
                                                           (System/getenv "WAITER_TEST_KITCHEN_CMD")
-                                                          (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]}
+                                                          (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]
+                    ;; Print exception data
+                    :injections [(defmethod clojure.test/report :error [m]
+                                   (clojure.test/with-test-out
+                                     (clojure.test/inc-report-counter :error)
+                                     (println "\nERROR in" (clojure.test/testing-vars-str m))
+                                     (when (seq clojure.test/*testing-contexts*) (println (clojure.test/testing-contexts-str)))
+                                     (when-let [message (:message m)] (println message))
+                                     (println "expected:" (pr-str (:expected m)))
+                                     (print "  actual: " (pr-str (:actual m)))))]}
              :test-console {:jvm-opts
                             ["-Dlog4j.configuration=log4j-console.properties"]}
              :test-log {:jvm-opts
