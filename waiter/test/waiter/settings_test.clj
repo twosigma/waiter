@@ -251,3 +251,24 @@
           (is (nil? (s/check settings-schema settings)))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
+
+(deftest test-validate-shell-oauth-settings
+  (testing "Test validating shell scheduler w/ oauth settings"
+    (let [port 12345
+          run-as-user "foo"]
+      (with-redefs [env (fn [name _]
+                          (case name
+                            "GITHUB_OAUTH_CLIENT_ID" "github-client-id"
+                            "GITHUB_OAUTH_CLIENT_SECRET" "github-client-secret"
+                            "GOOGLE_OAUTH_CLIENT_ID" "google-client-id"
+                            "GOOGLE_OAUTH_CLIENT_SECRET" "google-client-secret"
+                            "WAITER_PORT" (str port)
+                            "WAITER_AUTH_RUN_AS_USER" run-as-user
+                            (throw (ex-info "Unexpected environment variable" {:name name}))))]
+        (let [settings (load-config-file "config-shell-oauth.edn")]
+          (is (nil? (s/check settings-schema settings)))
+          (is (= :oauth (get-in settings [:authenticator-config :kind])))
+          (is (= "github-client-id" (get-in settings [:authenticator-config :oauth :providers :github :client-id])))
+          (is (= "github-client-secret" (get-in settings [:authenticator-config :oauth :providers :github :client-secret])))
+          (is (= "google-client-id" (get-in settings [:authenticator-config :oauth :providers :google :client-id])))
+          (is (= "google-client-secret" (get-in settings [:authenticator-config :oauth :providers :google :client-secret]))))))))
