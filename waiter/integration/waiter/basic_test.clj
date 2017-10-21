@@ -350,9 +350,7 @@
     (log/info "Basic waiter-auth test")
     (let [{:keys [status body headers]} (make-request waiter-url "/waiter-auth")
           set-cookie (get headers "set-cookie")
-          parsed-json (-> (try (json/read-str body)
-                               (catch Exception _
-                                 (is false (str "Unable to parse JSON\n:" body))))
+          parsed-json (-> (try-parse-json body)
                           (walk/keywordize-keys))]
       (is (= 200 status))
       (is (str/includes? set-cookie "x-waiter-auth="))
@@ -513,9 +511,7 @@
         (is (str/includes? body "<html>"))))
     (testing "application/json explicit"
       (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"accept" "application/json"})
-            {:strs [waiter-error]} (try (json/read-str body)
-                                        (catch Throwable _
-                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
+            {:strs [waiter-error]} (try-parse-json body)]
         (is (= 404 status))
         (is (= "application/json" (get headers "content-type")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
@@ -523,9 +519,7 @@
           (is (= 404 status)))))
     (testing "application/json implied by content-type"
       (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"content-type" "application/json"})
-            {:strs [waiter-error]} (try (json/read-str body)
-                                        (catch Throwable _
-                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
+            {:strs [waiter-error]} (try-parse-json body)]
         (is (= 404 status))
         (is (= "application/json" (get headers "content-type")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
@@ -534,9 +528,7 @@
     (testing "support information included"
       (let [{:keys [body headers status]} (make-request waiter-url "/404" :headers {"accept" "application/json"})
             {:keys [messages support-info]} (waiter-settings waiter-url)
-            {:strs [waiter-error]} (try (json/read-str body)
-                                        (catch Throwable _
-                                          (is false (str "Could not parse body that is supposed to be JSON:\n" body))))]
+            {:strs [waiter-error]} (try-parse-json body)]
 
         (is (= 404 status))
         (is (= "application/json" (get headers "content-type")))
@@ -566,9 +558,7 @@
         (is (str/includes? body "Welcome to Waiter"))))
     (testing "accept application/json"
       (let [{:keys [body headers status]} (make-request waiter-url "/" :headers {"accept" "application/json"})
-            json-data (try (json/read-str body)
-                           (catch Exception _
-                             (is false ("Not json:\n" body))))]
+            json-data (try-parse-json body)]
         (is (= 200 status))
         (is (= "application/json" (get headers "content-type")))
         (is (= "Welcome to Waiter" (get json-data "message")))))
