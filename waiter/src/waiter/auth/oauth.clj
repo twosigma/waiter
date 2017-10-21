@@ -34,7 +34,8 @@
 (defn make-http-client
   "Instantiates and returns a new HttpClient without a cookie store"
   []
-  (let [client (http/client)]
+  (let [client (http/client {:connect-timeout 5000
+                             :idle-timeout 5000})]
     (.setCookieStore client (HttpCookieStore$Empty.))
     client))
 
