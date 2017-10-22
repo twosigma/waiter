@@ -65,6 +65,8 @@
   (authenticate [_ request]
     (fa/go-try
       (let [{:strs [code state]} (:params (ring-params/params-request request))
+            _ (when-not (and code state)
+                (throw (ex-info "Malformed request" {:status 400})))
             {:strs [location token]} (try (-> state
                                               json/read-str)
                                           (catch Exception e
