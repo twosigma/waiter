@@ -1250,10 +1250,9 @@
                              (fn waiter-auth-handler-fn [request]
                                (handle-secure-request-fn
                                  (fn inner-waiter-auth-handler-fn [request]
-                                   {:content-type "application/json"
-                                    :body (json/write-str {:user (:authorization/user request)
-                                                           :principal (:authenticated-principal request)})
-                                    :status 200})
+                                   (utils/map->json-response
+                                     {:user (:authorization/user request)
+                                      :principal (:authenticated-principal request)}))
                                  request)))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->token-description]
                                                    [:settings consent-expiry-days]
