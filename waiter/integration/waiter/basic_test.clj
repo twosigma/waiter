@@ -357,8 +357,8 @@
       (is (str/includes? set-cookie "Max-Age="))
       (is (str/includes? set-cookie "Path=/"))
       (is (str/includes? set-cookie "HttpOnly=true"))
-      (is (= {:user (System/getProperty "user.name")
-              :principal (System/getProperty "user.name")} parsed-json)))))
+      (is (= (System/getProperty "user.name") (:user parsed-json)))
+      (is (:principal parsed-json)))))
 
 ; Marked explicit due to:
 ;   FAIL in (test-killed-instances)
