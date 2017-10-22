@@ -59,6 +59,8 @@
                                       "state" state})]
         (-> {:status 307
              :headers {"location" location}}
+            ;; We should store this cookie only long enough to provide a reasonable amount of time
+            ;; for the client to authenticate.
             (cookie-support/add-encoded-cookie password oauth/OAUTH-COOKIE-NAME token (-> 15 t/minutes t/in-seconds))))))
   (authenticate [_ request]
     (fa/go-try
