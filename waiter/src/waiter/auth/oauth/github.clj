@@ -59,8 +59,8 @@
                                                                             "state" state}}))
             _ (when error
                 (throw (ex-info "Error while communicating with GitHub" {:status 403} error)))
-            _  (when-not (= status 200)
-                 (throw (ex-info "Invalid access token response from GitHub" {:status 403})))
+            _ (when-not (= status 200)
+                (throw (ex-info "Invalid access token response from GitHub" {:status 403})))
             access-token-body (async/<! body)
             {:strs [access_token]} (-> access-token-body
                                        (ring-codec/form-decode))

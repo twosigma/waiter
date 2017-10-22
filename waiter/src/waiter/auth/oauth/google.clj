@@ -30,7 +30,7 @@
       (when error
         (throw (ex-info "Error while communicating with Google" {:status 403} error)))
       (when-not (= 200 status)
-        (throw (ex-info "Invalid response from Google" {:status 403} error)))
+        (throw (ex-info "Invalid response from Google" {:status 403})))
       (try
         (json/read-str (async/<! body))
         (catch Exception e
