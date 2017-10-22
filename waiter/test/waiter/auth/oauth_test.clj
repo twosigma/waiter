@@ -49,7 +49,8 @@
                                      :client-secret ""}}
                 :run-as-user "user"
                 :host "host"
-                :port 8080}
+                :port 8080
+                :password [:cached "password"]}
         authenticator (oauth-authenticator config)]
     (is authenticator)
     (is (= 2 (-> authenticator :providers count)))))
