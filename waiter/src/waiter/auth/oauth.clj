@@ -97,7 +97,8 @@
                                 :display-name (fn [provider] (display-name provider))
                                 :hash-query-param-name HASH-QUERY-PARAM-NAME
                                 :path path
-                                :query-string query-string})}
+                                :query-string query-string})
+          :headers {"content-type" "text/html"}}
     (throw (ex-info "Invalid request method"
                     {:request-method request-method
                      :status 405}))))
