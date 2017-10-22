@@ -55,7 +55,21 @@
                 :password [:cached "password"]}
         authenticator (oauth-authenticator config)]
     (is authenticator)
-    (is (= 2 (-> authenticator :providers count)))))
+    (let [{:keys [github google]} (-> authenticator :providers)]
+      (is github)
+      (is (satisfies? OAuthProvider github))
+      (is (instance? waiter.auth.oauth.github.GitHubOAuthProvider github))
+      (let [{:keys [authenticate-uri-fn http-client password]} github]
+        (is password)
+        (is http-client)
+        (is authenticate-uri-fn))
+      (is google)
+      (is (satisfies? OAuthProvider google))
+      (is (instance? waiter.auth.oauth.google.GoogleOAuthProvider google))
+      (let [{:keys [authenticate-uri-fn http-client password]} google]
+        (is password)
+        (is http-client)
+        (is authenticate-uri-fn)))))
 
 (deftest test-match-oauth-route
   (is (= {:handler :provider-list :route-params {:path ""}}

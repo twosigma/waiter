@@ -157,8 +157,9 @@
                                                           (str (utils/request->scheme request) "://"
                                                                host "/waiter-auth/oauth/" (name kind) "/authenticate"))]
                                 (utils/create-component (assoc providers :kind kind)
-                                                        :context {:http-client http-client
-                                                                  :authenticate-uri-fn authenticate-uri-fn})))
+                                                        :context {:authenticate-uri-fn authenticate-uri-fn
+                                                                  :http-client http-client
+                                                                  :password password})))
                             kinds)]
     (map->OAuthAuthenticator {:password password
                               :providers enabled-providers
