@@ -30,13 +30,15 @@
 
 (deftest test-provider-list-handler
   (testing "get"
-    (let [{:keys [body headers]} (provider-list-handler
-                                   {:github (map->GitHubOAuthProvider {})
-                                    :google (map->GoogleOAuthProvider {})}
+    (let [github-provider (map->GitHubOAuthProvider {})
+          google-provider (map->GoogleOAuthProvider {})
+          {:keys [body headers]} (provider-list-handler
+                                   {:github github-provider
+                                    :google google-provider}
                                    {:request-method :get})]
       (is body)
-      (is (str/includes? body "GitHub"))
-      (is (str/includes? body "Google")))))
+      (is (str/includes? body (display-name github-provider)))
+      (is (str/includes? body (display-name google-provider))))))
 
 (deftest test-oauth-authenticator
   (let [config {:factory-fn waiter.auth.oauth/oauth-authenticator
