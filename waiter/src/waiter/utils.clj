@@ -215,6 +215,16 @@
       ex
       (ex-info "Internal error" {:status 500} ex))))
 
+(defn escape-html
+  "Escapes HTML characters"
+  [s]
+  (str/escape s {\& "&amp;"
+                 \< "&lt;"
+                 \> "&gt;"
+                 \" "&quot;"
+                 \' "&#x27;"
+                 \/ "&#x2F;"}))
+
 (defn exception->response
   "Converts an exception into a ring response."
   [^Exception ex {:keys [] :as request}]
@@ -230,18 +240,19 @@
                "application/json"
                (do
                  (json/write-str {:waiter-error error-context}
-                               :value-fn stringify-elements
-                               :escape-slash false))
+                                 :value-fn stringify-elements
+                                 :escape-slash false))
                "text/html"
                (template/eval (slurp (io/resource "web/error.html"))
-                              (-> error-context 
+                              (-> error-context
+                                  (assoc :escape-html escape-html)
                                   (update :message #(urls->html-links %))
                                   (update :details #(with-out-str (pprint/pprint %)))))
                "text/plain"
                (-> (template/eval (slurp (io/resource "web/error.txt"))
-                                  (-> error-context 
-                                      (update :details (fn [v] 
-                                                         (when v 
+                                  (-> error-context
+                                      (update :details (fn [v]
+                                                         (when v
                                                            (-> (with-out-str (pprint/pprint v))
                                                                (str/replace #"\n" "\n  ")))))))
                    (str/replace #"\n" "\n  ")

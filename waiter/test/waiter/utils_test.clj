@@ -574,3 +574,12 @@
   (is (= "https" (request->scheme {:scheme :http :headers {"x-forwarded-proto" "https"}})))
   (is (= "http" (request->scheme {:scheme :https :headers {"x-forwarded-proto" "http"}})))
   (is (= "https" (request->scheme {:scheme :https :headers {"x-forwarded-proto" "https"}}))))
+
+(deftest test-escape-html
+  (is (= "&amp;" (escape-html "&")))
+  (is (= "&lt;" (escape-html "<")))
+  (is (= "&gt;" (escape-html ">")))
+  (is (= "&quot;" (escape-html "\"")))
+  (is (= "&#x27;" (escape-html "'")))
+  (is (= "&#x2F;" (escape-html "/")))
+  (is (= "&lt;script&gt;alert(&#x27;xss&#x27;);&lt;&#x2F;script&gt;" (escape-html "<script>alert('xss');</script>"))))
