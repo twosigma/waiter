@@ -1002,13 +1002,14 @@
   "Computes the slot distribution of instances on a given router."
   [router-id router-id->http-endpoint service-id->service-description-fn service-id->healthy-instances]
   (let [service-id->router->instance->slots
-        (into {}
-              (map (fn [[service-id instances]]
-                     (let [{:strs [concurrency-level distribution-scheme]} (service-id->service-description-fn service-id)
-                           router-id->instance->slots (distribute-slots-using-consistent-hash-distribution
-                                                        (keys router-id->http-endpoint) instances md5-hash-function concurrency-level distribution-scheme)]
-                       [service-id router-id->instance->slots]))
-                   service-id->healthy-instances))]
+        (->> service-id->healthy-instances
+             (map (fn [[service-id instances]]
+                    (let [{:strs [concurrency-level distribution-scheme]} (service-id->service-description-fn service-id)
+                          router-id->instance->slots (distribute-slots-using-consistent-hash-distribution
+                                                       (keys router-id->http-endpoint) instances md5-hash-function concurrency-level distribution-scheme)]
+                      (log/info "instance distribution of" service-id "is" (pc/map-vals #(pc/map-keys :id %) router-id->instance->slots))
+                      [service-id router-id->instance->slots])))
+             (into {}))]
     (pc/map-vals #(get % router-id) service-id->router->instance->slots)))
 
 (defn- update-router-instance-counts
