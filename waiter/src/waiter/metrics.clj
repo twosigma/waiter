@@ -215,17 +215,14 @@
   (counters/inc! the-counter (- (or new-value 0) (counters/value the-counter))))
 
 (defn retrieve-local-stats-for-service
-  "Returns a map containing local metrics for the specified service."
+  "Returns a map containing local metrics for the specified service along with the service-id."
   [service-id]
-  {:service-id service-id
-   :total-requests (counters/value (service-counter service-id "request-counts" "total"))
+  {:instances-blacklisted (counters/value (service-counter service-id "instance-counts" "blacklisted"))
+   :instances-failed (counters/value (service-counter service-id "instance-counts" "failed"))
    :outstanding-requests (counters/value (service-counter service-id "request-counts" "outstanding"))
-   :router-instances (counters/value (service-counter service-id "instance-counts" "my-instances"))
-   :in-use-instances (counters/value (service-counter service-id "instance-counts" "in-use"))
-   :healthy-instances (counters/value (service-counter service-id "instance-counts" "healthy"))
-   :unhealthy-instances (counters/value (service-counter service-id "instance-counts" "unhealthy"))
-   :failed-instances (counters/value (service-counter service-id "instance-counts" "failed"))
-   :blacklisted-instances (counters/value (service-counter service-id "instance-counts" "blacklisted"))})
+   :service-id service-id
+   :slots-assigned (counters/value (service-counter service-id "instance-counts" "slots-assigned"))
+   :slots-available (counters/value (service-counter service-id "instance-counts" "slots-available"))})
 
 (defn is-quantile-metric?
   "Returns true if the input map represents a quantile metric (timer or historgram).
