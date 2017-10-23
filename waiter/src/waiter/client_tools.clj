@@ -50,6 +50,13 @@
 
 (defn colored-time [time-string] (yellow time-string))
 
+(defn try-parse-json
+  [s]
+  (try
+    (json/read-str s)
+    (catch Exception e
+      (throw (ex-info "Couldn't parse JSON" {:string s} e)))))
+
 (defn execute-command [& args]
   (let [shell-output (apply shell/sh args)]
     (when (not= 0 (:exit shell-output))
@@ -365,7 +372,7 @@
 
 (defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
   (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies)
-        settings-json (json/read-str (:body settings-result))]
+        settings-json (try-parse-json (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 
 (defn service-settings [waiter-url service-id & {:keys [keywordize-keys] :or {keywordize-keys true}}]
@@ -373,14 +380,14 @@
         settings-result (make-request waiter-url settings-path)
         settings-body (:body settings-result)
         _ (log/debug "service" service-id ":" settings-body)
-        settings-json (json/read-str settings-body)]
+        settings-json (try-parse-json settings-body)]
     (cond-> settings-json keywordize-keys walk/keywordize-keys)))
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
   (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies)
         state-body (:body state-result)
         _ (log/debug "service" service-id "state:" state-body)
-        state-json (json/read-str state-body)]
+        state-json (try-parse-json state-body)]
     (walk/keywordize-keys state-json)))
 
 (defn- retrieve-state-helper
@@ -388,7 +395,7 @@
   [waiter-url endpoint & {:keys [cookies] :or {cookies {}}}]
   (let [state-body (:body (make-request waiter-url endpoint :verbose true :cookies cookies))]
     (log/debug endpoint "body:" state-body)
-    (json/read-str state-body)))
+    (try-parse-json state-body)))
 
 (defn kv-store-state
   "Fetches and returns the kv-store state."
@@ -478,7 +485,7 @@
          (fn []
            (let [app-delete-path (str "/apps/" service-id "?force=true")
                  delete-response (make-request waiter-url app-delete-path :http-method-fn http/delete)
-                 delete-json (json/read-str (:body delete-response))
+                 delete-json (try-parse-json (:body delete-response))
                  delete-success (true? (get delete-json "success"))
                  no-such-service (= "no-such-service-exists" (get delete-json "result"))]
              (log/debug "Delete response for" service-id ":" delete-json)
@@ -744,7 +751,7 @@
   [router-url service-id cookies]
   (let [state-json (:body (make-request router-url (str "/state/" service-id) :cookies cookies))]
     (log/debug "State received from" router-url ":" state-json)
-    (json/read-str state-json)))
+    (try-parse-json state-json)))
 
 (defn service
   "Retrieves the service (from /apps) corresponding to the provided service-id"
@@ -754,7 +761,7 @@
     (fn []
       (let [{:keys [body]} (make-request waiter-url "/apps" :query-params query-params)
             _ (log/debug "Response body:" body)
-            parsed-body (json/read-str body)
+            parsed-body (try-parse-json body)
             service (first (filter #(= service-id (get % "service-id")) parsed-body))]
         (when-not service
           (log/info "Service" service-id "is missing! Response:" body))
@@ -818,7 +825,7 @@
   (let [marathon-url (marathon-url waiter-url)
         app-info-path (str "/v2/apps/" service-id)
         app-info-response (make-request marathon-url app-info-path)
-        app-info-map (walk/keywordize-keys (json/read-str (:body app-info-response)))]
+        app-info-map (walk/keywordize-keys (try-parse-json (:body app-info-response)))]
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 
 (defn using-marathon?
