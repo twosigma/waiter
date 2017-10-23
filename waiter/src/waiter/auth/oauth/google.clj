@@ -64,9 +64,10 @@
             (cookie-support/add-encoded-cookie password oauth/OAUTH-COOKIE-NAME token (-> 15 t/minutes t/in-seconds))))))
   (authenticate [_ request]
     (fa/go-try
-      (let [{:strs [code state]} (:params (ring-params/params-request request))
+      (let [{:strs [code state] :as params} (:params (ring-params/params-request request))
             _ (when-not (and code state)
-                (throw (ex-info "Malformed request" {:status 400})))
+                (throw (ex-info "Malformed request" {:status 400
+                                                     :params params})))
             {:strs [location token]} (try (-> state
                                               json/read-str)
                                           (catch Exception e
