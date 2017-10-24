@@ -46,6 +46,7 @@
           extra-headers {:x-waiter-min-instances 0
                          :x-waiter-distribution-scheme "simple"
                          :x-waiter-scale-down-factor 0.9
+                         :x-waiter-scale-up-factor 0.9
                          :x-kitchen-delay-ms 5000
                          :x-waiter-name (rand-name)}
           request-fn (fn []
