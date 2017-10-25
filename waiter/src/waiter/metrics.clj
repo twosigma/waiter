@@ -469,7 +469,7 @@
             (< (.getMillis current-last-request-time)
                (.getMillis candidate-last-request-time)))
       (update-in agent-state [:pending :service-id->last-request-time]
-              assoc service-id candidate-last-request-time)
+                 assoc service-id candidate-last-request-time)
       agent-state)))
 
 (defn cleanup-last-request-times
