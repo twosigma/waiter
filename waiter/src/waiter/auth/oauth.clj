@@ -31,7 +31,7 @@
 (def OAUTH-COOKIE-NAME "x-waiter-oauth")
 (def HASH-QUERY-PARAM-NAME "_waiter_hash")
 
-(defn make-http-client
+(defn- make-http-client
   "Instantiates and returns a new HttpClient without a cookie store"
   []
   (let [client (http/client {:connect-timeout 5000
