@@ -351,7 +351,7 @@
     (let [{:keys [status body headers]} (make-request waiter-url "/waiter-auth")
           set-cookie (get headers "set-cookie")
           parsed-json (-> (try-parse-json body)
-                          (walk/keywordize-keys))]
+                          walk/keywordize-keys)]
       (is (= 200 status))
       (is (str/includes? set-cookie "x-waiter-auth="))
       (is (str/includes? set-cookie "Max-Age="))
