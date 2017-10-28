@@ -153,7 +153,7 @@
 (defn oauth-authenticator
   "Factory function for creating OAuthAuthenticator"
   [{:keys [password providers run-as-user]}]
-  {:pre [password providers run-as-user]}
+  {:pre [password (seq providers) run-as-user]}
   (let [http-client (make-http-client) {:keys [kinds]} providers
         enabled-providers (pc/map-from-keys
                             (fn [kind]
