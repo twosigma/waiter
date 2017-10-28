@@ -37,8 +37,8 @@
                                       "scope" "user:email"
                                       "redirect_uri" (authenticate-uri-fn request)
                                       "state" state})]
-        (-> {:status 307
-             :headers {"location" location}}
+        (-> {:headers {"location" location}
+             :status 307}
             ;; We should store this cookie only long enough to provide a reasonable amount of time
             ;; for the client to authenticate.
             (cookie-support/add-encoded-cookie password oauth/OAUTH-COOKIE-NAME token (-> 15 t/minutes t/in-seconds))))))
@@ -46,8 +46,7 @@
     (fa/go-try
       (let [{:strs [code state] :as params} (:params (ring-params/params-request request))
             _ (when-not (and code state)
-                (throw (ex-info "Malformed request" {:status 400
-                                                     :params params})))
+                (throw (ex-info "Malformed request" {:params params :status 400})))
             {:strs [location token]} (try (-> state
                                               json/read-str)
                                           (catch Exception e

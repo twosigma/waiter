@@ -135,9 +135,9 @@
               (-> request
                   (auth/assoc-auth-in-request auth-principal)
                   handler-fn)
-              {:status 307
-               :headers {"location" (cond-> (str "/waiter-auth/oauth/providers" uri)
-                                      (not (str/blank? query-string)) (str \? query-string))}}))))
+              {:headers {"location" (cond-> (str "/waiter-auth/oauth/providers" uri)
+                                      (not (str/blank? query-string)) (str \? query-string))}
+               :status 307}))))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
