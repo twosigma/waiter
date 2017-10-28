@@ -63,7 +63,8 @@
     "Handles the response from the OAuth provider.  Returns an async response."))
 
 (defn make-uri
-  "Takes a URI and adds a formatted query-string from query parameters in a map."
+  "Takes a URI and adds a formatted query-string from query parameters in a map.
+  Repeated parameters are not supported."
   [uri query-params]
   (str uri "?"
        (->> query-params
