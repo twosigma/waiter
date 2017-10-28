@@ -16,11 +16,13 @@
             [clojure.tools.logging :as log]
             [comb.template :as template]
             [digest]
+            [metrics.counters :as counters]
             [plumbing.core :as pc]
             [plumbing.graph :as graph]
             [qbits.jet.client.http :as http]
             [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cookie-support]
+            [waiter.metrics :as metrics]
             [waiter.utils :as utils])
   (:import java.security.SecureRandom
            org.eclipse.jetty.util.HttpCookieStore$Empty
@@ -120,6 +122,8 @@
       (let [{:keys [handler route-params] :as match} (match-oauth-route uri)
             request' (assoc request :route-params route-params)
             provider-fn (fn [] (-> route-params :provider keyword providers))]
+        (when handler
+          (counters/inc! (metrics/waiter-counter "requests" "oauth" (name handler))))
         (case handler
           :provider-list (provider-list-handler providers request')
           :redirect (redirect (provider-fn) request')
