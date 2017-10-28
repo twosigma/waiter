@@ -68,11 +68,11 @@
   "Takes a URI and adds a formatted query-string from query parameters in a map.
   Repeated parameters are not supported."
   [uri query-params]
-  (str uri "?"
+  (str uri \?
        (->> query-params
             (map (fn [[name value]]
-                   (str name "=" (UrlEncoded/encodeString value))))
-            (str/join "&"))))
+                   (str name \= (UrlEncoded/encodeString value))))
+            (str/join \&))))
 
 (defn make-location
   "Given a path and query-string, return the value for the Location header
