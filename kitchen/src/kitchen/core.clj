@@ -13,22 +13,30 @@
             [clojure.core.async :as async]
             [clojure.core.async.impl.protocols :refer (closed?)]
             [clojure.data.json :as json]
+            [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [kitchen.pi :as pi]
+            [kitchen.spnego :as spnego]
             [kitchen.utils :as utils]
             [plumbing.core :as pc]
+            [qbits.jet.client.cookies :as client-cookies]
+            [qbits.jet.client.http :as http]
             [qbits.jet.server :as server]
             [ring.middleware.basic-authentication :as basic-authentication]
             [ring.middleware.cookies :as cookies]
             [ring.middleware.params :as params])
   (:gen-class)
   (:import (java.io InputStream ByteArrayOutputStream)
-           (java.nio ByteBuffer)
-           (java.util UUID)
-           (java.util.zip GZIPOutputStream)
-           (org.eclipse.jetty.server HttpOutput)))
+           java.net.URI
+           java.nio.ByteBuffer
+           java.util.UUID
+           java.util.zip.GZIPOutputStream
+           org.eclipse.jetty.server.HttpOutput
+           (org.eclipse.jetty.util HttpCookieStore)
+           (org.eclipse.jetty.client HttpClient)))
 
 
 (def async-requests (atom {}))
@@ -403,6 +411,145 @@
                                            (utils/parse-positive-int threads 1)))
      :headers {"content-type" "application/json"}}))
 
+(def ^:const HTTP-SCHEME "http://")
+(def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
+
+(defn strip-trailing-slash
+  "If s ends with /, returns s with the / stripped"
+  [s]
+  (cond-> s (str/ends-with? s "/") (subs 0 (- (count s) 1))))
+
+(defn make-request
+  "TODO(DPO)"
+  ([client waiter-url path &
+    {:keys [body cookies content-type form-params headers http-method-fn multipart query-params use-spnego verbose]
+     :or {body nil
+          cookies []
+          headers {}
+          http-method-fn http/get
+          query-params {}
+          use-spnego false
+          verbose false}}]
+   (let [request-url (str
+                       (when-not (str/starts-with? waiter-url HTTP-SCHEME) HTTP-SCHEME)
+                       (strip-trailing-slash waiter-url)
+                       path)
+         request-headers (walk/stringify-keys headers)]
+     (try
+       (when verbose
+         (log/info "request url:" request-url)
+         (log/info "request headers:" (into (sorted-map) request-headers)))
+       (let [waiter-auth-cookie (some #(= AUTH-COOKIE-NAME (:name %)) cookies)
+             add-spnego-auth (and use-spnego (not waiter-auth-cookie))
+             start-nanos (System/nanoTime)
+             {:keys [body headers status]}
+             (async/<!! (http-method-fn
+                          client
+                          request-url
+                          (cond-> {:follow-redirects? false
+                                   :headers request-headers
+                                   :query-string query-params
+                                   :body body}
+                                  multipart (assoc :multipart multipart)
+                                  add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                                  form-params (assoc :form-params form-params)
+                                  content-type (assoc :content-type content-type)
+                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
+             elapsed-nanos (- (System/nanoTime) start-nanos)
+             response-body (if body (async/<!! body) nil)]
+         (when verbose
+           (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
+         {:request-headers request-headers
+          :cookies (client-cookies/get-cookies (.getCookieStore client))
+          :status status
+          :headers headers
+          :body response-body
+          :elapsed-nanos elapsed-nanos})
+       (catch Exception e
+         (when verbose
+           (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
+         (throw e))))))
+
+(defn make-http-client
+  "Instantiates and returns a new HttpClient with a cookie store"
+  []
+  (let [client (http/client)
+        cookie-store (HttpCookieStore.)
+        _ (.setCookieStore ^HttpClient client cookie-store)]
+    client))
+
+(defn make-parallel-requests
+  "TODO(DPO)"
+  [url path concurrency-level total-requests & {:keys [verbose use-spnego] :or {verbose false, use-spnego false}}]
+  (let [responses-atom (atom [])
+        client (make-http-client)
+        make-requests (fn []
+                        (try
+                          (let [future-uuid (UUID/randomUUID)]
+                            (loop []
+                              (when verbose
+                                (log/info "making request from future" future-uuid))
+                              (let [response (make-request client url path :verbose verbose :use-spnego use-spnego)]
+                                (if (< (count (swap! responses-atom conj response)) total-requests)
+                                  (recur)
+                                  (log/info "no more requests to make from future" future-uuid)))))
+                          (catch Throwable t
+                            (log/error t "encountered exception making parallel requests"))))
+        futures (doall (repeatedly concurrency-level #(future (make-requests))))]
+    (dorun (map deref futures))
+    @responses-atom))
+
+(defn percentile
+  "Calculates the p-th percentile of the values in coll
+  (where 0 < p <= 100), using the Nearest Rank method:
+
+  https://en.wikipedia.org/wiki/Percentile#The_Nearest_Rank_method
+
+  Assumes that coll is sorted (see percentiles below for context)"
+  [coll p]
+  (if (or (empty? coll) (not (number? p)) (<= p 0) (> p 100))
+    nil
+    (nth coll
+         (-> p
+             (/ 100)
+             (* (count coll))
+             (Math/ceil)
+             (dec)))))
+
+(defn percentiles
+  "Calculates the p-th percentiles of the values in coll for
+  each p in p-list (where 0 < p <= 100), and returns a map of
+  p -> value"
+  [coll & p-list]
+  (let [sorted (sort coll)]
+    (into {} (map (fn [p] [p (percentile sorted p)]) p-list))))
+
+(defn load-test-handler
+  "TODO(DPO)"
+  [{:keys [headers]}]
+  (let [url (get headers "x-load-test-url")
+        path (get headers "x-load-test-path" "/status")
+        concurrency-level (Integer/parseInt (get headers "x-load-test-concurrency" "1"))
+        total-requests (Integer/parseInt (get headers "x-load-test-total-requests" "1"))
+        verbose (Boolean/parseBoolean (get headers "x-load-test-verbose" "false"))
+        use-spnego (Boolean/parseBoolean (get headers "x-load-test-use-spnego" "false"))]
+    (if url
+      (let [responses (make-parallel-requests url path concurrency-level total-requests
+                                              :verbose verbose
+                                              :use-spnego use-spnego)
+            total-requests-made (count responses)
+            non-2xx-responses (count (filter #(or (< (:status %) 200) (>= (:status %) 300)) responses))
+            latencies (map :elapsed-nanos responses)
+            latency-percentiles (percentiles latencies 50 75 95 99 100)
+            latency-average (/ (reduce + latencies) total-requests-made)]
+        {:status (if (>= total-requests-made total-requests) 200 500)
+         :body (json/write-str {:latency-average-nanos latency-average
+                                :latency-percentiles-nanos latency-percentiles
+                                :non-2xx-responses non-2xx-responses
+                                :total-requests-made total-requests-made})})
+      {:status 400
+       :body "Missing header x-load-test-url"})))
+
 (defn http-handler
   [{:keys [uri] :as request}]
   (try
@@ -417,6 +564,7 @@
                      "/environment" (environment-handler request)
                      "/gzip" (gzip-handler request)
                      "/kitchen-state" (state-handler request)
+                     "/load-test" (load-test-handler request)
                      "/pi" (pi-handler request)
                      "/request-info" (request-info-handler request)
                      "/sleep" (sleep-handler request)
