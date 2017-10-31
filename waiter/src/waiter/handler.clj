@@ -535,11 +535,11 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
-(defn get-last-request-times-state
-  "Outputs the last-request-time state."
-  [router-id last-request-time-agent _]
+(defn get-local-metrics-state
+  "Outputs the local metrics agent state."
+  [router-id local-metrics-agent _]
   (-> {:router-id router-id
-       :state @last-request-time-agent}
+       :state @local-metrics-agent}
       (utils/map->streaming-json-response)))
 
 (defn get-leader-state
@@ -597,7 +597,7 @@
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."
-  [router-id instance-rpc-chan last-request-times-agent service-id query-chans request]
+  [router-id instance-rpc-chan local-metrics-agent service-id query-chans request]
   (async/go
     (try
       (if (str/blank? service-id)
@@ -609,17 +609,12 @@
               _ (log/info "waiting for response from query-work-stealing channel...")
               work-stealing-state-chan
               (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-work-stealing)
-              last-request-time-state (let [{:keys [last-published service-id->last-request-time]
-                                             :or {last-published {}
-                                                  service-id->last-request-time {}}}
-                                            @last-request-times-agent]
-                                        {:last-published-time (:time last-published)
-                                         :last-request-time (service-id->last-request-time service-id)})
+              local-metrics-state (get @local-metrics-agent service-id)
               [query-chans initial-result]
               (loop [[[entry-key entry-value] & remaining] [[:responder-state responder-state-chan]
                                                             [:work-stealing-state work-stealing-state-chan]]
                      query-chans query-chans
-                     initial-result {:last-request-times-agent last-request-time-state}]
+                     initial-result {:local-metrics local-metrics-state}]
                 (if entry-key
                   (if (map? entry-value)
                     (recur remaining query-chans (assoc initial-result entry-key entry-value))

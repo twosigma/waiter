@@ -871,3 +871,8 @@
   "Gets the service-id from a response."
   [{:keys [headers]}]
   (get headers "x-waiter-service-id"))
+
+(defn service-id->last-request-time
+  [waiter-url service-id]
+  (-> (service waiter-url service-id {})
+      (get "last-request-time" 0)))

@@ -20,6 +20,7 @@
             [plumbing.core :as pc]
             [waiter.async-utils :as au]
             [waiter.authorization :as authz]
+            [waiter.core :as core]
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
@@ -480,9 +481,11 @@
         (let [request {:authorization/user test-user}
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
+              list-services-handler (core/wrap-error-handling
+                                      #(list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                                              service-id->service-description-fn service-id->metrics-fn %))
               {:keys [body headers status]}
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
+              (list-services-handler request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "content-type")))
           (is (str/includes? (str body) exception-message))))
@@ -706,9 +709,9 @@
         (is (= 500 status))
         (is (str/includes? body "Waiter Error 500"))))))
 
-(deftest test-get-last-request-times-state
+(deftest test-get-local-metrics-state
   (let [router-id "test-router-id"
-        test-fn (wrap-handler-json-response get-last-request-times-state)]
+        test-fn (wrap-handler-json-response get-local-metrics-state)]
     (testing "successful response"
       (let [last-request-time-state {"foo" 1234, "bar" 7890}
             last-request-time-agent (agent last-request-time-state)
@@ -717,7 +720,8 @@
         (is (= (-> body json/read-str) {"router-id" router-id, "state" last-request-time-state}))))
 
     (testing "exception response"
-      (let [{:keys [body status]} (test-fn router-id nil {})]
+      (let [handler (core/wrap-error-handling #(test-fn router-id nil %))
+            {:keys [body status]} (handler {})]
         (is (= 500 status))
         (is (str/includes? body "Waiter Error 500"))))))
 
@@ -790,10 +794,9 @@
 (deftest test-get-service-state
   (let [router-id "router-id"
         service-id "service-1"
-        last-request-times-agent (agent {:last-published {:time "foo"}
-                                         :service-id->last-request-time {service-id "bar"}})]
+        local-metrics-agent (agent {service-id {"last-request-time" "foo"}})]
     (testing "returns 400 for missing service id"
-      (is (= 400 (:status (async/<!! (get-service-state router-id nil last-request-times-agent "" {} {}))))))
+      (is (= 400 (:status (async/<!! (get-service-state router-id nil local-metrics-agent "" {} {}))))))
     (let [instance-rpc-chan (async/chan 1)
           query-state-chan (async/chan 1)
           query-work-stealing-chan (async/chan 1)
@@ -822,13 +825,13 @@
       (start-instance-rpc-fn)
       (start-query-chan-fn)
       (start-maintainer-fn)
-      (let [response (async/<!! (get-service-state router-id instance-rpc-chan last-request-times-agent
+      (let [response (async/<!! (get-service-state router-id instance-rpc-chan local-metrics-agent
                                                    service-id {:maintainer-state maintainer-state-chan} {}))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))
-        (is (= {:last-published-time "foo", :last-request-time "bar"}
-               (get-in service-state [:state :last-request-times-agent])))
+        (is (= {:last-request-time "foo"}
+               (get-in service-state [:state :local-metrics])))
         (is (= work-stealing-state (get-in service-state [:state :work-stealing-state])))
         (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))))))
 

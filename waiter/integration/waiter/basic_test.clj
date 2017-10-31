@@ -193,38 +193,28 @@
 (deftest ^:parallel ^:integration-fast test-last-request-time
   (testing-using-waiter-url
     (let [waiter-settings (waiter-settings waiter-url)
-          last-request-times-publish-interval-ms (get-in waiter-settings [:last-request-times-publish-interval-ms])
           metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])
-          last-request-publish-wait-time-ms (+ last-request-times-publish-interval-ms metrics-sync-interval-ms)
-          num-iteration-requests 20
           service-name (rand-name)
-          headers {:x-kitchen-delay-ms 1000
+          headers {:x-kitchen-delay-ms (* 4 metrics-sync-interval-ms)
                    :x-waiter-name service-name
-                   :x-waiter-cmd (kitchen-cmd "-p $PORT0")
-                   :x-waiter-concurrency-level num-iteration-requests}
-          {:keys [request-headers service-id] :as first-response}
-          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :http-method-fn http/get))]
+                   :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
+          {:keys [headers request-headers service-id] :as first-response}
+          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
+          canary-request-time-from-header (-> (get headers "x-waiter-request-timestamp" "0")
+                                               Long/parseLong)]
       (with-service-cleanup
         service-id
         (assert-response-status first-response 200)
-        (dotimes [_ num-iteration-requests]
-          (-> (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
-              (assert-response-status 200)))
-        (Thread/sleep last-request-publish-wait-time-ms)
-        (let [current-last-request-time (-> (service-settings waiter-url service-id)
-                                            (get-in [:metrics :aggregate :counters :last-request-time]))]
-          (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
-          ;; allow some time to elapse to allow inter-router metrics syncing
-          (Thread/sleep last-request-publish-wait-time-ms)
-          (let [service (service waiter-url service-id {})
-                service-metrics (-> (service-settings waiter-url service-id)
-                                    (get-in [:metrics :aggregate]))]
-            (is service)
-            (is (< current-last-request-time (get service "last-request-time"))
-                (str {:current-last-request-time current-last-request-time, :service service}))
-            (is (= (get service "last-request-time")
-                   (get-in service-metrics [:counters :last-request-time]))
-                (str {:service service, :service-metrics service-metrics}))))))))
+        (is (pos? metrics-sync-interval-ms))
+        (let [service-last-request-time (service-id->last-request-time waiter-url service-id)]
+          (is (pos? canary-request-time-from-header))
+          (is (pos? service-last-request-time))
+          (is (= canary-request-time-from-header service-last-request-time)))
+        (Thread/sleep 100)
+        (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
+        (let [service-last-request-time (service-id->last-request-time waiter-url service-id)]
+          (is (pos? service-last-request-time))
+          (is (< canary-request-time-from-header service-last-request-time)))))))
 
 (deftest ^:parallel ^:integration-fast test-list-apps
   (testing-using-waiter-url

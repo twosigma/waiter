@@ -39,7 +39,8 @@
   (:import (java.io InputStream IOException)
            java.util.concurrent.TimeoutException
            org.eclipse.jetty.io.EofException
-           (org.eclipse.jetty.server HttpChannel HttpOutput)))
+           (org.eclipse.jetty.server HttpChannel HttpOutput)
+           (org.joda.time DateTime)))
 
 (defn check-control [control-chan]
   (let [state (au/poll! control-chan :still-running)]
@@ -473,7 +474,7 @@
     "Process the incoming request and stream back the response."
     [router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
      instance-request-properties handlers prepend-waiter-url determine-priority-fn process-backend-response-fn
-     process-exception-fn request-abort-callback-factory last-request-time-agent
+     process-exception-fn request-abort-callback-factory local-metrics-agent
      {:keys [ctrl] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
@@ -497,8 +498,9 @@
             (confirm-live-connection-without-abort)
             (let [{:keys [service-id service-description] :as descriptor} (request->descriptor-fn request)
                   {:strs [metric-group]} service-description
-                  request-time (t/now)]
-              (send last-request-time-agent metrics/update-last-request-time service-id request-time)
+                  ^DateTime request-time (t/now)]
+              (add-debug-header-into-response! "x-waiter-request-timestamp" (.getMillis request-time))
+              (send local-metrics-agent metrics/update-last-request-time service-id request-time)
               (loop [[handler & remaining-handlers] handlers]
                 (if handler
                   (let [response (handler request descriptor)]

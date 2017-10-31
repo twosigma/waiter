@@ -301,7 +301,7 @@
 (defn setup-metrics-syncer
   "Launches a go-block that trigger publishing of metrics with peer routers.
    `metrics-sync-interval-ms` is used to throttle the rate of sending metrics."
-  [router-metrics-agent metrics-sync-interval-ms encrypt]
+  [router-metrics-agent local-metrics-agent metrics-sync-interval-ms encrypt]
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 1)]
     (async/go-loop [iteration 0
@@ -318,7 +318,7 @@
               (str "setup-metrics-syncer-" iteration)
               (try
                 (let [service->metrics (utils/filterm (fn [[_ metrics]] (some pos? (vals metrics)))
-                                                      (metrics/get-core-metrics))]
+                                                      (metrics/get-core-metrics local-metrics-agent))]
                   (send router-metrics-agent publish-router-metrics encrypt service->metrics "core"))
                 (catch Exception e
                   (log/error e "error in making broadcast router metrics request" {:iteration iteration}))))
@@ -362,7 +362,7 @@
                                  (try
                                    (->> router->metrics
                                         (utils/filterm val)
-                                        (metrics/aggregate-router-data))
+                                        metrics/aggregate-router-data)
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
            (filter second)

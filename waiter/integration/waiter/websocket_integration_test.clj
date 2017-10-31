@@ -16,6 +16,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [qbits.jet.client.http :as http]
             [qbits.jet.client.websocket :as ws-client]
             [waiter.client-tools :refer :all]
             [waiter.utils :as utils]
@@ -91,61 +92,53 @@
 (deftest ^:parallel ^:integration-fast test-last-request-time
   (testing-using-waiter-url
     (let [waiter-settings (waiter-settings waiter-url)
-          last-request-times-publish-interval-ms (get-in waiter-settings [:last-request-times-publish-interval-ms])
           metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])
-          last-request-publish-wait-time-ms (+ last-request-times-publish-interval-ms metrics-sync-interval-ms)
+          inter-request-interval-ms (+ metrics-sync-interval-ms 1000)
           auth-cookie-value (auth-cookie waiter-url)
           waiter-headers (assoc (kitchen-request-headers)
-                           "x-waiter-metric-group" "test-ws-support"
-                           "x-waiter-name" (rand-name))
-          service-id (retrieve-service-id waiter-url waiter-headers)
-          retrieve-last-request-time (fn []
-                                       (-> (service-settings waiter-url service-id)
-                                           (get-in [:metrics :aggregate :counters :last-request-time])))
-          last-time-trigger-chan (async/chan)
-          last-request-times-atom (atom [])
+                           :x-waiter-metric-group "test-ws-support"
+                           :x-waiter-name (rand-name))
+          _ (make-kitchen-request waiter-url waiter-headers :http-method-fn http/get)
+          {:keys [headers service-id] :as canary-response}
+          (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
+          first-request-time-header (-> (get headers "x-waiter-request-timestamp" "0")
+                                        Long/parseLong)
           num-iterations 10]
+      (is (pos? metrics-sync-interval-ms))
       (with-service-cleanup
         service-id
         (is auth-cookie-value)
-        (let [response-promise (promise)]
+        (assert-response-status canary-response 200)
+        (is (pos? first-request-time-header))
+        (let [response-promise (promise)
+              connect-start-time-ms (System/currentTimeMillis)
+              connect-end-time-ms-atom (atom connect-start-time-ms)]
           (ws-client/connect!
             (websocket-client-factory)
             (ws-url waiter-url "/websocket-auth")
             (fn [{:keys [in out]}]
               (async/go
                 (log/info "websocket request connected")
-                (async/<! (async/timeout last-request-publish-wait-time-ms))
-                (async/>! last-time-trigger-chan :trigger)
+                (async/<! in)
+                (reset! connect-end-time-ms-atom (System/currentTimeMillis))
                 (dotimes [n num-iterations]
+                  (async/<! (async/timeout inter-request-interval-ms))
                   (async/>! out (str "hello-" n))
-                  (when (zero? n)
-                    (log/info "awaiting initial response")
-                    (async/<! in))
-                  (log/info "awaiting response for" (str "hello-" n))
-                  (async/<! in)
-                  (async/<! (async/timeout last-request-publish-wait-time-ms))
-                  (async/>! last-time-trigger-chan :trigger))
+                  (async/<! in))
                 (log/info "closing channels")
                 (async/close! out)
-                (async/close! last-time-trigger-chan)))
+                (deliver response-promise :done)))
             {:middleware (fn [_ ^UpgradeRequest request]
                            (websocket/add-headers-to-upgrade-request! request waiter-headers)
                            (add-auth-cookie request auth-cookie-value))})
-          (async/go-loop []
-            (if (async/<! last-time-trigger-chan)
-              (do
-                (log/info "retrieving last request time")
-                (swap! last-request-times-atom conj (retrieve-last-request-time))
-                (recur))
-              (do
-                (log/info "done retrieving last request times")
-                (deliver response-promise :done))))
           (is (= :done (deref response-promise (-> 2 t/minutes t/in-millis) :timed-out)))
-          (is (= (inc num-iterations) (count @last-request-times-atom)))
-          (let [last-request-times-diff (map - (rest @last-request-times-atom) @last-request-times-atom)]
-            (is (every? #(>= % last-request-times-publish-interval-ms) last-request-times-diff)
-                (str {:data @last-request-times-atom :diffs last-request-times-diff}))))))))
+          (Thread/sleep (* 3 metrics-sync-interval-ms))
+          (let [connection-duration-ms (- @connect-end-time-ms-atom connect-start-time-ms)
+                websocket-duration-ms (* num-iterations inter-request-interval-ms)
+                minimum-last-request-time-ms (+ first-request-time-header connection-duration-ms websocket-duration-ms)
+                service-last-request-time (service-id->last-request-time waiter-url service-id)]
+            (is (pos? service-last-request-time))
+            (is (<= minimum-last-request-time-ms service-last-request-time))))))))
 
 (deftest ^:parallel ^:integration-fast test-request-socket-timeout
   (testing-using-waiter-url

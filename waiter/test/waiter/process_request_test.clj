@@ -559,7 +559,7 @@
 
 (deftest test-redirect-on-process-error
   (let [ctrl-chan (async/promise-chan)
-        last-request-time-agent (agent {})
+        local-metrics-agent (agent {})
         prepend-waiter-url (fn [x] (str "http://www.waiter.com:7890" x))
         request->descriptor-fn (fn [_]
                                  (throw
@@ -571,7 +571,7 @@
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory
-                                   last-request-time-agent request)
+                                   local-metrics-agent request)
             {:keys [headers status]} (async/<!! response-chan)]
         (is (= 303 status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
@@ -580,7 +580,7 @@
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory
-                                   last-request-time-agent request)
+                                   local-metrics-agent request)
             {:keys [headers status]} (async/<!! response-chan)]
         (is (= 303 status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
@@ -589,20 +589,20 @@
       (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :uri "/path"}
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory
-                                   last-request-time-agent request)
+                                   local-metrics-agent request)
             {:keys [headers status]} (async/<!! response-chan)]
         (is (= 303 status))
         (is (= "/waiter-consent/path" (get headers "location")))))))
 
 (deftest test-no-redirect-on-process-error
   (let [ctrl-chan (async/promise-chan)
-        last-request-time-agent (agent {})
+        local-metrics-agent (agent {})
         request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
         request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
         request-abort-callback-factory (fn [_] (constantly nil))
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-in-http-request request-abort-callback-factory
-                               last-request-time-agent request)
+                               local-metrics-agent request)
         {:keys [body headers status]} (async/<!! response-chan)]
     (is (= 500 status))
     (is (nil? (get headers "location")))
@@ -611,13 +611,13 @@
 
 (deftest test-message-reaches-user-on-process-error
   (let [ctrl-chan (async/promise-chan)
-        last-request-time-agent (agent {})
+        local-metrics-agent (agent {})
         request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status 404})))
         request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
         request-abort-callback-factory (fn [_] (constantly nil))
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-in-http-request request-abort-callback-factory
-                               last-request-time-agent request)
+                               local-metrics-agent request)
         {:keys [body headers status]} (async/<!! response-chan)]
     (is (= 404 status))
     (is (= "text/plain" (get headers "content-type")))

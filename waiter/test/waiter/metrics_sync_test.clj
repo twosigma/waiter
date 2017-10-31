@@ -411,10 +411,10 @@
 (deftest test-setup-metrics-syncer
   (let [counter (atom 0)
         response-chan-atom (atom nil)]
-    (with-redefs [metrics/get-core-metrics (fn [] {"s1" {"slots-assigned" 1
-                                                         "outstanding" 1
-                                                         :response-chan @response-chan-atom
-                                                         :version @counter}})
+    (with-redefs [metrics/get-core-metrics (fn [_] {"s1" {"slots-assigned" 1
+                                                          "outstanding" 1
+                                                          :response-chan @response-chan-atom
+                                                          :version @counter}})
                   publish-router-metrics (fn [agent-state _ router-metrics _]
                                            (let [response-chan (get-in router-metrics ["s1" :response-chan])]
                                              (when response-chan
@@ -425,7 +425,9 @@
       (testing "setup-metrics-syncer"
         (let [router-metrics-agent (agent {:router-id "router-0", :version 1})
               encrypt identity
-              {:keys [exit-chan]} (setup-metrics-syncer router-metrics-agent 10 encrypt)]
+              local-metrics-agent (agent {"s1" {"last-request-time" 1000}
+                                          "s2" {"last-request-time" 2000}})
+              {:keys [exit-chan]} (setup-metrics-syncer router-metrics-agent local-metrics-agent 10 encrypt)]
           (let [response-chan (async/promise-chan)]
             (reset! response-chan-atom response-chan)
             (swap! counter inc)

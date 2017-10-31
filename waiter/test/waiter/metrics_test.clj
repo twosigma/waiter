@@ -18,13 +18,13 @@
             [metrics.histograms :as histograms]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
+            [plumbing.core :as pc]
             [waiter.async-utils :as au]
             [waiter.core :as core]
             [waiter.metrics :refer :all]
             [waiter.test-helpers :as test-helpers]
             [waiter.utils :as utils])
   (:import (com.codahale.metrics MetricFilter)
-           (java.util.concurrent CountDownLatch)
            (org.joda.time DateTime)))
 
 (deftest test-compress-strings
@@ -389,6 +389,8 @@
         service-id->metrics-chan-counter (atom 0)
         test-start-time (t/now)
         clock (fn [] (t/plus test-start-time (t/minutes @service-id->metrics-chan-counter)))
+        local-metrics-fn (fn [service-id] {"name" service-id})
+        local-metrics-agent (agent (pc/map-from-keys local-metrics-fn @available-services-atom))
         service-gc-go-routine (partial core/service-gc-go-routine read-state-fn write-state-fn leader? clock)]
     (with-redefs [remove-metrics-except-outstanding (fn [_ service-id]
                                                       (swap! deleted-services-atom conj service-id)
@@ -400,7 +402,7 @@
           (let [transient-metrics-timeout-ms 10
                 metrics-gc-interval-ms 1
                 scheduler-state-chan (async/chan)
-                result-chans (transient-metrics-gc scheduler-state-chan service-gc-go-routine
+                result-chans (transient-metrics-gc scheduler-state-chan local-metrics-agent service-gc-go-routine
                                                    {:transient-metrics-timeout-ms transient-metrics-timeout-ms
                                                     :metrics-gc-interval-ms metrics-gc-interval-ms})
                 service-id->metrics-chan (:service-id->metrics-chan result-chans)]
@@ -434,6 +436,9 @@
               (is (every? #(contains? @deleted-services-atom %) expected-deleted-services)
                   (str "Expected delete to include: " expected-deleted-services ", actual: " @deleted-services-atom)))
             (reset! exit-flag-atom true)
+            (await local-metrics-agent)
+            (is (= (pc/map-from-keys local-metrics-fn ["service-keep-2" "service-keep-3" "service-remove2-5-will-be-alive"])
+                   @local-metrics-agent))
             (async/>!! (:exit result-chans) :exit)))))))
 
 (deftest test-with-timer!
@@ -450,102 +455,50 @@
           (is (< 95000000 (first nanos)))
           (is (= (first nanos) @elapsed-nanos)))))))
 
+(deftest test-get-core-metrics
+  (let [local-metrics-agent (agent {"s1" {"last-request-time" 1000}
+                                    "s2" {"last-request-time" 2000}
+                                    "s3" {"last-request-time" 3000}})]
+
+    (.removeMatching mc/default-registry MetricFilter/ALL)
+    (counters/inc! (service-counter "s1" "request-counts" "outstanding") 100)
+    (counters/inc! (service-counter "s1" "request-counts" "total") 200)
+    (counters/inc! (service-counter "s1" "work-stealing" "received-from" "in-flight") 2)
+    (counters/inc! (service-counter "s2" "instance-counts" "slots-available") 10)
+    (counters/inc! (service-counter "s2" "instance-counts" "slots-in-use") 5)
+    (counters/inc! (service-counter "s2" "request-counts" "outstanding") 150)
+    (counters/inc! (service-counter "s2" "request-counts" "total") 250)
+
+    (is (= {"s1" {"last-request-time" 1000, "outstanding" 100, "slots-received" 2, "total" 200},
+            "s2" {"last-request-time" 2000, "outstanding" 150, "slots-available" 10, "slots-in-use" 5, "total" 250}}
+           (get-core-metrics local-metrics-agent)))))
+
 (deftest test-update-last-request-time
   (let [time-1 (DateTime. 1000)
         time-2 (DateTime. 2000)
         time-3 (DateTime. 3000)
         time-4 (DateTime. 2500)]
-    (is (= {:pending {:service-id->last-request-time {"foo" time-2}}}
+    (is (= {"foo" {"last-request-time" (.getMillis time-2)}}
            (update-last-request-time {} "foo" time-2)))
-    (is (= {:pending {:service-id->last-request-time {"foo" time-2, "bar" time-4}}}
+    (is (= {"bar" {"last-request-time" (.getMillis time-4)}, "foo" {"last-request-time" (.getMillis time-2)}}
            (update-last-request-time
-             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-4}}}
+             {"bar" {"last-request-time" (.getMillis time-4)}, "foo" {"last-request-time" (.getMillis time-1)}}
              "foo" time-2)))
-    (is (= {:pending {:service-id->last-request-time {"foo" time-2, "bar" time-4}}}
+    (is (= {"bar" {"last-request-time" (.getMillis time-2)}, "foo" {"last-request-time" (.getMillis time-3)}}
            (update-last-request-time
-             {:pending {:service-id->last-request-time {"foo" time-2, "bar" time-4}}}
+             {"bar" {"last-request-time" (.getMillis time-2)}, "foo" {"last-request-time" (.getMillis time-3)}}
              "foo" time-2)))
-    (is (= {:pending {:service-id->last-request-time {"foo" time-3, "bar" time-4}}}
+    (is (= {"bar" {"last-request-time" (.getMillis time-2)}, "foo" {"last-request-time" (.getMillis time-4)}}
            (update-last-request-time
-             {:pending {:service-id->last-request-time {"foo" time-3, "bar" time-4}}}
+             {"bar" {"last-request-time" (.getMillis time-2)}, "foo" {"last-request-time" (.getMillis time-4)}}
              "foo" time-2)))))
 
-(deftest test-cleanup-last-request-times
-  (let [publish-time (t/now)
-        time-0 (DateTime. 0)
-        time-1 (DateTime. 1)
-        time-2 (DateTime. 2)
-        time-3 (DateTime. 3)
-        time-4 (DateTime. 4)]
-    (is (= {:last-published {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}
-                             :time publish-time}
-            :pending {:service-id->last-request-time {}}}
-           (cleanup-last-request-times
-             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
-             "cid" publish-time {"foo" time-1, "bar" time-2, "baz" time-3})))
-    (is (= {:last-published {:service-id->last-request-time {"foo" time-1, "bar" time-1, "baz" time-4}
-                             :time publish-time}
-            :pending {:service-id->last-request-time {"bar" time-2}}}
-           (cleanup-last-request-times
-             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
-             "cid" publish-time {"foo" time-1, "bar" time-1, "baz" time-4})))
-    (is (= {:last-published {:service-id->last-request-time {"fee" time-1, "fie" time-2, "foe" time-3, "fum" time-4}
-                             :time publish-time}
-            :pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
-           (cleanup-last-request-times
-             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
-             "cid" publish-time {"fee" time-1, "fie" time-2, "foe" time-3, "fum" time-4})))
-    (is (= {:last-published {:service-id->last-request-time
-                             {"fee" time-1, "fie" time-2, "foe" time-3, "fum" time-4, "foo" time-0, "bar" time-2}
-                             :time publish-time}
-            :pending {:service-id->last-request-time {"foo" time-1, "baz" time-3}}}
-           (cleanup-last-request-times
-             {:pending {:service-id->last-request-time {"foo" time-1, "bar" time-2, "baz" time-3}}}
-             "cid" publish-time
-             {"fee" time-1, "fie" time-2, "foe" time-3, "fum" time-4, "foo" time-0, "bar" time-2})))))
-
-(deftest test-publish-last-request-times!
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))
-        time-1 (DateTime. 1)
-        time-2 (DateTime. 2)
-        time-3 (DateTime. 3)
-        time-4 (DateTime. 4)
-        last-request-times-agent (agent {:pending {:service-id->last-request-time {"service-1" time-1, "service-2" time-1}}})
-        publish-complete-latch (CountDownLatch. 1)
-        publish-time-1 (t/minus (t/now) (t/minutes 2))
-        publish-time-2 (t/plus time-1 (t/minutes 2))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
-
-    (publish-last-request-times! last-request-times-agent publish-time-1)
-    (is (= 1 (counters/value (service-counter "service-1" "last-request-time"))))
-    (is (= 1 (counters/value (service-counter "service-2" "last-request-time"))))
-
-    (send last-request-times-agent
-          update-in [:pending :service-id->last-request-time]
-          assoc "service-2" time-2 "service-3" time-3)
-    (await last-request-times-agent)
-    (is (= {:last-published {:service-id->last-request-time {"service-1" time-1, "service-2" time-1}
-                             :time publish-time-1}
-            :pending {:service-id->last-request-time {"service-2" time-2 "service-3" time-3}}}
-           @last-request-times-agent))
-
-    (send last-request-times-agent
-          (fn [agent-state]
-            ;; ensure assoc happens after publish
-            (.await publish-complete-latch)
-            (update-in agent-state [:pending :service-id->last-request-time]
-                       assoc "service-2" time-1 "service-3" time-4)))
-
-    (publish-last-request-times! last-request-times-agent publish-time-2)
-    (is (= 1 (counters/value (service-counter "service-1" "last-request-time"))))
-    (is (= 2 (counters/value (service-counter "service-2" "last-request-time"))))
-    (is (= 3 (counters/value (service-counter "service-3" "last-request-time"))))
-
-    (.countDown publish-complete-latch)
-    (await last-request-times-agent)
-
-    (is (= {:last-published {:service-id->last-request-time {"service-2" time-2, "service-3" time-3}
-                             :time publish-time-2}
-            :pending {:service-id->last-request-time {"service-3" time-4}}}
-           @last-request-times-agent)
-        "Agent not gc-ed")))
+(deftest test-cleanup-local-metrics
+  (let [time-2 2000
+        time-4 4000]
+    (is (= {"bar" {"last-request-time" time-4}}
+           (cleanup-local-metrics
+             {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}} "cid" "foo")))
+    (is (= {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}}
+           (cleanup-local-metrics
+             {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}} "cid" "baz")))))

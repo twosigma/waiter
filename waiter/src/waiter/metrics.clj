@@ -152,13 +152,14 @@
 
 (defn get-core-metrics
   "Retrieves the core set of metrics used by the routers to make decisions based on aggregate metrics.
-   The returned data has the format service-id->core-metrics-map
+   The returned data has the format service-id->core-metrics-map.
    The core-metrics-map is a flat map that has the following string keys:
-     slots-received (via work-stealing), slots-assigned, slots-available, slots-in-use, outstanding and total.
-   The numeric values in each entry of the map come from corresponding codahale metrics."
-  []
+     last-request-time, slots-received (via work-stealing), slots-assigned, slots-available,
+     slots-in-use, outstanding and total.
+   The numeric values in each entry of the map, except last-request-time, come from corresponding codahale metrics."
+  [local-metrics-agent]
   (let [services-string "services"
-        included-counter-names ["in-flight" "last-request-time" "outstanding" "slots-available" "slots-in-use" "total"]
+        included-counter-names ["in-flight" "outstanding" "slots-available" "slots-in-use" "total"]
         metric-filter (reify MetricFilter
                         (matches [_ name _]
                           (-> (and (str/starts-with? name services-string)
@@ -166,22 +167,24 @@
                                    (some #(str/includes? name %) included-counter-names))
                               boolean)))
         service-id->metrics (-> (get-metrics mc/default-registry metric-filter)
-                                (get services-string))]
-    (pc/map-vals (fn [metrics]
-                   (let [assoc-if (fn [transient-map metrics-keys map-key]
-                                    (let [value (get-in metrics metrics-keys)]
-                                      (cond-> transient-map
-                                              value (assoc! map-key value))))
-                         transient-map (transient {})]
-                     (-> transient-map
-                         (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")
-                         (assoc-if ["counters" "instance-counts" "slots-in-use"] "slots-in-use")
-                         (assoc-if ["counters" "last-request-time"] "last-request-time")
-                         (assoc-if ["counters" "request-counts" "outstanding"] "outstanding")
-                         (assoc-if ["counters" "request-counts" "total"] "total")
-                         (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
-                         (persistent!))))
-                 service-id->metrics)))
+                                (get services-string))
+        service-id->local-metrics @local-metrics-agent]
+    (pc/map-from-keys (fn [service-id]
+                        (let [metrics (service-id->metrics service-id)
+                              assoc-if (fn [transient-map metrics-keys map-key]
+                                         (let [value (get-in metrics metrics-keys)]
+                                           (cond-> transient-map
+                                                   value (assoc! map-key value))))
+                              local-metrics (service-id->local-metrics service-id {})
+                              transient-map (transient local-metrics)]
+                          (-> transient-map
+                              (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")
+                              (assoc-if ["counters" "instance-counts" "slots-in-use"] "slots-in-use")
+                              (assoc-if ["counters" "request-counts" "outstanding"] "outstanding")
+                              (assoc-if ["counters" "request-counts" "total"] "total")
+                              (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
+                              (persistent!))))
+                      (keys service-id->metrics))))
 
 (defn- prefix-metrics-filter
   "Creates a MetricFilter that filters by the provided prefix"
@@ -217,15 +220,6 @@
    A data race is possible if two threads invoke this function concurrently."
   [the-counter new-value]
   (counters/inc! the-counter (- (or new-value 0) (counters/value the-counter))))
-
-(defn reset-counter-if
-  "Resets the value of the counter to the new-value when
-   `(predicate current-value new-value)` returns a truthy value.
-   A data race is possible if two threads invoke this function concurrently."
-  [the-counter predicate new-value]
-  (let [cur-value (counters/value the-counter)]
-    (when (predicate cur-value new-value)
-      (counters/inc! the-counter (- new-value cur-value)))))
 
 (defn retrieve-local-stats-for-service
   "Returns a map containing local metrics for the specified service along with the service-id."
@@ -404,12 +398,30 @@
           (recur))
         (log/info "[transient-metrics-gc] stopping populating service-id->state-chan")))))
 
+(defn update-last-request-time
+  "Updates the last-request-time epoch time in the service-id->local-metrics to the maximum
+   of the current last request time and the provided last-request-datetime in epoch millis
+   for the specified service."
+  [service-id->local-metrics service-id ^DateTime candidate-last-request-time]
+  (let [current-last-request-time (get-in service-id->local-metrics [service-id "last-request-time"])
+        candidate-last-request-time-ms (.getMillis candidate-last-request-time)]
+    (if (or (nil? current-last-request-time)
+            (< current-last-request-time candidate-last-request-time-ms))
+      (assoc-in service-id->local-metrics [service-id "last-request-time"] candidate-last-request-time-ms)
+      service-id->local-metrics)))
+
+(defn cleanup-local-metrics
+  "Removes the entry for service-id in service-id->local-metrics."
+  [service-id->local-metrics correlation-id service-id]
+  (cid/cinfo correlation-id "cleaning local metrics for" service-id)
+  (dissoc service-id->local-metrics service-id))
+
 (defn transient-metrics-gc
   "Launches go-blocks that keep running for the lifetime of the router watching for idle services (services that no
    longer exist in the scheduler, i.e. not alive?, and have not received any new requests) known to the router.
    When such an idle service is found (based on the timestamp it was last updated), the metrics (except the one for
    outstanding requests) are deleted locally."
-  [scheduler-state-chan service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
+  [scheduler-state-chan local-metrics-agent service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
   (let [sanitize-state-fn (fn sanitize-state [prev-service->state _] prev-service->state)
         service-id->state-fn (fn service->state [_ _ data] data)
         gc-service?-fn (fn [_ {:keys [state last-modified-time]} current-time]
@@ -421,6 +433,7 @@
                                       mod-threshold-time (t/plus last-modified-time threshold)]
                                   (t/after? current-time mod-threshold-time)))))
         perform-gc-fn (fn [service-id]
+                        (send local-metrics-agent cleanup-local-metrics (cid/get-correlation-id) service-id)
                         (remove-metrics-except-outstanding mc/default-registry service-id)
                         ; truthy value to represent successful delete
                         true)
@@ -459,72 +472,3 @@
    :stream-read-body (service-timer service-id "stream-read-body")
    :stream-request-rate (service-meter service-id "stream-request-rate")
    :throughput-meter (service-meter service-id "stream-throughput")})
-
-(defn update-last-request-time
-  "Updates the last-request-time epoch time in the service-id->last-request-time to the maximum
-   of the current last request time and the provided last-request-datetime in epoch millis."
-  [agent-state service-id ^DateTime candidate-last-request-time]
-  (let [current-last-request-time (get-in agent-state [:pending :service-id->last-request-time service-id])]
-    (if (or (nil? current-last-request-time)
-            (< (.getMillis current-last-request-time)
-               (.getMillis candidate-last-request-time)))
-      (update-in agent-state [:pending :service-id->last-request-time]
-                 assoc service-id candidate-last-request-time)
-      agent-state)))
-
-(defn cleanup-last-request-times
-  "Removes stale entries in service-id->last-request-time based on entries provided in
-   published-service-id->last-request-time. Services who have more recent last request
-   times than those have been published will not be gc-ed."
-  [agent-state correlation-id publish-time
-   published-service-id->last-request-time]
-  (cid/cdebug correlation-id "triggering gc of services")
-  (let [service-id->last-request-time (get-in agent-state [:pending :service-id->last-request-time])
-        service-id->last-request-time'
-        (reduce
-          (fn [acc-service-id->last-request-time [service-id candidate-last-request-time]]
-            (let [current-last-request-time (get acc-service-id->last-request-time service-id)]
-              (cond-> acc-service-id->last-request-time
-                      (and current-last-request-time
-                           (<= (.getMillis current-last-request-time)
-                               (.getMillis candidate-last-request-time)))
-                      (dissoc service-id))))
-          service-id->last-request-time
-          published-service-id->last-request-time)
-        num-items-cleaned (- (count service-id->last-request-time)
-                             (count service-id->last-request-time'))]
-    (when (pos? num-items-cleaned)
-      (cid/cinfo correlation-id "gc-ed" num-items-cleaned "services"))
-    (assoc agent-state
-      :last-published {:service-id->last-request-time published-service-id->last-request-time
-                       :time publish-time}
-      :pending {:service-id->last-request-time service-id->last-request-time'})))
-
-(defn publish-last-request-times!
-  "Publishes the current last request time values from the last-request-times-agent into the
-   local metrics. The metric value is updated only if the new last request time is older than
-   the existing value."
-  [last-request-times-agent current-time]
-  (let [service-id->last-request-time (get-in @last-request-times-agent [:pending :service-id->last-request-time])
-        correlation-id (str "last-request-times-" (.getMillis current-time))]
-    (try
-      (cid/cdebug correlation-id "updating last request times for"
-                  (count service-id->last-request-time) "services")
-      (doseq [[service-id last-request-time] service-id->last-request-time]
-        (-> (service-counter service-id "last-request-time")
-            (reset-counter-if < (.getMillis last-request-time))))
-      (cid/cdebug correlation-id "updated last request times for"
-                  (count service-id->last-request-time) "services")
-      (send last-request-times-agent cleanup-last-request-times correlation-id
-            current-time service-id->last-request-time)
-      (catch Exception ex
-        (cid/cerror correlation-id ex "error in publishing last request times")))))
-
-(defn start-last-request-times-publisher
-  "Runs publishing of last-request-times every publish-interval-ms milliseconds."
-  [last-request-times-agent publish-interval-ms]
-  (log/info "starting last-request-times publisher")
-  (utils/start-timer-task
-    (t/millis publish-interval-ms)
-    (fn last-request-times-publisher []
-      (publish-last-request-times! last-request-times-agent (t/now)))))

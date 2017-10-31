@@ -446,10 +446,6 @@
 
  ; ---------- Metrics - Internal ----------
 
- ;; Waiter periodically triggers publishing of last-request-time metric per service locally.
- ;; This value (milliseconds) is used to throttle the rate of publishing per service metric:
- :last-request-times-publish-interval-ms 1000
-
  :metrics-config {
                   ;; The idle timeout (milliseconds) on the web socket connections
                   ;; for sharing metrics between routers in the cluster:
