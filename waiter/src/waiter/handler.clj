@@ -223,47 +223,44 @@
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
   [entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn service-id->metrics-fn request]
-  (try
-    (let [timeout-ms 30000
-          current-state (async/alt!!
-                          state-chan ([state-data] state-data)
-                          (async/timeout timeout-ms) ([_] :timeout)
-                          :priority true)]
-      (if (= :timeout current-state)
-        (throw (ex-info "Query for service state timed out" {:status 503}))
-        (let [request-params (:params (ring-params/params-request request))
-              auth-user (get request :authorization/user)
-              run-as-user-param (get request-params "run-as-user")
-              viewable-services (filter
-                                  #(let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn % :effective? false)]
-                                     (and service-description
-                                          (if run-as-user-param
-                                            (= run-as-user run-as-user-param)
-                                            (authz/manage-service? entitlement-manager auth-user % service-description))))
-                                  (->> (concat (keys (:service-id->healthy-instances current-state))
-                                               (keys (:service-id->unhealthy-instances current-state)))
-                                       (apply sorted-set)))
-              retrieve-instance-counts (fn retrieve-instance-counts [service-id]
-                                         {:healthy-instances (count (get-in current-state [:service-id->healthy-instances service-id]))
-                                          :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
-              service-id->metrics (service-id->metrics-fn)
-              include-effective-parameters? (utils/request-flag request-params "effective-parameters")
-              response-data (map
-                             (fn service-id->service-info [service-id]
-                               (let [service-description (service-id->service-description-fn service-id :effective? false)]
-                                 (cond->
-                                     {:instance-counts (retrieve-instance-counts service-id)
-                                      :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
-                                      :service-id service-id
-                                      :service-description service-description
-                                      :url (prepend-waiter-url (str "/apps/" service-id))}
-                                   include-effective-parameters? (assoc :effective-parameters
-                                                                        (service-id->service-description-fn
+  (let [timeout-ms 30000
+        current-state (async/alt!!
+                        state-chan ([state-data] state-data)
+                        (async/timeout timeout-ms) ([_] :timeout)
+                        :priority true)]
+    (if (= :timeout current-state)
+      (throw (ex-info "Query for service state timed out" {:status 503}))
+      (let [request-params (:params (ring-params/params-request request))
+            auth-user (get request :authorization/user)
+            run-as-user-param (get request-params "run-as-user")
+            viewable-services (filter
+                                #(let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn % :effective? false)]
+                                   (and service-description
+                                        (if run-as-user-param
+                                          (= run-as-user run-as-user-param)
+                                          (authz/manage-service? entitlement-manager auth-user % service-description))))
+                                (->> (concat (keys (:service-id->healthy-instances current-state))
+                                             (keys (:service-id->unhealthy-instances current-state)))
+                                     (apply sorted-set)))
+            retrieve-instance-counts (fn retrieve-instance-counts [service-id]
+                                       {:healthy-instances (count (get-in current-state [:service-id->healthy-instances service-id]))
+                                        :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
+            service-id->metrics (service-id->metrics-fn)
+            include-effective-parameters? (utils/request-flag request-params "effective-parameters")
+            response-data (map
+                            (fn service-id->service-info [service-id]
+                              (let [service-description (service-id->service-description-fn service-id :effective? false)]
+                                (cond->
+                                  {:instance-counts (retrieve-instance-counts service-id)
+                                   :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
+                                   :service-id service-id
+                                   :service-description service-description
+                                   :url (prepend-waiter-url (str "/apps/" service-id))}
+                                  include-effective-parameters? (assoc :effective-parameters
+                                                                       (service-id->service-description-fn
                                                                          service-id :effective? true)))))
-                             viewable-services)]
-          (utils/map->streaming-json-response response-data))))
-    (catch Exception ex
-      (utils/exception->response ex request))))
+                            viewable-services)]
+        (utils/map->streaming-json-response response-data)))))
 
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
@@ -540,13 +537,10 @@
 
 (defn get-last-request-times-state
   "Outputs the last-request-time state."
-  [router-id last-request-time-agent request]
-  (try
-    (-> {:router-id router-id
-         :state @last-request-time-agent}
-        (utils/map->streaming-json-response))
-    (catch Exception ex
-      (utils/exception->response ex request))))
+  [router-id last-request-time-agent _]
+  (-> {:router-id router-id
+       :state @last-request-time-agent}
+      (utils/map->streaming-json-response)))
 
 (defn get-leader-state
   "Outputs the leader state."
