@@ -511,13 +511,14 @@
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request]
+  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn local-metrics-agent request]
   (async/go
     (try
       (let [timeout-ms 30000]
         (-> (async/<! (retrieve-maintainer-state state-chan timeout-ms))
             (assoc :kv-store (kv/state kv-store)
                    :leader (leader?-fn)
+                   :local-metrics @local-metrics-agent
                    :router-metrics-state (router-metrics-state-fn)
                    :scheduler (async/<! (retrieve-scheduler-state scheduler-chan timeout-ms))
                    :statsd (statsd/state))

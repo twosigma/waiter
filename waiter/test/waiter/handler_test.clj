@@ -648,13 +648,14 @@
       (is (= 500 status)))))
 
 (deftest test-get-router-state
-  (let [test-fn (fn [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request]
+  (let [test-fn (fn [state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-metrics-agent request]
                   (let [handler (wrap-async-handler-json-response get-router-state)]
-                    (-> (handler state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)
+                    (-> (handler state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-metrics-agent request)
                         async/<!!)))
         kv-store (kv/new-local-kv-store {})
         leader?-fn (constantly true)
-        router-metrics-state-fn (fn [] {})
+        local-metrics-agent (agent {})
+        router-metrics-fn (fn [] {})
         state-chan (au/latest-chan)
         scheduler-chan (au/latest-chan)
         test-complete (atom false)]
@@ -678,14 +679,16 @@
         (testing "should handle exceptions gracefully"
           (let [state-chan (async/chan)]
             (async/put! state-chan []) ; vector instead of a map to trigger an error
-            (let [request {}
-                  {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
+            (let [{:keys [status body]}
+                  (->> {}
+                       (test-fn state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-metrics-agent))]
               (is (str/includes? (str body) "Internal error"))
               (is (= 500 status)))))
 
         (testing "display router state"
-          (let [request {}
-                {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
+          (let [{:keys [status body]}
+                (->> {}
+                     (test-fn state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-metrics-agent))]
             (is (every? #(str/includes? (str body) %1) ["kv-store", "leader", "router-metrics-state", "scheduler", "state-data", "statsd"])
                 (str "Body did not include necessary JSON keys:\n" body))
             (is (= 200 status)))))

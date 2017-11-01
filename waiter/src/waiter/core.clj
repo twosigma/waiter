@@ -1147,6 +1147,7 @@
    :state-all-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
                                   [:daemons router-state-maintainer scheduler-maintainer]
                                   [:routines router-metrics-helpers]
+                                  [:state local-metrics-agent]
                                   handle-secure-request-fn]
                            (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
                                  scheduler-query-chan (:query-chan scheduler-maintainer)
@@ -1154,7 +1155,8 @@
                              (fn state-all-handler-fn [request]
                                (handle-secure-request-fn
                                  (fn inner-state-all-handler-fn [request]
-                                   (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn kv-store leader?-fn request))
+                                   (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn
+                                                             kv-store leader?-fn local-metrics-agent request))
                                  request))))
    :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
                                        [:state router-id]
