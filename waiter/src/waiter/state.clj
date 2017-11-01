@@ -1121,7 +1121,7 @@
                                        filter-fn (fn [[service-id _]] (contains? available-apps-set service-id))
                                        service-id->healthy-instances' (utils/filterm filter-fn service-id->healthy-instances)
                                        service-id->unhealthy-instances' (utils/filterm filter-fn service-id->unhealthy-instances)
-                                       services-without-instances (set/difference available-apps-set (set (keys service-id->my-instance->slots)))
+                                       services-without-instances (apply disj available-apps-set (keys service-id->my-instance->slots))
                                        service-id->expired-instances' (utils/filterm filter-fn service-id->expired-instances)
                                        service-id->starting-instances' (utils/filterm filter-fn service-id->starting-instances)
                                        service-id->failed-instances' (utils/filterm filter-fn service-id->failed-instances)
@@ -1163,8 +1163,8 @@
                                              (not= (get service-id->unhealthy-instances service-id) unhealthy-instances))
                                      (let [curr-instance-ids (set (map :id healthy-instances))
                                            prev-instance-ids (set (map :id (get service-id->healthy-instances service-id)))
-                                           new-instance-ids (vec (set/difference curr-instance-ids prev-instance-ids))
-                                           rem-instance-ids (vec (set/difference prev-instance-ids curr-instance-ids))
+                                           new-instance-ids (filterv (complement prev-instance-ids) curr-instance-ids)
+                                           rem-instance-ids (filterv (complement curr-instance-ids) prev-instance-ids)
                                            unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
                                        (log/info "update-healthy-instances:" service-id "has"
                                                  (count healthy-instances) "healthy instance(s) and"

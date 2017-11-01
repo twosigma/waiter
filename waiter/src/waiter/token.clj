@@ -268,9 +268,8 @@
       (throw (ex-info "Token must match pattern"
                       {:status 400 :token token :pattern (str valid-token-re)})))
     (validate-service-description-fn new-service-description-template)
-    (let [unknown-keys (set/difference (-> new-token-description keys set)
-                                       (set sd/token-description-keys)
-                                       #{"token"})]
+    (let [unknown-keys (apply disj (-> new-token-description keys set)
+                              "token" sd/token-description-keys)]
       (when (not-empty unknown-keys)
         (throw (ex-info (str "Unsupported key(s) in token: " (str (vec unknown-keys)))
                         {:status 400 :token token}))))
@@ -369,7 +368,7 @@
     (case request-method
       :get (let [request-params (:params (ring-params/params-request req))
                  owner (get request-params "owner")
-                 owners (if owner (set [owner]) (list-token-owners kv-store))]
+                 owners (if owner #{owner} (list-token-owners kv-store))]
              (->> owners
                   (map (fn [owner] (->> (list-tokens-for-owner kv-store owner)
                                         (map (fn [v] {:token v, :owner owner})))))

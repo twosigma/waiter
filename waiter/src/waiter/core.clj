@@ -337,7 +337,7 @@
                                                                (catch Exception e
                                                                  (log/error e (str "error in deleting: " service)))))
                                                            apps-to-gc)
-                            apps-failed-to-delete (set/difference (set apps-to-gc) (set apps-successfully-gced))
+                            apps-failed-to-delete (apply disj (set apps-to-gc) apps-successfully-gced)
                             service->state'' (apply dissoc service->state' apps-successfully-gced)]
                         (when (or (not= (set (keys service->state'')) (set (keys service->raw-data)))
                                   (not= (set (keys service->state'')) (set (keys service->state))))
@@ -408,7 +408,7 @@
   "Creates a function that determines for a given request whether or not
   the request is intended for Waiter itself or a service of Waiter."
   [valid-waiter-hostnames]
-  (let [valid-waiter-hostnames (set/union (set valid-waiter-hostnames) #{"localhost" "127.0.0.1"})]
+  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
         (or (#{"/app-name" "/service-id" "/token"} uri) ; special urls that are always for Waiter (FIXME)
@@ -737,8 +737,7 @@
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
                                waiter-router-ip (.getHostAddress local-router)
-                               ;; use (set [...]) instead of #{...} below as there may be duplicate values
-                               hostnames (set/union waiter-hostnames (set [waiter-router-hostname waiter-router-ip]))]
+                               hostnames (conj waiter-hostnames waiter-router-hostname waiter-router-ip)]
                            (waiter-request?-factory hostnames)))
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]

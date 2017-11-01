@@ -612,7 +612,8 @@
                                   (dissoc :run-as-user))
           waiter-port (.getPort (URL. (str "http://" waiter-url)))
           waiter-port (if (neg? waiter-port) 80 waiter-port)
-          host-header (str token ":" waiter-port)]
+          host-header (str token ":" waiter-port)
+          has-x-waiter-consent? (partial some #(= (:name %) "x-waiter-consent"))]
       (try
         (testing "token creation"
           (let [token-description (assoc service-description :token token)
@@ -657,7 +658,7 @@
                   (reset! cookies-atom cookies)
                   (is (= "Added cookie x-waiter-consent" body))
                   ; x-waiter-consent should be emitted Waiter
-                  (is (contains? (set (map :name cookies)) "x-waiter-consent"))
+                  (is (has-x-waiter-consent? cookies))
                   (assert-response-status response 200)))
 
               (testing "auto run-as-user population on expected service-id"
@@ -672,7 +673,7 @@
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
                       ; x-waiter-consent should not be re-emitted Waiter
-                      (is (not (contains? (set (map :name cookies)) "x-waiter-consent")))
+                      (is (not (has-x-waiter-consent? cookies)))
                       (is (= expected-service-id service-id))
                       (is (not (str/blank? permitted-user)))
                       (is (= run-as-user permitted-user))
@@ -707,7 +708,7 @@
                   (reset! cookies-atom cookies)
                   (is (= "Added cookie x-waiter-consent" body))
                   ; x-waiter-consent should be emitted Waiter
-                  (is (contains? (set (map :name cookies)) "x-waiter-consent"))
+                  (is (has-x-waiter-consent? cookies))
                   (assert-response-status response 200)))
 
               (testing "auto run-as-user population on approved token"
@@ -720,7 +721,7 @@
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
                       ; x-waiter-consent should not be re-emitted Waiter
-                      (is (not (contains? (set (map :name cookies)) "x-waiter-consent")))
+                      (is (not (has-x-waiter-consent? cookies)))
                       (is (not= previous-service-id service-id))
                       (assert-response-status response 200))
                     (finally

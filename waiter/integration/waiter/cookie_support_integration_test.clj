@@ -50,5 +50,5 @@
               {:keys [body]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/request-info"
                                                                                           :cookies cookies))
               {:strings [headers]} (json/read-str (str body))]
-          (is (not (contains? (set (keys headers)) "cookie")))
+          (is (not (contains? headers "cookie")))
           (delete-service waiter-url service-id))))))

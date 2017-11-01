@@ -241,10 +241,10 @@
           (is (= new-router-ids (keyset (get-in out-router-metrics-state [:metrics :routers]))))
           (is (= (set/intersection (keyset (:router-id->incoming-ws out-router-metrics-state)) new-router-ids)
                  (keyset (get-in out-router-metrics-state [:router-id->incoming-ws]))))
-          (is (= (set/difference new-router-ids #{my-router-id "router-1"})
+          (is (= (disj new-router-ids my-router-id "router-1")
                  (keyset (get-in out-router-metrics-state [:router-id->outgoing-ws]))))
           (let [old-outgoing-router-ids (keyset (get-in in-router-metrics-state [:router-id->outgoing-ws]))
-                new-outgoing-router-ids (set/difference new-router-ids (set/union old-outgoing-router-ids #{my-router-id}))]
+                new-outgoing-router-ids (set/difference new-router-ids old-outgoing-router-ids #{my-router-id})]
             (doseq [[router-id ws-request] (-> out-router-metrics-state :router-id->outgoing-ws seq)]
               (if (contains? new-outgoing-router-ids router-id)
                 (do
@@ -305,10 +305,10 @@
         (is (= new-router-ids (keyset (get-in out-router-metrics-state [:metrics :routers]))))
         (is (= (set/intersection (keyset (:router-id->incoming-ws out-router-metrics-state)) new-router-ids)
                (keyset (get-in out-router-metrics-state [:router-id->incoming-ws]))))
-        (is (= (set/difference new-router-ids #{my-router-id})
+        (is (= (disj new-router-ids my-router-id)
                (keyset (get-in out-router-metrics-state [:router-id->outgoing-ws]))))
         (let [old-outgoing-router-ids (keyset (get-in in-router-metrics-state [:router-id->outgoing-ws]))
-              new-outgoing-router-ids (set/difference new-router-ids (set/union old-outgoing-router-ids #{my-router-id}))]
+              new-outgoing-router-ids (set/difference new-router-ids old-outgoing-router-ids #{my-router-id})]
           (doseq [[router-id ws-request] (-> out-router-metrics-state :router-id->outgoing-ws seq)]
             (if (contains? new-outgoing-router-ids router-id)
               (do
