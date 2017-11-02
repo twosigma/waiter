@@ -115,7 +115,7 @@
 
 (defn date-to-str
   ([date-time]
-   (date-to-str date-time (f/formatter "yyyy-MM-dd HH:mm:ss.SSS")))
+   (date-to-str date-time (:date-time f/formatters)))
   ([date-time formatter]
    (f/unparse
      (f/with-zone formatter (t/default-time-zone))
