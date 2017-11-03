@@ -150,14 +150,13 @@
                     (.getTimers registry metric-filter)))
      #"\.")))
 
-(defn get-core-metrics
-  "Retrieves the core set of metrics used by the routers to make decisions based on aggregate metrics.
+(defn get-core-codahale-metrics
+  "Retrieves the core set of codahale metrics used by the routers to make decisions based on aggregate metrics.
    The returned data has the format service-id->core-metrics-map.
    The core-metrics-map is a flat map that has the following string keys:
-     last-request-time, slots-received (via work-stealing), slots-assigned, slots-available,
-     slots-in-use, outstanding and total.
+   slots-received (via work-stealing), slots-assigned, slots-available, slots-in-use, outstanding and total.
    The numeric values in each entry of the map, except last-request-time, come from corresponding codahale metrics."
-  [local-metrics-agent]
+  []
   (let [services-string "services"
         included-counter-names ["in-flight" "outstanding" "slots-available" "slots-in-use" "total"]
         metric-filter (reify MetricFilter
@@ -166,25 +165,22 @@
                                    (str/includes? name "counters")
                                    (some #(str/includes? name %) included-counter-names))
                               boolean)))
-        service-id->metrics (-> (get-metrics mc/default-registry metric-filter)
-                                (get services-string))
-        service-id->local-metrics @local-metrics-agent]
-    (pc/map-from-keys (fn [service-id]
-                        (let [metrics (service-id->metrics service-id)
-                              assoc-if (fn [transient-map metrics-keys map-key]
-                                         (let [value (get-in metrics metrics-keys)]
-                                           (cond-> transient-map
-                                                   value (assoc! map-key value))))
-                              local-metrics (service-id->local-metrics service-id {})
-                              transient-map (transient local-metrics)]
-                          (-> transient-map
-                              (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")
-                              (assoc-if ["counters" "instance-counts" "slots-in-use"] "slots-in-use")
-                              (assoc-if ["counters" "request-counts" "outstanding"] "outstanding")
-                              (assoc-if ["counters" "request-counts" "total"] "total")
-                              (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
-                              (persistent!))))
-                      (keys service-id->metrics))))
+        service-id->codahale-metrics (-> (get-metrics mc/default-registry metric-filter)
+                                         (get services-string))]
+    (pc/map-vals (fn [metrics]
+                   (let [assoc-if (fn [transient-map metrics-keys map-key]
+                                    (let [value (get-in metrics metrics-keys)]
+                                      (cond-> transient-map
+                                              value (assoc! map-key value))))
+                         transient-map (transient {})]
+                     (-> transient-map
+                         (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")
+                         (assoc-if ["counters" "instance-counts" "slots-in-use"] "slots-in-use")
+                         (assoc-if ["counters" "request-counts" "outstanding"] "outstanding")
+                         (assoc-if ["counters" "request-counts" "total"] "total")
+                         (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
+                         (persistent!))))
+                 service-id->codahale-metrics)))
 
 (defn- prefix-metrics-filter
   "Creates a MetricFilter that filters by the provided prefix"
@@ -295,8 +291,6 @@
                         (if (contains? accum-map entry-key)
                           (let [current-val (get accum-map entry-key)
                                 reduced-val (cond
-                                              ;; last-request-time metric
-                                              (str/includes? entry-key "last-request-time") (max current-val entry-val)
                                               ;; histograms and timers
                                               (is-quantile-metric? entry-val) (merge-quantile-metrics current-val entry-val)
                                               ;; meters
@@ -314,15 +308,15 @@
           merge-metric-maps-fn (fn [m1 m2] (reduce merge-entry (or m1 {}) (seq m2)))]
       (reduce merge-metric-maps-fn maps))))
 
-(defn aggregate-router-data
+(defn aggregate-router-codahale-metrics
   "Aggregates the metrics from the different routers."
-  [router->metrics]
+  [router->codahale-metrics]
   (assoc
     (apply merge-metrics
            (map #(-> (dissoc % "metrics-version")
                      (utils/dissoc-in ["counters" "instance-counts"]))
-                (vals router->metrics)))
-    :routers-sent-requests-to (count router->metrics)))
+                (vals router->codahale-metrics)))
+    :routers-sent-requests-to (count router->codahale-metrics)))
 
 (let [metric-filter-fn (fn [service-id]
                          (reify MetricFilter
@@ -403,11 +397,10 @@
    of the current last request time and the provided last-request-datetime in epoch millis
    for the specified service."
   [service-id->local-metrics service-id ^DateTime candidate-last-request-time]
-  (let [current-last-request-time (get-in service-id->local-metrics [service-id "last-request-time"])
-        candidate-last-request-time-ms (.getMillis candidate-last-request-time)]
+  (let [current-last-request-time (get-in service-id->local-metrics [service-id "last-request-time"])]
     (if (or (nil? current-last-request-time)
-            (< current-last-request-time candidate-last-request-time-ms))
-      (assoc-in service-id->local-metrics [service-id "last-request-time"] candidate-last-request-time-ms)
+            (t/after? candidate-last-request-time current-last-request-time))
+      (assoc-in service-id->local-metrics [service-id "last-request-time"] candidate-last-request-time)
       service-id->local-metrics)))
 
 (defn cleanup-local-metrics

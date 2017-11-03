@@ -399,7 +399,7 @@
 (defn process-http-response
   "Processes a response resulting from a http request.
    It includes book-keeping for async requests and asycnhronously streaming the content."
-  [post-process-async-request-response-fn instance-request-properties descriptor instance
+  [post-process-async-request-response-fn _ instance-request-properties descriptor instance
    request reason-map response-headers-atom reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
   (let [{:keys [service-description service-id waiter-headers]} descriptor
@@ -499,7 +499,8 @@
             (let [{:keys [service-id service-description] :as descriptor} (request->descriptor-fn request)
                   {:strs [metric-group]} service-description
                   ^DateTime request-time (t/now)]
-              (add-debug-header-into-response! "x-waiter-request-timestamp" (.getMillis request-time))
+              (->> (utils/date-to-str request-time utils/formatter-rfc822)
+                   (add-debug-header-into-response! "x-waiter-request-timestamp"))
               (send local-metrics-agent metrics/update-last-request-time service-id request-time)
               (loop [[handler & remaining-handlers] handlers]
                 (if handler
@@ -577,7 +578,7 @@
                                         (throw (wrap-exception error instance 
                                                                (utils/message :backend-request-failed)
                                                                502 @response-headers)))))
-                              (process-backend-response-fn instance-request-properties descriptor instance request
+                              (process-backend-response-fn local-metrics-agent instance-request-properties descriptor instance request
                                                            reason-map response-headers reservation-status-promise
                                                            confirm-live-connection-with-abort request-state-chan response))
                             (catch Exception e

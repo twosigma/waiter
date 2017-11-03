@@ -874,5 +874,6 @@
 
 (defn service-id->last-request-time
   [waiter-url service-id]
-  (-> (service waiter-url service-id {})
-      (get "last-request-time" 0)))
+  (when-let [last-request-time-str (-> (service waiter-url service-id {})
+                                       (get "last-request-time"))]
+    (utils/str-to-date last-request-time-str)))

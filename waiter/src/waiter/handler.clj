@@ -321,7 +321,7 @@
                           (catch Exception e
                             (log/error e "Error in retrieving router metrics for" service-id)))
         aggregate-metrics-map (try
-                                (metrics/aggregate-router-data (or router->metrics {}))
+                                (metrics/aggregate-router-codahale-metrics (or router->metrics {}))
                                 (catch Exception e
                                   (log/error e "Error in aggregating router metrics for" service-id)))
         service-description-overrides (try

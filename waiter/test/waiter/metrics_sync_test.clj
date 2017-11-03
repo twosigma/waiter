@@ -20,8 +20,9 @@
             [waiter.metrics-sync :refer :all]
             [waiter.test-helpers :as test-helpers]
             [waiter.utils :as utils])
-  (:import (qbits.jet.websocket WebSocket)
-           (org.eclipse.jetty.websocket.client WebSocketClient)))
+  (:import (org.eclipse.jetty.websocket.client WebSocketClient)
+           (org.joda.time DateTime)
+           (qbits.jet.websocket WebSocket)))
 
 (defn- keyset
   "Returns the keys of the map as a set."
@@ -411,10 +412,10 @@
 (deftest test-setup-metrics-syncer
   (let [counter (atom 0)
         response-chan-atom (atom nil)]
-    (with-redefs [metrics/get-core-metrics (fn [_] {"s1" {"slots-assigned" 1
-                                                          "outstanding" 1
-                                                          :response-chan @response-chan-atom
-                                                          :version @counter}})
+    (with-redefs [metrics/get-core-codahale-metrics (fn [] {"s1" {"slots-assigned" 1
+                                                                  "outstanding" 1
+                                                                  :response-chan @response-chan-atom
+                                                                  :version @counter}})
                   publish-router-metrics (fn [agent-state _ router-metrics _]
                                            (let [response-chan (get-in router-metrics ["s1" :response-chan])]
                                              (when response-chan
@@ -425,20 +426,26 @@
       (testing "setup-metrics-syncer"
         (let [router-metrics-agent (agent {:router-id "router-0", :version 1})
               encrypt identity
-              local-metrics-agent (agent {"s1" {"last-request-time" 1000}
-                                          "s2" {"last-request-time" 2000}})
+              local-metrics-agent (agent {"s1" {"last-request-time" (DateTime. 1000)}
+                                          "s2" {"last-request-time" (DateTime. 2000)}})
               {:keys [exit-chan]} (setup-metrics-syncer router-metrics-agent local-metrics-agent 10 encrypt)]
           (let [response-chan (async/promise-chan)]
             (reset! response-chan-atom response-chan)
             (swap! counter inc)
             (async/<!! response-chan)
-            (is (= {:router-id "router-0", :metrics {"s1" {"slots-assigned" 1, "outstanding" 1, :version 1}}}
+            (is (= {:router-id "router-0", :metrics {"s1" {"last-request-time" (DateTime. 1000)
+                                                           "outstanding" 1
+                                                           "slots-assigned" 1
+                                                           :version 1}}}
                    (dissoc (retrieve-agent-state router-metrics-agent) :version))))
           (let [response-chan (async/promise-chan)]
             (reset! response-chan-atom response-chan)
             (swap! counter inc)
             (async/<!! response-chan)
-            (is (= {:router-id "router-0", :metrics {"s1" {"slots-assigned" 1, "outstanding" 1, :version 2}}}
+            (is (= {:router-id "router-0", :metrics {"s1" {"last-request-time" (DateTime. 1000)
+                                                           "outstanding" 1
+                                                           "slots-assigned" 1
+                                                           :version 2}}}
                    (dissoc (retrieve-agent-state router-metrics-agent) :version))))
           (async/>!! exit-chan :exit))))))
 
@@ -456,17 +463,34 @@
     (is (= {} (agent->service-id->metrics (agent {})))))
 
   (testing "aggregation-of-router-metrics"
-    (let [in-router-metrics-state {:metrics {:routers {"router-0" {"s1" {"c" 0}, "s2" {"c" {"d" 0}, "e" 0}, "s3" {"c" 0}}
-                                                       "router-1" {"s1" {"c" 1}, "s2" {"c" {"d" 1}, "e" 1}, "s3" {"c" 1}}
-                                                       "router-2" {"s1" {"c" 2}, "s3" {"c" 2, "e" {"d" 0}}, "s5" {"a" {"b" {"c" 1}}}}
-                                                       "router-3" {"s1" {"c" 3}, "s2" {"c" {"d" 3}}, "s3" {"c" 3}}
-                                                       "router-4" {"s1" {"c" 4}, "s4" {"c" 4}, "s5" {"d" 2}}}}}
+    (let [time-1 (DateTime. 1000)
+          time-2 (DateTime. 2000)
+          time-3 (DateTime. 3000)
+          time-4 (DateTime. 4000)
+          time-5 (DateTime. 5000)
+          in-router-metrics-state {:metrics
+                                   {:routers
+                                    {"router-0" {"s1" {"last-request-time" time-1, "outstanding" 0, "total" 2}
+                                                 "s2" {"last-request-time" time-2, "outstanding" 0, "total" 1}
+                                                 "s3" {"last-request-time" time-3, "outstanding" 0}}
+                                     "router-1" {"s1" {"outstanding" 1}
+                                                 "s2" {"last-request-time" time-1, "outstanding" 1, "total" 1}
+                                                 "s3" {"last-request-time" time-4, "outstanding" 1, "total" 2}}
+                                     "router-2" {"s1" {"outstanding" 2}
+                                                 "s3" {"last-request-time" time-1, "outstanding" 2, "total" 5}
+                                                 "s5" {"last-request-time" time-2, "outstanding" 1}}
+                                     "router-3" {"s1" {"outstanding" 3}
+                                                 "s2" {"last-request-time" time-3, "outstanding" 3}
+                                                 "s3" {"last-request-time" time-2, "outstanding" 3, "total" 6}}
+                                     "router-4" {"s1" {"outstanding" 4}
+                                                 "s4" {"last-request-time" time-5, "outstanding" 4, "total" 4}
+                                                 "s5" {"last-request-time" time-1, "outstanding" 2, "total" 3}}}}}
           router-metrics-agent (agent in-router-metrics-state)
-          expected-output {"s1" {"c" 10, :routers-sent-requests-to 5},
-                           "s2" {"c" {"d" 4}, "e" 1, :routers-sent-requests-to 3},
-                           "s3" {"c" 6, "e" {"d" 0}, :routers-sent-requests-to 4},
-                           "s4" {"c" 4, :routers-sent-requests-to 1},
-                           "s5" {"a" {"b" {"c" 1}}, "d" 2, :routers-sent-requests-to 2}}]
+          expected-output {"s1" {"last-request-time" time-1, "outstanding" 10, "total" 2}
+                           "s2" {"last-request-time" time-3, "outstanding" 4, "total" 2}
+                           "s3" {"last-request-time" time-4, "outstanding" 6, "total" 13}
+                           "s4" {"last-request-time" time-5, "outstanding" 4, "total" 4}
+                           "s5" {"last-request-time" time-2, "outstanding" 3, "total" 3}}]
       (is (= expected-output (agent->service-id->metrics router-metrics-agent)))))
 
   (testing "faulty-router-metrics"
@@ -474,7 +498,7 @@
                                                        "router-1" {"s1" {"c" 1}, "s2" {"c" {"d" 1}, "e" 1}, "s3" {"c" {"d" 2}}}
                                                        "router-2" {"s1" {"c" 2}, "s3" {"c" 2, "e" {"d" 0}}}}}}
           router-metrics-agent (agent in-router-metrics-state)
-          expected-output {"s1" {"c" 3, :routers-sent-requests-to 3}}]
+          expected-output {"s1" {"c" 3}}]
       (is (= expected-output (agent->service-id->metrics router-metrics-agent))))))
 
 (deftest test-agent->service-id->router-id->metrics

@@ -113,13 +113,24 @@
       (str (subs in-str 0 (- max-len ellipsis-len)) ellipsis)
       in-str)))
 
+(def formatter-iso8601 (:date-time f/formatters))
+(def formatter-rfc822 (:rfc822 f/formatters))
+
 (defn date-to-str
   ([date-time]
-   (date-to-str date-time (:date-time f/formatters)))
+   (date-to-str date-time formatter-iso8601))
   ([date-time formatter]
    (f/unparse
      (f/with-zone formatter (t/default-time-zone))
      date-time)))
+
+(defn str-to-date
+  ([date-str]
+   (str-to-date date-str formatter-iso8601))
+  ([date-str formatter]
+   (f/parse
+     (f/with-zone formatter (t/default-time-zone))
+     date-str)))
 
 (defn non-neg? [x]
   (or (zero? x) (pos? x)))

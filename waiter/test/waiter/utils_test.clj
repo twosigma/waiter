@@ -117,7 +117,8 @@
   (let [input (t/now)
         result (date-to-str input)
         formatter (f/with-zone (:date-time f/formatters) (t/default-time-zone))]
-    (is (= result (f/unparse formatter input)))))
+    (is (= result (f/unparse formatter input)))
+    (is (t/equal? input (str-to-date result formatter)))))
 
 (deftest non-neg-test
   (is (non-neg? 0))

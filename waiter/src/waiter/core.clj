@@ -946,16 +946,10 @@
                                                              [instance request request-properties passthrough-headers end-route metric-group]
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
                                                                               passthrough-headers end-route metric-group))]
-                                       (letfn [(process-backend-fn [instance-request-properties descriptor instance request
-                                                                    reason-map response-headers reservation-status-promise
-                                                                    confirm-live-connection-with-abort request-state-chan response]
-                                                 (ws/process-response! local-metrics-agent instance-request-properties descriptor instance
-                                                                       request reason-map response-headers reservation-status-promise
-                                                                       confirm-live-connection-with-abort request-state-chan response))
-                                               (process-request-fn [request]
+                                       (letfn [(process-request-fn [request]
                                                  (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
                                                              instance-request-properties process-handlers prepend-waiter-url
-                                                             determine-priority-fn process-backend-fn ws/process-exception-in-request
+                                                             determine-priority-fn ws/process-response! ws/process-exception-in-request
                                                              ws/abort-request-callback-factory local-metrics-agent request))]
                                          (ws/request-handler password process-request-fn request)))))
    :display-settings-handler-fn (pc/fnk [handle-secure-request-fn settings]

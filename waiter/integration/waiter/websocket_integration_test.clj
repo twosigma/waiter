@@ -102,14 +102,14 @@
           {:keys [headers service-id] :as canary-response}
           (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
           first-request-time-header (-> (get headers "x-waiter-request-timestamp" "0")
-                                        Long/parseLong)
-          num-iterations 10]
+                                        (utils/str-to-date utils/formatter-rfc822))
+          num-iterations 5]
       (is (pos? metrics-sync-interval-ms))
       (with-service-cleanup
         service-id
         (is auth-cookie-value)
         (assert-response-status canary-response 200)
-        (is (pos? first-request-time-header))
+        (is (pos? (.getMillis first-request-time-header)))
         (let [response-promise (promise)
               connect-start-time-ms (System/currentTimeMillis)
               connect-end-time-ms-atom (atom connect-start-time-ms)]
@@ -131,14 +131,17 @@
             {:middleware (fn [_ ^UpgradeRequest request]
                            (websocket/add-headers-to-upgrade-request! request waiter-headers)
                            (add-auth-cookie request auth-cookie-value))})
-          (is (= :done (deref response-promise (-> 2 t/minutes t/in-millis) :timed-out)))
+          (is (= :done (deref response-promise (* 2 num-iterations inter-request-interval-ms) :timed-out)))
           (Thread/sleep (* 3 metrics-sync-interval-ms))
           (let [connection-duration-ms (- @connect-end-time-ms-atom connect-start-time-ms)
                 websocket-duration-ms (* num-iterations inter-request-interval-ms)
-                minimum-last-request-time-ms (+ first-request-time-header connection-duration-ms websocket-duration-ms)
+                minimum-last-request-time-duration-ms (+ connection-duration-ms websocket-duration-ms)
+                minimum-last-request-time (t/plus first-request-time-header (t/millis minimum-last-request-time-duration-ms))
                 service-last-request-time (service-id->last-request-time waiter-url service-id)]
-            (is (pos? service-last-request-time))
-            (is (<= minimum-last-request-time-ms service-last-request-time))))))))
+            (is (pos? (.getMillis service-last-request-time)))
+            (is (or (t/before? minimum-last-request-time service-last-request-time)
+                    (t/equal? minimum-last-request-time service-last-request-time))
+                (str [minimum-last-request-time service-last-request-time]))))))))
 
 (deftest ^:parallel ^:integration-fast test-request-socket-timeout
   (testing-using-waiter-url
