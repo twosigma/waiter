@@ -116,7 +116,7 @@
 (deftest test-date-to-str
   (let [input (t/now)
         result (date-to-str input)
-        formatter (f/with-zone (f/formatter "yyyy-MM-dd HH:mm:ss.SSS") (t/default-time-zone))]
+        formatter (f/with-zone (:date-time f/formatters) (t/default-time-zone))]
     (is (= result (f/unparse formatter input)))))
 
 (deftest non-neg-test
