@@ -354,20 +354,15 @@
    Counters are combined using sum reduction."
   [& maps]
   (when (some identity maps)
-    (letfn [(merge-entry [accum-map [entry-key entry-val]]
-              (if-let [current-val (get accum-map entry-key)]
-                (->> (cond
-                       ;; last-request-time
-                       (str/includes? entry-key "last-request-time") (t/max-date current-val entry-val)
-                       ;; counters
-                       (every? number? [current-val entry-val]) (+ current-val entry-val)
-                       ;; error scenario
-                       :else (throw (ex-info "Unable to merge" {:accum current-val :key entry-key :value entry-val})))
-                     (assoc accum-map entry-key))
-                (assoc accum-map entry-key entry-val)))]
-      (reduce (fn merge-metric-maps-fn [m1 m2]
-                (reduce merge-entry (or m1 {}) (seq m2)))
-              maps))))
+    (letfn [(merge-fn [key current-val new-val]
+              (cond
+                ;; last-request-time
+                (= key "last-request-time") (t/max-date current-val new-val)
+                ;; counters
+                (every? number? [current-val new-val]) (+ current-val new-val)
+                ;; error scenario
+                :else (throw (ex-info "Unable to merge" {:current current-val :key key :new new-val}))))]
+      (apply utils/merge-by merge-fn maps))))
 
 (defn agent->service-id->metrics
   "Retrieves aggregated view of service-id->metrics using data available from all peer routers in the agent."

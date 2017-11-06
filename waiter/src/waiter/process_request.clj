@@ -500,7 +500,7 @@
                   {:strs [metric-group]} service-description
                   ^DateTime request-time (t/now)]
               (->> (utils/date-to-str request-time utils/formatter-rfc822)
-                   (add-debug-header-into-response! "x-waiter-request-timestamp"))
+                   (add-debug-header-into-response! "x-waiter-request-date"))
               (send local-metrics-agent metrics/update-last-request-time service-id request-time)
               (loop [[handler & remaining-handlers] handlers]
                 (if handler

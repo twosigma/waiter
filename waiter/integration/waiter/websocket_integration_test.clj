@@ -101,14 +101,14 @@
           _ (make-kitchen-request waiter-url waiter-headers :http-method-fn http/get)
           {:keys [headers service-id] :as canary-response}
           (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
-          first-request-time-header (-> (get headers "x-waiter-request-timestamp" "0")
+          _ (assert-response-status canary-response 200)
+          first-request-time-header (-> (get headers "x-waiter-request-date")
                                         (utils/str-to-date utils/formatter-rfc822))
           num-iterations 5]
       (is (pos? metrics-sync-interval-ms))
       (with-service-cleanup
         service-id
         (is auth-cookie-value)
-        (assert-response-status canary-response 200)
         (is (pos? (.getMillis first-request-time-header)))
         (let [response-promise (promise)
               connect-start-time-ms (System/currentTimeMillis)

@@ -567,3 +567,15 @@
     (is (= "text/plain" (request->content-type {:headers {"accept" "*/*"}})))
     (is (= "text/plain" (request->content-type {:headers {"accept" ""}})))
     (is (= "text/plain" (request->content-type {})))))
+
+(deftest test-merge-by
+  (let [merge-fn (fn [k v1 v2]
+                   (cond
+                     (= :m k) (* v1 v2)
+                     :else (+ v1 v2)))]
+    (is (= {:a 4, :b 6, :c 5, :d 6}
+           (merge-by merge-fn {:a 1, :b 2} {:a 3} {:b 4} {:c 5} {:d 6})))
+    (is (= {:a 4, :b 6, :m 5}
+           (merge-by merge-fn {:a 1, :b 2} {:a 3} {:b 4} {:m 5})))
+    (is (= {:a 4, :b 2, :m 20}
+           (merge-by merge-fn {:a 1, :b 2} {:a 3, :m 4} {:m 5})))))

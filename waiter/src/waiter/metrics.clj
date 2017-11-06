@@ -155,7 +155,7 @@
    The returned data has the format service-id->core-metrics-map.
    The core-metrics-map is a flat map that has the following string keys:
    slots-received (via work-stealing), slots-assigned, slots-available, slots-in-use, outstanding and total.
-   The numeric values in each entry of the map, except last-request-time, come from corresponding codahale metrics."
+   The numeric values in each entry of the map come from corresponding codahale metrics."
   []
   (let [services-string "services"
         included-counter-names ["in-flight" "outstanding" "slots-available" "slots-in-use" "total"]
@@ -280,7 +280,6 @@
 
 (defn- merge-metrics
   "Merges all the metrics.
-   last-request-time metric is combined using the max operator.
    Timers and histograms will be combined using `merge-quantile-metrics`.
    Meters will be combined using `merge-rate-metrics`.
    Counters are combined using sum reduction.

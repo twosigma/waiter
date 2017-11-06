@@ -202,11 +202,11 @@
                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
           {:keys [headers request-headers service-id] :as first-response}
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
-          canary-request-time-from-header (-> (get headers "x-waiter-request-timestamp" "0")
+          _ (assert-response-status first-response 200)
+          canary-request-time-from-header (-> (get headers "x-waiter-request-date")
                                               (utils/str-to-date utils/formatter-rfc822))]
       (with-service-cleanup
         service-id
-        (assert-response-status first-response 200)
         (is (pos? metrics-sync-interval-ms))
         (let [service-last-request-time (service-id->last-request-time waiter-url service-id)]
           (is (pos? (.getMillis canary-request-time-from-header)))
