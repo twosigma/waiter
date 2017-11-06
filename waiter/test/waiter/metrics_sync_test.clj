@@ -426,9 +426,9 @@
       (testing "setup-metrics-syncer"
         (let [router-metrics-agent (agent {:router-id "router-0", :version 1})
               encrypt identity
-              local-metrics-agent (agent {"s1" {"last-request-time" (DateTime. 1000)}
+              local-usage-agent (agent {"s1" {"last-request-time" (DateTime. 1000)}
                                           "s2" {"last-request-time" (DateTime. 2000)}})
-              {:keys [exit-chan]} (setup-metrics-syncer router-metrics-agent local-metrics-agent 10 encrypt)]
+              {:keys [exit-chan]} (setup-metrics-syncer router-metrics-agent local-usage-agent 10 encrypt)]
           (let [response-chan (async/promise-chan)]
             (reset! response-chan-atom response-chan)
             (swap! counter inc)

@@ -301,7 +301,7 @@
 (defn setup-metrics-syncer
   "Launches a go-block that trigger publishing of metrics with peer routers.
    `metrics-sync-interval-ms` is used to throttle the rate of sending metrics."
-  [router-metrics-agent local-metrics-agent metrics-sync-interval-ms encrypt]
+  [router-metrics-agent local-usage-agent metrics-sync-interval-ms encrypt]
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 1)]
     (async/go-loop [iteration 0
@@ -319,10 +319,10 @@
               (try
                 (let [service-id->codahale-metrics (utils/filterm (fn [[_ metrics]] (some pos? (vals metrics)))
                                                                   (metrics/get-core-codahale-metrics))
-                      service-id->local-metrics @local-metrics-agent
+                      service-id->usage-metrics @local-usage-agent
                       service-id->metrics (pc/map-from-keys (fn service-id->metrics-fn [service-id]
                                                               (merge (service-id->codahale-metrics service-id)
-                                                                     (service-id->local-metrics service-id)))
+                                                                     (service-id->usage-metrics service-id)))
                                                             (keys service-id->codahale-metrics))]
                   (send router-metrics-agent publish-router-metrics encrypt service-id->metrics "core"))
                 (catch Exception e

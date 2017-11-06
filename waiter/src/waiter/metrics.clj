@@ -278,8 +278,8 @@
       {"count" (reduce + counts)
        "value" (reduce + values)})))
 
-(defn- merge-metrics
-  "Merges all the metrics.
+(defn- merge-codahale-metrics
+  "Merges all the codahale metrics.
    Timers and histograms will be combined using `merge-quantile-metrics`.
    Meters will be combined using `merge-rate-metrics`.
    Counters are combined using sum reduction.
@@ -297,7 +297,7 @@
                                               ;; leaf-level counters
                                               (every? number? [current-val entry-val]) (reduce + [current-val entry-val])
                                               ;; recurse on nested values
-                                              (every? map? [current-val entry-val]) (merge-metrics current-val entry-val)
+                                              (every? map? [current-val entry-val]) (merge-codahale-metrics current-val entry-val)
                                               ;; base-case
                                               (every? nil? [current-val entry-val]) nil
                                               ;; error scenario
@@ -311,7 +311,7 @@
   "Aggregates the metrics from the different routers."
   [router->codahale-metrics]
   (assoc
-    (apply merge-metrics
+    (apply merge-codahale-metrics
            (map #(-> (dissoc % "metrics-version")
                      (utils/dissoc-in ["counters" "instance-counts"]))
                 (vals router->codahale-metrics)))
@@ -391,29 +391,29 @@
           (recur))
         (log/info "[transient-metrics-gc] stopping populating service-id->state-chan")))))
 
-(defn update-last-request-time
-  "Updates the last-request-time epoch time in the service-id->local-metrics to the maximum
+(defn update-last-request-time-usage-metric
+  "Updates the last-request-time epoch time in the service-id->local-usage to the maximum
    of the current last request time and the provided last-request-datetime in epoch millis
    for the specified service."
-  [service-id->local-metrics service-id ^DateTime candidate-last-request-time]
-  (let [current-last-request-time (get-in service-id->local-metrics [service-id "last-request-time"])]
+  [service-id->local-usage service-id ^DateTime candidate-last-request-time]
+  (let [current-last-request-time (get-in service-id->local-usage [service-id "last-request-time"])]
     (if (or (nil? current-last-request-time)
             (t/after? candidate-last-request-time current-last-request-time))
-      (assoc-in service-id->local-metrics [service-id "last-request-time"] candidate-last-request-time)
-      service-id->local-metrics)))
+      (assoc-in service-id->local-usage [service-id "last-request-time"] candidate-last-request-time)
+      service-id->local-usage)))
 
-(defn cleanup-local-metrics
-  "Removes the entry for service-id in service-id->local-metrics."
-  [service-id->local-metrics correlation-id service-id]
+(defn cleanup-local-usage-metrics
+  "Removes the entry for service-id in service-id->local-usage."
+  [service-id->local-usage correlation-id service-id]
   (cid/cinfo correlation-id "cleaning local metrics for" service-id)
-  (dissoc service-id->local-metrics service-id))
+  (dissoc service-id->local-usage service-id))
 
 (defn transient-metrics-gc
   "Launches go-blocks that keep running for the lifetime of the router watching for idle services (services that no
    longer exist in the scheduler, i.e. not alive?, and have not received any new requests) known to the router.
    When such an idle service is found (based on the timestamp it was last updated), the metrics (except the one for
    outstanding requests) are deleted locally."
-  [scheduler-state-chan local-metrics-agent service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
+  [scheduler-state-chan local-usage-agent service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
   (let [sanitize-state-fn (fn sanitize-state [prev-service->state _] prev-service->state)
         service-id->state-fn (fn service->state [_ _ data] data)
         gc-service?-fn (fn [_ {:keys [state last-modified-time]} current-time]
@@ -425,7 +425,7 @@
                                       mod-threshold-time (t/plus last-modified-time threshold)]
                                   (t/after? current-time mod-threshold-time)))))
         perform-gc-fn (fn [service-id]
-                        (send local-metrics-agent cleanup-local-metrics (cid/get-correlation-id) service-id)
+                        (send local-usage-agent cleanup-local-usage-metrics (cid/get-correlation-id) service-id)
                         (remove-metrics-except-outstanding mc/default-registry service-id)
                         ; truthy value to represent successful delete
                         true)

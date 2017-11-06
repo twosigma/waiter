@@ -389,8 +389,8 @@
         service-id->metrics-chan-counter (atom 0)
         test-start-time (t/now)
         clock (fn [] (t/plus test-start-time (t/minutes @service-id->metrics-chan-counter)))
-        local-metrics-fn (fn [service-id] {"name" service-id})
-        local-metrics-agent (agent (pc/map-from-keys local-metrics-fn @available-services-atom))
+        local-usage-fn (fn [service-id] {"name" service-id})
+        local-usage-agent (agent (pc/map-from-keys local-usage-fn @available-services-atom))
         service-gc-go-routine (partial core/service-gc-go-routine read-state-fn write-state-fn leader? clock)]
     (with-redefs [remove-metrics-except-outstanding (fn [_ service-id]
                                                       (swap! deleted-services-atom conj service-id)
@@ -402,7 +402,7 @@
           (let [transient-metrics-timeout-ms 10
                 metrics-gc-interval-ms 1
                 scheduler-state-chan (async/chan)
-                result-chans (transient-metrics-gc scheduler-state-chan local-metrics-agent service-gc-go-routine
+                result-chans (transient-metrics-gc scheduler-state-chan local-usage-agent service-gc-go-routine
                                                    {:transient-metrics-timeout-ms transient-metrics-timeout-ms
                                                     :metrics-gc-interval-ms metrics-gc-interval-ms})
                 service-id->metrics-chan (:service-id->metrics-chan result-chans)]
@@ -436,9 +436,9 @@
               (is (every? #(contains? @deleted-services-atom %) expected-deleted-services)
                   (str "Expected delete to include: " expected-deleted-services ", actual: " @deleted-services-atom)))
             (reset! exit-flag-atom true)
-            (await local-metrics-agent)
-            (is (= (pc/map-from-keys local-metrics-fn ["service-keep-2" "service-keep-3" "service-remove2-5-will-be-alive"])
-                   @local-metrics-agent))
+            (await local-usage-agent)
+            (is (= (pc/map-from-keys local-usage-fn ["service-keep-2" "service-keep-3" "service-remove2-5-will-be-alive"])
+                   @local-usage-agent))
             (async/>!! (:exit result-chans) :exit)))))))
 
 (deftest test-with-timer!
@@ -469,32 +469,32 @@
           "s2" {"outstanding" 150, "slots-available" 10, "slots-in-use" 5, "total" 250}}
          (get-core-codahale-metrics))))
 
-(deftest test-update-last-request-time
+(deftest test-update-last-request-time-usage-metric
   (let [time-1 (DateTime. 1000)
         time-2 (DateTime. 2000)
         time-3 (DateTime. 3000)
         time-4 (DateTime. 2500)]
     (is (= {"foo" {"last-request-time" time-2}}
-           (update-last-request-time {} "foo" time-2)))
+           (update-last-request-time-usage-metric {} "foo" time-2)))
     (is (= {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}}
-           (update-last-request-time
+           (update-last-request-time-usage-metric
              {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-1}}
              "foo" time-2)))
     (is (= {"bar" {"last-request-time" time-2}, "foo" {"last-request-time" time-3}}
-           (update-last-request-time
+           (update-last-request-time-usage-metric
              {"bar" {"last-request-time" time-2}, "foo" {"last-request-time" time-3}}
              "foo" time-2)))
     (is (= {"bar" {"last-request-time" time-2}, "foo" {"last-request-time" time-4}}
-           (update-last-request-time
+           (update-last-request-time-usage-metric
              {"bar" {"last-request-time" time-2}, "foo" {"last-request-time" time-4}}
              "foo" time-2)))))
 
-(deftest test-cleanup-local-metrics
+(deftest test-cleanup-local-usage-metrics
   (let [time-2 (DateTime. 2000)
         time-4 (DateTime. 4000)]
     (is (= {"bar" {"last-request-time" time-4}}
-           (cleanup-local-metrics
+           (cleanup-local-usage-metrics
              {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}} "cid" "foo")))
     (is (= {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}}
-           (cleanup-local-metrics
+           (cleanup-local-usage-metrics
              {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}} "cid" "baz")))))

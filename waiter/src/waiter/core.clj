@@ -91,7 +91,7 @@
                      "state" [["" :state-all-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
                               ["/leader" :state-leader-handler-fn]
-                              ["/local-metrics" :state-local-metrics-handler-fn]
+                              ["/local-usage" :state-local-usage-handler-fn]
                               ["/maintainer" :state-maintainer-handler-fn]
                               ["/router-metrics" :state-router-metrics-handler-fn]
                               ["/scheduler" :state-scheduler-handler-fn]
@@ -455,7 +455,7 @@
    :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
                   (http-client-factory connection-timeout-ms))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
-   :local-metrics-agent (pc/fnk [] (agent {}))
+   :local-usage-agent (pc/fnk [] (agent {}))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
                       passwords (password-store/retrieve-passwords password-provider)
@@ -771,7 +771,7 @@
                                 {}))
    :gc-for-transient-metrics (pc/fnk [[:routines router-metrics-helpers]
                                       [:settings metrics-config]
-                                      [:state clock local-metrics-agent]
+                                      [:state clock local-usage-agent]
                                       scheduler-maintainer]
                                (let [state-store-atom (atom {})
                                      read-state-fn (fn read-state [_] @state-store-atom)
@@ -781,7 +781,7 @@
                                      scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
                                      {:keys [service-id->metrics-fn]} router-metrics-helpers
                                      {:keys [service-id->metrics-chan] :as metrics-gc-chans}
-                                     (metrics/transient-metrics-gc scheduler-state-chan local-metrics-agent service-gc-go-routine metrics-config)]
+                                     (metrics/transient-metrics-gc scheduler-state-chan local-usage-agent service-gc-go-routine metrics-config)]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
                                  metrics-gc-chans))
    :messages (pc/fnk [[:settings {messages nil}]]
@@ -796,12 +796,12 @@
                                {:router-mult-chan router-mult-chan}))
    :router-metrics-syncer (pc/fnk [[:routines crypt-helpers websocket-request-auth-cookie-attacher]
                                    [:settings [:metrics-config inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms router-update-interval-ms]]
-                                   [:state local-metrics-agent router-metrics-agent websocket-client]
+                                   [:state local-usage-agent router-metrics-agent websocket-client]
                                    router-list-maintainer]
                             (let [{:keys [bytes-encryptor]} crypt-helpers
                                   router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))]
                               {:metrics-syncer (metrics-sync/setup-metrics-syncer
-                                                 router-metrics-agent local-metrics-agent metrics-sync-interval-ms bytes-encryptor)
+                                                 router-metrics-agent local-usage-agent metrics-sync-interval-ms bytes-encryptor)
                                :router-syncer (metrics-sync/setup-router-syncer router-chan router-metrics-agent router-update-interval-ms
                                                                                 inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms
                                                                                 websocket-client bytes-encryptor websocket-request-auth-cookie-attacher)}))
@@ -938,7 +938,7 @@
                                         (utils/exception->response e request))))))
    :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
-                                          [:state instance-rpc-chan local-metrics-agent passwords router-id websocket-client]]
+                                          [:state instance-rpc-chan local-usage-agent passwords router-id websocket-client]]
                                    (fn default-websocket-handler-fn [request]
                                      (let [password (first passwords)
                                            process-handlers []
@@ -950,7 +950,7 @@
                                                  (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
                                                              instance-request-properties process-handlers prepend-waiter-url
                                                              determine-priority-fn ws/process-response! ws/process-exception-in-request
-                                                             ws/abort-request-callback-factory local-metrics-agent request))]
+                                                             ws/abort-request-callback-factory local-usage-agent request))]
                                          (ws/request-handler password process-request-fn request)))))
    :display-settings-handler-fn (pc/fnk [handle-secure-request-fn settings]
                                   (fn display-settings-handler-fn [request]
@@ -1036,7 +1036,7 @@
    :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
                                  prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
-                                [:state http-client instance-rpc-chan local-metrics-agent router-id]
+                                [:state http-client instance-rpc-chan local-usage-agent router-id]
                                 handle-authentication-wrapper-fn handle-secure-request-fn]
                          (let [process-handlers [pr/handle-suspended-service pr/handle-too-many-requests]
                                make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
@@ -1051,7 +1051,7 @@
                                      (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
                                                  instance-request-properties process-handlers prepend-waiter-url
                                                  determine-priority-fn process-response-fn pr/process-exception-in-http-request
-                                                 pr/abort-http-request-callback-factory local-metrics-agent request))
+                                                 pr/abort-http-request-callback-factory local-usage-agent request))
                                    request))
                                request))))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
@@ -1141,7 +1141,7 @@
    :state-all-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
                                   [:daemons router-state-maintainer scheduler-maintainer]
                                   [:routines router-metrics-helpers]
-                                  [:state local-metrics-agent]
+                                  [:state local-usage-agent]
                                   handle-secure-request-fn]
                            (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
                                  scheduler-query-chan (:query-chan scheduler-maintainer)
@@ -1150,7 +1150,7 @@
                                (handle-secure-request-fn
                                  (fn inner-state-all-handler-fn [request]
                                    (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn
-                                                             kv-store leader?-fn local-metrics-agent request))
+                                                             kv-store leader?-fn local-usage-agent request))
                                  request))))
    :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
                                        [:state router-id]
@@ -1168,12 +1168,12 @@
                                   (fn inner-leader-state-handler-fn [request]
                                     (handler/get-leader-state router-id leader?-fn leader-id-fn request))
                                   request)))
-   :state-local-metrics-handler-fn (pc/fnk [[:state local-metrics-agent router-id]
+   :state-local-usage-handler-fn (pc/fnk [[:state local-usage-agent router-id]
                                             handle-secure-request-fn]
-                                     (fn local-metrics-state-handler-fn [request]
+                                     (fn local-usage-state-handler-fn [request]
                                        (handle-secure-request-fn
-                                         (fn inner-local-metrics-state-handler-fn [request]
-                                           (handler/get-local-metrics-state router-id local-metrics-agent request))
+                                         (fn inner-local-usage-state-handler-fn [request]
+                                           (handler/get-local-usage-state router-id local-usage-agent request))
                                          request)))
    :state-maintainer-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                          [:state router-id]
@@ -1203,12 +1203,12 @@
                                          (handler/get-scheduler-state router-id scheduler-query-chan request))
                                        request))))
    :state-service-handler-fn (pc/fnk [[:daemons state-query-chans]
-                                      [:state instance-rpc-chan local-metrics-agent router-id]
+                                      [:state instance-rpc-chan local-usage-agent router-id]
                                       handle-secure-request-fn]
                                (fn service-state-handler-fn [request]
                                  (handle-secure-request-fn
                                    (fn inner-service-state-handler-fn [{{:keys [service-id]} :route-params}]
-                                     (handler/get-service-state router-id instance-rpc-chan local-metrics-agent
+                                     (handler/get-service-state router-id instance-rpc-chan local-usage-agent
                                                                 service-id state-query-chans request))
                                    request)))
    :state-statsd-handler-fn (pc/fnk [[:state router-id]

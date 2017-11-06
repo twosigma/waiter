@@ -511,14 +511,14 @@
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn local-metrics-agent request]
+  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn local-usage-agent request]
   (async/go
     (try
       (let [timeout-ms 30000]
         (-> (async/<! (retrieve-maintainer-state state-chan timeout-ms))
             (assoc :kv-store (kv/state kv-store)
                    :leader (leader?-fn)
-                   :local-metrics @local-metrics-agent
+                   :local-usage @local-usage-agent
                    :router-metrics-state (router-metrics-state-fn)
                    :scheduler (async/<! (retrieve-scheduler-state scheduler-chan timeout-ms))
                    :statsd (statsd/state))
@@ -536,11 +536,11 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
-(defn get-local-metrics-state
+(defn get-local-usage-state
   "Outputs the local metrics agent state."
-  [router-id local-metrics-agent _]
+  [router-id local-usage-agent _]
   (-> {:router-id router-id
-       :state @local-metrics-agent}
+       :state @local-usage-agent}
       (utils/map->streaming-json-response)))
 
 (defn get-leader-state
@@ -598,7 +598,7 @@
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."
-  [router-id instance-rpc-chan local-metrics-agent service-id query-chans request]
+  [router-id instance-rpc-chan local-usage-agent service-id query-chans request]
   (async/go
     (try
       (if (str/blank? service-id)
@@ -610,12 +610,12 @@
               _ (log/info "waiting for response from query-work-stealing channel...")
               work-stealing-state-chan
               (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-work-stealing)
-              local-metrics-state (get @local-metrics-agent service-id)
+              local-usage-state (get @local-usage-agent service-id)
               [query-chans initial-result]
               (loop [[[entry-key entry-value] & remaining] [[:responder-state responder-state-chan]
                                                             [:work-stealing-state work-stealing-state-chan]]
                      query-chans query-chans
-                     initial-result {:local-metrics local-metrics-state}]
+                     initial-result {:local-usage local-usage-state}]
                 (if entry-key
                   (if (map? entry-value)
                     (recur remaining query-chans (assoc initial-result entry-key entry-value))

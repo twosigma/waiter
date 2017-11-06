@@ -474,7 +474,7 @@
     "Process the incoming request and stream back the response."
     [router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
      instance-request-properties handlers prepend-waiter-url determine-priority-fn process-backend-response-fn
-     process-exception-fn request-abort-callback-factory local-metrics-agent
+     process-exception-fn request-abort-callback-factory local-usage-agent
      {:keys [ctrl] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
@@ -501,7 +501,7 @@
                   ^DateTime request-time (t/now)]
               (->> (utils/date-to-str request-time utils/formatter-rfc822)
                    (add-debug-header-into-response! "x-waiter-request-date"))
-              (send local-metrics-agent metrics/update-last-request-time service-id request-time)
+              (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
               (loop [[handler & remaining-handlers] handlers]
                 (if handler
                   (let [response (handler request descriptor)]
@@ -578,7 +578,7 @@
                                         (throw (wrap-exception error instance 
                                                                (utils/message :backend-request-failed)
                                                                502 @response-headers)))))
-                              (process-backend-response-fn local-metrics-agent instance-request-properties descriptor instance request
+                              (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
                                                            reason-map response-headers reservation-status-promise
                                                            confirm-live-connection-with-abort request-state-chan response))
                             (catch Exception e
