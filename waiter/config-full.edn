@@ -333,6 +333,8 @@
                                        "BAZ" "qux"}
                                 "expired-instance-restart-rate" 0.1
                                 "grace-period-secs" 30
+                                "health-check-interval-secs" 10
+                                "health-check-max-consecutive-failures" 5
                                 "health-check-url" "/status"
                                 "idle-timeout-mins" 30
                                 "instance-expiry-mins" 7200

@@ -67,6 +67,8 @@
    (s/optional-key "metric-group") schema/valid-metric-group
    ; start-up related
    (s/optional-key "health-check-url") schema/non-empty-string
+   (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
+   (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
    (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 1 % (t/in-minutes (t/weeks 1))) 'between-1-minute-and-1-week))
    (s/optional-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
@@ -93,7 +95,8 @@
 ; keys used in computing the service-id from the service description
 (def ^:const service-override-keys
   #{"authentication" "blacklist-on-503" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate"
-    "grace-period-secs" "idle-timeout-mins" "instance-expiry-mins" "jitter-threshold" "max-queue-length" "min-instances"
+    "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures"
+    "idle-timeout-mins" "instance-expiry-mins" "jitter-threshold" "max-queue-length" "min-instances"
     "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
 
 ; keys stored in the service description
