@@ -99,6 +99,8 @@
                                                    (s/required-key "env") {s/Str s/Str}
                                                    (s/required-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "grace-period-secs") schema/positive-int
+                                                   (s/required-key "health-check-interval-secs") schema/positive-int
+                                                   (s/required-key "health-check-max-consecutive-failures") schema/positive-int
                                                    (s/required-key "health-check-url") schema/non-empty-string
                                                    (s/required-key "idle-timeout-mins") schema/positive-int
                                                    (s/required-key "instance-expiry-mins") schema/positive-int
@@ -271,6 +273,8 @@
                                   "env" {}
                                   "expired-instance-restart-rate" 0.1
                                   "grace-period-secs" 30
+                                  "health-check-interval-secs" 10
+                                  "health-check-max-consecutive-failures" 5
                                   "health-check-url" "/status"
                                   "idle-timeout-mins" 30
                                   "instance-expiry-mins" 7200 ; 5 days
