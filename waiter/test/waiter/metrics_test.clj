@@ -18,12 +18,14 @@
             [metrics.histograms :as histograms]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
+            [plumbing.core :as pc]
             [waiter.async-utils :as au]
             [waiter.core :as core]
             [waiter.metrics :refer :all]
             [waiter.test-helpers :as test-helpers]
             [waiter.utils :as utils])
-  (:import (com.codahale.metrics MetricFilter)))
+  (:import (com.codahale.metrics MetricFilter)
+           (org.joda.time DateTime)))
 
 (deftest test-compress-strings
   (is (= ["a"] (compress-strings ["a"] ".")))
@@ -224,7 +226,7 @@
       (is (all-waiter-metrics-available? (get-waiter-metrics)))
       (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true))))))
 
-(deftest test-aggregate-router-data
+(deftest test-aggregate-router-codahale-metrics
   (let [router->metrics {"router-a" {"counters" {"instance-counts" {"a" 10, "b" 20}
                                                  "request-counts" {"total" 20}
                                                  "item-a" 100}
@@ -276,7 +278,7 @@
                                                "quantile-c" {"count" 30
                                                              "value" {"0.0" 10, "0.25" 10, "0.5" 10, "0.75" 10}}}}}
                   :routers-sent-requests-to 4}
-        actual (aggregate-router-data router->metrics)]
+        actual (aggregate-router-codahale-metrics router->metrics)]
     (is (= expected actual))))
 
 (deftest test-remove-and-check-metrics-except-outstanding
@@ -387,6 +389,8 @@
         service-id->metrics-chan-counter (atom 0)
         test-start-time (t/now)
         clock (fn [] (t/plus test-start-time (t/minutes @service-id->metrics-chan-counter)))
+        local-usage-fn (fn [service-id] {"name" service-id})
+        local-usage-agent (agent (pc/map-from-keys local-usage-fn @available-services-atom))
         service-gc-go-routine (partial core/service-gc-go-routine read-state-fn write-state-fn leader? clock)]
     (with-redefs [remove-metrics-except-outstanding (fn [_ service-id]
                                                       (swap! deleted-services-atom conj service-id)
@@ -398,7 +402,7 @@
           (let [transient-metrics-timeout-ms 10
                 metrics-gc-interval-ms 1
                 scheduler-state-chan (async/chan)
-                result-chans (transient-metrics-gc scheduler-state-chan service-gc-go-routine
+                result-chans (transient-metrics-gc scheduler-state-chan local-usage-agent service-gc-go-routine
                                                    {:transient-metrics-timeout-ms transient-metrics-timeout-ms
                                                     :metrics-gc-interval-ms metrics-gc-interval-ms})
                 service-id->metrics-chan (:service-id->metrics-chan result-chans)]
@@ -432,6 +436,9 @@
               (is (every? #(contains? @deleted-services-atom %) expected-deleted-services)
                   (str "Expected delete to include: " expected-deleted-services ", actual: " @deleted-services-atom)))
             (reset! exit-flag-atom true)
+            (await local-usage-agent)
+            (is (= (pc/map-from-keys local-usage-fn ["service-keep-2" "service-keep-3" "service-remove2-5-will-be-alive"])
+                   @local-usage-agent))
             (async/>!! (:exit result-chans) :exit)))))))
 
 (deftest test-with-timer!
@@ -447,3 +454,47 @@
           (is (= 1 (count nanos)))
           (is (< 95000000 (first nanos)))
           (is (= (first nanos) @elapsed-nanos)))))))
+
+(deftest test-get-core-codahale-metrics
+  (.removeMatching mc/default-registry MetricFilter/ALL)
+  (counters/inc! (service-counter "s1" "request-counts" "outstanding") 100)
+  (counters/inc! (service-counter "s1" "request-counts" "total") 200)
+  (counters/inc! (service-counter "s1" "work-stealing" "received-from" "in-flight") 2)
+  (counters/inc! (service-counter "s2" "instance-counts" "slots-available") 10)
+  (counters/inc! (service-counter "s2" "instance-counts" "slots-in-use") 5)
+  (counters/inc! (service-counter "s2" "request-counts" "outstanding") 150)
+  (counters/inc! (service-counter "s2" "request-counts" "total") 250)
+
+  (is (= {"s1" {"outstanding" 100, "slots-received" 2, "total" 200},
+          "s2" {"outstanding" 150, "slots-available" 10, "slots-in-use" 5, "total" 250}}
+         (get-core-codahale-metrics))))
+
+(deftest test-update-last-request-time-usage-metric
+  (let [time-1 (DateTime. 1000)
+        time-2 (DateTime. 2000)
+        time-3 (DateTime. 3000)
+        time-4 (DateTime. 2500)]
+    (is (= {"foo" {"last-request-time" time-2}}
+           (update-last-request-time-usage-metric {} "foo" time-2)))
+    (is (= {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}}
+           (update-last-request-time-usage-metric
+             {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-1}}
+             "foo" time-2)))
+    (is (= {"bar" {"last-request-time" time-2}, "foo" {"last-request-time" time-3}}
+           (update-last-request-time-usage-metric
+             {"bar" {"last-request-time" time-2}, "foo" {"last-request-time" time-3}}
+             "foo" time-2)))
+    (is (= {"bar" {"last-request-time" time-2}, "foo" {"last-request-time" time-4}}
+           (update-last-request-time-usage-metric
+             {"bar" {"last-request-time" time-2}, "foo" {"last-request-time" time-4}}
+             "foo" time-2)))))
+
+(deftest test-cleanup-local-usage-metrics
+  (let [time-2 (DateTime. 2000)
+        time-4 (DateTime. 4000)]
+    (is (= {"bar" {"last-request-time" time-4}}
+           (cleanup-local-usage-metrics
+             {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}} "cid" "foo")))
+    (is (= {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}}
+           (cleanup-local-usage-metrics
+             {"bar" {"last-request-time" time-4}, "foo" {"last-request-time" time-2}} "cid" "baz")))))

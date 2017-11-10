@@ -101,7 +101,8 @@
                          (merge extra-headers {:x-kitchen-delay-ms time})
                          #(make-kitchen-request waiter-url % :cookies cookies)))
           _ (log/info (str "Making canary request..."))
-          {:keys [cookies instance-id service-id]} (request-fn 100)]
+          {:keys [cookies instance-id service-id] :as canary-response} (request-fn 100)]
+      (assert-response-status canary-response 200)
       (log/info "Sending additional requests.")
       (time-it
         "additional-requests"

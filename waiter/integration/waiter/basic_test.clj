@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.basic-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -18,7 +19,8 @@
             [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
-            [waiter.service-description :as sd])
+            [waiter.service-description :as sd]
+            [waiter.utils :as utils])
   (:import java.io.ByteArrayInputStream))
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality
@@ -190,6 +192,31 @@
       (is (= {:foo "bar", :baz "quux", :begindate "null", :enddate "null", :timestamp "20160713201333949"} value))
       (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-last-request-time
+  (testing-using-waiter-url
+    (let [waiter-settings (waiter-settings waiter-url)
+          metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])
+          service-name (rand-name)
+          headers {:x-kitchen-delay-ms (* 4 metrics-sync-interval-ms)
+                   :x-waiter-name service-name
+                   :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
+          {:keys [headers request-headers service-id] :as first-response}
+          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
+          _ (assert-response-status first-response 200)
+          canary-request-time-from-header (-> (get headers "x-waiter-request-date")
+                                              (utils/str-to-date utils/formatter-rfc822))]
+      (with-service-cleanup
+        service-id
+        (is (pos? metrics-sync-interval-ms))
+        (let [service-last-request-time (service-id->last-request-time waiter-url service-id)]
+          (is (pos? (.getMillis canary-request-time-from-header)))
+          (is (pos? (.getMillis service-last-request-time)))
+          (is (zero? (t/in-seconds (t/interval canary-request-time-from-header service-last-request-time)))))
+        (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
+        (let [service-last-request-time (service-id->last-request-time waiter-url service-id)]
+          (is (pos? (.getMillis service-last-request-time)))
+          (is (t/before? canary-request-time-from-header service-last-request-time)))))))
+
 (deftest ^:parallel ^:integration-fast test-list-apps
   (testing-using-waiter-url
     (let [service-id (:service-id (make-request-with-debug-info
@@ -198,16 +225,19 @@
       (testing "without parameters"
         (let [service (service waiter-url service-id {})] ;; see my app as myself
           (is service)
+          (is (-> (get service "last-request-time") utils/str-to-date .getMillis pos?))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "waiter user disabled" ;; see my app as myself
         (let [service (service waiter-url service-id {"force" "false"})]
           (is service)
+          (is (-> (get service "last-request-time") utils/str-to-date .getMillis pos?))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "waiter user disabled and same user" ;; see my app as myself
         (let [service (service waiter-url service-id {"force" "false", "run-as-user" (retrieve-username)})]
           (is service)
+          (is (-> (get service "last-request-time") utils/str-to-date .getMillis pos?))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "different run-as-user" ;; no such app
@@ -237,6 +267,7 @@
       (testing "list-apps-with-waiter-user-disabled-and-see-another-app" ;; can see another user's app
         (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
           (is service)
+          (is (-> (get service "last-request-time") utils/str-to-date .getMillis pos?))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
       (delete-service waiter-url service-id))))
 

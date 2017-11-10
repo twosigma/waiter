@@ -39,7 +39,8 @@
   (:import (java.io InputStream IOException)
            java.util.concurrent.TimeoutException
            org.eclipse.jetty.io.EofException
-           (org.eclipse.jetty.server HttpChannel HttpOutput)))
+           (org.eclipse.jetty.server HttpChannel HttpOutput)
+           (org.joda.time DateTime)))
 
 (defn check-control [control-chan]
   (let [state (au/poll! control-chan :still-running)]
@@ -398,7 +399,7 @@
 (defn process-http-response
   "Processes a response resulting from a http request.
    It includes book-keeping for async requests and asycnhronously streaming the content."
-  [post-process-async-request-response-fn instance-request-properties descriptor instance
+  [post-process-async-request-response-fn _ instance-request-properties descriptor instance
    request reason-map response-headers-atom reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
   (let [{:keys [service-description service-id waiter-headers]} descriptor
@@ -473,7 +474,7 @@
     "Process the incoming request and stream back the response."
     [router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
      instance-request-properties handlers prepend-waiter-url determine-priority-fn process-backend-response-fn
-     process-exception-fn request-abort-callback-factory
+     process-exception-fn request-abort-callback-factory local-usage-agent
      {:keys [ctrl] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
@@ -496,7 +497,11 @@
           (try
             (confirm-live-connection-without-abort)
             (let [{:keys [service-id service-description] :as descriptor} (request->descriptor-fn request)
-                  {:strs [metric-group]} service-description]
+                  {:strs [metric-group]} service-description
+                  ^DateTime request-time (t/now)]
+              (->> (utils/date-to-str request-time utils/formatter-rfc822)
+                   (add-debug-header-into-response! "x-waiter-request-date"))
+              (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
               (loop [[handler & remaining-handlers] handlers]
                 (if handler
                   (let [response (handler request descriptor)]
@@ -521,7 +526,7 @@
                               priority (determine-priority-fn waiter-headers)
                               reason-map (cond-> {:reason :serve-request
                                                   :state {:initial (metrics/retrieve-local-stats-for-service service-id)}
-                                                  :time (t/now)
+                                                  :time request-time
                                                   :cid (cid/get-correlation-id)
                                                   :request-id request-id}
                                                  priority (assoc :priority priority))
@@ -573,7 +578,7 @@
                                         (throw (wrap-exception error instance 
                                                                (utils/message :backend-request-failed)
                                                                502 @response-headers)))))
-                              (process-backend-response-fn instance-request-properties descriptor instance request
+                              (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
                                                            reason-map response-headers reservation-status-promise
                                                            confirm-live-connection-with-abort request-state-chan response))
                             (catch Exception e

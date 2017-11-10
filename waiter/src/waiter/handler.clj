@@ -222,46 +222,45 @@
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
-  [entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request]
-  (try
-    (let [timeout-ms 30000
-          current-state (async/alt!!
-                          state-chan ([state-data] state-data)
-                          (async/timeout timeout-ms) ([_] :timeout)
-                          :priority true)]
-      (if (= :timeout current-state)
-        (throw (ex-info "Query for service state timed out" {:status 503}))
-        (let [request-params (:params (ring-params/params-request request))
-              auth-user (get request :authorization/user)
-              run-as-user-param (get request-params "run-as-user")
-              viewable-services (filter
-                                  #(let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn % :effective? false)]
-                                     (and service-description
-                                          (if run-as-user-param
-                                            (= run-as-user run-as-user-param)
-                                            (authz/manage-service? entitlement-manager auth-user % service-description))))
-                                  (->> (concat (keys (:service-id->healthy-instances current-state))
-                                               (keys (:service-id->unhealthy-instances current-state)))
-                                       (apply sorted-set)))
-              retrieve-instance-counts (fn retrieve-instance-counts [service-id]
-                                         {:healthy-instances (count (get-in current-state [:service-id->healthy-instances service-id]))
-                                          :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
-              include-effective-parameters? (utils/request-flag request-params "effective-parameters")
-              response-data (map
-                             (fn service-id->service-info [service-id]
-                               (let [service-description (service-id->service-description-fn service-id :effective? false)]
-                                 (cond->
-                                     {:service-id service-id
-                                      :service-description service-description
-                                      :instance-counts (retrieve-instance-counts service-id)
-                                      :url (prepend-waiter-url (str "/apps/" service-id))}
-                                   include-effective-parameters? (assoc :effective-parameters
-                                                                        (service-id->service-description-fn
+  [entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn service-id->metrics-fn request]
+  (let [timeout-ms 30000
+        current-state (async/alt!!
+                        state-chan ([state-data] state-data)
+                        (async/timeout timeout-ms) ([_] :timeout)
+                        :priority true)]
+    (if (= :timeout current-state)
+      (throw (ex-info "Query for service state timed out" {:status 503}))
+      (let [request-params (:params (ring-params/params-request request))
+            auth-user (get request :authorization/user)
+            run-as-user-param (get request-params "run-as-user")
+            viewable-services (filter
+                                #(let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn % :effective? false)]
+                                   (and service-description
+                                        (if run-as-user-param
+                                          (= run-as-user run-as-user-param)
+                                          (authz/manage-service? entitlement-manager auth-user % service-description))))
+                                (->> (concat (keys (:service-id->healthy-instances current-state))
+                                             (keys (:service-id->unhealthy-instances current-state)))
+                                     (apply sorted-set)))
+            retrieve-instance-counts (fn retrieve-instance-counts [service-id]
+                                       {:healthy-instances (count (get-in current-state [:service-id->healthy-instances service-id]))
+                                        :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
+            service-id->metrics (service-id->metrics-fn)
+            include-effective-parameters? (utils/request-flag request-params "effective-parameters")
+            response-data (map
+                            (fn service-id->service-info [service-id]
+                              (let [service-description (service-id->service-description-fn service-id :effective? false)]
+                                (cond->
+                                  {:instance-counts (retrieve-instance-counts service-id)
+                                   :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
+                                   :service-id service-id
+                                   :service-description service-description
+                                   :url (prepend-waiter-url (str "/apps/" service-id))}
+                                  include-effective-parameters? (assoc :effective-parameters
+                                                                       (service-id->service-description-fn
                                                                          service-id :effective? true)))))
-                             viewable-services)]
-          (utils/map->streaming-json-response response-data))))
-    (catch Exception ex
-      (utils/exception->response ex request))))
+                            viewable-services)]
+        (utils/map->streaming-json-response response-data)))))
 
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
@@ -322,7 +321,7 @@
                           (catch Exception e
                             (log/error e "Error in retrieving router metrics for" service-id)))
         aggregate-metrics-map (try
-                                (metrics/aggregate-router-data (or router->metrics {}))
+                                (metrics/aggregate-router-codahale-metrics (or router->metrics {}))
                                 (catch Exception e
                                   (log/error e "Error in aggregating router metrics for" service-id)))
         service-description-overrides (try
@@ -339,9 +338,9 @@
                              (assoc :instances service-instance-maps
                                     :num-active-instances (count (:active-instances service-instance-maps)))
                              (not-empty aggregate-metrics-map)
-                             (update-in [:metrics :aggregate] (fn [_] aggregate-metrics-map))
+                             (assoc-in [:metrics :aggregate] aggregate-metrics-map)
                              (not-empty router->metrics)
-                             (update-in [:metrics :routers] (fn [_] router->metrics))
+                             (assoc-in [:metrics :routers] router->metrics)
                              (not-empty core-service-description)
                              (assoc :service-description core-service-description)
                              (not-empty (or (:overrides service-description-overrides) {}))
@@ -474,7 +473,7 @@
             (-> request (:body) (slurp) (json/read-str) (walk/keywordize-keys))]
         (log/info "received work-stealing offer" (:id instance) "of" service-id "from" router-id)
         (if-not (and cid instance request-id router-id service-id)
-          (throw (ex-info "Missing one of cid, instance, request-id, router-id or service-id" 
+          (throw (ex-info "Missing one of cid, instance, request-id, router-id or service-id"
                           (assoc request-body-map :status 400)))
           (let [response-chan (async/promise-chan)
                 offer-params {:cid cid
@@ -512,13 +511,14 @@
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request]
+  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn local-usage-agent request]
   (async/go
     (try
       (let [timeout-ms 30000]
         (-> (async/<! (retrieve-maintainer-state state-chan timeout-ms))
             (assoc :kv-store (kv/state kv-store)
                    :leader (leader?-fn)
+                   :local-usage @local-usage-agent
                    :router-metrics-state (router-metrics-state-fn)
                    :scheduler (async/<! (retrieve-scheduler-state scheduler-chan timeout-ms))
                    :statsd (statsd/state))
@@ -535,6 +535,13 @@
         (utils/map->streaming-json-response))
     (catch Exception ex
       (utils/exception->response ex request))))
+
+(defn get-local-usage-state
+  "Outputs the local metrics agent state."
+  [router-id local-usage-agent _]
+  (-> {:router-id router-id
+       :state @local-usage-agent}
+      (utils/map->streaming-json-response)))
 
 (defn get-leader-state
   "Outputs the leader state."
@@ -591,21 +598,24 @@
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."
-  [router-id instance-rpc-chan service-id query-chans request]
+  [router-id instance-rpc-chan local-usage-agent service-id query-chans request]
   (async/go
     (try
       (if (str/blank? service-id)
         (throw (ex-info "Missing service-id" {:status 400}))
         (let [timeout-ms (-> 10 t/seconds t/in-millis)
               _ (log/info "waiting for response from query-state channel...")
-              responder-state-chan (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-state)
+              responder-state-chan
+              (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-state)
               _ (log/info "waiting for response from query-work-stealing channel...")
-              work-stealing-state-chan (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-work-stealing)
+              work-stealing-state-chan
+              (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-work-stealing)
+              local-usage-state (get @local-usage-agent service-id)
               [query-chans initial-result]
               (loop [[[entry-key entry-value] & remaining] [[:responder-state responder-state-chan]
                                                             [:work-stealing-state work-stealing-state-chan]]
                      query-chans query-chans
-                     initial-result {}]
+                     initial-result {:local-usage local-usage-state}]
                 (if entry-key
                   (if (map? entry-value)
                     (recur remaining query-chans (assoc initial-result entry-key entry-value))
@@ -642,18 +652,18 @@
           {:strs [mode service-id] :as params} params]
       (when-not (str/blank? origin)
         (when-not (utils/same-origin request)
-          (throw (ex-info "Origin is not the same as the host" 
+          (throw (ex-info "Origin is not the same as the host"
                           {:host host
                            :origin origin
                            :status 400}))))
       (when (and (not (str/blank? origin)) (not (str/blank? referer)))
         (when-not (str/starts-with? referer origin)
-          (throw (ex-info "Referer does not start with origin" 
+          (throw (ex-info "Referer does not start with origin"
                           {:origin origin
                            :referer referer
                            :status 400}))))
       (when-not (= x-requested-with "XMLHttpRequest")
-        (throw (ex-info "Header x-requested-with does not match expected value" 
+        (throw (ex-info "Header x-requested-with does not match expected value"
                         {:actual x-requested-with
                          :expected "XMLHttpRequest"
                          :status 400})))

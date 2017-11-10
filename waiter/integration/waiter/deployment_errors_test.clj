@@ -12,10 +12,8 @@
   (:require [clojure.pprint :as pprint]
             [clojure.string :as str]
             [clojure.test :refer :all]
-            [clojure.tools.logging :as log]
             [plumbing.core :as pc]
-            [waiter.client-tools :refer :all]
-            [waiter.settings :as settings]))
+            [waiter.client-tools :refer :all]))
 
 (defn get-router->service-state
   "Retrieves service state for a service."

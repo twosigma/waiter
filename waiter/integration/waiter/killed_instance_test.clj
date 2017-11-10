@@ -51,15 +51,16 @@
                          :x-waiter-name (rand-name)}
           request-fn (fn []
                        (log/info "making kitchen request")
-                       (make-kitchen-request waiter-url extra-headers))
+                       (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %)))
           _ (log/info "making canary request")
-          {:keys [request-headers]} (request-fn)
-          service-id (retrieve-service-id waiter-url request-headers)]
-      (time-it (str service-id ":" parallelism "x" requests-per-thread)
-               (parallelize-requests parallelism requests-per-thread #(request-fn) :verbose true))
-      (is (< (* 2 (count (routers waiter-url))) (num-instances waiter-url service-id)))
-      (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180)
-      (delete-service waiter-url service-id))))
+          {:keys [service-id] :as canary-response} (request-fn)]
+      (assert-response-status canary-response 200)
+      (with-service-cleanup
+        service-id
+        (time-it (str service-id ":" parallelism "x" requests-per-thread)
+                 (parallelize-requests parallelism requests-per-thread #(request-fn) :verbose true))
+        (is (< (* 2 (count (routers waiter-url))) (num-instances waiter-url service-id)))
+        (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180)))))
 
 ; Marked explicit due to:
 ; FAIL in (test-blacklisted-instance-not-reserved) (killed_instance_test.clj)

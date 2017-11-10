@@ -855,6 +855,8 @@
            (exec-routes-mapper "/state")))
     (is (= {:handler :state-kv-store-handler-fn}
            (exec-routes-mapper "/state/kv-store")))
+    (is (= {:handler :state-local-usage-handler-fn}
+           (exec-routes-mapper "/state/local-usage")))
     (is (= {:handler :state-leader-handler-fn}
            (exec-routes-mapper "/state/leader")))
     (is (= {:handler :state-maintainer-handler-fn}

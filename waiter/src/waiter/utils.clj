@@ -33,7 +33,7 @@
            java.util.concurrent.ThreadLocalRandom
            java.util.regex.Pattern
            javax.servlet.ServletResponse
-           (org.joda.time DateTime ReadablePeriod)
+           (org.joda.time DateTime DateTimeZone ReadablePeriod)
            (schema.utils ValidationError)))
 
 (defn select-keys-pred
@@ -113,13 +113,25 @@
       (str (subs in-str 0 (- max-len ellipsis-len)) ellipsis)
       in-str)))
 
+(def formatter-iso8601 (:date-time f/formatters))
+(def formatter-rfc822 (:rfc822 f/formatters))
+
 (defn date-to-str
   ([date-time]
-   (date-to-str date-time (:date-time f/formatters)))
+   (date-to-str date-time formatter-iso8601))
   ([date-time formatter]
-   (f/unparse
+   (when date-time
+     (f/unparse
+       (f/with-zone formatter (t/default-time-zone))
+       (.withZone date-time DateTimeZone/UTC)))))
+
+(defn str-to-date
+  ([date-str]
+   (str-to-date date-str formatter-iso8601))
+  ([date-str formatter]
+   (f/parse
      (f/with-zone formatter (t/default-time-zone))
-     date-time)))
+     date-str)))
 
 (defn non-neg? [x]
   (or (zero? x) (pos? x)))
@@ -453,3 +465,22 @@
   "Parses the request header to determine if debug mode has been enabled."
   [request]
   (boolean (get-in request [:headers "x-waiter-debug"])))
+
+(defn merge-by
+  "Returns a map that consists of the rest of the maps conj-ed onto the first.
+   If a key occurs in more than one map,
+   the mapping(s) from the latter (left-to-right) will be combined with
+   the mapping in the result by calling (f key val-in-result val-in-latter)."
+  {:added "1.0"
+   :static true}
+  [f & maps]
+  (when (some identity maps)
+    (let [merge-entry (fn [m e]
+                        (let [k (key e)
+                              v (val e)]
+                          (if (contains? m k)
+                            (assoc m k (f k (get m k) v))
+                            (assoc m k v))))
+          merge2 (fn [m1 m2]
+                   (reduce merge-entry (or m1 {}) (seq m2)))]
+      (reduce merge2 maps))))

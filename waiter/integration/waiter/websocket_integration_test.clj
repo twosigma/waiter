@@ -16,6 +16,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [qbits.jet.client.http :as http]
             [qbits.jet.client.websocket :as ws-client]
             [waiter.client-tools :refer :all]
             [waiter.utils :as utils]
@@ -87,6 +88,60 @@
           (is (= x-waiter-auth-principal (retrieve-username))))
         (finally
           (delete-service waiter-url waiter-headers))))))
+
+(deftest ^:parallel ^:integration-fast test-last-request-time
+  (testing-using-waiter-url
+    (let [waiter-settings (waiter-settings waiter-url)
+          metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])
+          inter-request-interval-ms (+ metrics-sync-interval-ms 1000)
+          auth-cookie-value (auth-cookie waiter-url)
+          waiter-headers (assoc (kitchen-request-headers)
+                           :x-waiter-metric-group "test-ws-support"
+                           :x-waiter-name (rand-name))
+          _ (make-kitchen-request waiter-url waiter-headers :http-method-fn http/get)
+          {:keys [headers service-id] :as canary-response}
+          (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
+          _ (assert-response-status canary-response 200)
+          first-request-time-header (-> (get headers "x-waiter-request-date")
+                                        (utils/str-to-date utils/formatter-rfc822))
+          num-iterations 5]
+      (is (pos? metrics-sync-interval-ms))
+      (with-service-cleanup
+        service-id
+        (is auth-cookie-value)
+        (is (pos? (.getMillis first-request-time-header)))
+        (let [response-promise (promise)
+              connect-start-time-ms (System/currentTimeMillis)
+              connect-end-time-ms-atom (atom connect-start-time-ms)]
+          (ws-client/connect!
+            (websocket-client-factory)
+            (ws-url waiter-url "/websocket-auth")
+            (fn [{:keys [in out]}]
+              (async/go
+                (log/info "websocket request connected")
+                (async/<! in)
+                (reset! connect-end-time-ms-atom (System/currentTimeMillis))
+                (dotimes [n num-iterations]
+                  (async/<! (async/timeout inter-request-interval-ms))
+                  (async/>! out (str "hello-" n))
+                  (async/<! in))
+                (log/info "closing channels")
+                (async/close! out)
+                (deliver response-promise :done)))
+            {:middleware (fn [_ ^UpgradeRequest request]
+                           (websocket/add-headers-to-upgrade-request! request waiter-headers)
+                           (add-auth-cookie request auth-cookie-value))})
+          (is (= :done (deref response-promise (* 2 num-iterations inter-request-interval-ms) :timed-out)))
+          (Thread/sleep (* 3 metrics-sync-interval-ms))
+          (let [connection-duration-ms (- @connect-end-time-ms-atom connect-start-time-ms)
+                websocket-duration-ms (* num-iterations inter-request-interval-ms)
+                minimum-last-request-time-duration-ms (+ connection-duration-ms websocket-duration-ms)
+                minimum-last-request-time (t/plus first-request-time-header (t/millis minimum-last-request-time-duration-ms))
+                service-last-request-time (service-id->last-request-time waiter-url service-id)]
+            (is (pos? (.getMillis service-last-request-time)))
+            (is (or (t/before? minimum-last-request-time service-last-request-time)
+                    (t/equal? minimum-last-request-time service-last-request-time))
+                (str [minimum-last-request-time service-last-request-time]))))))))
 
 (deftest ^:parallel ^:integration-fast test-request-socket-timeout
   (testing-using-waiter-url

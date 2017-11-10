@@ -20,6 +20,7 @@
             [plumbing.core :as pc]
             [waiter.async-utils :as au]
             [waiter.authorization :as authz]
+            [waiter.core :as core]
             [waiter.handler :refer :all]
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
@@ -412,8 +413,10 @@
                                      (= action :manage)
                                      (some #(= % service-id) test-user-services))))
         list-services-handler (wrap-handler-json-response list-services-handler)]
-    (let [service-id->service-description-fn
-          (fn [service-id & _] {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})]
+    (letfn [(service-id->service-description-fn [service-id & _]
+              {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})
+            (service-id->metrics-fn []
+              {})]
 
       (testing "list-services-handler:success-regular-user"
         (async/>!! state-chan {:service-id->healthy-instances {"service1" []
@@ -424,7 +427,8 @@
                                :service-id->unhealthy-instances {"service3" []
                                                                  "service5" []}})
         (let [{:keys [body headers status]}
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                     service-id->service-description-fn service-id->metrics-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -441,7 +445,8 @@
                                  :service-id->unhealthy-instances {"service3" []
                                                                    "service5" []}})
           (let [{:keys [body headers status]}
-                (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+                (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "content-type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -463,7 +468,8 @@
                                                                    "service5" []}})
           (let [{:keys [body headers status]}
 
-                (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+                (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "content-type")))
             (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
@@ -475,8 +481,11 @@
         (let [request {:authorization/user test-user}
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
+              list-services-handler (core/wrap-error-handling
+                                      #(list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                                              service-id->service-description-fn service-id->metrics-fn %))
               {:keys [body headers status]}
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+              (list-services-handler request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "content-type")))
           (is (str/includes? (str body) exception-message))))
@@ -496,7 +505,8 @@
                                            (some #(= (str "service" %) service-id) (range 1 7)))))
               {:keys [body headers status]}
               ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn request)]
+              (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                     service-id->service-description-fn service-id->metrics-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str "service" %)) (range 1 7)))
@@ -638,13 +648,14 @@
       (is (= 500 status)))))
 
 (deftest test-get-router-state
-  (let [test-fn (fn [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request]
+  (let [test-fn (fn [state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-usage-agent request]
                   (let [handler (wrap-async-handler-json-response get-router-state)]
-                    (-> (handler state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)
+                    (-> (handler state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-usage-agent request)
                         async/<!!)))
         kv-store (kv/new-local-kv-store {})
         leader?-fn (constantly true)
-        router-metrics-state-fn (fn [] {})
+        local-usage-agent (agent {})
+        router-metrics-fn (fn [] {})
         state-chan (au/latest-chan)
         scheduler-chan (au/latest-chan)
         test-complete (atom false)]
@@ -668,14 +679,16 @@
         (testing "should handle exceptions gracefully"
           (let [state-chan (async/chan)]
             (async/put! state-chan []) ; vector instead of a map to trigger an error
-            (let [request {}
-                  {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
+            (let [{:keys [status body]}
+                  (->> {}
+                       (test-fn state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-usage-agent))]
               (is (str/includes? (str body) "Internal error"))
               (is (= 500 status)))))
 
         (testing "display router state"
-          (let [request {}
-                {:keys [status body]} (test-fn state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn request)]
+          (let [{:keys [status body]}
+                (->> {}
+                     (test-fn state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-usage-agent))]
             (is (every? #(str/includes? (str body) %1) ["kv-store", "leader", "router-metrics-state", "scheduler", "state-data", "statsd"])
                 (str "Body did not include necessary JSON keys:\n" body))
             (is (= 200 status)))))
@@ -696,6 +709,22 @@
     (testing "exception response"
       (let [kv-store (Object.)
             {:keys [body status]} (test-fn router-id kv-store {})]
+        (is (= 500 status))
+        (is (str/includes? body "Waiter Error 500"))))))
+
+(deftest test-get-local-usage-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-handler-json-response get-local-usage-state)]
+    (testing "successful response"
+      (let [last-request-time-state {"foo" 1234, "bar" 7890}
+            last-request-time-agent (agent last-request-time-state)
+            {:keys [body status]} (test-fn router-id last-request-time-agent {})]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" last-request-time-state}))))
+
+    (testing "exception response"
+      (let [handler (core/wrap-error-handling #(test-fn router-id nil %))
+            {:keys [body status]} (handler {})]
         (is (= 500 status))
         (is (str/includes? body "Waiter Error 500"))))))
 
@@ -767,9 +796,10 @@
 
 (deftest test-get-service-state
   (let [router-id "router-id"
-        service-id "service-1"]
+        service-id "service-1"
+        local-usage-agent (agent {service-id {"last-request-time" "foo"}})]
     (testing "returns 400 for missing service id"
-      (is (= 400 (:status (async/<!! (get-service-state router-id nil "" {} {}))))))
+      (is (= 400 (:status (async/<!! (get-service-state router-id nil local-usage-agent "" {} {}))))))
     (let [instance-rpc-chan (async/chan 1)
           query-state-chan (async/chan 1)
           query-work-stealing-chan (async/chan 1)
@@ -798,10 +828,13 @@
       (start-instance-rpc-fn)
       (start-query-chan-fn)
       (start-maintainer-fn)
-      (let [response (async/<!! (get-service-state router-id instance-rpc-chan service-id {:maintainer-state maintainer-state-chan} {}))
+      (let [response (async/<!! (get-service-state router-id instance-rpc-chan local-usage-agent
+                                                   service-id {:maintainer-state maintainer-state-chan} {}))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))
+        (is (= {:last-request-time "foo"}
+               (get-in service-state [:state :local-usage])))
         (is (= work-stealing-state (get-in service-state [:state :work-stealing-state])))
         (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))))))
 

@@ -301,7 +301,7 @@
 (defn setup-metrics-syncer
   "Launches a go-block that trigger publishing of metrics with peer routers.
    `metrics-sync-interval-ms` is used to throttle the rate of sending metrics."
-  [router-metrics-agent metrics-sync-interval-ms encrypt]
+  [router-metrics-agent local-usage-agent metrics-sync-interval-ms encrypt]
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 1)]
     (async/go-loop [iteration 0
@@ -317,9 +317,14 @@
             (cid/with-correlation-id
               (str "setup-metrics-syncer-" iteration)
               (try
-                (let [service->metrics (utils/filterm (fn [[_ metrics]] (some pos? (vals metrics)))
-                                                      (metrics/get-core-metrics))]
-                  (send router-metrics-agent publish-router-metrics encrypt service->metrics "core"))
+                (let [service-id->codahale-metrics (utils/filterm (fn [[_ metrics]] (some pos? (vals metrics)))
+                                                                  (metrics/get-core-codahale-metrics))
+                      service-id->usage-metrics @local-usage-agent
+                      service-id->metrics (pc/map-from-keys (fn service-id->metrics-fn [service-id]
+                                                              (merge (service-id->codahale-metrics service-id)
+                                                                     (service-id->usage-metrics service-id)))
+                                                            (keys service-id->codahale-metrics))]
+                  (send router-metrics-agent publish-router-metrics encrypt service-id->metrics "core"))
                 (catch Exception e
                   (log/error e "error in making broadcast router metrics request" {:iteration iteration}))))
             (recur (inc iteration) (async/timeout metrics-sync-interval-ms)))
@@ -343,11 +348,29 @@
         metrics-agent (agent initial-state)]
     metrics-agent))
 
+(defn- merge-router-metrics
+  "Merges all the metrics shared among routers.
+   last-request-time is combined using the max operator.
+   Counters are combined using sum reduction."
+  [& maps]
+  (when (some identity maps)
+    (letfn [(merge-fn [key current-val new-val]
+              (cond
+                ;; last-request-time
+                (= key "last-request-time") (t/max-date current-val new-val)
+                ;; counters
+                (every? number? [current-val new-val]) (+ current-val new-val)
+                ;; error scenario
+                :else (throw (ex-info "Unable to merge" {:current current-val :key key :new new-val}))))]
+      (apply utils/merge-by merge-fn maps))))
+
 (defn agent->service-id->metrics
   "Retrieves aggregated view of service-id->metrics using data available from all peer routers in the agent."
   [router-metrics-agent]
   (try
     (let [router-id->service-id->metrics (get-in @router-metrics-agent [:metrics :routers])
+          aggregate-router-metrics (fn aggregate-router-metrics [router->metrics]
+                                     (apply merge-router-metrics (vals router->metrics)))
           service-ids (->> router-id->service-id->metrics
                            (vals)
                            (map keys)
@@ -357,12 +380,13 @@
                 "routers with distribution" (pc/map-vals count router-id->service-id->metrics))
       (->> (seq service-ids)
            (pc/map-from-keys (fn [service-id]
-                               (let [router->metrics (pc/map-vals (fn [service-id->metrics] (service-id->metrics service-id))
+                               (let [router->metrics (pc/map-vals (fn [service-id->metrics]
+                                                                    (service-id->metrics service-id))
                                                                   router-id->service-id->metrics)]
                                  (try
                                    (->> router->metrics
                                         (utils/filterm val)
-                                        (metrics/aggregate-router-data))
+                                        aggregate-router-metrics)
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
            (filter second)

@@ -23,7 +23,8 @@
             [waiter.async-utils :as au]
             [waiter.correlation-id :as cid]
             [waiter.utils :as utils])
-  (:import (com.codahale.metrics Counter Gauge Histogram Meter MetricFilter MetricRegistry Timer Timer$Context)))
+  (:import (com.codahale.metrics Counter Gauge Histogram Meter MetricFilter MetricRegistry Timer Timer$Context)
+           (org.joda.time DateTime)))
 
 (defn compress-strings
   "Compress adjacent strings in vector with a delimeter.
@@ -149,23 +150,23 @@
                     (.getTimers registry metric-filter)))
      #"\.")))
 
-(defn get-core-metrics
-  "Retrieves the core set of metrics used by the routers to make decisions based on aggregate metrics.
-   The returned data has the format service-id->core-metrics-map
+(defn get-core-codahale-metrics
+  "Retrieves the core set of codahale metrics used by the routers to make decisions based on aggregate metrics.
+   The returned data has the format service-id->core-metrics-map.
    The core-metrics-map is a flat map that has the following string keys:
-     slots-received (via work-stealing), slots-assigned, slots-available, slots-in-use, outstanding and total.
+   slots-received (via work-stealing), slots-assigned, slots-available, slots-in-use, outstanding and total.
    The numeric values in each entry of the map come from corresponding codahale metrics."
   []
   (let [services-string "services"
+        included-counter-names ["in-flight" "outstanding" "slots-available" "slots-in-use" "total"]
         metric-filter (reify MetricFilter
                         (matches [_ name _]
-                          (and (str/starts-with? name services-string)
-                               (or (and (str/includes? name "counters")
-                                        (some #(str/includes? name %)
-                                              ["slots-available" "slots-in-use" "in-flight" "outstanding" "total"]))
-                                   (and (str/includes? name "timers") (str/includes? name "process"))))))
-        service-id->metrics (-> (get-metrics mc/default-registry metric-filter)
-                                (get services-string))]
+                          (-> (and (str/starts-with? name services-string)
+                                   (str/includes? name "counters")
+                                   (some #(str/includes? name %) included-counter-names))
+                              boolean)))
+        service-id->codahale-metrics (-> (get-metrics mc/default-registry metric-filter)
+                                         (get services-string))]
     (pc/map-vals (fn [metrics]
                    (let [assoc-if (fn [transient-map metrics-keys map-key]
                                     (let [value (get-in metrics metrics-keys)]
@@ -179,7 +180,7 @@
                          (assoc-if ["counters" "request-counts" "total"] "total")
                          (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
                          (persistent!))))
-                 service-id->metrics)))
+                 service-id->codahale-metrics)))
 
 (defn- prefix-metrics-filter
   "Creates a MetricFilter that filters by the provided prefix"
@@ -205,12 +206,14 @@
   (get-metrics mc/default-registry (prefix-metrics-filter "jvm")))
 
 (defn update-counter
-  "Updates the counter to the size of the `new-coll`."
+  "Updates the counter to the size of the `new-coll`.
+   A data race is possible if two threads invoke this function concurrently."
   [counter old-coll new-coll]
   (counters/inc! counter (- (count new-coll) (count old-coll))))
 
 (defn reset-counter
-  "Resets the value of the counter to the new value."
+  "Resets the value of the counter to the new value.
+   A data race is possible if two threads invoke this function concurrently."
   [the-counter new-value]
   (counters/inc! the-counter (- (or new-value 0) (counters/value the-counter))))
 
@@ -275,8 +278,8 @@
       {"count" (reduce + counts)
        "value" (reduce + values)})))
 
-(defn- merge-metrics
-  "Merges all the metrics.
+(defn- merge-codahale-metrics
+  "Merges all the codahale metrics.
    Timers and histograms will be combined using `merge-quantile-metrics`.
    Meters will be combined using `merge-rate-metrics`.
    Counters are combined using sum reduction.
@@ -294,7 +297,7 @@
                                               ;; leaf-level counters
                                               (every? number? [current-val entry-val]) (reduce + [current-val entry-val])
                                               ;; recurse on nested values
-                                              (every? map? [current-val entry-val]) (merge-metrics current-val entry-val)
+                                              (every? map? [current-val entry-val]) (merge-codahale-metrics current-val entry-val)
                                               ;; base-case
                                               (every? nil? [current-val entry-val]) nil
                                               ;; error scenario
@@ -304,15 +307,15 @@
           merge-metric-maps-fn (fn [m1 m2] (reduce merge-entry (or m1 {}) (seq m2)))]
       (reduce merge-metric-maps-fn maps))))
 
-(defn aggregate-router-data
+(defn aggregate-router-codahale-metrics
   "Aggregates the metrics from the different routers."
-  [router->metrics]
+  [router->codahale-metrics]
   (assoc
-    (apply merge-metrics
+    (apply merge-codahale-metrics
            (map #(-> (dissoc % "metrics-version")
                      (utils/dissoc-in ["counters" "instance-counts"]))
-                (vals router->metrics)))
-    :routers-sent-requests-to (count router->metrics)))
+                (vals router->codahale-metrics)))
+    :routers-sent-requests-to (count router->codahale-metrics)))
 
 (let [metric-filter-fn (fn [service-id]
                          (reify MetricFilter
@@ -388,12 +391,29 @@
           (recur))
         (log/info "[transient-metrics-gc] stopping populating service-id->state-chan")))))
 
+(defn update-last-request-time-usage-metric
+  "Updates the last-request-time epoch time in the service-id->local-usage to the maximum
+   of the current last request time and the provided last-request-datetime in epoch millis
+   for the specified service."
+  [service-id->local-usage service-id ^DateTime candidate-last-request-time]
+  (let [current-last-request-time (get-in service-id->local-usage [service-id "last-request-time"])]
+    (if (or (nil? current-last-request-time)
+            (t/after? candidate-last-request-time current-last-request-time))
+      (assoc-in service-id->local-usage [service-id "last-request-time"] candidate-last-request-time)
+      service-id->local-usage)))
+
+(defn cleanup-local-usage-metrics
+  "Removes the entry for service-id in service-id->local-usage."
+  [service-id->local-usage correlation-id service-id]
+  (cid/cinfo correlation-id "cleaning local metrics for" service-id)
+  (dissoc service-id->local-usage service-id))
+
 (defn transient-metrics-gc
   "Launches go-blocks that keep running for the lifetime of the router watching for idle services (services that no
    longer exist in the scheduler, i.e. not alive?, and have not received any new requests) known to the router.
    When such an idle service is found (based on the timestamp it was last updated), the metrics (except the one for
    outstanding requests) are deleted locally."
-  [scheduler-state-chan service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
+  [scheduler-state-chan local-usage-agent service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
   (let [sanitize-state-fn (fn sanitize-state [prev-service->state _] prev-service->state)
         service-id->state-fn (fn service->state [_ _ data] data)
         gc-service?-fn (fn [_ {:keys [state last-modified-time]} current-time]
@@ -405,6 +425,7 @@
                                       mod-threshold-time (t/plus last-modified-time threshold)]
                                   (t/after? current-time mod-threshold-time)))))
         perform-gc-fn (fn [service-id]
+                        (send local-usage-agent cleanup-local-usage-metrics (cid/get-correlation-id) service-id)
                         (remove-metrics-except-outstanding mc/default-registry service-id)
                         ; truthy value to represent successful delete
                         true)

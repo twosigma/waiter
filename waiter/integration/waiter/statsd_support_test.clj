@@ -36,7 +36,7 @@
             make-request (fn [url]
                            (make-request-with-debug-info headers #(make-kitchen-request url % :cookies cookies)))
             {:keys [status service-id router-id] :as response} (make-request waiter-url)]
-        (is (= 200 status))
+        (assert-response-status response 200)
         (when (= 200 status)
           (let [router-url (router-endpoint waiter-url router-id)
                 cancellation-token (atom false)
