@@ -9,9 +9,8 @@ branches:
 env:
   global:
     - DEPS_CMD='lein with-profiles +test voom build-deps'
-    - LEIN_GET='wget https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein'
+    - LEIN_GET='wget https://raw.githubusercontent.com/technomancy/leiningen/2.6.1/bin/lein'
     - LEIN_CHMOD='chmod +x ./lein'
-    - LEIN_DOWN='lein downgrade 2.6.1'
     - _JAVA_OPTIONS='' # Avoid unwanted _JAVA_OPTIONS set by Travis CI
   matrix:
     - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
@@ -31,7 +30,7 @@ cache:
   directories:
     - $HOME/.m2
     - $HOME/.voom-repos
-before_script: ($LEIN_GET && $LEIN_CHMOD && export PATH=$(pwd):$PATH && yes | $LEIN_DOWN && cd $TEST_DIR && $DEPS_CMD)
+before_script: ($LEIN_GET && $LEIN_CHMOD && export PATH=$(pwd):$PATH && cd $TEST_DIR && $DEPS_CMD)
 script: cd $TEST_DIR && $TEST_CMD
 addons:
     artifacts: true
