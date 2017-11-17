@@ -90,15 +90,13 @@
   (when (not (is-prestashed? run-as-user))
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan})
-          [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)
-          response-map {:message (utils/message :prestashed-tickets-not-available)
-                        :user run-as-user
-                        :service-id service-id}]
+          [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)]
       (when (and (= response-chan chan) (not (contains? users run-as-user)))
-        (log/info (:message response-map) (dissoc response-map :message))
-        (throw (ex-info "No prestashed tickets available" {:message (json/write-str response-map)
-                                                           :status 403
-                                                           :suppress-logging true}))))))
+        (throw (ex-info "No prestashed tickets available"
+                        {:message (utils/message :prestashed-tickets-not-available)
+                         :service-id service-id
+                         :status 403
+                         :user run-as-user}))))))
 
 (defrecord KerberosAuthenticator [password query-chan]
 
