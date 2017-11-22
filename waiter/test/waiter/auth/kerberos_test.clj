@@ -88,11 +88,9 @@
           (check-has-prestashed-tickets query-chan "kuser" "service-id")
           (is false "Expected exception to be thrown")
           (catch ExceptionInfo e
-            (let [{:keys [status message suppress-logging]} (ex-data e)]
+            (let [{:keys [status message]} (ex-data e)]
               (is (= 403 status))
-              (is suppress-logging "Exception should be thrown with supress-logging")
-              (is (str/includes? message "Prestashed tickets"))
-              (is (str/includes? message "kuser")))))))
+              (is (str/includes? message "Prestashed tickets")))))))
 
     (testing "queries on cache miss"
       (with-redefs [is-prestashed? (fn [_] false)]
