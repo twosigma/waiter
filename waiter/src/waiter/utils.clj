@@ -117,18 +117,18 @@
 (def formatter-rfc822 (:rfc822 f/formatters))
 
 (defn date-to-str
-  ([date-time]
+  ([^DateTime date-time]
    (date-to-str date-time formatter-iso8601))
-  ([date-time formatter]
+  ([^DateTime date-time formatter]
    (when date-time
      (f/unparse
        (f/with-zone formatter (t/default-time-zone))
        (.withZone date-time DateTimeZone/UTC)))))
 
 (defn str-to-date
-  ([date-str]
+  (^DateTime [date-str]
    (str-to-date date-str formatter-iso8601))
-  ([date-str formatter]
+  (^DateTime [date-str formatter]
    (f/parse
      (f/with-zone formatter (t/default-time-zone))
      date-str)))

@@ -232,17 +232,21 @@
         show-metadata (utils/param-contains? request-params "include" "metadata")
         {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
-        {:keys [service-description-template token-metadata]} token-description]
+        {:keys [service-description-template token-metadata]} token-description
+        token-etag (token-metadata->etag token-metadata)]
     (if (and service-description-template (not-empty service-description-template))
       ;;NB do not ever return the password to the user
       (do
         (log/info "successfully retrieved token " token)
-        (utils/map->json-response (cond-> service-description-template
-                                          show-metadata (merge token-metadata))
-                                  :headers {"etag" (token-metadata->etag token-metadata)}))
+        (utils/map->json-response
+          (cond-> service-description-template
+                  show-metadata (merge (cond-> token-metadata
+                                               (contains? token-metadata "last-update-time")
+                                               (update "last-update-time" #(DateTime. %)))))
+          :headers {"etag" token-etag}))
       (do
         (throw (ex-info (str "Couldn't find token " token)
-                        {:headers {"etag" (token-metadata->etag token-metadata)}
+                        {:headers {"etag" token-etag}
                          :status 404
                          :token token}))))))
 

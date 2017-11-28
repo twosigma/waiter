@@ -16,8 +16,10 @@
             [clojure.walk :as walk]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
-            [waiter.client-tools :refer :all])
-  (:import java.net.URL))
+            [waiter.client-tools :refer :all]
+            [waiter.utils :as utils])
+  (:import (java.net URL)
+           (org.joda.time DateTime)))
 
 (defn- waiter-url->token-url
   [waiter-url]
@@ -140,7 +142,8 @@
                 (get-token waiter-url token :cookies cookies)]
             (assert-response-status response 200)
             (is (get headers "etag"))
-            (is (= (get headers "etag") (-> body json/read-str (get "last-update-time") str))))))
+            (is (= (get headers "etag")
+                   (-> body json/read-str (get "last-update-time") utils/str-to-date .getMillis str))))))
 
       (log/info "ensuring tokens can be retrieved and listed on each router")
       (doseq [token tokens-to-create]
@@ -333,8 +336,11 @@
 
                 (let [token-response (get-token waiter-url token)
                       response-body (json/read-str (:body token-response))]
-                  (is (= {"health-check-url" "/probe-2", "last-update-time" last-update-time, "name" service-id-prefix,
-                          "owner" (retrieve-username), "run-as-user" "i-do-not-exist-but-will-not-be-checked"}
+                  (is (= {"health-check-url" "/probe-2"
+                          "last-update-time" (-> last-update-time DateTime. utils/date-to-str)
+                          "name" service-id-prefix,
+                          "owner" (retrieve-username)
+                          "run-as-user" "i-do-not-exist-but-will-not-be-checked"}
                          response-body))
                   (log/info "asserted retrieval of configuration for token" token)))
 
@@ -403,8 +409,12 @@
                 (is (str/includes? (str body) "Couldn't find token") (str body)))
               (let [token-response (get-token waiter-url token :query-params {"include" ["deleted" "metadata"]})
                     response-body (json/read-str (:body token-response))]
-                (is (= {"deleted" true, "health-check-url" "/probe", "last-update-time" last-update-time,
-                        "name" service-id-prefix, "owner" (retrieve-username), "run-as-user" "foo-bar"}
+                (is (= {"deleted" true
+                        "health-check-url" "/probe"
+                        "last-update-time" (-> last-update-time DateTime. utils/date-to-str)
+                        "name" service-id-prefix
+                        "owner" (retrieve-username)
+                        "run-as-user" "foo-bar"}
                        response-body)))
               (log/info "asserted retrieval of configuration for token" token)
               (finally
@@ -672,8 +682,9 @@
                   (try
                     (let [expected-service-id service-id
                           {:keys [body cookies service-id] :as response}
-                          (make-request-with-debug-info {"host" host-header}
-                                                        #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))
+                          (make-request-with-debug-info
+                            {"host" host-header}
+                            #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))
                           {:keys [service-description]} (service-settings waiter-url service-id)
                           {:keys [run-as-user permitted-user]} service-description]
                       (reset! service-id-atom service-id)
@@ -722,8 +733,9 @@
                   (try
                     (let [previous-service-id service-id
                           {:keys [body cookies service-id] :as response}
-                          (make-request-with-debug-info {"host" host-header}
-                                                        #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))]
+                          (make-request-with-debug-info
+                            {"host" host-header}
+                            #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))]
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
                       ; x-waiter-consent should not be re-emitted Waiter
@@ -743,7 +755,10 @@
           token (create-token-name waiter-url service-name)
           current-user (retrieve-username)
           service-description (-> (kitchen-request-headers :prefix "")
-                                  (assoc :authentication "disabled" :name service-name :permitted-user "*" :run-as-user current-user))
+                                  (assoc :authentication "disabled"
+                                         :name service-name
+                                         :permitted-user "*"
+                                         :run-as-user current-user))
           request-headers {:x-waiter-token token}]
       (try
         (testing "token creation"
@@ -753,18 +768,20 @@
 
         (testing "token retrieval"
           (let [token-response (get-token waiter-url token)
-                response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
+                response-body (-> token-response :body json/read-str pc/keywordize-map)]
             (is (contains? response-body :last-update-time))
             (is (= (assoc service-description :authentication "disabled" :owner current-user)
                    (dissoc response-body :last-update-time)))))
 
         (testing "successful request"
-          (let [{:keys [body] :as response} (make-request waiter-url "/hello-world" :headers request-headers :spnego-auth false)]
+          (let [{:keys [body] :as response}
+                (make-request waiter-url "/hello-world" :headers request-headers :spnego-auth false)]
             (assert-response-status response 200)
             (is (= "Hello World" body))))
 
         (testing "backend request headers"
-          (let [{:keys [body] :as response} (make-request waiter-url "/request-info" :headers request-headers :spnego-auth false)
+          (let [{:keys [body] :as response}
+                (make-request waiter-url "/request-info" :headers request-headers :spnego-auth false)
                 {:strs [headers]} (json/read-str (str body))
                 service-id (retrieve-service-id waiter-url (:request-headers response))]
             (assert-response-status response 200)
