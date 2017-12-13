@@ -85,16 +85,19 @@
 
 (defmacro assert-token-response
   "Asserts the token data in the response"
-  [response service-id-prefix deleted]
-  `(let [body# (:body ~response)
-         token-description# (parse-token-description body#)]
-     (assert-response-status ~response 200)
-     (is (contains? token-description# :last-update-time))
-     (is (= (cond-> {:health-check-url "/probe"
-                     :name ~service-id-prefix
-                     :owner (retrieve-username)}
-                    ~deleted (assoc :deleted ~deleted))
-            (dissoc token-description# :last-update-time)))))
+  ([response service-id-prefix deleted]
+   `(assert-token-response ~response ~service-id-prefix ~deleted true))
+  ([response service-id-prefix deleted include-metadata]
+   `(let [body# (:body ~response)
+          token-description# (parse-token-description body#)]
+      (assert-response-status ~response 200)
+      (when ~include-metadata
+        (is (contains? token-description# :last-update-time)))
+      (is (= (cond-> {:health-check-url "/probe"
+                      :name ~service-id-prefix}
+                     ~include-metadata (assoc :owner (retrieve-username))
+                     (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
+             (dissoc token-description# :last-update-time))))))
 
 (deftest ^:parallel ^:integration-fast test-token-create-delete
   (testing-using-waiter-url
@@ -142,8 +145,10 @@
       (log/info "ensuring tokens can be retrieved and listed on each router")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
-          (-> (get-token router-url token :cookies cookies)
-              (assert-token-response service-id-prefix false))
+          (-> (get-token router-url token :cookies cookies :query-params {"include" "none"})
+              (assert-token-response service-id-prefix false false))
+          (-> (get-token router-url token :cookies cookies :query-params {"include" "metadata"})
+              (assert-token-response service-id-prefix false true))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
