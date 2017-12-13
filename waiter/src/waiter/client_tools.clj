@@ -592,7 +592,7 @@
   (log/info "retrieving etag for token" token)
   (let [response (make-request waiter-url "/token"
                                :headers {"x-waiter-token" token}
-                               :query-params {"include-deleted" true})]
+                               :query-params {"include" "deleted"})]
     (get-in response [:headers "etag"])))
 
 (defn- attach-token-etag
