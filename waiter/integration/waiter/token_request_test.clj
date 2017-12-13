@@ -133,7 +133,8 @@
 
       (testing "token retrieval - presence of etag header"
         (doseq [token tokens-to-create]
-          (let [{:keys [body headers] :as response} (get-token waiter-url token :cookies cookies)]
+          (let [{:keys [body headers] :as response}
+                (get-token waiter-url token :cookies cookies)]
             (assert-response-status response 200)
             (is (get headers "etag"))
             (is (= (get headers "etag") (-> body json/read-str (get "last-update-time") str))))))
@@ -141,8 +142,8 @@
       (log/info "ensuring tokens can be retrieved and listed on each router")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
-          (let [response (get-token router-url token :cookies cookies)]
-            (assert-token-response response service-id-prefix false))
+          (-> (get-token router-url token :cookies cookies)
+              (assert-token-response service-id-prefix false))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
@@ -163,10 +164,10 @@
           (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
             (assert-response-status response 404)
             (is (str/includes? (str body) "Couldn't find token") (str body)))
-          (let [response (get-token router-url token
-                                    :cookies cookies
-                                    :query-params {"include-deleted" true})]
-            (assert-token-response response service-id-prefix true))
+          (-> (get-token router-url token
+                         :cookies cookies
+                         :query-params {"include-deleted" true, "include" "metadata"})
+              (assert-token-response service-id-prefix true))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
@@ -395,7 +396,7 @@
               (let [{:keys [body] :as response} (get-token waiter-url token)]
                 (assert-response-status response 404)
                 (is (str/includes? (str body) "Couldn't find token") (str body)))
-              (let [token-response (get-token waiter-url token :query-params {"include-deleted" true})
+              (let [token-response (get-token waiter-url token :query-params {"include-deleted" true, "include" "metadata"})
                     response-body (json/read-str (:body token-response))]
                 (is (= {"deleted" true, "health-check-url" "/probe", "last-update-time" last-update-time,
                         "name" service-id-prefix, "owner" (retrieve-username), "run-as-user" "foo-bar"}

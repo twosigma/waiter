@@ -347,14 +347,55 @@
           (is (empty? (sd/fetch-core kv-store service-id1)))
           (is (empty? (sd/fetch-core kv-store service-id2)))))
 
-      (testing "test:get-updated-service-description"
+      (testing "test:get-updated-service-description:include-metadata"
+        (let [{:keys [status body]}
+              (run-handle-token-request
+                kv-store waiter-hostnames entitlement-manager make-peer-requests-fn nil
+                {:request-method :get, :headers {"x-waiter-token" token}, :query-params {"include" "metadata"}})]
+          (is (= 200 status))
+          (let [body-map (-> body str json/read-str)]
+            (doseq [key sd/service-description-keys]
+              (is (= (get service-description2 key) (get body-map key))))
+            (doseq [key (disj sd/token-metadata-keys "deleted")]
+              (is (contains? body-map key) (str "Missing entry for " key)))
+            (is (not (contains? body-map "deleted"))))))
+
+      (testing "test:get-updated-service-description:include-foo"
+        (let [{:keys [status body]}
+              (run-handle-token-request
+                kv-store waiter-hostnames entitlement-manager make-peer-requests-fn nil
+                {:request-method :get, :headers {"x-waiter-token" token}, :query-params {"include" "foo"}})]
+          (is (= 200 status))
+          (let [body-map (-> body str json/read-str)]
+            (doseq [key sd/service-description-keys]
+              (is (= (get service-description2 key) (get body-map key))))
+            (doseq [key sd/token-metadata-keys]
+              (is (not (contains? body-map key)))))))
+
+      (testing "test:get-updated-service-description:include-metadata-and-foo"
+        (let [{:keys [status body]}
+              (run-handle-token-request
+                kv-store waiter-hostnames entitlement-manager make-peer-requests-fn nil
+                {:request-method :get, :headers {"x-waiter-token" token}, :query-params {"include" ["foo" "metadata"]}})]
+          (is (= 200 status))
+          (let [body-map (-> body str json/read-str)]
+            (doseq [key sd/service-description-keys]
+              (is (= (get service-description2 key) (get body-map key))))
+            (doseq [key (disj sd/token-metadata-keys "deleted")]
+              (is (contains? body-map key) (str "Missing entry for " key)))
+            (is (not (contains? body-map "deleted"))))))
+
+      (testing "test:get-updated-service-description:exclude-metadata"
         (let [{:keys [status body]}
               (run-handle-token-request
                 kv-store waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:request-method :get, :headers {"x-waiter-token" token}})]
           (is (= 200 status))
-          (doseq [key (keys (select-keys service-description2 sd/service-description-keys))]
-            (is (str/includes? body (str (get service-description2 key)))))))
+          (let [body-map (-> body str json/read-str)]
+            (doseq [key sd/service-description-keys]
+              (is (= (get service-description2 key) (get body-map key))))
+            (doseq [key sd/token-metadata-keys]
+              (is (not (contains? body-map key)))))))
 
       (testing "test:get-invalid-token"
         (let [{:keys [status body]}
