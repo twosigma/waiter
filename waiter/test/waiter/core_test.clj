@@ -221,41 +221,64 @@
                                   :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
                                   :service-description-defaults service-description-defaults}}
         handlers {:service-override-handler-fn ((:service-override-handler-fn request-handlers) configuration)}
+        request-handler (-> (ring-handler-factory waiter-request?-fn handlers) wrap-error-handling)
         test-service-id "service-id-1"]
     (sd/store-core kv-store test-service-id service-description-defaults (constantly nil))
     (testing "override-service-handler"
       (let [user "tu1"
-            request {:uri (str "/apps/" test-service-id "/override")
-                     :request-method :post
+            request {:authorization/user user
                      :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
-                     :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+                     :request-method :post
+                     :uri (str "/apps/" test-service-id "/override")}
+            {:keys [status body]} (request-handler request)]
         (is (= 200 status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "success"]))
         (is (= {"scale-factor" 0.3} (:overrides (sd/service-id->overrides kv-store test-service-id)))))
       (let [user "tu1"
-            request {:uri (str "/apps/" test-service-id "/override")
-                     :request-method :delete
+            request {:authorization/user user
                      :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
-                     :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+                     :request-method :get
+                     :uri (str "/apps/" test-service-id "/override")}
+            {:keys [status body]} (request-handler request)]
+        (is (= 200 status))
+        (is (= {:scale-factor 0.3} (-> body json/read-str walk/keywordize-keys :overrides)))
+        (is (= test-service-id (-> body json/read-str walk/keywordize-keys :service-id))))
+      (let [user "tu1"
+            request {:authorization/user user
+                     :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
+                     :request-method :delete
+                     :uri (str "/apps/" test-service-id "/override")}
+            {:keys [status body]} (request-handler request)]
         (is (= 200 status))
         (is (every? #(str/includes? (str body) %) ["true" test-service-id "success"]))
         (is (= {} (:overrides (sd/service-id->overrides kv-store test-service-id)))))
       (let [user "tu2"
-            request {:uri (str "/apps/" test-service-id "/override")
+            request {:authorization/user user
                      :request-method :post
-                     :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+                     :uri (str "/apps/" test-service-id "/override")}
+            {:keys [status body]} (request-handler request)]
         (is (= 403 status))
         (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id])))
       (let [user "tu2"
-            request {:uri (str "/apps/" test-service-id "/override")
-                     :request-method :delete
-                     :authorization/user user}
-            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+            request {:authorization/user user
+                     :request-method :get
+                     :uri (str "/apps/" test-service-id "/override")}
+            {:keys [status body]} (request-handler request)]
         (is (= 403 status))
-        (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id]))))))
+        (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id])))
+      (let [user "tu2"
+            request {:authorization/user user
+                     :request-method :delete
+                     :uri (str "/apps/" test-service-id "/override")}
+            {:keys [status body]} (request-handler request)]
+        (is (= 403 status))
+        (is (every? #(str/includes? (str body) %) ["not allowed" test-service-id])))
+      (let [user "tu2"
+            request {:authorization/user user
+                     :request-method :put
+                     :uri (str "/apps/" test-service-id "/override")}
+            {:keys [status]} (request-handler request)]
+        (is (= 405 status))))))
 
 (deftest test-service-view-logs-handler
   (let [scheduler (marathon/->MarathonScheduler (Object.) {:slave-port 5051} (fn [] nil) "/home/path/"
