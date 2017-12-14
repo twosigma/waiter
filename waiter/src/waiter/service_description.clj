@@ -16,12 +16,12 @@
             [digest]
             [plumbing.core :as pc]
             [schema.core :as s]
+            [slingshot.slingshot :as sling]
             [waiter.authorization :as authz]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.schema :as schema]
-            [waiter.utils :as utils]
-            [slingshot.slingshot :as sling])
+            [waiter.utils :as utils])
   (:import (org.joda.time DateTime)
            (schema.core RequiredKey)
            (schema.utils ValidationError)))

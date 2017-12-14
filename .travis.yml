@@ -1,3 +1,6 @@
+sudo: required
+dist: trusty
+group: deprecated-2017Q4
 language: java
 jdk:
 - oraclejdk8
@@ -13,8 +16,8 @@ env:
     - LEIN_CHMOD='chmod +x ./lein'
     - _JAVA_OPTIONS='' # Avoid unwanted _JAVA_OPTIONS set by Travis CI
   matrix:
-    - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=kitchen TEST_CMD='lein test'
+    - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-fast'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-slow'
     - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test explicit'

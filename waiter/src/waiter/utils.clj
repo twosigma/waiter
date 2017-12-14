@@ -404,6 +404,15 @@
   [params flag]
   (Boolean/parseBoolean (str (get params flag "false"))))
 
+(defn param-contains?
+  "Returns true if and only if request parameter k is present in params and has a value equal to v."
+  [params k v]
+  (let [param-value (get params k)]
+    (cond
+      (string? param-value) (= param-value v)
+      (seq param-value) (->> param-value seq (some #(= v %)))
+      :else false)))
+
 (defn authority->host
   "Retrieves the host from the authority."
   [authority]

@@ -228,7 +228,8 @@
    Anyone can see the configuration, b/c it shouldn't contain any sensitive data."
   [kv-store waiter-hostnames {:keys [headers] :as request}]
   (let [request-params (:query-params (ring-params/params-request request))
-        include-deleted (utils/request-flag request-params "include-deleted")
+        include-deleted (utils/param-contains? request-params "include" "deleted")
+        show-metadata (utils/param-contains? request-params "include" "metadata")
         {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
         {:keys [service-description-template token-metadata]} token-description]
@@ -236,7 +237,8 @@
       ;;NB do not ever return the password to the user
       (do
         (log/info "successfully retrieved token " token)
-        (utils/map->json-response (merge service-description-template token-metadata)
+        (utils/map->json-response (cond-> service-description-template
+                                          show-metadata (merge token-metadata))
                                   :headers {"etag" (token-metadata->etag token-metadata)}))
       (do
         (throw (ex-info (str "Couldn't find token " token)

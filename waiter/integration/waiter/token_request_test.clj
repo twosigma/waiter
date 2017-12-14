@@ -85,16 +85,19 @@
 
 (defmacro assert-token-response
   "Asserts the token data in the response"
-  [response service-id-prefix deleted]
-  `(let [body# (:body ~response)
-         token-description# (parse-token-description body#)]
-     (assert-response-status ~response 200)
-     (is (contains? token-description# :last-update-time))
-     (is (= (cond-> {:health-check-url "/probe"
-                     :name ~service-id-prefix
-                     :owner (retrieve-username)}
-                    ~deleted (assoc :deleted ~deleted))
-            (dissoc token-description# :last-update-time)))))
+  ([response service-id-prefix deleted]
+   `(assert-token-response ~response ~service-id-prefix ~deleted true))
+  ([response service-id-prefix deleted include-metadata]
+   `(let [body# (:body ~response)
+          token-description# (parse-token-description body#)]
+      (assert-response-status ~response 200)
+      (when ~include-metadata
+        (is (contains? token-description# :last-update-time)))
+      (is (= (cond-> {:health-check-url "/probe"
+                      :name ~service-id-prefix}
+                     ~include-metadata (assoc :owner (retrieve-username))
+                     (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
+             (dissoc token-description# :last-update-time))))))
 
 (deftest ^:parallel ^:integration-fast test-token-create-delete
   (testing-using-waiter-url
@@ -133,7 +136,8 @@
 
       (testing "token retrieval - presence of etag header"
         (doseq [token tokens-to-create]
-          (let [{:keys [body headers] :as response} (get-token waiter-url token :cookies cookies)]
+          (let [{:keys [body headers] :as response}
+                (get-token waiter-url token :cookies cookies)]
             (assert-response-status response 200)
             (is (get headers "etag"))
             (is (= (get headers "etag") (-> body json/read-str (get "last-update-time") str))))))
@@ -141,8 +145,10 @@
       (log/info "ensuring tokens can be retrieved and listed on each router")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
-          (let [response (get-token router-url token :cookies cookies)]
-            (assert-token-response response service-id-prefix false))
+          (-> (get-token router-url token :cookies cookies :query-params {"include" "none"})
+              (assert-token-response service-id-prefix false false))
+          (-> (get-token router-url token :cookies cookies :query-params {"include" "metadata"})
+              (assert-token-response service-id-prefix false true))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
@@ -152,7 +158,7 @@
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token :hard-delete false))
 
-      (log/info "ensuring tokens can no longer be retrieved on each router without include-deleted parameter")
+      (log/info "ensuring tokens can no longer be retrieved on each router without include=deleted parameter")
       (doseq [token tokens-to-create]
         (doseq [[router-id router-url] (routers waiter-url)]
           (let [router-state (kv-store-state router-url :cookies cookies)
@@ -163,10 +169,10 @@
           (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
             (assert-response-status response 404)
             (is (str/includes? (str body) "Couldn't find token") (str body)))
-          (let [response (get-token router-url token
-                                    :cookies cookies
-                                    :query-params {"include-deleted" true})]
-            (assert-token-response response service-id-prefix true))
+          (-> (get-token router-url token
+                         :cookies cookies
+                         :query-params {"include" ["deleted" "metadata"]})
+              (assert-token-response service-id-prefix true))
           (let [{:keys [body] :as tokens-response} (list-tokens router-url current-user :cookies cookies)
                 tokens (json/read-str body)]
             (assert-response-status tokens-response 200)
@@ -176,12 +182,12 @@
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token))
 
-      (log/info "ensuring tokens can no longer be retrieved on each router with include-deleted parameter after hard-delete")
+      (log/info "ensuring tokens can no longer be retrieved on each router with include=deleted parameter after hard-delete")
       (doseq [token tokens-to-create]
         (doseq [[_ router-url] (routers waiter-url)]
           (let [{:keys [body] :as response} (get-token router-url token
                                                        :cookies cookies
-                                                       :query-params {"include-deleted" true})]
+                                                       :query-params {"include" "deleted"})]
             (assert-response-status response 404)
             (is (str/includes? (str body) "Couldn't find token") (str body))))))))
 
@@ -395,7 +401,7 @@
               (let [{:keys [body] :as response} (get-token waiter-url token)]
                 (assert-response-status response 404)
                 (is (str/includes? (str body) "Couldn't find token") (str body)))
-              (let [token-response (get-token waiter-url token :query-params {"include-deleted" true})
+              (let [token-response (get-token waiter-url token :query-params {"include" ["deleted" "metadata"]})
                     response-body (json/read-str (:body token-response))]
                 (is (= {"deleted" true, "health-check-url" "/probe", "last-update-time" last-update-time,
                         "name" service-id-prefix, "owner" (retrieve-username), "run-as-user" "foo-bar"}

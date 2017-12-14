@@ -592,7 +592,7 @@
   (log/info "retrieving etag for token" token)
   (let [response (make-request waiter-url "/token"
                                :headers {"x-waiter-token" token}
-                               :query-params {"include-deleted" true})]
+                               :query-params {"include" "deleted"})]
     (get-in response [:headers "etag"])))
 
 (defn- attach-token-etag
@@ -850,7 +850,7 @@
 
 (defn get-token
   "Gets the token with the given name"
-  [waiter-url token & {:keys [cookies query-params] :or {cookies {}, query-params {}}}]
+  [waiter-url token & {:keys [cookies query-params] :or {cookies {}, query-params {"include" "metadata"}}}]
   (let [request-headers (clojure.walk/stringify-keys {:host token})
         token-response (make-request waiter-url "/token"
                                      :cookies cookies
