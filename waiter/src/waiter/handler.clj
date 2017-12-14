@@ -406,15 +406,15 @@
 
 (defn override-service-handler
   "Handles overrides for a service."
-  [kv-store allowed-to-manage-service? make-inter-router-requests-fn service-id request]
-  (try
-    (when (str/blank? service-id)
-      (throw (ex-info "Missing service-id" {:status 400})))
-    ; throw exception if no service description for service-id exists
-    (sd/fetch-core kv-store service-id :nil-on-missing? false)
-    (case (:request-method request)
+  [kv-store allowed-to-manage-service? make-inter-router-requests-fn service-id {:keys [request-method] :as request}]
+  (when (str/blank? service-id)
+    (throw (ex-info "Missing service-id" {:status 400})))
+  ; throw exception if no service description for service-id exists
+  (sd/fetch-core kv-store service-id :nil-on-missing? false)
+  (let [auth-user (get request :authorization/user)]
+    (case request-method
       :delete
-      (let [auth-user (get request :authorization/user)]
+      (do
         (log/info auth-user "wants to delete overrides for" service-id)
         (if (allowed-to-manage-service? service-id auth-user)
           (do
@@ -422,11 +422,18 @@
             (trigger-service-refresh make-inter-router-requests-fn service-id)
             (utils/map->json-response {:service-id service-id, :success true}))
           (throw (ex-info (str auth-user " not allowed to override " service-id)
-                          {:auth-user auth-user
-                           :service-id service-id
-                           :status 403}))))
+                          {:auth-user auth-user, :service-id service-id, :status 403}))))
+
+      :get
+      (if (allowed-to-manage-service? service-id auth-user)
+        (-> (sd/service-id->overrides kv-store service-id :refresh true)
+            (assoc :service-id service-id)
+            utils/map->json-response)
+        (throw (ex-info (str auth-user " not allowed view override information of " service-id)
+                        {:auth-user auth-user, :service-id service-id, :status 403})))
+
       :post
-      (let [auth-user (get request :authorization/user)]
+      (do
         (log/info auth-user "wants to update overrides for" service-id)
         (if (allowed-to-manage-service? service-id auth-user)
           (do
@@ -435,11 +442,9 @@
             (trigger-service-refresh make-inter-router-requests-fn service-id)
             (utils/map->json-response {:service-id service-id, :success true}))
           (throw (ex-info (str auth-user " not allowed to override " service-id)
-                          {:auth-user auth-user
-                           :service-id service-id
-                           :status 403})))))
-    (catch Exception ex
-      (utils/exception->response ex request))))
+                          {:auth-user auth-user, :service-id service-id, :status 403}))))
+
+      (throw (ex-info "Unsupported request method" {:request-method request-method, :status 405})))))
 
 (defn service-view-logs-handler
   "Redirects user to the log directory on the slave"

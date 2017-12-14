@@ -360,21 +360,29 @@
           overrides {:max-instances 100
                      :min-instances 2
                      :scale-factor 0.3}
-          {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
-      (let [{:keys [status]} (make-request waiter-url (str "/apps/" service-id "/override")
-                                           :http-method-fn http/post
-                                           :body (json/write-str overrides))]
-        (is (= 200 status)))
-      (let [service-settings (service-settings waiter-url service-id)
-            service-description-overrides (-> service-settings :service-description-overrides :overrides)]
-        (is (= overrides service-description-overrides)))
-      (let [{:keys [status]} (make-request waiter-url (str "/apps/" service-id "/override")
-                                           :http-method-fn http/delete)]
-        (is (= 200 status)))
-      (let [service-settings (service-settings waiter-url service-id)
-            service-description-overrides (-> service-settings :service-description-overrides :overrides)]
-        (is (not service-description-overrides)))
-      (delete-service waiter-url service-id))))
+          {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))
+          override-endpoint (str "/apps/" service-id "/override")]
+      (with-service-cleanup
+        service-id
+        (-> (make-request waiter-url override-endpoint :http-method-fn http/post :body (json/write-str overrides))
+            (assert-response-status 200))
+        (let [{:keys [body] :as response} (make-request waiter-url override-endpoint
+                                                        :http-method-fn http/get
+                                                        :body (json/write-str overrides))]
+          (assert-response-status response 200)
+          (let [response-data (-> body str json/read-str walk/keywordize-keys)]
+            (is (= (retrieve-username) (:last-updated-by response-data)))
+            (is (= overrides (:overrides response-data)))
+            (is (= service-id (:service-id response-data)))
+            (is (contains? response-data :time))))
+        (let [service-settings (service-settings waiter-url service-id)
+              service-description-overrides (-> service-settings :service-description-overrides :overrides)]
+          (is (= overrides service-description-overrides)))
+        (-> (make-request waiter-url override-endpoint :http-method-fn http/delete)
+            (assert-response-status 200))
+        (let [service-settings (service-settings waiter-url service-id)
+              service-description-overrides (-> service-settings :service-description-overrides :overrides)]
+          (is (not service-description-overrides)))))))
 
 (deftest ^:parallel ^:integration-fast basic-waiter-auth-test
   (testing-using-waiter-url
