@@ -126,7 +126,6 @@
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]
-   (s/required-key :thread-stack-state-refresh-interval-ms) schema/positive-int
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
    (s/required-key :work-stealing) {(s/required-key :offer-help-interval-ms) schema/positive-int
@@ -293,7 +292,6 @@
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
-   :thread-stack-state-refresh-interval-ms 600000 ; 10 minutes
    :websocket-config {:ws-max-binary-message-size  (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:offer-help-interval-ms 100
