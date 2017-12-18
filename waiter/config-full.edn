@@ -507,10 +507,6 @@
                        ;; flagged as never-passed-health-checks upon failure
                        :failed-check-threshold 5}
 
- ;; Waiter launches a loop that maintains the stacktraces for individual threads;
- ;; this value dictates how often (milliseconds) the stacktraces are refreshed:
- :thread-stack-state-refresh-interval-ms 600000
-
  ;; Waiter supports making websocket connections to backends.
  ;; The maximum binary and text message sizes in the websocket request or response can be configured
  ;; as follows, the values are in bytes:
