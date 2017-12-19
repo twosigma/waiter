@@ -227,12 +227,28 @@
       ex
       (ex-info "Internal error" {:status 500} ex))))
 
+(let [html-fn (template/fn
+                [{:keys [cid details host message query-string request-method status support-info timestamp uri]}]
+                (slurp (io/resource "web/error.html")))]
+  (defn- render-error-html
+    "Renders error html"
+    [context]
+    (html-fn context)))
+
+(let [text-fn (template/fn
+                [{:keys [cid details host message query-string request-method status support-info timestamp uri]}]
+                (slurp (io/resource "web/error.txt")))]
+  (defn- render-error-text
+    "Renders error text"
+    [context]
+    (text-fn context)))
+
 (defn exception->response
   "Converts an exception into a ring response."
   [^Exception ex {:keys [] :as request}]
   (let [wrapped-ex (wrap-unhandled-exception ex)
         {:keys [headers suppress-logging]} (ex-data wrapped-ex)
-        processed-headers (into {} (for [[k v] headers] [(name k) (str v)])) ]
+        processed-headers (into {} (for [[k v] headers] [(name k) (str v)]))]
     (when-not suppress-logging
       (log/error wrapped-ex))
     (let [content-type (request->content-type request)
@@ -240,22 +256,20 @@
       {:status status
        :body (case content-type
                "application/json"
-               (do
-                 (json/write-str {:waiter-error error-context}
-                               :value-fn stringify-elements
-                               :escape-slash false))
+               (-> {:waiter-error error-context}
+                   (json/write-str :value-fn stringify-elements :escape-slash false))
                "text/html"
-               (template/eval (slurp (io/resource "web/error.html"))
-                              (-> error-context 
-                                  (update :message #(urls->html-links %))
-                                  (update :details #(with-out-str (pprint/pprint %)))))
+               (-> error-context
+                   (update :message #(urls->html-links %))
+                   (update :details #(with-out-str (pprint/pprint %)))
+                   render-error-html)
                "text/plain"
-               (-> (template/eval (slurp (io/resource "web/error.txt"))
-                                  (-> error-context 
-                                      (update :details (fn [v] 
-                                                         (when v 
-                                                           (-> (with-out-str (pprint/pprint v))
-                                                               (str/replace #"\n" "\n  ")))))))
+               (-> error-context
+                   (update :details (fn [v]
+                                      (when v
+                                        (-> (with-out-str (pprint/pprint v))
+                                            (str/replace #"\n" "\n  ")))))
+                   render-error-text
                    (str/replace #"\n" "\n  ")
                    (str/replace #"\n  $" "\n")))
        :headers (merge {"content-type" content-type} processed-headers)})))
