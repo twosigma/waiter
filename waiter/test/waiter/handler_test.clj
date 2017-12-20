@@ -1021,6 +1021,17 @@
         (is (= {} headers))
         (is (str/includes? body "Added cookie x-waiter-consent"))))))
 
+(deftest test-render-consent-template
+  (let [context {:auth-user "test-user"
+                 :consent-expiry-days 1
+                 :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
+                 :service-id "service-5.97"
+                 :target-url "http://www.example.com:6789/some-path"
+                 :token "www.example.com"}
+        body (render-consent-template context)]
+    (is (str/includes? body "Run Web App? - Waiter"))
+    (is (str/includes? body "http://www.example.com:6789/some-path"))))
+
 (deftest test-request-consent-handler
   (let [token->service-description-template (fn [token]
                                               (when (= token "www.example.com")
@@ -1038,7 +1049,7 @@
                          (is (= "web/consent.html" file-path))
                          (StringReader. "some-content"))
         template-eval-factory (fn [scheme]
-                                (fn [content data]
+                                (fn [data]
                                   (is (= {:auth-user "test-user"
                                           :consent-expiry-days 1
                                           :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
@@ -1046,7 +1057,7 @@
                                           :target-url (str scheme "://www.example.com:6789/some-path")
                                           :token "www.example.com"}
                                          data))
-                                  (str "template:" content)))]
+                                  "template:some-content"))]
     (testing "unsupported request method"
       (let [request {:authorization/user "test-user"
                      :request-method :post
@@ -1068,7 +1079,7 @@
         (is (str/includes? body "Unable to load description for token"))))
 
     (with-redefs [io/resource io-resource-fn
-                  template/eval (template-eval-factory "http")]
+                  render-consent-template (template-eval-factory "http")]
       (testing "token without service description - http scheme"
         (let [request {:authorization/user "test-user"
                        :headers {"host" "www.example.com:6789"}
@@ -1080,7 +1091,7 @@
           (is (= body "template:some-content")))))
 
     (with-redefs [io/resource io-resource-fn
-                  template/eval (template-eval-factory "https")]
+                  render-consent-template (template-eval-factory "https")]
       (testing "token without service description - https scheme"
         (let [request {:authorization/user "test-user"
                        :headers {"host" "www.example.com:6789"}
@@ -1092,7 +1103,7 @@
           (is (= body "template:some-content")))))
 
     (with-redefs [io/resource io-resource-fn
-                  template/eval (template-eval-factory "https")]
+                  render-consent-template (template-eval-factory "https")]
       (testing "token without service description - https x-forwarded-proto"
         (let [request {:authorization/user "test-user"
                        :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}

@@ -485,7 +485,7 @@
             (service/offer-instance! instance-rpc-chan service-id offer-params)
             (let [response-status (async/<! response-chan)]
               (utils/map->json-response (assoc (select-keys offer-params [:cid :request-id :router-id :service-id])
-                                               :response-status response-status))))))
+                                          :response-status response-status))))))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
@@ -695,6 +695,15 @@
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-error"))
       (utils/exception->response ex request))))
 
+(let [consent-template-fn
+      (template/fn
+        [{:keys [auth-user consent-expiry-days service-description-template service-id target-url token]}]
+        (slurp (io/resource "web/consent.html")))]
+  (defn render-consent-template
+    "Render the consent html page."
+    [context]
+    (consent-template-fn context)))
+
 (defn request-consent-handler
   "Displays the consent form and requests approval from user. The content is rendered from consent.html.
    Approval form is submitted using AJAX and the user is then redirected to the target url that triggered a redirect to this form."
@@ -715,20 +724,34 @@
                            (service-description->service-id))]
         (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-render"))
         (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-render"))
-        {:body (template/eval (slurp (io/resource "web/consent.html"))
-                              {:auth-user auth-user
-                               :consent-expiry-days consent-expiry-days
-                               :service-description-template service-description-template
-                               :service-id service-id
-                               :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
-                                                (when (not (str/blank? query-string)) (str "?" query-string)))
-                               :token token})
+        {:body (render-consent-template
+                 {:auth-user auth-user
+                  :consent-expiry-days consent-expiry-days
+                  :service-description-template service-description-template
+                  :service-id service-id
+                  :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
+                                   (when (not (str/blank? query-string)) (str "?" query-string)))
+                  :token token})
          :headers {"content-type" "text/html"}
          :status 200}))
     (catch Exception ex
       (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-error"))
       (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-error"))
       (utils/exception->response ex request))))
+
+(let [html-fn (template/fn [{:keys [cid host hostname message port support-info timestamp]}]
+                           (slurp (io/resource "web/welcome.html")))]
+  (defn- render-welcome-html
+    "Renders welcome html"
+    [context]
+    (html-fn context)))
+
+(let [text-fn (template/fn [{:keys [cid host hostname message port support-info timestamp]}]
+                           (slurp (io/resource "web/welcome.txt")))]
+  (defn- render-welcome-text
+    "Renders welcome text"
+    [context]
+    (text-fn context)))
 
 (defn welcome-handler
   "Response with a welcome page."
@@ -745,8 +768,8 @@
       (case request-method
         :get {:body (case content-type
                       "application/json" (json/write-str welcome-info)
-                      "text/html" (template/eval (slurp (io/resource "web/welcome.html")) welcome-info)
-                      "text/plain" (template/eval (slurp (io/resource "web/welcome.txt")) welcome-info))
+                      "text/html" (render-welcome-html welcome-info)
+                      "text/plain" (render-welcome-text welcome-info))
               :headers {"content-type" content-type}}
         (throw (ex-info "Only GET supported" {:status 405})))
       (catch Exception ex
