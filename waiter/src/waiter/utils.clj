@@ -187,7 +187,7 @@
 (defn urls->html-links
   "Converts any URLs in a string to HTML links."
   [message]
-  (when message 
+  (when message
     (str/replace message #"(https?://[^\s]+)" "<a href=\"$1\">$1</a>")))
 
 (defn request->content-type
@@ -202,30 +202,22 @@
     (= "application/json" content-type) "application/json"
     :else "text/plain"))
 
-(defn build-error-context
-  "Creates an error context from a request and exception data."
-  [^Exception e {:keys [headers query-string request-method support-info uri] :as request}]
-  (let [{:strs [host x-cid]} headers
-        {:keys [friendly-error-message message status] :as ex-data} (ex-data e)] 
-    {:cid x-cid 
-     :details ex-data
+(defn- build-error-context
+  "Creates a context from a data map and a request.
+   The data map is expected to contain the following keys: details, message, and status."
+  [{:keys [details message status]}
+   {:keys [headers query-string request-method support-info uri]}]
+  (let [{:strs [host x-cid]} headers]
+    {:cid x-cid
+     :details details
      :host host
-     :message (or friendly-error-message message (.getMessage e))
+     :message message
      :query-string query-string
-     :request-method (-> (or request-method  "") name str/upper-case)
-     :status (or status 400)
+     :request-method (-> (or request-method "") name str/upper-case)
+     :status status
      :support-info support-info
      :timestamp (date-to-str (t/now))
      :uri uri}))
-
-(defn wrap-unhandled-exception
-  "Wraps any exception that doesn't already set status in a parent
-  exception with a generic error message and a 500 status."
-  [ex]
-  (let [{:keys [status]} (ex-data ex)]
-    (if status
-      ex
-      (ex-info "Internal error" {:status 500} ex))))
 
 (let [html-fn (template/fn
                 [{:keys [cid details host message query-string request-method status support-info timestamp uri]}]
@@ -243,36 +235,54 @@
     [context]
     (text-fn context)))
 
+(defn data->error-response
+  "Converts the provided data map into a ring response.
+   The data map is expected to contain the following keys: details, headers, message, and status."
+  [{:keys [headers status] :or {status 400} :as data-map} request]
+  (let [error-context (build-error-context data-map request)
+        content-type (request->content-type request)]
+    {:body (case content-type
+             "application/json"
+             (-> {:waiter-error error-context}
+                 (json/write-str :value-fn stringify-elements :escape-slash false))
+             "text/html"
+             (-> error-context
+                 (update :message #(urls->html-links %))
+                 (update :details #(with-out-str (pprint/pprint %)))
+                 render-error-html)
+             "text/plain"
+             (-> error-context
+                 (update :details (fn [v]
+                                    (when v
+                                      (-> (with-out-str (pprint/pprint v))
+                                          (str/replace #"\n" "\n  ")))))
+                 render-error-text
+                 (str/replace #"\n" "\n  ")
+                 (str/replace #"\n  $" "\n")))
+     :headers (merge {"content-type" content-type} headers)
+     :status status}))
+
+(defn- wrap-unhandled-exception
+  "Wraps any exception that doesn't already set status in a parent
+  exception with a generic error message and a 500 status."
+  [ex]
+  (let [{:keys [status]} (ex-data ex)]
+    (if status
+      ex
+      (ex-info "Internal error" {:status 500} ex))))
+
 (defn exception->response
   "Converts an exception into a ring response."
   [^Exception ex {:keys [] :as request}]
   (let [wrapped-ex (wrap-unhandled-exception ex)
+        {:keys [friendly-error-message message status] :as ex-data} (ex-data wrapped-ex)
+        message (or friendly-error-message message (.getMessage wrapped-ex))
         {:keys [headers suppress-logging]} (ex-data wrapped-ex)
         processed-headers (into {} (for [[k v] headers] [(name k) (str v)]))]
     (when-not suppress-logging
       (log/error wrapped-ex))
-    (let [content-type (request->content-type request)
-          {:keys [status] :as error-context} (build-error-context wrapped-ex request)]
-      {:status status
-       :body (case content-type
-               "application/json"
-               (-> {:waiter-error error-context}
-                   (json/write-str :value-fn stringify-elements :escape-slash false))
-               "text/html"
-               (-> error-context
-                   (update :message #(urls->html-links %))
-                   (update :details #(with-out-str (pprint/pprint %)))
-                   render-error-html)
-               "text/plain"
-               (-> error-context
-                   (update :details (fn [v]
-                                      (when v
-                                        (-> (with-out-str (pprint/pprint v))
-                                            (str/replace #"\n" "\n  ")))))
-                   render-error-text
-                   (str/replace #"\n" "\n  ")
-                   (str/replace #"\n  $" "\n")))
-       :headers (merge {"content-type" content-type} processed-headers)})))
+    (-> {:details ex-data, :headers processed-headers, :message message, :status status}
+        (data->error-response request))))
 
 (defmacro log-and-suppress-when-exception-thrown
   "Executes the body inside a try-catch block and suppresses any thrown exceptions."

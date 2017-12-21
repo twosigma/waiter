@@ -16,6 +16,7 @@
             [metrics.counters :as counters]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
+            [waiter.async-utils :as au]
             [waiter.core :refer :all]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
@@ -490,7 +491,7 @@
                                 (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
                                                      can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
 
-    (testing "not preauthorized service, permitted to run service"
+    (testing "not pre-authorized service, permitted to run service"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "tuser", "permitted-user" "tuser"}
                                                       :service-preauthorized false})]
         (let [service-description-defaults {}
@@ -503,17 +504,18 @@
   (testing "returns error for suspended app"
     (let [{:keys [status body]} (handle-suspended-service nil {:service-id "service-id-1"
                                                                :suspended-state {:suspended true
-                                                                                 :last-updated-by "suser"
+                                                                                 :last-updated-by "test-user"
                                                                                  :time (t/now)}})]
       (is (= 503 status))
       (is (str/includes? body "Service has been suspended"))
-      (is (str/includes? body "suser"))))
+      (is (str/includes? body "test-user"))))
+
   (testing "passes apps by default"
     (is (nil? (handle-suspended-service nil {})))))
 
 (deftest test-handle-too-many-requests
   (testing "returns error for too many requests"
-    (let [service-id "myservice"
+    (let [service-id "my-service"
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 10)
@@ -521,8 +523,9 @@
                                                                  :service-description {"max-queue-length" 5}})]
         (is (= 503 status))
         (is (str/includes? body "Max queue length")))))
+
   (testing "passes service with fewer requests"
-    (let [service-id "okservice"
+    (let [service-id "ok-service"
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 3)
@@ -572,7 +575,7 @@
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory
                                    local-usage-agent request)
-            {:keys [headers status]} (async/<!! response-chan)]
+            {:keys [headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
         (is (= 303 status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
@@ -581,7 +584,7 @@
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory
                                    local-usage-agent request)
-            {:keys [headers status]} (async/<!! response-chan)]
+            {:keys [headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
         (is (= 303 status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
@@ -590,7 +593,7 @@
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory
                                    local-usage-agent request)
-            {:keys [headers status]} (async/<!! response-chan)]
+            {:keys [headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
         (is (= 303 status))
         (is (= "/waiter-consent/path" (get headers "location")))))))
 
@@ -603,7 +606,7 @@
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-in-http-request request-abort-callback-factory
                                local-usage-agent request)
-        {:keys [body headers status]} (async/<!! response-chan)]
+        {:keys [body headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
     (is (= 500 status))
     (is (nil? (get headers "location")))
     (is (= "text/plain" (get headers "content-type")))
@@ -618,7 +621,7 @@
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-in-http-request request-abort-callback-factory
                                local-usage-agent request)
-        {:keys [body headers status]} (async/<!! response-chan)]
+        {:keys [body headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
     (is (= 404 status))
     (is (= "text/plain" (get headers "content-type")))
     (is (str/includes? (str body) "Error message for user"))))
