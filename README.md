@@ -1,3 +1,5 @@
+<img src="./waiter.svg" align="right" width="250px" height="250px">
+
 # Waiter
 
 [![Build Status](https://travis-ci.org/twosigma/waiter.svg)](https://travis-ci.org/twosigma/waiter)
