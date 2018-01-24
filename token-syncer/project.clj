@@ -11,7 +11,7 @@
 (defproject token-syncer "0.1.0-SNAPSHOT"
   :aliases {"test" ["with-profile" "+test" "test"]}
   :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
-                 [cc.qbits/jet "0.7.10-20170801_153701-gf517b70"]
+[cc.qbits/jet "0.7.10-20180124_201515-g857338f"]
                  [commons-codec/commons-codec "1.10"]
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/data.json "0.2.6"]
@@ -20,7 +20,7 @@
                  [org.slf4j/slf4j-log4j12 "1.7.21"]
                  [prismatic/plumbing "0.5.4"]]
   :main ^:skip-aot token-syncer.main
-  :plugins [[lein-voom "0.1.0-20150115_230705-gd96d771"]]
+  :plugins [[lein-voom "0.1.0-20171225_233657-g7962d1d"]]
   :profiles {:default {:jvm-opts ["-Dlog4j.configuration=log4j.properties"]}
              :test {:jvm-opts ["-Dlog4j.configuration=log4j-test.properties"
                                "-XX:+PrintAdaptiveSizePolicy"
