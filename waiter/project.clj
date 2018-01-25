@@ -26,9 +26,9 @@
   :dependencies [[bidi "2.0.16"
                   :exclusions [prismatic/schema ring/ring-core]]
                  ^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
-                 [cc.qbits/jet "0.7.10-20180124_192153-gf3270ee"]
+                 [cc.qbits/jet "0.7.10-20180124_201515-g857338f"]
                  ^{:voom {:repo "https://github.com/twosigma/clj-http.git" :branch "waiter-patch"}}
-                 [clj-http "1.0.2-20180124_192038-g917314d"
+                 [clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.12.0"
                   :exclusions
@@ -47,7 +47,7 @@
                    org.clojure/core.async]]
                  [joda-time "2.9.4"]
                  ^{:voom {:repo "https://github.com/twosigma/metrics-clojure.git" :branch "waiter-patch"}}
-                 [metrics-clojure "2.6.0-20180124_192727-g36960dc"
+                 [metrics-clojure "2.6.0-20180124_201441-g72cee16"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
                  [metrics-clojure-jvm "2.6.0"
                   :exclusions [io.dropwizard.metrics/metrics-core
