@@ -373,7 +373,7 @@
                             {:scheduler-state scheduler-state, :service-id service-id})
                   {:scale-to-instances instances :target-instances target-instances :scale-amount 0}))]
           (when (< instances (service-description "min-instances"))
-            (log/warn "Scheduler reported service had fewer instances than min-instances" {:service-id service-id
+            (log/warn "scheduler reported service had fewer instances than min-instances" {:service-id service-id
                                                                                            :instances instances
                                                                                            :min-instances (service-description "min-instances")}))
           (when-not (zero? scale-amount)
