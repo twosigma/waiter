@@ -37,4 +37,4 @@
               header (str "Negotiate " (String. (.encode base64 token)))]
           (.header request HttpHeader/AUTHORIZATION header))
         (catch Exception e
-          (log/error e "Failure during spnego authentication"))))))
+          (log/error e "failure during spnego authentication"))))))

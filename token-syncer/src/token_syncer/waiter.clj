@@ -35,7 +35,7 @@
   "Throws an exception if an error is present in the response map, esle returns the input response map."
   [{:keys [error] :as response}]
   (when error
-    (log/error error "Error in making request")
+    (log/error error "error in making request")
     (throw error))
   response)
 
@@ -57,7 +57,7 @@
                                                         async/<!!)]
           (if (and (= 401 status) (= "Negotiate" (get headers "www-authenticate")))
             (do
-              (log/info "Using spnego auth to make request" request-url)
+              (log/info "using spnego auth to make request" request-url)
               (->> (assoc request-options :auth (spnego/spnego-authentication (URI. request-url)))
                    (method-fn http-client request-url)
                    async/<!!))
@@ -70,7 +70,7 @@
   (try
     (-> data str json/read-str)
     (catch Exception exception
-      (log/error "Unable to parse as json:" data)
+      (log/error "unable to parse as json:" data)
       (throw exception))))
 
 (defn- extract-relevant-headers
@@ -111,7 +111,7 @@
                                                            :headers {"accept" "application/json"
                                                                      "x-waiter-token" token}
                                                            :query-params {"include" ["deleted" "metadata"]})]
-      (log/info "Loading" token "on" cluster-url "responded with status" status
+      (log/info "loading" token "on" cluster-url "responded with status" status
                 (select-keys headers ["content-type" "etag" "x-cid"]))
       (let [token-etag (get headers "etag")
             token-description (->> body
@@ -124,13 +124,13 @@
          :token-etag token-etag
          :status status}))
     (catch Exception ex
-      (log/error ex "Unable to retrieve token" token "from" cluster-url)
+      (log/error ex "unable to retrieve token" token "from" cluster-url)
       {:error ex})))
 
 (defn store-token
   "Stores the token description on a specific cluster."
   [^HttpClient http-client cluster-url token token-etag token-description]
-  (log/info "Storing token:" token ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
+  (log/info "storing token:" token ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
   (let [{:keys [body headers status]} (make-http-request http-client (str cluster-url "/token")
                                                          :body (json/write-str (assoc token-description :token token))
                                                          :headers {"accept" "application/json"
@@ -138,12 +138,12 @@
                                                          :method :post
                                                          :query-params {"update-mode" "admin"})
         body-data (async/<!! body)]
-    (log/info "Storing" token "on" cluster-url "responded with status" status
+    (log/info "storing" token "on" cluster-url "responded with status" status
               (select-keys headers ["content-type" "etag" "x-cid"]))
     (when (or (nil? status)
               (< status 200)
               (> status 299))
-      (log/error "Token store failed" body-data)
+      (log/error "token store failed" body-data)
       (throw (ex-info "Token store failed"
                       {:body body-data
                        :headers (extract-relevant-headers headers)
@@ -156,7 +156,7 @@
 (defn hard-delete-token
   "Hard-delete a token on a specific cluster."
   [^HttpClient http-client cluster-url token token-etag]
-  (log/info "Hard-delete" token "on" cluster-url)
+  (log/info "hard-delete" token "on" cluster-url)
   (let [{:keys [body headers status]} (make-http-request http-client (str cluster-url "/token")
                                                          :headers {"accept" "application/json"
                                                                    "if-match" token-etag
@@ -164,7 +164,7 @@
                                                          :method :delete
                                                          :query-params {"hard-delete" "true"})
         body-data (async/<!! body)]
-    (log/info "Hard-deleting" token "on" cluster-url "responded with status" status
+    (log/info "hard-deleting" token "on" cluster-url "responded with status" status
               (select-keys headers ["content-type" "etag" "x-cid"]))
     (when (or (nil? status)
               (not (<= 200 status 299)))

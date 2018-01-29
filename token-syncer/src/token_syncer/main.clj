@@ -61,7 +61,7 @@
   "The main entry point."
   [& args]
   (setup-exception-handler)
-  (log/info "Command-line arguments:" (vec args))
+  (log/info "command-line arguments:" (vec args))
   (let [{:keys [arguments errors options summary]} (parse-cli-options args)
         {:keys [help]} options
         cluster-urls arguments]
@@ -75,10 +75,10 @@
           (doseq [error-message errors]
             (log/error error-message)
             (println System/err error-message))
-          (exit 1 "Error in parsing arguments"))
+          (exit 1 "error in parsing arguments"))
 
         (> (-> cluster-urls set count) 1)
-        (exit 1 (str "Must provide at least two different cluster urls, provided:" cluster-urls))
+        (exit 1 (str "must provide at least two different cluster urls, provided:" cluster-urls))
 
         :else
         (let [http-client-wrapper (http-client-factory options)
@@ -87,7 +87,7 @@
                           0
                           1)]
           (log/info (-> sync-result pp/pprint with-out-str str/trim))
-          (exit exit-code (str "Exiting with code " exit-code))))
+          (exit exit-code (str "exiting with code " exit-code))))
       (catch Exception e
-        (log/error e "Error in syncing tokens")
-        (exit 1 (str "Encountered error starting token-syncer: " (.getMessage e)))))))
+        (log/error e "error in syncing tokens")
+        (exit 1 (str "encountered error starting token-syncer: " (.getMessage e)))))))
