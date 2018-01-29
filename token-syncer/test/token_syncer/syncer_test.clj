@@ -308,8 +308,9 @@
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data))))))))
 
 (deftest test-summarize-sync-result
-  (is (= {:sync {:error ["token-1B" "token-4B"]
-                 :success ["token-1A" "token-2" "token-3" "token-4A"]}
+  (is (= {:sync {:failed #{"token-1B" "token-4B"}
+                 :unmodified #{"token-1A"}
+                 :updated #{"token-2" "token-3" "token-4A"}}
           :tokens {:processed 6}}
          (summarize-sync-result
            {"token-1A" {:sync-result {"www.cluster-2.com" {:code :success/token-match}
@@ -423,8 +424,9 @@
                         "token-4" {:latest (token->latest-description "token-4")
                                    :sync-result (-> [cluster-1 cluster-2 cluster-3]
                                                     (compute-sync-result "token-4" :success/hard-delete))}}
-              :summary {:sync {:error []
-                               :success ["token-1" "token-2" "token-3" "token-4"]}
+              :summary {:sync {:failed #{}
+                               :unmodified #{"token-1"}
+                               :updated #{"token-2" "token-3" "token-4"}}
                         :tokens {:processed 4
                                  :total 4}}}
              (sync-tokens http-client cluster-urls))))))

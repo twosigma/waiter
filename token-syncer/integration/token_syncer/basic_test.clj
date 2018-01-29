@@ -19,6 +19,8 @@
   (:import (java.util UUID)
            (org.eclipse.jetty.client HttpClient)))
 
+(def basic-description {"cmd" "echo 'Hello World'", "cpus" 1, "mem" 2048, "metric-group" "syncer-test"})
+
 (defn waiter-urls []
   (let [waiter-uris (System/getenv "WAITER_URIS")]
     (is waiter-uris)
@@ -68,7 +70,7 @@
       (try
         (log/info "****** test-token-hard-delete ARRANGE")
         (let [last-update-time-ms (- (System/currentTimeMillis) 10000)
-              token-description (merge {"cmd" "echo 'Hello World'", "cpus" 1, "mem" 2048, "name" token-name}
+              token-description (merge basic-description
                                        {"deleted" true, "last-update-time" last-update-time-ms, "owner" "test-user"})]
 
           (doseq [waiter-url waiter-urls]
@@ -89,8 +91,9 @@
                                                                     :description token-description
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result waiter-urls)}}
-                                     :summary {:sync {:error []
-                                                      :success [token-name]}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{}
+                                                      :updated #{token-name}}
                                                :tokens {:processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
@@ -108,7 +111,7 @@
       (try
         (log/info "****** test-token-soft-delete ARRANGE")
         (let [current-time-ms (System/currentTimeMillis)
-              token-description (merge {"cmd" "echo 'Hello World'", "cpus" 1, "mem" 2048, "name" token-name}
+              token-description (merge basic-description
                                        {"last-update-time" current-time-ms, "owner" "test-user"})]
 
           (waiter/store-token http-client (first waiter-urls) token-name "0" (assoc token-description "deleted" true))
@@ -131,13 +134,55 @@
                                                                     :description (assoc token-description "deleted" true)
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
-                                     :summary {:sync {:error []
-                                                      :success [token-name]}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{}
+                                                      :updated #{token-name}}
                                                :tokens {:processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description (assoc token-description "deleted" true)
+                          :headers {"content-type" "application/json"
+                                    "etag" token-etag}
+                          :status 200
+                          :token-etag token-etag}
+                         (waiter/load-token http-client waiter-url token-name))))))))
+        (finally
+          (cleanup-token http-client waiter-urls token-name))))))
+
+(deftest ^:integration test-token-already-synced
+  (testing "token already synced"
+    (let [waiter-urls (waiter-urls)
+          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          token-name (str "test-token-already-synced-" (UUID/randomUUID))]
+      (try
+        (log/info "****** test-token-already-synced ARRANGE")
+        (let [current-time-ms (System/currentTimeMillis)
+              token-description (merge basic-description
+                                       {"last-update-time" current-time-ms, "owner" "test-user"})]
+
+          (doseq [waiter-url waiter-urls]
+            (waiter/store-token http-client waiter-url token-name "0" token-description))
+
+          (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
+
+            (log/info "****** test-token-already-synced ACT")
+            (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
+
+              (log/info "****** test-token-already-synced ASSERT")
+              (let [waiter-sync-result (constantly {:code :success/token-match})
+                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
+                                                                    :description token-description
+                                                                    :token-etag token-etag}
+                                                           :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{token-name}
+                                                      :updated #{}}
+                                               :tokens {:processed 1
+                                                        :total 1}}}]
+                (is (= expected-result actual-result))
+                (doseq [waiter-url waiter-urls]
+                  (is (= {:description token-description
                           :headers {"content-type" "application/json"
                                     "etag" token-etag}
                           :status 200
@@ -154,7 +199,7 @@
       (try
         (log/info "****** test-token-update ARRANGE")
         (let [current-time-ms (System/currentTimeMillis)
-              token-description (merge {"cmd" "echo 'Hello World'", "cpus" 1, "mem" 4096, "name" token-name}
+              token-description (merge basic-description
                                        {"last-update-time" current-time-ms, "owner" "test-user"})]
 
           (let [last-update-time-ms (- current-time-ms 10000)]
@@ -177,8 +222,9 @@
                                                                     :description token-description
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
-                                     :summary {:sync {:error []
-                                                      :success [token-name]}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{}
+                                                      :updated #{token-name}}
                                                :tokens {:processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
@@ -189,5 +235,73 @@
                           :status 200
                           :token-etag token-etag}
                          (waiter/load-token http-client waiter-url token-name))))))))
+        (finally
+          (cleanup-token http-client waiter-urls token-name))))))
+
+(deftest ^:integration test-token-different-owners
+  (testing "token sync update with different owners"
+    (let [waiter-urls (waiter-urls)
+          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          token-name (str "test-token-different-owners-" (UUID/randomUUID))]
+      (try
+        (log/info "****** test-token-different-owners ARRANGE")
+        (let [current-time-ms (System/currentTimeMillis)
+              last-update-time-ms (- current-time-ms 10000)]
+
+          (doall
+            (map-indexed
+              (fn [index waiter-url]
+                (waiter/store-token http-client waiter-url token-name "0"
+                                    (assoc basic-description
+                                      "cpus" (inc index)
+                                      "last-update-time" (- last-update-time-ms index)
+                                      "owner" (str "test-user-" index))))
+              waiter-urls))
+
+          (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
+
+            (log/info "****** test-token-different-owners ACT")
+            (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
+
+              (log/info "****** test-token-different-owners ASSERT")
+              (let [latest-description (assoc basic-description
+                                         "cpus" 1
+                                         "last-update-time" last-update-time-ms
+                                         "owner" "test-user-0")
+                    sync-result (->> (rest waiter-urls)
+                                     (map-indexed
+                                       (fn [index waiter-url]
+                                         [waiter-url
+                                          {:code :error/owner-different
+                                           :details {:cluster (assoc basic-description
+                                                                "cpus" (+ index 2)
+                                                                "last-update-time" (- last-update-time-ms index 1)
+                                                                "owner" (str "test-user-" (inc index)))
+                                                     :latest latest-description}}]))
+                                     (into {}))
+                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
+                                                                    :description latest-description
+                                                                    :token-etag token-etag}
+                                                           :sync-result sync-result}}
+                                     :summary {:sync {:failed #{token-name}
+                                                      :unmodified #{}
+                                                      :updated #{}}
+                                               :tokens {:processed 1
+                                                        :total 1}}}]
+                (is (= expected-result actual-result))
+                (doall
+                  (map-indexed
+                    (fn [index waiter-url]
+                      (let [token-last-modified-time (- last-update-time-ms index)]
+                        (is (= {:description (assoc basic-description
+                                               "cpus" (inc index)
+                                               "last-update-time" token-last-modified-time
+                                               "owner" (str "test-user-" index))
+                                :headers {"content-type" "application/json"
+                                          "etag" (str token-last-modified-time)}
+                                :status 200
+                                :token-etag (str token-last-modified-time)}
+                               (waiter/load-token http-client waiter-url token-name)))))
+                    waiter-urls))))))
         (finally
           (cleanup-token http-client waiter-urls token-name))))))

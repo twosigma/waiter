@@ -146,17 +146,22 @@
 (defn summarize-sync-result
   "Summarizes the token sync result"
   [token-sync-result]
-  (let [successful-tokens (->> token-sync-result
-                               keys
-                               (filter
-                                 (fn [token]
-                                   (every? (fn [result] (-> result :code namespace (= "success")))
-                                           (-> token-sync-result (get token) :sync-result vals))))
-                               vec
-                               sort)
-        error-tokens (-> token-sync-result keys set (set/difference successful-tokens) vec sort)]
-    {:sync {:success successful-tokens
-            :error error-tokens}
+  (let [filter-tokens (fn [filter-fn]
+                        (->> token-sync-result
+                             keys
+                             (filter
+                               (fn [token]
+                                 (every? filter-fn (-> token-sync-result (get token) :sync-result vals))))
+                             set))
+        unmodified-filter-fn (fn [result] (-> result :code (= :success/token-match)))
+        unmodified-tokens (filter-tokens unmodified-filter-fn)
+        updated-filter-fn (fn [result] (-> result :code namespace (= "success")))
+        updated-tokens (-> (filter-tokens updated-filter-fn)
+                           (set/difference unmodified-tokens))
+        failed-tokens (-> token-sync-result keys set (set/difference unmodified-tokens updated-tokens))]
+    {:sync {:failed failed-tokens
+            :unmodified unmodified-tokens
+            :updated updated-tokens}
      :tokens {:processed (count token-sync-result)}}))
 
 (defn sync-tokens
