@@ -6,7 +6,7 @@
 #   run-integration-tests.sh parallel-test
 #   run-integration-tests.sh
 #
-# Runs the Waiter integration tests, and dumps log files if the tests fail.
+# Runs the Token-Syncer integration tests, and dumps log files if the tests fail.
 
 set -ev
 
@@ -33,12 +33,18 @@ SYNCER_DIR=${WAITER_DIR}/../token-syncer
 pushd ${WAITER_DIR}
 
 lein voom build-deps
+lein do clean, compile
 
 # Start waiter servers
+for waiter_port in 9093 9092 9091
+do
+  bin/run-using-shell-scheduler.sh ${waiter_port} 0 &
+done
+
+# Wait for the waiter servers to start
 WAITER_URIS=""
 for waiter_port in 9093 9092 9091
 do
-  bin/run-using-shell-scheduler.sh ${waiter_port} &
   WAITER_URI="http://127.0.0.1:${waiter_port}"
   timeout 180s bash -c "wait_for_server ${WAITER_URI}"
   WAITER_URIS="${WAITER_URI},${WAITER_URIS}"

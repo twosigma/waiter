@@ -168,12 +168,12 @@
   "Syncs tokens across provided clusters based on cluster-urls."
   [http-client cluster-urls]
   (try
-    (log/info "syncing tokens on clusters:" (set cluster-urls))
-    (let [cluster-urls (set cluster-urls)
-          cluster-url->tokens (pc/map-from-keys #(waiter/load-token-list http-client %) cluster-urls)
+    (log/info "syncing tokens on clusters:" cluster-urls)
+    (let [cluster-urls-set (set cluster-urls)
+          cluster-url->tokens (pc/map-from-keys #(waiter/load-token-list http-client %) cluster-urls-set)
           all-tokens (set (mapcat identity (vals cluster-url->tokens)))
           _ (log/info "found" (count all-tokens) "across the clusters")
-          token-sync-result (perform-token-syncs http-client cluster-urls all-tokens)]
+          token-sync-result (perform-token-syncs http-client cluster-urls-set all-tokens)]
       (log/info "completed syncing tokens")
       {:details token-sync-result
        :summary (-> (summarize-sync-result token-sync-result)

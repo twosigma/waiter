@@ -14,20 +14,20 @@ $ lein run --help
 
 To sync tokens across multiple clusters, use comma separated names as follows:
 ```bash
-$ lein run --cluster-urls "http://c1.localtest.me:9091,http://c2.localtest.me:9093"
+$ lein run http://c1.localtest.me:9091 http://c2.localtest.me:9093
 ...
-Syncing tokens on clusters: \#{http://c1.localtest.me:9091 http://c2.localtest.me:9093}
+syncing tokens on clusters: \#{http://c1.localtest.me:9091 http://c2.localtest.me:9093}
 ...
-Exiting.
+exiting.
 ```
 
 Alternatively, it can also be run after building the uberjar (see below):
 ```bash
-$ java -jar /path/to/token-syncer.jar --cluster-urls "http://c1.localtest.me:9091,http://c2.localtest.me:9093"
+$ java -jar /path/to/token-syncer.jar http://c1.localtest.me:9091 http://c2.localtest.me:9093
 ...
-Syncing tokens on clusters: \#{http://c1.localtest.me:9091 http://c2.localtest.me:9093}
+syncing tokens on clusters: \#{http://c1.localtest.me:9091 http://c2.localtest.me:9093}
 ...
-Exiting.
+exiting.
 ```
 
 # Implementation
@@ -35,7 +35,7 @@ Exiting.
 The token syncer communicates with Waiter clusters on their respective `/token` endpoints to retrieve and manage individual tokens.
 Outline of steps performed by the syncer:
 1. Loads all tokens on each cluster.
-1. Determines the latest version of the tokens using the `last-update-time` field in the token description.
+1. Determines the latest version of the tokens using the token etags.
 1. Perform the sync operations using following cases:
     1. Update all clusters with stale tokens to the latest token.
     1. Hard-deletes tokens on all clusters once all clusters agree that a token has been soft-deleted.

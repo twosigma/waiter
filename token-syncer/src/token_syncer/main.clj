@@ -77,15 +77,16 @@
             (println System/err error-message))
           (exit 1 "error in parsing arguments"))
 
-        (> (-> cluster-urls set count) 1)
+        (<= (-> cluster-urls set count) 1)
         (exit 1 (str "must provide at least two different cluster urls, provided:" cluster-urls))
 
         :else
         (let [http-client-wrapper (http-client-factory options)
-              sync-result (syncer/sync-tokens http-client-wrapper cluster-urls)
-              exit-code (if (zero? (get-in sync-result [:summary :sync :error] 0))
-                          0
-                          1)]
+              cluster-urls-set (set cluster-urls)
+              sync-result (syncer/sync-tokens http-client-wrapper cluster-urls-set)
+              exit-code (-> (get-in sync-result [:summary :sync :error] 0)
+                            zero?
+                            (if 0 1))]
           (log/info (-> sync-result pp/pprint with-out-str str/trim))
           (exit exit-code (str "exiting with code " exit-code))))
       (catch Exception e
