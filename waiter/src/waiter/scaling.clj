@@ -359,10 +359,10 @@
               {:keys [instances task-count] :as scheduler-state} (service-id->scheduler-state service-id)
               ; if we don't have a target instance count, default to the number of tasks
               target-instances (get-in service-id->scale-state [service-id :target-instances] task-count)
+              service-description (get service-id->service-description service-id)
               {:keys [target-instances scale-to-instances scale-amount]}
               (if (and target-instances scale-ticks)
-                (scale-app-fn (assoc (get service-id->service-description service-id)
-                                "scale-ticks" scale-ticks)
+                (scale-app-fn (assoc service-description "scale-ticks" scale-ticks)
                               {:healthy-instances healthy-instances
                                :expired-instances expired-instances
                                :outstanding-requests outstanding-requests
@@ -372,6 +372,9 @@
                   (log/info "no target instances available for service"
                             {:scheduler-state scheduler-state, :service-id service-id})
                   {:scale-to-instances instances :target-instances target-instances :scale-amount 0}))]
+          (when (< instances (service-description "min-instances"))
+            (log/warn "scheduler reported service had fewer instances than min-instances"
+                      {:service-id service-id :instances instances :min-instances (service-description "min-instances")}))
           (when-not (zero? scale-amount)
             (apply-scaling-fn service-id
                               {:outstanding-requests outstanding-requests

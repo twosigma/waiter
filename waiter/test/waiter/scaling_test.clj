@@ -680,7 +680,8 @@
 
 (let [leader?-fn (constantly true)
       instance-killer-multiplexer-fn (fn [_])
-      service-id->service-description (fn [id] {:service-id id})
+      service-id->service-description (fn [id] {:service-id id
+                                                "min-instances" 1})
       timeout-interval-ms 10000
       scale-app-fn (fn [_ state]
                      (case (int (:total-instances state))
