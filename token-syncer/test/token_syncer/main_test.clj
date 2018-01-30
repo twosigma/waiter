@@ -19,6 +19,8 @@
          (:errors (parse-cli-options ["-c" "abcd,abcd"]))))
   (is (= {:connection-timeout-ms 1000, :idle-timeout-ms 30000}
          (:options (parse-cli-options ["-c" "abcd,efgh"]))))
+  (is (= {:connection-timeout-ms 1000, :dry-run true, :idle-timeout-ms 30000}
+         (:options (parse-cli-options ["-d" "abcd,efgh"]))))
   (is (= {:connection-timeout-ms 1000, :help true, :idle-timeout-ms 30000}
          (:options (parse-cli-options ["-h"]))))
   (is (= {:connection-timeout-ms 1000, :idle-timeout-ms 10000}

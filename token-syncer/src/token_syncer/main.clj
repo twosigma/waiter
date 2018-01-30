@@ -39,7 +39,9 @@
 (defn parse-cli-options
   "Parses and returns the cli options passed to the token syncer."
   [args]
-  (->> [["-h" "--help"]
+  (->> [["-d" "--dry-run"
+         "Runs the syncer in dry run mode where it doesn't perform any token delete or update operations"]
+        ["-h" "--help"]
         ["-i" "--idle-timeout-ms timeout" "The idle timeout in milliseconds"
          :default 30000
          :parse-fn #(Integer/parseInt %)
@@ -60,12 +62,21 @@
 
 (defn extract-waiter-functions
   "Creates the map of methods used to interact with Waiter to load, store and delete tokens."
-  [options]
+  [{:keys [dry-run] :as options}]
   (let [http-client (http-client-factory options)]
-    {:hard-delete-token (partial waiter/hard-delete-token http-client)
+    {:hard-delete-token (if dry-run
+                          (fn hard-delete-dry-run-version [cluster-url token token-etag]
+                            (log/info "[dry-run] hard-delete" token "on" cluster-url "with etag" token-etag)
+                            {:status "dry-run"})
+                          (partial waiter/hard-delete-token http-client))
      :load-token (partial waiter/load-token http-client)
      :load-token-list (partial waiter/load-token-list http-client)
-     :store-token (partial waiter/store-token http-client)}))
+     :store-token (if dry-run
+                    (fn store-token-dry-run-version [cluster-url token token-etag token-description]
+                      (log/info "[dry-run] store-token" token "on" cluster-url "with etag" token-etag
+                                "and description" token-description)
+                      {:status "dry-run"})
+                    (partial waiter/store-token http-client))}))
 
 (defn -main
   "The main entry point."
@@ -91,14 +102,17 @@
         (exit 1 (str "must provide at least two different cluster urls, provided:" cluster-urls))
 
         :else
-        (let [waiter-functions (extract-waiter-functions options)
-              cluster-urls-set (set cluster-urls)
-              sync-result (syncer/sync-tokens waiter-functions cluster-urls-set)
-              exit-code (-> (get-in sync-result [:summary :sync :error] 0)
-                            zero?
-                            (if 0 1))]
-          (log/info (-> sync-result pp/pprint with-out-str str/trim))
-          (exit exit-code (str "exiting with code " exit-code))))
+        (do
+          (when (:dry-run options)
+            (log/info "executing token syncer in dry-run mode"))
+          (let [waiter-functions (extract-waiter-functions options)
+                cluster-urls-set (set cluster-urls)
+                sync-result (syncer/sync-tokens waiter-functions cluster-urls-set)
+                exit-code (-> (get-in sync-result [:summary :sync :error] 0)
+                              zero?
+                              (if 0 1))]
+            (log/info (-> sync-result pp/pprint with-out-str str/trim))
+            (exit exit-code (str "exiting with code " exit-code)))))
       (catch Exception e
         (log/error e "error in syncing tokens")
         (exit 1 (str "encountered error starting token-syncer: " (.getMessage e)))))))
