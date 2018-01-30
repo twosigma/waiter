@@ -77,7 +77,7 @@
     (fn [cluster-url]
       (let [cluster-result
             (try
-              (let [{:keys [description error token-etag status]} (get cluster-url->token-data cluster-url)
+              (let [{:keys [description error status] :as token-data} (get cluster-url->token-data cluster-url)
                     latest-root (get token-description "root")
                     cluster-root (get description "root")]
                 (cond
@@ -89,13 +89,14 @@
                   {:code :error/token-read
                    :details {:message "status missing from response"}}
 
-                  (not= latest-root cluster-root)
+                  (and (seq description) (not= latest-root cluster-root))
                   {:code :error/root-mismatch
                    :details {:cluster description
                              :latest token-description}}
 
                   (not= token-description (get-in cluster-url->token-data [cluster-url :description]))
-                  (let [{:keys [headers status] :as response} (store-token cluster-url token token-etag token-description)]
+                  (let [token-etag (:token-etag token-data "0")
+                        {:keys [headers status] :as response} (store-token cluster-url token token-etag token-description)]
                     {:code (if (get token-description "deleted")
                              (if (successful? response) :success/soft-delete :error/soft-delete)
                              (if (successful? response) :success/sync-update :error/sync-update))

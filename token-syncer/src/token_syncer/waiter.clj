@@ -117,12 +117,14 @@
             token-description (->> body
                                    async/<!!
                                    parse-json-data)]
-        {:description (cond-> token-description
-                              (contains? token-description "last-update-time")
-                              (update "last-update-time" iso8601->millis))
-         :headers (extract-relevant-headers headers)
-         :token-etag token-etag
-         :status status}))
+        (cond-> {:description (if (= status 404)
+                                {}
+                                (cond-> token-description
+                                        (contains? token-description "last-update-time")
+                                        (update "last-update-time" iso8601->millis)))
+                 :headers (extract-relevant-headers headers)
+                 :status status}
+                token-etag (assoc :token-etag token-etag))))
     (catch Exception ex
       (log/error ex "unable to retrieve token" token "from" cluster-url)
       {:error ex})))
@@ -130,7 +132,8 @@
 (defn store-token
   "Stores the token description on a specific cluster."
   [^HttpClient http-client cluster-url token token-etag token-description]
-  (log/info "storing token:" token ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
+  (log/info "storing token:" token ", soft-delete:" (true? (get token-description "deleted"))
+            "on" cluster-url "with etag" token-etag)
   (let [{:keys [body headers status]} (make-http-request http-client (str cluster-url "/token")
                                                          :body (-> token-description
                                                                    walk/stringify-keys

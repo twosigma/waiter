@@ -141,6 +141,49 @@
         (finally
           (cleanup-token waiter-functions waiter-urls token-name))))))
 
+(deftest ^:integration test-token-token-on-single-cluster
+  (testing "token exists on single cluster"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
+          token-name (str "test-token-token-on-single-cluster-" (UUID/randomUUID))]
+      (try
+        (log/info "****** test-token-token-on-single-cluster ARRANGE")
+        (let [current-time-ms (System/currentTimeMillis)
+              token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
+              token-description (merge basic-description token-metadata)]
+
+          (store-token (first waiter-urls) token-name "0" token-description)
+
+          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
+
+            (log/info "****** test-token-token-on-single-cluster ACT")
+            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
+
+              (log/info "****** test-token-token-on-single-cluster ASSERT")
+              (let [waiter-sync-result (constantly
+                                         {:code :success/sync-update
+                                          :details {:etag token-etag
+                                                    :status 200}})
+                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
+                                                                    :description token-description
+                                                                    :token-etag token-etag}
+                                                           :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{}
+                                                      :updated #{token-name}}
+                                               :tokens {:num-processed 1
+                                                        :total 1}}}]
+                (is (= expected-result actual-result))
+                (doseq [waiter-url waiter-urls]
+                  (is (= {:description token-description
+                          :headers {"content-type" "application/json"
+                                    "etag" token-etag}
+                          :status 200
+                          :token-etag token-etag}
+                         (load-token waiter-url token-name))))))))
+        (finally
+          (cleanup-token waiter-functions waiter-urls token-name))))))
+
 (deftest ^:integration test-token-already-synced
   (testing "token already synced"
     (let [waiter-urls (waiter-urls)
