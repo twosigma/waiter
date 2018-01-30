@@ -80,8 +80,8 @@
       (let [cluster-result
             (try
               (let [{:keys [description error token-etag status]} (get cluster-url->token-data cluster-url)
-                    latest-owner (get token-description "owner")
-                    cluster-owner (get description "owner")]
+                    latest-root (get token-description "root")
+                    cluster-root (get description "root")]
                 (cond
                   error
                   {:code :error/token-read
@@ -91,8 +91,8 @@
                   {:code :error/token-read
                    :details {:message "status missing from response"}}
 
-                  (not= latest-owner cluster-owner)
-                  {:code :error/owner-different
+                  (not= latest-root cluster-root)
+                  {:code :error/root-mismatch
                    :details {:cluster description
                              :latest token-description}}
 

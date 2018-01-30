@@ -70,8 +70,8 @@
       (try
         (log/info "****** test-token-hard-delete ARRANGE")
         (let [last-update-time-ms (- (System/currentTimeMillis) 10000)
-              token-description (merge basic-description
-                                       {"deleted" true, "last-update-time" last-update-time-ms, "owner" "test-user"})]
+              token-metadata {"deleted" true, "last-update-time" last-update-time-ms, "owner" "test-user", "root" "src1"}
+              token-description (merge basic-description token-metadata)]
 
           (doseq [waiter-url waiter-urls]
             (let [token-etag (token->etag http-client waiter-url token-name)]
@@ -111,8 +111,8 @@
       (try
         (log/info "****** test-token-soft-delete ARRANGE")
         (let [current-time-ms (System/currentTimeMillis)
-              token-description (merge basic-description
-                                       {"last-update-time" current-time-ms, "owner" "test-user"})]
+              token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
+              token-description (merge basic-description token-metadata)]
 
           (waiter/store-token http-client (first waiter-urls) token-name "0" (assoc token-description "deleted" true))
           (doseq [waiter-url (rest waiter-urls)]
@@ -158,8 +158,8 @@
       (try
         (log/info "****** test-token-already-synced ARRANGE")
         (let [current-time-ms (System/currentTimeMillis)
-              token-description (merge basic-description
-                                       {"last-update-time" current-time-ms, "owner" "test-user"})]
+              token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
+              token-description (merge basic-description token-metadata)]
 
           (doseq [waiter-url waiter-urls]
             (waiter/store-token http-client waiter-url token-name "0" token-description))
@@ -199,8 +199,8 @@
       (try
         (log/info "****** test-token-update ARRANGE")
         (let [current-time-ms (System/currentTimeMillis)
-              token-description (merge basic-description
-                                       {"last-update-time" current-time-ms, "owner" "test-user"})]
+              token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
+              token-description (merge basic-description token-metadata)]
 
           (let [last-update-time-ms (- current-time-ms 10000)]
             (waiter/store-token http-client (first waiter-urls) token-name "0" token-description)
@@ -238,13 +238,13 @@
         (finally
           (cleanup-token http-client waiter-urls token-name))))))
 
-(deftest ^:integration test-token-different-owners
-  (testing "token sync update with different owners"
+(deftest ^:integration test-token-different-owners-but-same-root
+  (testing "token sync update with different owners but same root"
     (let [waiter-urls (waiter-urls)
           http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
-          token-name (str "test-token-different-owners-" (UUID/randomUUID))]
+          token-name (str "test-token-different-owners-but-same-root-" (UUID/randomUUID))]
       (try
-        (log/info "****** test-token-different-owners ARRANGE")
+        (log/info "****** test-token-different-owners-but-same-root ARRANGE")
         (let [current-time-ms (System/currentTimeMillis)
               last-update-time-ms (- current-time-ms 10000)]
 
@@ -255,28 +255,90 @@
                                     (assoc basic-description
                                       "cpus" (inc index)
                                       "last-update-time" (- last-update-time-ms index)
-                                      "owner" (str "test-user-" index))))
+                                      "owner" (str "test-user-" index)
+                                      "root" "common-root")))
               waiter-urls))
 
           (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
 
-            (log/info "****** test-token-different-owners ACT")
+            (log/info "****** test-token-different-owners-but-same-root ACT")
             (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
 
-              (log/info "****** test-token-different-owners ASSERT")
+              (log/info "****** test-token-different-owners-but-same-root ASSERT")
               (let [latest-description (assoc basic-description
                                          "cpus" 1
                                          "last-update-time" last-update-time-ms
-                                         "owner" "test-user-0")
+                                         "owner" "test-user-0"
+                                         "root" "common-root")
+                    waiter-sync-result (constantly
+                                         {:code :success/sync-update
+                                          :details {:etag token-etag
+                                                    :status 200}})
+                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
+                                                                    :description latest-description
+                                                                    :token-etag token-etag}
+                                                           :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{}
+                                                      :updated #{token-name}}
+                                               :tokens {:processed 1
+                                                        :total 1}}}]
+                (is (= expected-result actual-result))
+                (doall
+                  (map-indexed
+                    (fn [index waiter-url]
+                      (is (= {:description latest-description
+                              :headers {"content-type" "application/json"
+                                        "etag" token-etag}
+                              :status 200
+                              :token-etag token-etag}
+                             (waiter/load-token http-client waiter-url token-name))))
+                    waiter-urls))))))
+        (finally
+          (cleanup-token http-client waiter-urls token-name))))))
+
+(deftest ^:integration test-token-different-owners-and-roots
+  (testing "token sync update with different owners and different roots"
+    (let [waiter-urls (waiter-urls)
+          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          token-name (str "test-token-different-owners-and-roots-" (UUID/randomUUID))]
+      (try
+        (log/info "****** test-token-different-owners-and-roots ARRANGE")
+        (let [current-time-ms (System/currentTimeMillis)
+              last-update-time-ms (- current-time-ms 10000)]
+
+          (doall
+            (map-indexed
+              (fn [index waiter-url]
+                (waiter/store-token http-client waiter-url token-name "0"
+                                    (assoc basic-description
+                                      "cpus" (inc index)
+                                      "last-update-time" (- last-update-time-ms index)
+                                      "owner" (str "test-user-" index)
+                                      "root" waiter-url)))
+              waiter-urls))
+
+          (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
+
+            (log/info "****** test-token-different-owners-and-roots ACT")
+            (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
+
+              (log/info "****** test-token-different-owners-and-roots ASSERT")
+              (let [latest-description (assoc basic-description
+                                         "cpus" 1
+                                         "last-update-time" last-update-time-ms
+                                         "owner" "test-user-0"
+                                         "root" (first waiter-urls))
                     sync-result (->> (rest waiter-urls)
                                      (map-indexed
                                        (fn [index waiter-url]
                                          [waiter-url
-                                          {:code :error/owner-different
+                                          {:code :error/root-mismatch
                                            :details {:cluster (assoc basic-description
                                                                 "cpus" (+ index 2)
                                                                 "last-update-time" (- last-update-time-ms index 1)
-                                                                "owner" (str "test-user-" (inc index)))
+                                                                "owner" (str "test-user-" (inc index))
+                                                                "root" waiter-url)
                                                      :latest latest-description}}]))
                                      (into {}))
                     expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
@@ -296,7 +358,8 @@
                         (is (= {:description (assoc basic-description
                                                "cpus" (inc index)
                                                "last-update-time" token-last-modified-time
-                                               "owner" (str "test-user-" index))
+                                               "owner" (str "test-user-" index)
+                                               "root" waiter-url)
                                 :headers {"content-type" "application/json"
                                           "etag" (str token-last-modified-time)}
                                 :status 200

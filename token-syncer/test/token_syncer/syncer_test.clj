@@ -201,21 +201,41 @@
                                        :details {:message "status missing from response"}}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
-      (testing "sync cluster different owners"
+      (testing "sync cluster different owners but same root"
         (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
               test-token "test-token-1"
               token-description {"name" "test-name"
-                                 "owner" "test-user-1"}
-              cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
-                                                                          "owner" "test-user-1"}
+                                 "owner" "test-user-1"
+                                 "root" "cluster-1"}
+              cluster-url->token-data {"www.cluster-1.com" {:description token-description
                                                             :token-etag (str test-token-etag ".1")
                                                             :status 200}
-                                       "www.cluster-2.com" {:description {"owner" "test-user-2"}
+                                       "www.cluster-2.com" {:description {"owner" "test-user-2"
+                                                                          "root" "cluster-1"}
                                                             :token-etag (str test-token-etag ".2")
                                                             :status 200}}]
           (is (= {"www.cluster-1.com" {:code :success/token-match}
-                  "www.cluster-2.com" {:code :error/owner-different
-                                       :details {:cluster {"owner" "test-user-2"}
+                  "www.cluster-2.com" {:code :success/sync-update
+                                       :details {:etag (str test-token-etag ".2.new")
+                                                 :status 200}}}
+                 (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
+
+      (testing "sync cluster different owners and different root"
+        (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+              test-token "test-token-1"
+              token-description {"name" "test-name"
+                                 "owner" "test-user-1"
+                                 "root" "cluster-1"}
+              cluster-url->token-data {"www.cluster-1.com" {:description token-description
+                                                            :token-etag (str test-token-etag ".1")
+                                                            :status 200}
+                                       "www.cluster-2.com" {:description {"owner" "test-user-2"
+                                                                          "root" "cluster-2"}
+                                                            :token-etag (str test-token-etag ".2")
+                                                            :status 200}}]
+          (is (= {"www.cluster-1.com" {:code :success/token-match}
+                  "www.cluster-2.com" {:code :error/root-mismatch
+                                       :details {:cluster {"owner" "test-user-2", "root" "cluster-2"}
                                                  :latest token-description}}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
@@ -235,26 +255,26 @@
                                                  :status 200}}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
-      (testing "sync cluster with outdated missing owner"
+      (testing "sync cluster with outdated missing root"
         (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
               test-token "test-token-1"
               token-description {"name" "test-name-1"
-                                 "owner" "test-user-1"}
+                                 "root" "test-user-1"}
               cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name-1"
-                                                                          "owner" "test-user-1"}
+                                                                          "root" "test-user-1"}
                                                             :token-etag (str test-token-etag ".1")
                                                             :status 200}
                                        "www.cluster-2.com" {:description {"name" "test-name-2"}
                                                             :token-etag (str test-token-etag ".2")
                                                             :status 200}}]
           (is (= {"www.cluster-1.com" {:code :success/token-match}
-                  "www.cluster-2.com" {:code :error/owner-different
+                  "www.cluster-2.com" {:code :error/root-mismatch
                                        :details {:cluster {"name" "test-name-2"}
                                                  :latest {"name" "test-name-1"
-                                                          "owner" "test-user-1"}}}}
+                                                          "root" "test-user-1"}}}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
-      (testing "sync cluster with latest missing owner"
+      (testing "sync cluster with latest missing root"
         (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
               test-token "test-token-1"
               token-description {"name" "test-name-1"}
@@ -262,13 +282,13 @@
                                                             :token-etag (str test-token-etag ".1")
                                                             :status 200}
                                        "www.cluster-2.com" {:description {"name" "test-name-2"
-                                                                          "owner" "test-user-2"}
+                                                                          "root" "test-user-2"}
                                                             :token-etag (str test-token-etag ".2")
                                                             :status 200}}]
           (is (= {"www.cluster-1.com" {:code :success/token-match}
-                  "www.cluster-2.com" {:code :error/owner-different
+                  "www.cluster-2.com" {:code :error/root-mismatch
                                        :details {:cluster {"name" "test-name-2"
-                                                           "owner" "test-user-2"}
+                                                           "root" "test-user-2"}
                                                  :latest {"name" "test-name-1"}}}}
                  (sync-token-on-clusters http-client cluster-urls test-token token-description cluster-url->token-data)))))
 
