@@ -13,20 +13,21 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
-            [qbits.jet.client.http :as http]
-            [token-syncer.syncer :as syncer]
-            [token-syncer.waiter :as waiter])
-  (:import (java.util UUID)
-           (org.eclipse.jetty.client HttpClient)))
+            [token-syncer.main :as main]
+            [token-syncer.syncer :as syncer])
+  (:import (java.util UUID)))
 
 (def basic-description {"cmd" "echo 'Hello World'", "cpus" 1, "mem" 2048, "metric-group" "syncer-test"})
 
-(defn waiter-urls []
+(defn- waiter-urls []
   (let [waiter-uris (System/getenv "WAITER_URIS")]
     (is waiter-uris)
     (-> waiter-uris
         (str/split #",")
         sort)))
+
+(defn- waiter-functions []
+  (main/extract-waiter-functions {:connection-timeout-ms 5000, :idle-timeout-ms 5000}))
 
 (deftest ^:integration test-environment
   (log/info "****** Running: test-environment")
@@ -35,36 +36,27 @@
     (is (System/getenv "WAITER_URIS"))
     (is (> (count (waiter-urls)) 1))))
 
-(defn- ^HttpClient http-client-factory
-  "Creates an instance of HttpClient with the specified timeout."
-  [{:keys [connection-timeout-ms idle-timeout-ms]}]
-  (let [http-client (http/client {:connect-timeout connection-timeout-ms
-                                  :idle-timeout idle-timeout-ms
-                                  :follow-redirects? false})
-        _ (.clear (.getContentDecoderFactories http-client))]
-    http-client))
-
 (defn- token->etag
   "Retrieves the etag for a token on a waiter router."
-  [http-client waiter-url token-name]
-  (-> (waiter/load-token http-client waiter-url token-name)
+  [{:keys [load-token]} waiter-url token-name]
+  (-> (load-token waiter-url token-name)
       (get :token-etag)
       (or 0) ;; Waiter defaults etag to 0
       str))
 
 (defn- cleanup-token
-  [http-client waiter-urls token-name]
+  [{:keys [hard-delete-token] :as waiter-functions} waiter-urls token-name]
   (log/info "Cleaning up token:" token-name)
   (doseq [waiter-url waiter-urls]
     (try
-      (let [token-etag (token->etag http-client waiter-url token-name)]
-        (waiter/hard-delete-token http-client waiter-url token-name token-etag))
+      (let [token-etag (token->etag waiter-functions waiter-url token-name)]
+        (hard-delete-token waiter-url token-name token-etag))
       (catch Exception _))))
 
 (deftest ^:integration test-token-hard-delete
   (testing "token sync hard-delete"
     (let [waiter-urls (waiter-urls)
-          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
           token-name (str "test-token-hard-delete-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-hard-delete ARRANGE")
@@ -73,13 +65,13 @@
               token-description (merge basic-description token-metadata)]
 
           (doseq [waiter-url waiter-urls]
-            (let [token-etag (token->etag http-client waiter-url token-name)]
-              (waiter/store-token http-client waiter-url token-name token-etag token-description)))
+            (let [token-etag (token->etag waiter-functions waiter-url token-name)]
+              (store-token waiter-url token-name token-etag token-description)))
 
-          (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
 
             (log/info "****** test-token-hard-delete ACT")
-            (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
 
               (log/info "****** test-token-hard-delete ASSERT")
               (let [waiter-sync-result (constantly
@@ -97,15 +89,15 @@
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
-                  (let [response (waiter/load-token http-client waiter-url token-name)]
+                  (let [response (load-token waiter-url token-name)]
                     (is (= 404 (:status response)) (str waiter-url " responded with " response))))))))
         (finally
-          (cleanup-token http-client waiter-urls token-name))))))
+          (cleanup-token waiter-functions waiter-urls token-name))))))
 
 (deftest ^:integration test-token-soft-delete
   (testing "token sync soft-delete"
     (let [waiter-urls (waiter-urls)
-          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
           token-name (str "test-token-soft-delete-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-soft-delete ARRANGE")
@@ -113,16 +105,16 @@
               token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
               token-description (merge basic-description token-metadata)]
 
-          (waiter/store-token http-client (first waiter-urls) token-name "0" (assoc token-description "deleted" true))
+          (store-token (first waiter-urls) token-name "0" (assoc token-description "deleted" true))
           (doseq [waiter-url (rest waiter-urls)]
             (let [last-update-time-ms (- current-time-ms 10000)]
-              (waiter/store-token http-client waiter-url token-name "0"
-                                  (assoc token-description "last-update-time" last-update-time-ms))))
+              (store-token waiter-url token-name "0"
+                           (assoc token-description "last-update-time" last-update-time-ms))))
 
-          (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
 
             (log/info "****** test-token-soft-delete ACT")
-            (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
 
               (log/info "****** test-token-soft-delete ASSERT")
               (let [waiter-sync-result (constantly
@@ -145,14 +137,14 @@
                                     "etag" token-etag}
                           :status 200
                           :token-etag token-etag}
-                         (waiter/load-token http-client waiter-url token-name))))))))
+                         (load-token waiter-url token-name))))))))
         (finally
-          (cleanup-token http-client waiter-urls token-name))))))
+          (cleanup-token waiter-functions waiter-urls token-name))))))
 
 (deftest ^:integration test-token-already-synced
   (testing "token already synced"
     (let [waiter-urls (waiter-urls)
-          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
           token-name (str "test-token-already-synced-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-already-synced ARRANGE")
@@ -161,12 +153,12 @@
               token-description (merge basic-description token-metadata)]
 
           (doseq [waiter-url waiter-urls]
-            (waiter/store-token http-client waiter-url token-name "0" token-description))
+            (store-token waiter-url token-name "0" token-description))
 
-          (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
 
             (log/info "****** test-token-already-synced ACT")
-            (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
 
               (log/info "****** test-token-already-synced ASSERT")
               (let [waiter-sync-result (constantly {:code :success/token-match})
@@ -186,14 +178,14 @@
                                     "etag" token-etag}
                           :status 200
                           :token-etag token-etag}
-                         (waiter/load-token http-client waiter-url token-name))))))))
+                         (load-token waiter-url token-name))))))))
         (finally
-          (cleanup-token http-client waiter-urls token-name))))))
+          (cleanup-token waiter-functions waiter-urls token-name))))))
 
 (deftest ^:integration test-token-update
   (testing "token sync update"
     (let [waiter-urls (waiter-urls)
-          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
           token-name (str "test-token-update-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-update ARRANGE")
@@ -202,15 +194,15 @@
               token-description (merge basic-description token-metadata)]
 
           (let [last-update-time-ms (- current-time-ms 10000)]
-            (waiter/store-token http-client (first waiter-urls) token-name "0" token-description)
+            (store-token (first waiter-urls) token-name "0" token-description)
             (doseq [waiter-url (rest waiter-urls)]
-              (waiter/store-token http-client waiter-url token-name "0"
-                                  (assoc token-description "cpus" 2, "mem" 2048, "last-update-time" last-update-time-ms))))
+              (store-token waiter-url token-name "0"
+                           (assoc token-description "cpus" 2, "mem" 2048, "last-update-time" last-update-time-ms))))
 
-          (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
 
             (log/info "****** test-token-update ACT")
-            (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
 
               (log/info "****** test-token-update ASSERT")
               (let [waiter-sync-result (constantly
@@ -233,14 +225,14 @@
                                     "etag" token-etag}
                           :status 200
                           :token-etag token-etag}
-                         (waiter/load-token http-client waiter-url token-name))))))))
+                         (load-token waiter-url token-name))))))))
         (finally
-          (cleanup-token http-client waiter-urls token-name))))))
+          (cleanup-token waiter-functions waiter-urls token-name))))))
 
 (deftest ^:integration test-token-different-owners-but-same-root
   (testing "token sync update with different owners but same root"
     (let [waiter-urls (waiter-urls)
-          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
           token-name (str "test-token-different-owners-but-same-root-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-different-owners-but-same-root ARRANGE")
@@ -250,18 +242,18 @@
           (doall
             (map-indexed
               (fn [index waiter-url]
-                (waiter/store-token http-client waiter-url token-name "0"
-                                    (assoc basic-description
-                                      "cpus" (inc index)
-                                      "last-update-time" (- last-update-time-ms index)
-                                      "owner" (str "test-user-" index)
-                                      "root" "common-root")))
+                (store-token waiter-url token-name "0"
+                             (assoc basic-description
+                               "cpus" (inc index)
+                               "last-update-time" (- last-update-time-ms index)
+                               "owner" (str "test-user-" index)
+                               "root" "common-root")))
               waiter-urls))
 
-          (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
 
             (log/info "****** test-token-different-owners-but-same-root ACT")
-            (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
 
               (log/info "****** test-token-different-owners-but-same-root ASSERT")
               (let [latest-description (assoc basic-description
@@ -289,14 +281,14 @@
                                     "etag" token-etag}
                           :status 200
                           :token-etag token-etag}
-                         (waiter/load-token http-client waiter-url token-name))))))))
+                         (load-token waiter-url token-name))))))))
         (finally
-          (cleanup-token http-client waiter-urls token-name))))))
+          (cleanup-token waiter-functions waiter-urls token-name))))))
 
 (deftest ^:integration test-token-different-roots
   (testing "token sync update with different owners and different roots"
     (let [waiter-urls (waiter-urls)
-          http-client (http-client-factory {:connection-timeout-ms 5000, :idle-timeout-ms 5000})
+          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
           token-name (str "test-token-different-roots-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-different-roots ARRANGE")
@@ -306,18 +298,18 @@
           (doall
             (map-indexed
               (fn [index waiter-url]
-                (waiter/store-token http-client waiter-url token-name "0"
-                                    (assoc basic-description
-                                      "cpus" (inc index)
-                                      "last-update-time" (- last-update-time-ms index)
-                                      "owner" "test-user"
-                                      "root" waiter-url)))
+                (store-token waiter-url token-name "0"
+                             (assoc basic-description
+                               "cpus" (inc index)
+                               "last-update-time" (- last-update-time-ms index)
+                               "owner" "test-user"
+                               "root" waiter-url)))
               waiter-urls))
 
-          (let [token-etag (token->etag http-client (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
 
             (log/info "****** test-token-different-roots ACT")
-            (let [actual-result (syncer/sync-tokens http-client waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
 
               (log/info "****** test-token-different-roots ASSERT")
               (let [latest-description (assoc basic-description
@@ -360,7 +352,7 @@
                                           "etag" (str token-last-modified-time)}
                                 :status 200
                                 :token-etag (str token-last-modified-time)}
-                               (waiter/load-token http-client waiter-url token-name)))))
+                               (load-token waiter-url token-name)))))
                     waiter-urls))))))
         (finally
-          (cleanup-token http-client waiter-urls token-name))))))
+          (cleanup-token waiter-functions waiter-urls token-name))))))

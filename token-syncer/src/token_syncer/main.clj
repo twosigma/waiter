@@ -14,7 +14,8 @@
             [clojure.tools.cli :as cli]
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
-            [token-syncer.syncer :as syncer])
+            [token-syncer.syncer :as syncer]
+            [token-syncer.waiter :as waiter])
   (:import (org.eclipse.jetty.client HttpClient))
   (:gen-class))
 
@@ -57,6 +58,15 @@
     (log/error message))
   (System/exit status))
 
+(defn extract-waiter-functions
+  "Creates the map of methods used to interact with Waiter to load, store and delete tokens."
+  [options]
+  (let [http-client (http-client-factory options)]
+    {:hard-delete-token (partial waiter/hard-delete-token http-client)
+     :load-token (partial waiter/load-token http-client)
+     :load-token-list (partial waiter/load-token-list http-client)
+     :store-token (partial waiter/store-token http-client)}))
+
 (defn -main
   "The main entry point."
   [& args]
@@ -81,9 +91,9 @@
         (exit 1 (str "must provide at least two different cluster urls, provided:" cluster-urls))
 
         :else
-        (let [http-client-wrapper (http-client-factory options)
+        (let [waiter-functions (extract-waiter-functions options)
               cluster-urls-set (set cluster-urls)
-              sync-result (syncer/sync-tokens http-client-wrapper cluster-urls-set)
+              sync-result (syncer/sync-tokens waiter-functions cluster-urls-set)
               exit-code (-> (get-in sync-result [:summary :sync :error] 0)
                             zero?
                             (if 0 1))]

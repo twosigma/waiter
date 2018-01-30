@@ -11,9 +11,7 @@
 (ns token-syncer.syncer
   (:require [clojure.set :as set]
             [clojure.tools.logging :as log]
-            [plumbing.core :as pc]
-            [token-syncer.waiter :as waiter])
-  (:import (org.eclipse.jetty.client HttpClient)))
+            [plumbing.core :as pc]))
 
 (defn- successful?
   "Returns true if the response has a 2XX status code."
@@ -23,13 +21,13 @@
 (defn retrieve-token->url->token-data
   "Given collections of cluster urls and tokens, retrieve the token description on each cluster.
    The resulting data structure is a map as follows: token->cluster->token-data where the
-   token-data format is defined by the return value of waiter/load-token."
-  [^HttpClient http-client cluster-urls all-tokens]
+   token-data format is defined by the return value of load-token."
+  [{:keys [load-token]} cluster-urls all-tokens]
   (pc/map-from-keys
     (fn [token]
       (pc/map-from-keys
         (fn [cluster-url]
-          (waiter/load-token http-client cluster-url token))
+          (load-token cluster-url token))
         cluster-urls))
     all-tokens))
 
@@ -51,13 +49,12 @@
 
 (defn hard-delete-token-on-all-clusters
   "Hard-deletes a given token on all clusters."
-  [^HttpClient http-client cluster-urls token token-etag]
+  [{:keys [hard-delete-token]} cluster-urls token token-etag]
   (log/info "hard-delete" token "on clusters" cluster-urls)
   (reduce
     (fn [cluster-sync-result cluster-url]
       (->> (try
-             (let [{:keys [headers status] :as response}
-                   (waiter/hard-delete-token http-client cluster-url token token-etag)]
+             (let [{:keys [headers status] :as response} (hard-delete-token cluster-url token token-etag)]
                {:code (if (successful? response)
                         :success/hard-delete
                         :error/hard-delete)
@@ -75,7 +72,7 @@
   "Syncs a given token description on all clusters.
    If the cluster-url->token-data says that a given token was not successfully loaded, it is skipped.
    Token sync-ing is also skipped if the owners of the tokens are different."
-  [^HttpClient http-client cluster-urls token token-description cluster-url->token-data]
+  [{:keys [store-token]} cluster-urls token token-description cluster-url->token-data]
   (pc/map-from-keys
     (fn [cluster-url]
       (let [cluster-result
@@ -98,8 +95,7 @@
                              :latest token-description}}
 
                   (not= token-description (get-in cluster-url->token-data [cluster-url :description]))
-                  (let [{:keys [headers status] :as response}
-                        (waiter/store-token http-client cluster-url token token-etag token-description)]
+                  (let [{:keys [headers status] :as response} (store-token cluster-url token token-etag token-description)]
                     {:code (if (get token-description "deleted")
                              (if (successful? response) :success/soft-delete :error/soft-delete)
                              (if (successful? response) :success/sync-update :error/sync-update))
@@ -118,8 +114,8 @@
 
 (defn- perform-token-syncs
   "Perform token syncs for all the specified tokens."
-  [http-client cluster-urls all-tokens]
-  (let [token->url->token-data (retrieve-token->url->token-data http-client cluster-urls all-tokens)
+  [waiter-functions cluster-urls all-tokens]
+  (let [token->url->token-data (retrieve-token->url->token-data waiter-functions cluster-urls all-tokens)
         token->latest-description (retrieve-token->latest-description token->url->token-data)]
     (pc/map-from-keys
       (fn [token]
@@ -137,8 +133,8 @@
           (log/info "syncing" token "with token description from" cluster-url
                     {:all-soft-deleted all-soft-deleted, :all-tokens-match all-tokens-match})
           (let [sync-result (if (and all-tokens-match all-soft-deleted description)
-                              (hard-delete-token-on-all-clusters http-client cluster-urls token token-etag)
-                              (sync-token-on-clusters http-client remaining-cluster-urls token description
+                              (hard-delete-token-on-all-clusters waiter-functions cluster-urls token token-etag)
+                              (sync-token-on-clusters waiter-functions remaining-cluster-urls token description
                                                       (token->url->token-data token)))]
             {:latest (token->latest-description token)
              :sync-result sync-result})))
@@ -170,14 +166,14 @@
 (defn sync-tokens
   "Syncs tokens across provided clusters based on cluster-urls and returns the result of token syncing.
    Throws an exception if there was an error during token syncing."
-  [http-client cluster-urls]
+  [{:keys [load-token-list] :as waiter-functions} cluster-urls]
   (try
     (log/info "syncing tokens on clusters:" cluster-urls)
     (let [cluster-urls-set (set cluster-urls)
-          cluster-url->tokens (pc/map-from-keys #(waiter/load-token-list http-client %) cluster-urls-set)
+          cluster-url->tokens (pc/map-from-keys #(load-token-list %) cluster-urls-set)
           all-tokens (set (mapcat identity (vals cluster-url->tokens)))
           _ (log/info "found" (count all-tokens) "across the clusters")
-          token-sync-result (perform-token-syncs http-client cluster-urls-set all-tokens)]
+          token-sync-result (perform-token-syncs waiter-functions cluster-urls-set all-tokens)]
       (log/info "completed syncing tokens")
       {:details token-sync-result
        :summary (-> (summarize-sync-result token-sync-result)
