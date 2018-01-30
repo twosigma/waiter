@@ -46,4 +46,4 @@ done
 
 # Run the integration tests
 cd ${SYNCER_DIR}
-lein with-profiles +test-log ${TEST_COMMAND} :${TEST_SELECTOR} ${@:3}
+lein ${TEST_COMMAND} :${TEST_SELECTOR} ${@:3}

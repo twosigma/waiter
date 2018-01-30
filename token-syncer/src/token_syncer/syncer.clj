@@ -21,7 +21,9 @@
   (and (integer? status) (<= 200 status 299)))
 
 (defn retrieve-token->url->token-data
-  "Given a lists tokens and cluster urls, retrieve the token description on each cluster."
+  "Given collections of cluster urls and tokens, retrieve the token description on each cluster.
+   The resulting data structure is a map as follows: token->cluster->token-data where the
+   token-data format is defined by the return value of waiter/load-token."
   [^HttpClient http-client cluster-urls all-tokens]
   (pc/map-from-keys
     (fn [token]
@@ -32,8 +34,8 @@
     all-tokens))
 
 (defn retrieve-token->latest-description
-  "Given token->cluster-url->token-data, retrieves the latest token description for each token
-   among all the clusters."
+  "Given token->cluster-url->token-data, retrieves the latest token description (based on last-update-time)
+   for each token among all the clusters. The cluster urls are sorted to ensure deterministic outputs."
   [token->cluster-url->token-data]
   (->> token->cluster-url->token-data
        (pc/map-vals
@@ -41,7 +43,6 @@
            (when (seq cluster-url->token-data)
              (let [[cluster-url token-data]
                    (apply max-key #(-> % val (get-in [:description "last-update-time"] 0))
-                          ;; sort the clusters to ensure consistent outputs
                           (-> cluster-url->token-data sort reverse))]
                {:cluster-url cluster-url
                 :description (:description token-data)
@@ -144,7 +145,9 @@
       all-tokens)))
 
 (defn summarize-sync-result
-  "Summarizes the token sync result"
+  "Summarizes the token sync result.
+   The summary includes the tokens that were unmodified, successfully synced, and failed to sync.
+   It also includes counts of the total number of tokens that were processed."
   [token-sync-result]
   (let [filter-tokens (fn [filter-fn]
                         (->> token-sync-result
@@ -162,10 +165,11 @@
     {:sync {:failed failed-tokens
             :unmodified unmodified-tokens
             :updated updated-tokens}
-     :tokens {:processed (count token-sync-result)}}))
+     :tokens {:num-processed (count token-sync-result)}}))
 
 (defn sync-tokens
-  "Syncs tokens across provided clusters based on cluster-urls."
+  "Syncs tokens across provided clusters based on cluster-urls and returns the result of token syncing.
+   Throws an exception if there was an error during token syncing."
   [http-client cluster-urls]
   (try
     (log/info "syncing tokens on clusters:" cluster-urls)

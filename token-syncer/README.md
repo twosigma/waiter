@@ -37,6 +37,7 @@ Outline of steps performed by the syncer:
 1. Loads all tokens on each cluster.
 1. Determines the latest version of the tokens using the token etags.
 1. Perform the sync operations using following cases:
+    1. Report a conflict in sync if the token roots are different.
     1. Update all clusters with stale tokens to the latest token.
     1. Hard-deletes tokens on all clusters once all clusters agree that a token has been soft-deleted.
 

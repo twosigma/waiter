@@ -132,7 +132,10 @@
   [^HttpClient http-client cluster-url token token-etag token-description]
   (log/info "storing token:" token ", soft-delete:" (true? (get token-description "deleted")) "on" cluster-url)
   (let [{:keys [body headers status]} (make-http-request http-client (str cluster-url "/token")
-                                                         :body (json/write-str (assoc token-description :token token))
+                                                         :body (-> token-description
+                                                                   walk/stringify-keys
+                                                                   (assoc "token" token)
+                                                                   json/write-str)
                                                          :headers {"accept" "application/json"
                                                                    "if-match" token-etag}
                                                          :method :post

@@ -331,7 +331,7 @@
   (is (= {:sync {:failed #{"token-1B" "token-4B"}
                  :unmodified #{"token-1A"}
                  :updated #{"token-2" "token-3" "token-4A"}}
-          :tokens {:processed 6}}
+          :tokens {:num-processed 6}}
          (summarize-sync-result
            {"token-1A" {:sync-result {"www.cluster-2.com" {:code :success/token-match}
                                       "www.cluster-3.com" {:code :success/token-match}}}
@@ -447,6 +447,6 @@
               :summary {:sync {:failed #{}
                                :unmodified #{"token-1"}
                                :updated #{"token-2" "token-3" "token-4"}}
-                        :tokens {:processed 4
+                        :tokens {:num-processed 4
                                  :total 4}}}
              (sync-tokens http-client cluster-urls))))))

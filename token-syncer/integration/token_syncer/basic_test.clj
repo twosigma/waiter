@@ -94,7 +94,7 @@
                                      :summary {:sync {:failed #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:processed 1
+                                               :tokens {:num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -137,7 +137,7 @@
                                      :summary {:sync {:failed #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:processed 1
+                                               :tokens {:num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -178,7 +178,7 @@
                                      :summary {:sync {:failed #{}
                                                       :unmodified #{token-name}
                                                       :updated #{}}
-                                               :tokens {:processed 1
+                                               :tokens {:num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -225,7 +225,7 @@
                                      :summary {:sync {:failed #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:processed 1
+                                               :tokens {:num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -281,7 +281,7 @@
                                      :summary {:sync {:failed #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:processed 1
+                                               :tokens {:num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doall
@@ -348,7 +348,7 @@
                                      :summary {:sync {:failed #{token-name}
                                                       :unmodified #{}
                                                       :updated #{}}
-                                               :tokens {:processed 1
+                                               :tokens {:num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doall
