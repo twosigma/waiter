@@ -18,7 +18,13 @@ $ lein run http://c1.localtest.me:9091 http://c2.localtest.me:9093
 ...
 syncing tokens on clusters: \#{http://c1.localtest.me:9091 http://c2.localtest.me:9093}
 ...
-exiting.
+completed syncing tokens
+{:details ...
+ :summary {:sync {:failed ...,
+                  :unmodified ...,
+                  :updated ...},
+           :tokens {:num-processed ..., :total ...}}} }
+exiting with code 0
 ```
 
 Alternatively, it can also be run after building the uberjar (see below):
@@ -27,7 +33,13 @@ $ java -jar /path/to/token-syncer.jar http://c1.localtest.me:9091 http://c2.loca
 ...
 syncing tokens on clusters: \#{http://c1.localtest.me:9091 http://c2.localtest.me:9093}
 ...
-exiting.
+completed syncing tokens
+{:details ...
+ :summary {:sync {:failed ...,
+                  :unmodified ...,
+                  :updated ...},
+           :tokens {:num-processed ..., :total ...}}} }
+exiting with code 0
 ```
 
 # Implementation
@@ -35,7 +47,7 @@ exiting.
 The token syncer communicates with Waiter clusters on their respective `/token` endpoints to retrieve and manage individual tokens.
 Outline of steps performed by the syncer:
 1. Loads all tokens on each cluster.
-1. Determines the latest version of the tokens using the token etags.
+1. Determines the latest version of the tokens using the token last updated times.
 1. Perform the sync operations using following cases:
     1. Report a conflict in sync if the token roots are different.
     1. Update all clusters with stale tokens to the latest token.
