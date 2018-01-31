@@ -211,18 +211,23 @@
   Returns false if such a connection cannot be established."
   [{:keys [port] :as service-instance} health-check-path http-client]
   (async/go
-    (if (pos? port)
-      (let [instance-health-check-url (health-check-url service-instance health-check-path)
-            {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
-            error-flag (cond
-                         (instance? ConnectException error) :connect-exception
-                         (instance? SocketTimeoutException error) :timeout-exception
-                         (instance? TimeoutException error) :timeout-exception)]
-        (log-health-check-issues service-instance instance-health-check-url status error)
-        {:healthy? (and (not error) (<= 200 status 299))
-         :status status
-         :error error-flag})
-      {:healthy? false})))
+    (try
+      (if (pos? port)
+        (let [instance-health-check-url (health-check-url service-instance health-check-path)
+              {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
+              error-flag (cond
+                           (instance? ConnectException error) :connect-exception
+                           (instance? SocketTimeoutException error) :timeout-exception
+                           (instance? TimeoutException error) :timeout-exception)]
+          (log-health-check-issues service-instance instance-health-check-url status error)
+          {:healthy? (and (not error) (<= 200 status 299))
+           :status status
+           :error error-flag})
+        {:healthy? false})
+      (catch Exception e
+        (log/error e "exception thrown while performing health check" {:instance service-instance
+                                                                       :health-check-path health-check-path})
+        {:healthy? false}))))
 
 (defn instance-comparator
   "The comparison order is: service-id, started-at, and finally id."
