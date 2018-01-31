@@ -11,12 +11,8 @@
 (ns token-syncer.syncer
   (:require [clojure.set :as set]
             [clojure.tools.logging :as log]
-            [plumbing.core :as pc]))
-
-(defn- successful?
-  "Returns true if the response has a 2XX status code."
-  [{:keys [status]}]
-  (and (integer? status) (<= 200 status 299)))
+            [plumbing.core :as pc]
+            [token-syncer.utils :as utils]))
 
 (defn retrieve-token->url->token-data
   "Given collections of cluster urls and tokens, retrieve the token description on each cluster.
@@ -55,11 +51,11 @@
     (fn [cluster-sync-result cluster-url]
       (->> (try
              (let [{:keys [headers status] :as response} (hard-delete-token cluster-url token token-etag)]
-               {:code (if (successful? response)
+               {:code (if (utils/successful? response)
                         :success/hard-delete
                         :error/hard-delete)
                 :details (cond-> {:status status}
-                                 (successful? response) (assoc :etag (get headers "etag")))})
+                                 (utils/successful? response) (assoc :etag (get headers "etag")))})
              (catch Exception ex
                (log/error ex "unable to delete" token "on" cluster-url)
                {:code :error/hard-delete
@@ -98,10 +94,10 @@
                   (let [token-etag (:token-etag token-data "0")
                         {:keys [headers status] :as response} (store-token cluster-url token token-etag token-description)]
                     {:code (if (get token-description "deleted")
-                             (if (successful? response) :success/soft-delete :error/soft-delete)
-                             (if (successful? response) :success/sync-update :error/sync-update))
+                             (if (utils/successful? response) :success/soft-delete :error/soft-delete)
+                             (if (utils/successful? response) :success/sync-update :error/sync-update))
                      :details (cond-> {:status status}
-                                      (successful? response) (assoc :etag (get headers "etag")))})
+                                      (utils/successful? response) (assoc :etag (get headers "etag")))})
 
                   :else
                   {:code :success/token-match}))
@@ -141,11 +137,52 @@
              :sync-result sync-result})))
       all-tokens)))
 
+(defn load-and-classify-tokens
+  "Retrieves a summary of all tokens available in the clusters as a map containing the following keys:
+     :all-tokens, :pending-tokens and :synced-tokens.
+   Synced tokens have the same non-nil etag value and deleted=false from load-token-list on each cluster.
+   Pending tokens are un-synced tokens present in some cluster."
+  [load-token-list cluster-urls-set]
+  (let [cluster-url->index-entries (pc/map-from-keys #(load-token-list %) cluster-urls-set)
+        cluster-url->token->index-entries (pc/map-vals
+                                            (fn [index-entries]
+                                              (pc/map-from-vals #(get % "token") index-entries))
+                                            cluster-url->index-entries)
+        all-tokens (->> cluster-url->index-entries
+                        vals
+                        (mapcat identity)
+                        (map #(get % "token"))
+                        (remove nil?)
+                        set)
+        synced-tokens (->> all-tokens
+                           (filter
+                             (fn [token]
+                               (let [cluster-data (map
+                                                     (fn [cluster-url]
+                                                       (-> cluster-url->token->index-entries
+                                                           (get cluster-url)
+                                                           (get token)
+                                                           (select-keys ["deleted" "etag"])))
+                                                     cluster-urls-set)
+                                     cluster-deleted (map #(get % "deleted") cluster-data)
+                                     cluster-etags (map #(get % "etag") cluster-data)
+                                     already-synced? (and (every? false? cluster-deleted)
+                                                          (not-any? nil? cluster-etags)
+                                                          (= 1 (-> cluster-etags set count)))]
+                                 (when already-synced?
+                                   (log/info token "has already been synced across clusters at time" (first cluster-etags)))
+                                 already-synced?)))
+                           set)]
+    (log/info "found" (count all-tokens) "across the clusters," (count synced-tokens) "previously synced")
+    {:all-tokens all-tokens
+     :pending-tokens (set/difference all-tokens synced-tokens)
+     :synced-tokens synced-tokens}))
+
 (defn summarize-sync-result
   "Summarizes the token sync result.
    The summary includes the tokens that were unmodified, successfully synced, and failed to sync.
    It also includes counts of the total number of tokens that were processed."
-  [token-sync-result]
+  [token-sync-result synced-tokens]
   (let [filter-tokens (fn [filter-fn]
                         (->> token-sync-result
                              keys
@@ -160,9 +197,11 @@
                            (set/difference unmodified-tokens))
         failed-tokens (-> token-sync-result keys set (set/difference unmodified-tokens updated-tokens))]
     {:sync {:failed failed-tokens
+            :previously-synced (set synced-tokens)
             :unmodified unmodified-tokens
             :updated updated-tokens}
-     :tokens {:num-processed (count token-sync-result)}}))
+     :tokens {:num-previously-synced (count synced-tokens)
+              :num-processed (count token-sync-result)}}))
 
 (defn sync-tokens
   "Syncs tokens across provided clusters based on cluster-urls and returns the result of token syncing.
@@ -171,13 +210,11 @@
   (try
     (log/info "syncing tokens on clusters:" cluster-urls)
     (let [cluster-urls-set (set cluster-urls)
-          cluster-url->tokens (pc/map-from-keys #(load-token-list %) cluster-urls-set)
-          all-tokens (set (mapcat identity (vals cluster-url->tokens)))
-          _ (log/info "found" (count all-tokens) "across the clusters")
-          token-sync-result (perform-token-syncs waiter-functions cluster-urls-set all-tokens)]
+          {:keys [all-tokens pending-tokens synced-tokens]} (load-and-classify-tokens load-token-list cluster-urls-set)
+          token-sync-result (perform-token-syncs waiter-functions cluster-urls-set pending-tokens)]
       (log/info "completed syncing tokens")
       {:details token-sync-result
-       :summary (-> (summarize-sync-result token-sync-result)
+       :summary (-> (summarize-sync-result token-sync-result synced-tokens)
                     (assoc-in [:tokens :total] (count all-tokens)))})
     (catch Throwable th
       (log/error th "unable to sync tokens")

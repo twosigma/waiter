@@ -323,11 +323,72 @@
                                            :details {:message "Error in storing token thrown from test"}}}
                (sync-token-on-clusters waiter-functions cluster-urls test-token token-description cluster-url->token-data)))))))
 
+(deftest test-load-and-classify-tokens
+  (let [current-time-ms (System/currentTimeMillis)
+        previous-time-ms (- current-time-ms 10101010)
+        cluster-1 "www.cluster-1.com"
+        cluster-2 "www.cluster-2.com"
+        cluster-3 "www.cluster-3.com"
+        cluster-urls [cluster-1 cluster-2 cluster-3]
+        cluster-url->tokens {cluster-1 ["token-1" "token-2"]
+                             cluster-2 ["token-1" "token-2" "token-3" "token-4"]
+                             cluster-3 ["token-1" "token-3"]}
+        token-desc-1 {"last-update-time" current-time-ms
+                      "name" "t1-all-synced"}
+        token-desc-2 {"last-update-time" current-time-ms
+                      "name" "t2-needs-sync"}
+        token-desc-3 {"deleted" true
+                      "last-update-time" current-time-ms
+                      "name" "t3-soft-delete"}
+        token-desc-4 {"deleted" true
+                      "last-update-time" current-time-ms
+                      "name" "t4-hard-delete"}
+        token->cluster-url->token-data {"token-1" {cluster-1 {:description token-desc-1
+                                                              :token-etag current-time-ms}
+                                                   cluster-2 {:description token-desc-1
+                                                              :token-etag current-time-ms}
+                                                   cluster-3 {:description token-desc-1
+                                                              :token-etag current-time-ms}}
+                                        "token-2" {cluster-1 {:description token-desc-2
+                                                              :token-etag current-time-ms}
+                                                   cluster-2 {:description (assoc token-desc-2 "cmd" "test")
+                                                              :token-etag previous-time-ms}
+                                                   cluster-3 {:description token-desc-2
+                                                              :token-etag current-time-ms}}
+                                        "token-3" {cluster-1 {:description (dissoc token-desc-3 "deleted")
+                                                              :token-etag previous-time-ms}
+                                                   cluster-2 {:description token-desc-3
+                                                              :token-etag current-time-ms}
+                                                   cluster-3 {:description token-desc-3
+                                                              :token-etag current-time-ms}}
+                                        "token-4" {cluster-1 {:description token-desc-4
+                                                              :token-etag current-time-ms}
+                                                   cluster-2 {:description token-desc-4
+                                                              :token-etag current-time-ms}
+                                                   cluster-3 {:description token-desc-4
+                                                              :token-etag current-time-ms}}}
+        load-token-list (fn [cluster-url]
+                          (let [cluster-tokens (cluster-url->tokens cluster-url)]
+                            (->> cluster-tokens
+                                 (map (fn [token]
+                                        (let [{:strs [last-update-time owner]}
+                                              (get-in token->cluster-url->token-data [token cluster-url :description])]
+                                          (cond-> {"token" token}
+                                                  last-update-time (assoc "etag" (str "E" last-update-time))
+                                                  owner (assoc "owner" owner)))))
+                                 vec)))]
+    (is (= {:all-tokens #{"token-1" "token-2" "token-3" "token-4"}
+            :pending-tokens #{"token-2" "token-3" "token-4"},
+            :synced-tokens #{"token-1"}})
+        (load-and-classify-tokens load-token-list cluster-urls))))
+
 (deftest test-summarize-sync-result
   (is (= {:sync {:failed #{"token-1B" "token-4B"}
+                 :previously-synced #{"token-5"}
                  :unmodified #{"token-1A"}
                  :updated #{"token-2" "token-3" "token-4A"}}
-          :tokens {:num-processed 6}}
+          :tokens {:num-previously-synced 1
+                   :num-processed 6}}
          (summarize-sync-result
            {"token-1A" {:sync-result {"www.cluster-2.com" {:code :success/token-match}
                                       "www.cluster-3.com" {:code :success/token-match}}}
@@ -342,7 +403,8 @@
                                       "www.cluster-3.com" {:code :success/hard-delete}}}
             "token-4B" {:sync-result {"www.cluster-1.com" {:code :success/hard-delete}
                                       "www.cluster-2.com" {:code :error/hard-delete}
-                                      "www.cluster-3.com" {:code :success/hard-delete}}}}))))
+                                      "www.cluster-3.com" {:code :success/hard-delete}}}}
+           #{"token-5"}))))
 
 (deftest test-sync-tokens
   (let [current-time-ms (System/currentTimeMillis)
@@ -407,10 +469,21 @@
                                    :details {:etag (str token "." cluster-url "." (count cluster-urls))
                                              :status 200}})
                                 cluster-urls))
-        waiter-functions {:load-token-list (fn [cluster-url] (cluster-url->tokens cluster-url))}]
+        waiter-functions {:load-token-list
+                          (fn [cluster-url]
+                            (let [cluster-tokens (cluster-url->tokens cluster-url)]
+                              (->> cluster-tokens
+                                   (map (fn [token]
+                                          (let [{:strs [deleted last-update-time owner]}
+                                                (get-in token->cluster-url->token-data [token cluster-url :description])]
+                                            (cond-> {"deleted" (true? deleted)
+                                                     "token" token}
+                                                    last-update-time (assoc "etag" (str "E" last-update-time))
+                                                    owner (assoc "owner" owner)))))
+                                   vec)))}]
     (with-redefs [retrieve-token->url->token-data (fn [_ in-cluster-urls all-tokens]
                                                     (is (= (set cluster-urls) in-cluster-urls))
-                                                    (is (= #{"token-1" "token-2" "token-3" "token-4"}
+                                                    (is (= #{"token-2" "token-3" "token-4"}
                                                            (set all-tokens)))
                                                     token->cluster-url->token-data)
                   retrieve-token->latest-description (fn [in-token->cluster-url->token-data]
@@ -426,10 +499,7 @@
                                                         (str/includes? token-name "soft-delete") :success/soft-delete
                                                         :else :error/token-sync)]
                                              (compute-sync-result cluster-urls token code)))]
-      (is (= {:details {"token-1" {:latest (token->latest-description "token-1")
-                                   :sync-result (-> [cluster-2 cluster-3]
-                                                    (compute-sync-result "token-1" :success/token-match))}
-                        "token-2" {:latest (token->latest-description "token-2")
+      (is (= {:details {"token-2" {:latest (token->latest-description "token-2")
                                    :sync-result (-> [cluster-2 cluster-3]
                                                     (compute-sync-result "token-2" :success/sync-update))}
                         "token-3" {:latest (token->latest-description "token-3")
@@ -439,8 +509,10 @@
                                    :sync-result (-> [cluster-1 cluster-2 cluster-3]
                                                     (compute-sync-result "token-4" :success/hard-delete))}}
               :summary {:sync {:failed #{}
-                               :unmodified #{"token-1"}
+                               :previously-synced #{"token-1"}
+                               :unmodified #{}
                                :updated #{"token-2" "token-3" "token-4"}}
-                        :tokens {:num-processed 4
+                        :tokens {:num-previously-synced 1
+                                 :num-processed 3
                                  :total 4}}}
              (sync-tokens waiter-functions cluster-urls))))))

@@ -83,9 +83,11 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result waiter-urls)}}
                                      :summary {:sync {:failed #{}
+                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-processed 1
+                                               :tokens {:num-previously-synced 0
+                                                        :num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -126,9 +128,11 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
                                      :summary {:sync {:failed #{}
+                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-processed 1
+                                               :tokens {:num-previously-synced 0
+                                                        :num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -169,9 +173,11 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
                                      :summary {:sync {:failed #{}
+                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-processed 1
+                                               :tokens {:num-previously-synced 0
+                                                        :num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -204,15 +210,13 @@
             (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
 
               (log/info "****** test-token-already-synced ASSERT")
-              (let [waiter-sync-result (constantly {:code :success/token-match})
-                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
-                                                                    :description token-description
-                                                                    :token-etag token-etag}
-                                                           :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
+              (let [expected-result {:details {}
                                      :summary {:sync {:failed #{}
-                                                      :unmodified #{token-name}
+                                                      :previously-synced #{token-name}
+                                                      :unmodified #{}
                                                       :updated #{}}
-                                               :tokens {:num-processed 1
+                                               :tokens {:num-previously-synced 1
+                                                        :num-processed 0
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -257,9 +261,11 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
                                      :summary {:sync {:failed #{}
+                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-processed 1
+                                               :tokens {:num-previously-synced 0
+                                                        :num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -313,9 +319,11 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
                                      :summary {:sync {:failed #{}
+                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-processed 1
+                                               :tokens {:num-previously-synced 0
+                                                        :num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
@@ -377,24 +385,27 @@
                                                                     :token-etag token-etag}
                                                            :sync-result sync-result}}
                                      :summary {:sync {:failed #{token-name}
+                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{}}
-                                               :tokens {:num-processed 1
+                                               :tokens {:num-previously-synced 0
+                                                        :num-processed 1
                                                         :total 1}}}]
                 (is (= expected-result actual-result))
                 (doall
                   (map-indexed
                     (fn [index waiter-url]
-                      (let [token-last-modified-time (- last-update-time-ms index)]
+                      (let [token-last-modified-time (- last-update-time-ms index)
+                            token-etag (token->etag waiter-functions waiter-url token-name)]
                         (is (= {:description (assoc basic-description
                                                "cpus" (inc index)
                                                "last-update-time" token-last-modified-time
                                                "owner" "test-user"
                                                "root" waiter-url)
                                 :headers {"content-type" "application/json"
-                                          "etag" (str token-last-modified-time)}
+                                          "etag" token-etag}
                                 :status 200
-                                :token-etag (str token-last-modified-time)}
+                                :token-etag token-etag}
                                (load-token waiter-url token-name)))))
                     waiter-urls))))))
         (finally

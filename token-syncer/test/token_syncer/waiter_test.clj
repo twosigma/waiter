@@ -94,16 +94,15 @@
                                 (load-token-list http-client-wrapper test-cluster-url))))))
 
     (testing "successful response"
-      (let [token-response [{:owner "test-1", :token "token-1"}
-                            {:owner "test-2", :token "token-2"}
-                            {:owner "test-3", :token "token-3"}]]
+      (let [token-response [{"last-update-time" 1000, "owner" "test-1", "token" "token-1"}
+                            {"last-update-time" 2000, "owner" "test-2", "token" "token-2"}
+                            {"last-update-time" 3000, "owner" "test-3", "token" "token-3"}]]
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
                                           (is (= [:headers {"accept" "application/json"}] in-options))
                                           (send-json-response token-response :status 200))]
-          (is (= #{"token-1" "token-2" "token-3"}
-                 (load-token-list http-client-wrapper test-cluster-url))))))))
+          (is (= token-response (load-token-list http-client-wrapper test-cluster-url))))))))
 
 (deftest test-load-token
   (let [http-client-wrapper (Object.)

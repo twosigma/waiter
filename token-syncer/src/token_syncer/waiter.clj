@@ -17,7 +17,8 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
-            [token-syncer.spnego :as spnego])
+            [token-syncer.spnego :as spnego]
+            [token-syncer.utils :as utils])
   (:import (java.net URI)
            (java.util UUID)
            (org.eclipse.jetty.client HttpClient)))
@@ -82,13 +83,11 @@
   "Loads the list of tokens on a specific cluster."
   [^HttpClient http-client cluster-url]
   (let [token-list-url (str cluster-url "/tokens")
-        {:keys [body headers status]} (make-http-request http-client token-list-url
-                                                         :headers {"accept" "application/json"})
+        {:keys [body headers status] :as response}
+        (make-http-request http-client token-list-url :headers {"accept" "application/json"})
         body-json (->> body async/<!! parse-json-data)]
-    (if (and status (<= 200 status 299))
-      (->> body-json
-           (map (fn entry->token [entry] (get entry "token")))
-           set)
+    (if (utils/successful? response)
+      body-json
       (throw (ex-info (str "Unable to load tokens from " cluster-url)
                       {:body body-json
                        :headers (extract-relevant-headers headers)
