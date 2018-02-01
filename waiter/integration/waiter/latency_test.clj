@@ -71,7 +71,7 @@
   (testing-using-waiter-url
     (let [max-instances (Integer/parseInt (or (System/getenv "WAITER_TEST_REQUEST_LATENCY_MAX_INSTANCES") "50"))
           _ (log/info "using max-instances =" max-instances)
-          client-concurrency-level 800
+          client-concurrency-level 300
           waiter-concurrency-level 4
           total-requests 100000
           name (rand-name)
