@@ -361,7 +361,7 @@
   [track-process-error-metrics-fn {:keys [out] :as request} descriptor exception]
   (log/error exception "error in processing websocket request")
   (track-process-error-metrics-fn descriptor)
-  (let [exception-response (utils/exception->response request exception)]
+  (let [exception-response (utils/exception->response exception request)]
     (async/go
       (async/>! out exception-response)
       (async/close! out))

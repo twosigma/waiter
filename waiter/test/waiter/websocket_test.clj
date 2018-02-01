@@ -10,6 +10,7 @@
 ;;
 (ns waiter.websocket-test
   (:require [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.test :refer :all]
             [qbits.jet.client.websocket :as ws-client]
             [waiter.auth.authentication :as auth]
@@ -342,3 +343,15 @@
         (is (= [:test-name :test-name-error exception nil] (async/<!! request-close-promise-chan)))
         (is (= :test-name-error @reservation-status-promise))
         (is (= server-termination-on-unexpected-condition @status-callback-atom))))))
+
+(deftest test-exception-processing
+  (let [out (async/chan 1)
+        request {:out out :headers {"accept" "application/json"}}
+        ex (Exception.)
+        desc "error descriptor"
+        _ (process-exception-in-request identity request desc ex)
+        ex-msg (-> out async/<!! :body json/read-str (get-in ["waiter-error" "message"]))]
+    ;; response should indicate an internal server error
+    (is (= "Internal error" ex-msg))
+    ;; channels should be closed
+    (is (not (async/>!! out :out-data)))))
