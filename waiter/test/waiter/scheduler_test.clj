@@ -14,6 +14,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [plumbing.core :as pc]
+            [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
             [waiter.core :as core]
             [waiter.curator :as curator]
@@ -520,3 +521,11 @@
         (let [killed-instances (map (fn [n] {:id (str "service-1." n), :service-id "service-1", :killed-at current-time-str}) (range 40 50))]
           (is (= killed-instances
                  (service-id->killed-instances "service-1"))))))))
+
+
+(deftest test-available?
+  (with-redefs [http/get (fn [_ _] (throw (IllegalArgumentException. "Unable to make request")))]
+    (let [resp (async/<!! (available? {:port 80 :protocol "http" :host "www.example.com"}
+                                      "/health-check"
+                                      (Object.)))]
+      (is (= {:healthy? false} resp)))))
