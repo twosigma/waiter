@@ -29,19 +29,22 @@
                           :marathon-response nil
                           :expected-response {:active-instances []
                                               :failed-instances []
-                                              :killed-instances []}},
+                                              :killed-instances []}
+                          :service-id->service-description {}},
                          {
                           :name "response-data->service-instances empty response"
                           :marathon-response {}
                           :expected-response {:active-instances []
                                               :failed-instances []
-                                              :killed-instances []}},
+                                              :killed-instances []}
+                          :service-id->service-description {}},
                          {
                           :name "response-data->service-instances empty-app response"
                           :marathon-response {:app {}}
                           :expected-response {:active-instances []
                                               :failed-instances []
-                                              :killed-instances []}},
+                                              :killed-instances []}
+                          :service-id->service-description {}},
                          {
                           :name "response-data->service-instances valid response with task failure"
                           :marathon-response {
@@ -141,49 +144,50 @@
                                                                      :protocol "https",
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-12T232341.711Z"}))
-                                              :killed-instances []}},
+                                              :killed-instances []}
+                          :service-id->service-description {"test-app-1234" {"backend-proto" "https"}}},
                          {
                           :name "response-data->service-instances valid response without task failure"
                           :marathon-response {
                                               :framework-id "F123445"
                                               :app {
-                                                    :id "test-app-6789",
+                                                    :id "test-app-1234",
                                                     :instances 3,
                                                     :healthChecks [{:path "/health", :portIndex 0, :protocol "HTTP", :timeoutSeconds 10}],
                                                     :tasks [
                                                             {
-                                                             :appId "/test-app-6789",
+                                                             :appId "/test-app-1234",
                                                              :healthCheckResults [{:alive true, :consecutiveFailures 0,
                                                                                    :firstSuccess "2014-09-13T002028.101Z",
                                                                                    :lastFailure nil, :lastSuccess "2014-09-13T002507.506Z",
-                                                                                   :taskId "test-app-6789.A"}],
+                                                                                   :taskId "test-app-1234.A"}],
                                                              :host "10.141.141.11",
-                                                             :id "test-app-6789.A",
+                                                             :id "test-app-1234.A",
                                                              :ports [31045],
                                                              :stagedAt "2014-09-12T232828.594Z",
                                                              :startedAt "2014-09-13T002446.959Z",
                                                              :version "2014-09-12T232821.737Z",
                                                              :slaveId "S234842"},
                                                             {
-                                                             :appId "test-app-6789",
+                                                             :appId "test-app-1234",
                                                              :healthCheckResults [{:alive true, :consecutiveFailures 0,
                                                                                    :firstSuccess "2014-09-13T002028.101Z",
                                                                                    :lastFailure nil, :lastSuccess "2014-09-13T002507.508Z",
-                                                                                   :taskId "test-app-6789.B"}],
+                                                                                   :taskId "test-app-1234.B"}],
                                                              :host "10.141.141.12",
-                                                             :id "test-app-6789.B",
+                                                             :id "test-app-1234.B",
                                                              :ports [31234],
                                                              :stagedAt "2014-09-12T232822.587Z",
                                                              :startedAt "2014-09-13T002446.965Z",
                                                              :version "2014-09-12T232821.737Z"},
                                                             {
-                                                             :appId "/test-app-6789",
+                                                             :appId "/test-app-1234",
                                                              :healthCheckResults [{:alive false, :consecutiveFailures 10,
                                                                                    :firstSuccess "2014-09-13T002028.101Z",
                                                                                    :lastFailure "2014-09-13T002507.508Z", :lastSuccess nil,
-                                                                                   :taskId "/test-app-6789.C"}],
+                                                                                   :taskId "/test-app-1234.C"}],
                                                              :host "10.141.141.13",
-                                                             :id "test-app-6789.C",
+                                                             :id "test-app-1234.C",
                                                              :ports [41234],
                                                              :stagedAt "2014-09-12T232822.587Z",
                                                              :startedAt "2014-09-13T002446.965Z",
@@ -195,43 +199,42 @@
                                                                     {:extra-ports [],
                                                                      :healthy? true,
                                                                      :host "10.141.141.11",
-                                                                     :id "test-app-6789.A",
-                                                                     :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-6789.A/runs/latest",
+                                                                     :id "test-app-1234.A",
+                                                                     :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest",
                                                                      :message nil,
                                                                      :port 31045,
                                                                      :protocol "http",
-                                                                     :service-id "test-app-6789",
+                                                                     :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.959Z"}),
                                                                   (scheduler/make-ServiceInstance
                                                                     {:extra-ports [],
                                                                      :healthy? true,
                                                                      :host "10.141.141.12",
-                                                                     :id "test-app-6789.B",
+                                                                     :id "test-app-1234.B",
                                                                      :log-directory nil,
                                                                      :message nil,
                                                                      :port 31234,
                                                                      :protocol "http",
-                                                                     :service-id "test-app-6789",
+                                                                     :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.965Z"}),
                                                                   (scheduler/make-ServiceInstance
                                                                     {:extra-ports [],
                                                                      :healthy? false,
                                                                      :host "10.141.141.13",
-                                                                     :id "test-app-6789.C",
-                                                                     :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-6789.C/runs/latest",
+                                                                     :id "test-app-1234.C",
+                                                                     :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest",
                                                                      :message nil,
                                                                      :port 41234,
                                                                      :protocol "http",
-                                                                     :service-id "test-app-6789",
+                                                                     :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.965Z"}))
                                               :failed-instances []
-                                              :killed-instances []}})]
-    (doseq [{:keys [expected-response marathon-response name]} test-cases]
+                                              :killed-instances []}
+                          :service-id->service-description {"test-app-1234" {"backend-proto" "http"}}})]
+    (doseq [{:keys [expected-response marathon-response name service-id->service-description]} test-cases]
       (testing (str "Test " name)
         (let [framework-id (:framework-id marathon-response)
               service-id->failed-instances-transient-store (atom {})
-              service-id->service-description {"test-app-1234" {"backend-proto" "https"}
-                                               "test-app-6789" {"backend-proto" "http"}}
               actual-response (response-data->service-instances
                                 marathon-response
                                 [:app]
