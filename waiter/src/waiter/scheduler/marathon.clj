@@ -118,14 +118,17 @@
 
 (defn response-data->service-instances
   "Extracts the list of instances for a given app from the marathon response."
-  [marathon-response service-keys retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store]
+  [marathon-response service-keys retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
+   service-id->service-description]
   (let [service-id (remove-slash-prefix (get-in marathon-response (conj service-keys :id)))
+        {:strs [backend-proto]} (service-id->service-description service-id)
         framework-id (retrieve-framework-id-fn)
         common-extractor-fn (fn [instance-id marathon-task-response]
                               (let [{:keys [appId host message slaveId]} marathon-task-response
                                     log-directory (mesos/build-sandbox-path mesos-api slaveId framework-id instance-id)]
-                                (cond-> {:service-id (remove-slash-prefix appId)
-                                         :host host}
+                                (cond-> {:host host
+                                         :protocol backend-proto
+                                         :service-id (remove-slash-prefix appId)}
                                         log-directory
                                         (assoc :log-directory log-directory)
 
@@ -148,10 +151,6 @@
                          (every?
                            (fn [hc]
                              (zero? (:consecutiveFailures hc))) health-checks)))
-        protocol (-> marathon-response
-                     (get-in (conj service-keys :healthChecks 0 :protocol))
-                     str
-                     str/lower-case)
         active-marathon-tasks (get-in marathon-response (conj service-keys :tasks))
         active-instances (map
                            #(scheduler/make-ServiceInstance
@@ -163,8 +162,7 @@
                                    :healthy? (healthy?-fn %)
                                    ;; first port must be used for the web server, extra ports can be used freely.
                                    :port (-> % :ports first)
-                                   :extra-ports (-> % :ports rest vec)
-                                   :protocol protocol})))
+                                   :extra-ports (-> % :ports rest vec)})))
                            active-marathon-tasks)]
     (parse-and-store-failed-instance!
       service-id->failed-instances-transient-store
@@ -192,12 +190,13 @@
 
 (defn response-data->service->service-instances
   "Extracts the list of instances for a given app from the marathon apps-list."
-  [apps-list retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store]
+  [apps-list retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store service-id->service-description]
   (let [service->service-instances (zipmap
                                      (map response->Service apps-list)
                                      (map #(response-data->service-instances
                                              % [] retrieve-framework-id-fn mesos-api
-                                             service-id->failed-instances-transient-store)
+                                             service-id->failed-instances-transient-store
+                                             service-id->service-description)
                                           apps-list))]
     (scheduler/preserve-only-killed-instances-for-services! (map :id (keys service->service-instances)))
     (preserve-only-failed-instances-for-services!
@@ -273,21 +272,24 @@
 
   scheduler/ServiceScheduler
 
-  (get-apps->instances [_]
+  (get-apps->instances [_ service-id->service-description]
     (let [apps (get-apps marathon-api is-waiter-app?-fn)]
       (response-data->service->service-instances
-        apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store)))
+        apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
+        service-id->service-description)))
 
   (get-apps [_]
     (map response->Service (get-apps marathon-api is-waiter-app?-fn)))
 
-  (get-instances [_ service-id]
+  (get-instances [_ service-id service-description]
     (ss/try+
       (scheduler/retry-on-transient-server-exceptions
         (str "get-instances[" service-id "]")
-        (let [marathon-response (marathon/get-app marathon-api service-id)]
+        (let [marathon-response (marathon/get-app marathon-api service-id)
+              service-id->service-description {service-id service-description}]
           (response-data->service-instances
-            marathon-response [:app] retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store)))
+            marathon-response [:app] retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
+            service-id->service-description)))
       (catch [:status 404] {}
         (log/warn "get-instances: service" service-id "does not exist!"))))
 
