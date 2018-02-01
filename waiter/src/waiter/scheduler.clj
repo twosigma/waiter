@@ -60,13 +60,13 @@
 
 (defprotocol ServiceScheduler
 
-  (get-apps->instances [this]
+  (get-apps->instances [this service-id->service-description]
     "Returns a map of scheduler/Service records -> scheduler/ServiceInstance records.")
 
   (get-apps [this]
     "Returns a list of scheduler/Service records")
 
-  (get-instances [this ^String service-id]
+  (get-instances [this ^String service-id service-description]
     "Retrieve a {:active-instances [...]. :failed-instances [...]} map of scheduler/ServiceInstance records for the given service-id.
      The active-instances should not be assumed to be healthy (or live).
      The failed-instances are guaranteed to be dead.")
@@ -354,12 +354,12 @@
 
 (defn- request-available-waiter-apps
   "Queries the scheduler and builds a list of available Waiter apps."
-  [scheduler]
+  [scheduler service-id->service-description-fn]
   (when-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "get-apps")
                                           (retry-on-transient-server-exceptions
                                             "request-available-waiter-apps"
-                                            (get-apps->instances scheduler)))]
+                                            (get-apps->instances scheduler service-id->service-description-fn)))]
     (log/trace "request-available-waiter-apps:apps" (keys service->service-instances))
     service->service-instances))
 
@@ -432,7 +432,7 @@
     (log/trace "scheduler-syncer: querying scheduler")
     (if-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "app->available-tasks")
-                                          (do-health-checks (request-available-waiter-apps scheduler)
+                                          (do-health-checks (request-available-waiter-apps scheduler service-id->service-description-fn)
                                                             (fn available [instance health-check-path]
                                                               (available? instance health-check-path http-client))
                                                             service-id->service-description-fn))]

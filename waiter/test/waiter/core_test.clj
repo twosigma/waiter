@@ -483,7 +483,7 @@
             (is (= "test-service-1" service-id))))))
     (testing "service-handler:valid-response-missing-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
-                    scheduler/get-instances (fn [_ service-id]
+                    scheduler/get-instances (fn [_ service-id _]
                                               {:active-instances [{:id (str service-id ".A")
                                                                    :service-id service-id
                                                                    :healthy? true,
@@ -515,7 +515,7 @@
                    {"name" "test-service-1-name", "run-as-user" "waiter-user"}))))))
     (testing "service-handler:valid-response-including-active-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
-                    scheduler/get-instances (fn [_ service-id]
+                    scheduler/get-instances (fn [_ service-id _]
                                               {:active-instances [{:id (str service-id ".A"), :service-id service-id}]
                                                :failed-instances [{:id (str service-id ".F"), :service-id service-id}]
                                                :killed-instances [{:id (str service-id ".K"), :service-id service-id}]})]

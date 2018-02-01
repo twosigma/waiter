@@ -29,26 +29,29 @@
                           :marathon-response nil
                           :expected-response {:active-instances []
                                               :failed-instances []
-                                              :killed-instances []}},
+                                              :killed-instances []}
+                          :service-id->service-description {}},
                          {
                           :name "response-data->service-instances empty response"
                           :marathon-response {}
                           :expected-response {:active-instances []
                                               :failed-instances []
-                                              :killed-instances []}},
+                                              :killed-instances []}
+                          :service-id->service-description {}},
                          {
                           :name "response-data->service-instances empty-app response"
                           :marathon-response {:app {}}
                           :expected-response {:active-instances []
                                               :failed-instances []
-                                              :killed-instances []}},
+                                              :killed-instances []}
+                          :service-id->service-description {}},
                          {
                           :name "response-data->service-instances valid response with task failure"
                           :marathon-response {
                                               :app {
                                                     :id "test-app-1234",
                                                     :instances 3,
-                                                    :healthChecks [{:path "/health", :portIndex 0, :protocol "HTTPS", :timeoutSeconds 10}],
+                                                    :healthChecks [{:path "/health", :portIndex 0, :protocol "N/A", :timeoutSeconds 10}],
                                                     :lastTaskFailure {
                                                                       :appId "test-app-1234",
                                                                       :host "10.141.141.10",
@@ -138,9 +141,11 @@
                                                                      :log-directory nil,
                                                                      :message "Abnormal executor termination",
                                                                      :port 0,
+                                                                     :protocol "https",
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-12T232341.711Z"}))
-                                              :killed-instances []}},
+                                              :killed-instances []}
+                          :service-id->service-description {"test-app-1234" {"backend-proto" "https"}}},
                          {
                           :name "response-data->service-instances valid response without task failure"
                           :marathon-response {
@@ -224,8 +229,9 @@
                                                                      :service-id "test-app-1234",
                                                                      :started-at "2014-09-13T002446.965Z"}))
                                               :failed-instances []
-                                              :killed-instances []}})]
-    (doseq [{:keys [expected-response marathon-response name]} test-cases]
+                                              :killed-instances []}
+                          :service-id->service-description {"test-app-1234" {"backend-proto" "http"}}})]
+    (doseq [{:keys [expected-response marathon-response name service-id->service-description]} test-cases]
       (testing (str "Test " name)
         (let [framework-id (:framework-id marathon-response)
               service-id->failed-instances-transient-store (atom {})
@@ -234,7 +240,8 @@
                                 [:app]
                                 (fn [] framework-id)
                                 {:slave-directory "/slave-dir"}
-                                service-id->failed-instances-transient-store)]
+                                service-id->failed-instances-transient-store
+                                service-id->service-description)]
           (is (= expected-response actual-response) (str name))
           (scheduler/preserve-only-killed-instances-for-services! [])
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
@@ -376,12 +383,15 @@
                          :healthy? false
                          :host "10.141.141.10"
                          :port 0
+                         :protocol "http"
                          :started-at "2014-09-12T232341.711Z"
                          :message "Abnormal executor termination"}))
                     :killed-instances []})
         service-id->failed-instances-transient-store (atom {})
-        actual (response-data->service->service-instances input (fn [] nil) nil
-                                                          service-id->failed-instances-transient-store)]
+        service-id->service-description {"test-app-1234" {"backend-proto" "https"}
+                                         "test-app-6789" {"backend-proto" "http"}}
+        actual (response-data->service->service-instances
+                 input (fn [] nil) nil service-id->failed-instances-transient-store service-id->service-description)]
     (is (= expected actual))
     (scheduler/preserve-only-killed-instances-for-services! [])
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])))
