@@ -14,6 +14,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
+            [schema.core :as s]
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
@@ -547,7 +548,8 @@
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
     (let [entitlement-manager (authz/->SimpleEntitlementManager nil)
           make-peer-requests-fn (fn [endpoint _ _] (and (str/starts-with? endpoint "token/") (str/ends-with? endpoint "/refresh")) {})
-          validate-service-description-fn (fn validate-service-description-fn [service-description] (sd/validate-schema service-description nil))
+          validate-service-description-fn (fn validate-service-description-fn [service-description]
+                                            (sd/validate-schema service-description {s/Str s/Any} nil))
           token "test-token"
           token-root "test-token-root"
           waiter-hostname "waiter-hostname.app.example.com"

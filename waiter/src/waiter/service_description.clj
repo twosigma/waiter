@@ -259,7 +259,7 @@
 (defn validate-schema
   "Validates the provided service description template.
    When requested to do so, it populates required fields to ensure validation does not fail for missing required fields."
-  [service-description-template
+  [service-description-template resource-limits-schema
    {:keys [allow-missing-required-fields?] :or {allow-missing-required-fields? true} :as args-map}]
   (let [default-valid-service-description (when allow-missing-required-fields?
                                             {"cpus" 1
@@ -268,7 +268,15 @@
                                              "version" "default-version"
                                              "run-as-user" "default-run-as-user"})
         service-description-to-use (merge default-valid-service-description service-description-template)
-        exception-message (utils/message :invalid-service-description)]
+        exception-message (utils/message :invalid-service-description)
+        throw-error (fn throw-error [e issue friendly-error-message]
+                      (sling/throw+ (cond-> {:type :service-description-error
+                                             :message exception-message
+                                             :service-description service-description-template
+                                             :status 400
+                                             :issue issue}
+                                            (not-empty friendly-error-message) (assoc :friendly-error-message friendly-error-message))
+                                    e))]
     (try
       (s/validate service-description-schema service-description-to-use)
       (catch Exception e
@@ -276,13 +284,24 @@
               friendly-error-message (utils/filterm val
                                                     {:metadata (generate-friendly-metadata-error-message issue)
                                                      :env (generate-friendly-environment-variable-error-message issue)})]
-          (sling/throw+ (cond-> {:type :service-description-error
-                                 :message exception-message
-                                 :service-description service-description-template
-                                 :status 400
-                                 :issue issue}
-                                (not-empty friendly-error-message) (assoc :friendly-error-message friendly-error-message))
-                        e))))
+          (throw-error e issue friendly-error-message))))
+
+    (try
+      (s/validate resource-limits-schema service-description-to-use)
+      (catch Exception e
+        (let [issue (s/check resource-limits-schema service-description-to-use)
+              param->message (fn [param]
+                               (str param
+                                    " is "
+                                    (get service-description-to-use param)
+                                    " but allowed max is "
+                                    (-> issue (get param) .schema .pred-name (str/replace "limit-" ""))))
+              friendly-error-message (str "The following fields exceed their allowed limits: "
+                                          (str/join ", " (->> issue
+                                                              keys
+                                                              sort
+                                                              (map param->message))))]
+          (throw-error e issue friendly-error-message))))
 
     ; Validate max-instances >= min-instances
     (let [{:strs [min-instances max-instances]} service-description-to-use]
@@ -319,7 +338,7 @@
   [service-description username]
   (assoc service-description "run-as-user" username "permitted-user" username))
 
-(defrecord DefaultServiceDescriptionBuilder [_]
+(defrecord DefaultServiceDescriptionBuilder [resource-limits-schema]
   ServiceDescriptionBuilder
 
   (build [_ user-service-description {:keys [service-id-prefix metric-group-mappings kv-store defaults assoc-run-as-user-approved? username]}]
@@ -340,7 +359,17 @@
        :service-id service-id}))
 
   (validate [_ service-description args-map]
-    (validate-schema service-description (merge-with set/union args-map {:valid-cmd-types #{"shell"}}))))
+    (->> (merge-with set/union args-map {:valid-cmd-types #{"shell"}})
+         (validate-schema service-description resource-limits-schema))))
+
+(defn create-default-service-description-builder
+  "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
+  [{:keys [resource-limits]}]
+  (let [resource-limits-schema (-> (->> resource-limits
+                                        (pc/map-keys s/required-key)
+                                        (pc/map-vals (fn [v] (s/pred #(<= % v) (symbol (str "limit-" v))))))
+                                   (assoc s/Str s/Any))]
+    (->DefaultServiceDescriptionBuilder resource-limits-schema)))
 
 (defn service-description->health-check-url
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"

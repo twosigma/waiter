@@ -639,7 +639,8 @@
            kv-store (or kv-store (kv/->LocalKeyValueStore (atom {})))
            waiter-headers (or waiter-headers {})]
        (compute-service-description sources waiter-headers {} kv-store "test-service-" "current-request-user"
-                                    [] (->DefaultServiceDescriptionBuilder nil) assoc-run-as-user-approved?)))))
+                                    [] (create-default-service-description-builder {})
+                                    assoc-run-as-user-approved?)))))
 
 (defn- service-description
   ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
@@ -1036,7 +1037,7 @@
                                                         "run-as-user" test-user}
                                                :headers {}}
                                               {} {} kv-store service-id-prefix test-user []
-                                              (->DefaultServiceDescriptionBuilder nil)
+                                              (create-default-service-description-builder {})
                                               (constantly false))))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" 1},
@@ -1047,14 +1048,14 @@
                                                         "run-as-user" test-user}
                                                :headers {}}
                                               {} {} kv-store service-id-prefix test-user []
-                                              (->DefaultServiceDescriptionBuilder nil)
+                                              (create-default-service-description-builder {})
                                               (constantly false))))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" 1}
                                                :tokens {}
                                                :headers {}}
                                               {} {} kv-store service-id-prefix test-user []
-                                              (->DefaultServiceDescriptionBuilder nil)
+                                              (create-default-service-description-builder {})
                                               (constantly false))))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" "/health"}
@@ -1063,7 +1064,7 @@
                                                         "mem" 200
                                                         "version" "a1b2c3"}}
                                               {} {} kv-store service-id-prefix test-user []
-                                              (->DefaultServiceDescriptionBuilder nil)
+                                              (create-default-service-description-builder {})
                                               (constantly false))))))
 
 (deftest test-compute-service-description-service-preauthorized-and-authentication-disabled
@@ -1204,9 +1205,9 @@
 
 (deftest test-metadata-error-message
   (let [service-description {"cpus" 1, "mem" 1, "cmd" "exit 0", "version" "1", "run-as-user" "someone"}]
-    (testing "metdata schema error"
+    (testing "metadata schema error"
       (try
-        (validate-schema (assoc service-description "metadata" {"a" "b" "c" 1}) nil)
+        (validate-schema (assoc service-description "metadata" {"a" "b" "c" 1}) {s/Str s/Any} nil)
         (is false "Exception should have been thrown for invalid service description.")
         (catch ExceptionInfo ex
           (let [friendly-message (get-in (ex-data ex) [:friendly-error-message :metadata])]
@@ -1241,7 +1242,7 @@
   (let [service-description {"cpus" 1, "mem" 1, "cmd" "exit 0", "version" "1", "run-as-user" "someone"}]
     (testing "environment variable schema error"
       (try
-        (validate-schema (assoc service-description "env" {"abc" "def", "ABC" 1}) nil)
+        (validate-schema (assoc service-description "env" {"abc" "def", "ABC" 1}) {s/Str s/Any} nil)
         (is false "Exception should have been thrown for invalid service description")
         (catch ExceptionInfo ex
           (let [friendly-message (get-in (ex-data ex) [:friendly-error-message :env])]
@@ -1339,11 +1340,11 @@
 (deftest test-validate-cmd-type
   (testing "DefaultServiceDescriptionBuilder validation"
     (testing "should accept no cmd-type or shell cmd-type"
-      (validate (->DefaultServiceDescriptionBuilder nil) {} {})
-      (validate (->DefaultServiceDescriptionBuilder nil) {"cmd-type" "shell"} {})
-      (is (thrown? Exception (validate (->DefaultServiceDescriptionBuilder nil) {"cmd-type" ""} {})))
+      (validate (create-default-service-description-builder {}) {} {})
+      (validate (create-default-service-description-builder {}) {"cmd-type" "shell"} {})
+      (is (thrown? Exception (validate (create-default-service-description-builder {}) {"cmd-type" ""} {})))
       (is (thrown-with-msg? Exception #"Command type invalid is not supported"
-                            (validate (->DefaultServiceDescriptionBuilder nil) {"cmd-type" "invalid"} {}))))))
+                            (validate (create-default-service-description-builder {}) {"cmd-type" "invalid"} {}))))))
 
 (deftest test-consent-cookie-value
   (let [current-time (t/now)
@@ -1416,3 +1417,43 @@
 (deftest test-no-intersection-in-token-service-description-and-metadata
   (is (empty? (set/intersection service-description-keys token-metadata-keys))
       "We found common elements in service-description-keys and token-metadata-keys!"))
+
+(deftest test-default-service-description-builder-validate
+  (let [resource-limits {"cpus" 100, "mem" (* 1024 1024)}
+        builder (create-default-service-description-builder {:resource-limits resource-limits})
+        basic-service-description {"cpus" 1, "mem" 1, "cmd" "foo", "version" "bar", "run-as-user" "*"}
+        validation-settings {:allow-missing-required-fields? false}]
+
+    (testing "validate-service-description-within-limits"
+      (is (nil? (validate builder basic-service-description validation-settings))))
+
+    (testing "validate-service-description-within-limits-missing-cpus"
+      (let [service-description (dissoc basic-service-description "cpus")]
+        (try
+          (validate builder service-description validation-settings)
+          (is false)
+          (catch ExceptionInfo ex
+            (is (= {:issue {"cpus" 'missing-required-key}, :status 400, :type :service-description-error}
+                   (select-keys (ex-data ex) [:issue :status :type])))))))
+
+    (testing "validate-service-description-cpus-outside-limits"
+      (let [service-description (assoc basic-service-description "cpus" 200)]
+        (try
+          (validate builder service-description validation-settings)
+          (is false)
+          (catch ExceptionInfo ex
+            (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
+                                                 "cpus is 200 but allowed max is 100")
+                    :status 400, :type :service-description-error}
+                   (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
+
+    (testing "validate-service-description-cpus-and-mem-outside-limits"
+      (let [service-description (assoc basic-service-description "cpus" 200 "mem" (* 3 1024 1024))]
+        (try
+          (validate builder service-description validation-settings)
+          (is false)
+          (catch ExceptionInfo ex
+            (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
+                                                 "cpus is 200 but allowed max is 100, mem is 3145728 but allowed max is 1048576")
+                    :status 400, :type :service-description-error}
+                   (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))
