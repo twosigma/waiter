@@ -537,13 +537,15 @@
       (let [expected {:id "test-service-1"
                       :labels {:source "waiter"
                                :user "test-user"}
-                      :env {"WAITER_USERNAME" "waiter"
-                            "WAITER_PASSWORD" "test-service-1-password"
+                      :env {"BAZ" "quux"
+                            "FOO" "bar"
                             "HOME" "/home/path/test-user"
                             "LOGNAME" "test-user"
                             "USER" "test-user"
-                            "FOO" "bar"
-                            "BAZ" "quux"}
+                            "WAITER_CPUS" "1"
+                            "WAITER_MEM_MB" "1536"
+                            "WAITER_PASSWORD" "test-service-1-password"
+                            "WAITER_USERNAME" "waiter"}
                       :cmd "test-command"
                       :cpus 1
                       :disk nil

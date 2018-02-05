@@ -36,6 +36,7 @@
   ([scheduler service-id custom-service-description]
    (let [descriptor {:service-description (merge {"backend-proto" "http"
                                                   "cmd" "ls"
+                                                  "cpus" 2
                                                   "grace-period-secs" 10
                                                   "mem" 32
                                                   "ports" 1}
@@ -134,6 +135,8 @@
 (deftest test-directory-content
   (let [service-description {"backend-proto" "http"
                              "cmd" "echo Hello, World!"
+                             "cpus" 4
+                             "mem" 256
                              "ports" 1}
         id->service (create-service {} "foo" service-description (constantly "password")
                                     (work-dir) (atom {}) [0 0] (promise))
@@ -383,13 +386,16 @@
                   :instances 1
                   :task-count 1
                   :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-                  :environment {"WAITER_USERNAME" "waiter"
-                                "WAITER_PASSWORD" "password"
-                                "HOME" (work-dir)
+                  :environment {"HOME" (work-dir)
                                 "LOGNAME" nil
-                                "USER" nil}
+                                "USER" nil
+                                "WAITER_CPUS" "2"
+                                "WAITER_MEM_MB" "32"
+                                "WAITER_PASSWORD" "password"
+                                "WAITER_USERNAME" "waiter"}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
+                                        "cpus" 2
                                         "grace-period-secs" 10
                                         "mem" 32
                                         "ports" 1}
@@ -398,13 +404,16 @@
                   :instances 1
                   :task-count 1
                   :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-                  :environment {"WAITER_USERNAME" "waiter"
-                                "WAITER_PASSWORD" "password"
-                                "HOME" (work-dir)
+                  :environment {"HOME" (work-dir)
                                 "LOGNAME" nil
-                                "USER" nil}
+                                "USER" nil
+                                "WAITER_CPUS" "2"
+                                "WAITER_MEM_MB" "32"
+                                "WAITER_PASSWORD" "password"
+                                "WAITER_USERNAME" "waiter"}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
+                                        "cpus" 2
                                         "grace-period-secs" 10
                                         "mem" 32
                                         "ports" 1}
@@ -413,13 +422,16 @@
                   :instances 1
                   :task-count 1
                   :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-                  :environment {"WAITER_USERNAME" "waiter"
-                                "WAITER_PASSWORD" "password"
-                                "HOME" (work-dir)
+                  :environment {"HOME" (work-dir)
                                 "LOGNAME" nil
-                                "USER" nil}
+                                "USER" nil
+                                "WAITER_CPUS" "2"
+                                "WAITER_MEM_MB" "32"
+                                "WAITER_PASSWORD" "password"
+                                "WAITER_USERNAME" "waiter"}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
+                                        "cpus" 2
                                         "grace-period-secs" 10
                                         "mem" 32
                                         "ports" 1}
@@ -449,13 +461,16 @@
                                     :instances 1
                                     :task-count 1
                                     :task-stats {:running 1, :healthy 0, :unhealthy 1, :staged 0}
-                                    :environment {"WAITER_USERNAME" "waiter"
-                                                  "WAITER_PASSWORD" "password"
-                                                  "HOME" (work-dir)
+                                    :environment {"HOME" (work-dir)
                                                   "LOGNAME" nil
-                                                  "USER" nil}
+                                                  "USER" nil
+                                                  "WAITER_CPUS" "2"
+                                                  "WAITER_MEM_MB" "32"
+                                                  "WAITER_PASSWORD" "password"
+                                                  "WAITER_USERNAME" "waiter"}
                                     :service-description {"backend-proto" "http"
                                                           "cmd" "ls"
+                                                          "cpus" 2
                                                           "grace-period-secs" 10
                                                           "mem" 32
                                                           "ports" 1}
