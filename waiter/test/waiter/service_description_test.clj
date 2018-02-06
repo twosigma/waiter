@@ -1443,7 +1443,8 @@
           (is false)
           (catch ExceptionInfo ex
             (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
-                                                 "cpus is 200 but allowed max is 100")
+                                                 \newline
+                                                 "- cpus is 200 but the max allowed is 100")
                     :status 400, :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
 
@@ -1454,6 +1455,9 @@
           (is false)
           (catch ExceptionInfo ex
             (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
-                                                 "cpus is 200 but allowed max is 100, mem is 40960 but allowed max is 32768")
+                                                 \newline
+                                                 "- cpus is 200 but the max allowed is 100"
+                                                 \newline
+                                                 "- mem is 40960 but the max allowed is 32768")
                     :status 400, :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))

@@ -290,17 +290,16 @@
       (s/validate upper-limits-schema service-description-to-use)
       (catch Exception e
         (let [issue (s/check upper-limits-schema service-description-to-use)
+              issue->param->limit (fn [issue param]
+                                    (-> issue (get param) .schema .pred-name (str/replace "limit-" "")))
               param->message (fn [param]
-                               (str param
-                                    " is "
-                                    (get service-description-to-use param)
-                                    " but allowed max is "
-                                    (-> issue (get param) .schema .pred-name (str/replace "limit-" ""))))
-              friendly-error-message (str "The following fields exceed their allowed limits: "
-                                          (str/join ", " (->> issue
-                                                              keys
-                                                              sort
-                                                              (map param->message))))]
+                               (str "- " param " is " (get service-description-to-use param) " but the max allowed is "
+                                    (issue->param->limit issue param)))
+              friendly-error-message (str "The following fields exceed their allowed limits: " \newline
+                                          (str/join \newline (->> issue
+                                                                  keys
+                                                                  sort
+                                                                  (map param->message))))]
           (throw-error e issue friendly-error-message))))
 
     ; Validate max-instances >= min-instances
