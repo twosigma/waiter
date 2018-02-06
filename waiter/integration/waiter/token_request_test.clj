@@ -662,6 +662,19 @@
       (is (not (str/includes? body "clojure")) body)
       (is (str/includes? body "The following environment variable keys are reserved: HOME.") body))))
 
+(deftest ^:parallel ^:integration-fast test-token-parameters-exceed-limits
+  (testing-using-waiter-url
+    (let [upper-limits (get (waiter-settings waiter-url) :service-description-upper-limits)]
+      (is (seq upper-limits))
+      (doseq [[parameter upper-limit] upper-limits]
+        (let [{:keys [body status]} (post-token waiter-url {parameter (inc upper-limit) :token (rand-name)})]
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")) body)
+          (is (every? #(str/includes? body %)
+                      ["The following fields exceed their allowed limits"
+                       (str (name parameter) " is " (inc upper-limit) " but the max allowed is " upper-limit)])
+              body))))))
+
 (deftest ^:parallel ^:integration-fast test-auto-run-as-requester-support
   (testing-using-waiter-url
     (let [service-name (rand-name)

@@ -178,6 +178,23 @@
       (is (= 400 status))
       (is (str/includes? body "Command type fakecommand is not supported")))))
 
+(deftest ^:parallel ^:integration-fast test-basic-parameters-exceed-limits
+  (testing-using-waiter-url
+    (let [upper-limits (get (waiter-settings waiter-url) :service-description-upper-limits)]
+      (is (seq upper-limits))
+      (doseq [[parameter upper-limit] (rest upper-limits)]
+        (let [headers {:x-waiter-cmd "false"
+                       :x-waiter-name (rand-name)
+                       :x-waiter-version "1"
+                       (keyword (str "x-waiter-" (name parameter))) (inc upper-limit)}
+              {:keys [body status]} (make-light-request waiter-url headers)]
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")) body)
+          (is (every? #(str/includes? body %)
+                      ["The following fields exceed their allowed limits"
+                       (str (name parameter) " is " (inc upper-limit) " but the max allowed is " upper-limit)])
+              body))))))
+
 (deftest ^:parallel ^:integration-fast test-header-metadata
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
