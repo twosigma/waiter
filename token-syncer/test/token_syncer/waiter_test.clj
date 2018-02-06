@@ -88,7 +88,9 @@
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
-                                          (is (= [:headers {"accept" "application/json"}] in-options))
+                                          (is (= [:headers {"accept" "application/json"}
+                                                  :query-params {"include" ["deleted" "metadata"]}]
+                                                 in-options))
                                           (throw error))]
           (is (thrown-with-msg? Exception #"exception from test"
                                 (load-token-list http-client-wrapper test-cluster-url))))))
@@ -100,7 +102,9 @@
         (with-redefs [make-http-request (fn [in-http-client-wrapper in-endopint-url & in-options]
                                           (is (= http-client-wrapper in-http-client-wrapper))
                                           (is (= (str test-cluster-url "/token")) in-endopint-url)
-                                          (is (= [:headers {"accept" "application/json"}] in-options))
+                                          (is (= [:headers {"accept" "application/json"}
+                                                  :query-params {"include" ["deleted" "metadata"]}]
+                                                 in-options))
                                           (send-json-response token-response :status 200))]
           (is (= token-response (load-token-list http-client-wrapper test-cluster-url))))))))
 

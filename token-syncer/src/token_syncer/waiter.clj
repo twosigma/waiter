@@ -83,8 +83,10 @@
   "Loads the list of tokens on a specific cluster."
   [^HttpClient http-client cluster-url]
   (let [token-list-url (str cluster-url "/tokens")
+        request-headers {"accept" "application/json"}
+        request-params {"include" ["deleted" "metadata"]}
         {:keys [body headers status] :as response}
-        (make-http-request http-client token-list-url :headers {"accept" "application/json"})
+        (make-http-request http-client token-list-url :headers request-headers :query-params request-params)
         body-json (->> body async/<!! parse-json-data)]
     (if (utils/successful? response)
       body-json
