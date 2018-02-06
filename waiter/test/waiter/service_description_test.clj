@@ -1419,8 +1419,8 @@
       "We found common elements in service-description-keys and token-metadata-keys!"))
 
 (deftest test-default-service-description-builder-validate
-  (let [resource-limits {"cpus" 100, "mem" (* 1024 1024)}
-        builder (create-default-service-description-builder {:resource-limits resource-limits})
+  (let [upper-limits {"cpus" 100, "mem" (* 32 1024)}
+        builder (create-default-service-description-builder {:upper-limits upper-limits})
         basic-service-description {"cpus" 1, "mem" 1, "cmd" "foo", "version" "bar", "run-as-user" "*"}
         validation-settings {:allow-missing-required-fields? false}]
 
@@ -1448,12 +1448,12 @@
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
 
     (testing "validate-service-description-cpus-and-mem-outside-limits"
-      (let [service-description (assoc basic-service-description "cpus" 200 "mem" (* 3 1024 1024))]
+      (let [service-description (assoc basic-service-description "cpus" 200 "mem" (* 40 1024))]
         (try
           (validate builder service-description validation-settings)
           (is false)
           (catch ExceptionInfo ex
             (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
-                                                 "cpus is 200 but allowed max is 100, mem is 3145728 but allowed max is 1048576")
+                                                 "cpus is 200 but allowed max is 100, mem is 40960 but allowed max is 32768")
                     :status 400, :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))

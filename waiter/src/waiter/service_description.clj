@@ -259,7 +259,7 @@
 (defn validate-schema
   "Validates the provided service description template.
    When requested to do so, it populates required fields to ensure validation does not fail for missing required fields."
-  [service-description-template resource-limits-schema
+  [service-description-template upper-limits-schema
    {:keys [allow-missing-required-fields?] :or {allow-missing-required-fields? true} :as args-map}]
   (let [default-valid-service-description (when allow-missing-required-fields?
                                             {"cpus" 1
@@ -287,9 +287,9 @@
           (throw-error e issue friendly-error-message))))
 
     (try
-      (s/validate resource-limits-schema service-description-to-use)
+      (s/validate upper-limits-schema service-description-to-use)
       (catch Exception e
-        (let [issue (s/check resource-limits-schema service-description-to-use)
+        (let [issue (s/check upper-limits-schema service-description-to-use)
               param->message (fn [param]
                                (str param
                                     " is "
@@ -338,7 +338,7 @@
   [service-description username]
   (assoc service-description "run-as-user" username "permitted-user" username))
 
-(defrecord DefaultServiceDescriptionBuilder [resource-limits-schema]
+(defrecord DefaultServiceDescriptionBuilder [upper-limits-schema]
   ServiceDescriptionBuilder
 
   (build [_ user-service-description {:keys [service-id-prefix metric-group-mappings kv-store defaults assoc-run-as-user-approved? username]}]
@@ -360,16 +360,16 @@
 
   (validate [_ service-description args-map]
     (->> (merge-with set/union args-map {:valid-cmd-types #{"shell"}})
-         (validate-schema service-description resource-limits-schema))))
+         (validate-schema service-description upper-limits-schema))))
 
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
-  [{:keys [resource-limits]}]
-  (let [resource-limits-schema (-> (->> resource-limits
-                                        (pc/map-keys s/required-key)
-                                        (pc/map-vals (fn [v] (s/pred #(<= % v) (symbol (str "limit-" v))))))
-                                   (assoc s/Str s/Any))]
-    (->DefaultServiceDescriptionBuilder resource-limits-schema)))
+  [{:keys [upper-limits]}]
+  (let [upper-limits-schema (-> (->> upper-limits
+                                     (pc/map-keys s/required-key)
+                                     (pc/map-vals (fn [v] (s/pred #(<= % v) (symbol (str "limit-" v))))))
+                                (assoc s/Str s/Any))]
+    (->DefaultServiceDescriptionBuilder upper-limits-schema)))
 
 (defn service-description->health-check-url
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"

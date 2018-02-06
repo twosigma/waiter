@@ -116,8 +116,7 @@
                                                    (s/required-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "scale-up-factor") schema/positive-fraction-less-than-1
                                                    (s/required-key "scale-down-factor") schema/positive-fraction-less-than-1}
-   (s/required-key :service-description-resource-limits) {(s/required-key "cpus") schema/positive-int
-                                                          (s/required-key "mem") schema/positive-int}
+   (s/required-key :service-description-upper-limits) {s/Str schema/positive-num}
    (s/required-key :statsd) (s/either (s/eq :disabled)
                                       {(s/required-key :cluster) schema/non-empty-string
                                        (s/required-key :environment) schema/non-empty-string
@@ -291,8 +290,8 @@
                                   "scale-down-factor" 0.001
                                   "scale-factor" 1
                                   "scale-up-factor" 0.1}
-   :service-description-resource-limits {"cpus" 100
-                                         "mem" (* 1024 1024)}
+   :service-description-upper-limits {"cpus" 32
+                                      "mem" (* 128 1024)}
    :statsd :disabled
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url

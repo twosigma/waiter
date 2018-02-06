@@ -357,10 +357,10 @@
                                 "scale-factor" 1
                                 "scale-up-factor" 0.1}
 
- ;; Service description parameters with numeric values, e.g. cpus, can be configured to have
- ;; maximum value limits. When not configured, these defaults will be used:
- :service-description-resource-limits {"cpus" 100
-                                       "mem" 1048576}
+ ;; Service description parameters with numeric values, e.g. cpus, can be configured
+ ;; to have maximum value limits.
+ :service-description-upper-limits {"cpus" 40
+                                    "mem" 32768} ;; mem is in megabytes
 
  ; ---------- Timeouts ----------
 
