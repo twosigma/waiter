@@ -22,11 +22,9 @@
 (defn ^HttpClient http-client-factory
   "Creates an instance of HttpClient with the specified timeout."
   [{:keys [connection-timeout-ms idle-timeout-ms]}]
-  (let [http-client (http/client {:connect-timeout connection-timeout-ms
-                                  :idle-timeout idle-timeout-ms
-                                  :follow-redirects? false})
-        _ (.clear (.getContentDecoderFactories http-client))]
-    http-client))
+  (http/client {:connect-timeout connection-timeout-ms
+                :idle-timeout idle-timeout-ms
+                :follow-redirects? false}))
 
 (defn- setup-exception-handler
   "Sets up the UncaughtExceptionHandler."
