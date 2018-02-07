@@ -664,7 +664,10 @@
 
 (deftest ^:parallel ^:integration-fast test-token-parameters-exceed-limits
   (testing-using-waiter-url
-    (let [upper-limits (get (waiter-settings waiter-url) :service-description-upper-limits)]
+    (let [constraints (setting waiter-url [:service-description-constraints])
+          upper-limits (->> constraints
+                            (filter (fn [[_ constraint]] (contains? constraint :max)))
+                            (pc/map-vals :max))]
       (is (seq upper-limits))
       (doseq [[parameter upper-limit] upper-limits]
         (let [{:keys [body status]} (post-token waiter-url {parameter (inc upper-limit) :token (rand-name)})]

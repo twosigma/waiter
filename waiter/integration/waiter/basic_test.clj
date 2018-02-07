@@ -17,6 +17,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
             [waiter.service-description :as sd]
@@ -180,7 +181,10 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-parameters-exceed-limits
   (testing-using-waiter-url
-    (let [upper-limits (get (waiter-settings waiter-url) :service-description-upper-limits)]
+    (let [constraints (setting waiter-url [:service-description-constraints])
+          upper-limits (->> constraints
+                            (filter (fn [[_ constraint]] (contains? constraint :max)))
+                            (pc/map-vals :max))]
       (is (seq upper-limits))
       (doseq [[parameter upper-limit] (rest upper-limits)]
         (let [headers {:x-waiter-cmd "false"

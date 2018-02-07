@@ -291,15 +291,19 @@
       (catch Exception e
         (let [issue (s/check upper-limits-schema service-description-to-use)
               issue->param->limit (fn [issue param]
-                                    (-> issue (get param) .schema .pred-name (str/replace "limit-" "")))
+                                    (-> issue
+                                        (get param)
+                                        .schema
+                                        .pred-name
+                                        (str/replace "limit-" "")))
               param->message (fn [param]
-                               (str "- " param " is " (get service-description-to-use param) " but the max allowed is "
+                               (str param " is " (get service-description-to-use param) " but the max allowed is "
                                     (issue->param->limit issue param)))
-              friendly-error-message (str "The following fields exceed their allowed limits: " \newline
-                                          (str/join \newline (->> issue
-                                                                  keys
-                                                                  sort
-                                                                  (map param->message))))]
+              friendly-error-message (str "The following fields exceed their allowed limits: "
+                                          (str/join ", " (->> issue
+                                                              keys
+                                                              sort
+                                                              (map param->message))))]
           (throw-error e issue friendly-error-message))))
 
     ; Validate max-instances >= min-instances
@@ -363,9 +367,12 @@
 
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
-  [{:keys [upper-limits]}]
-  (let [upper-limits-schema (-> (->> upper-limits
-                                     (pc/map-keys s/required-key)
+  [{:keys [constraints]}]
+  (let [upper-limits (->> constraints
+                          (filter (fn [[_ constraint]] (contains? constraint :max)))
+                          (pc/map-vals :max))
+        upper-limits-schema (-> (->> upper-limits
+                                     (pc/map-keys s/optional-key)
                                      (pc/map-vals (fn [v] (s/pred #(<= % v) (symbol (str "limit-" v))))))
                                 (assoc s/Str s/Any))]
     (->DefaultServiceDescriptionBuilder upper-limits-schema)))

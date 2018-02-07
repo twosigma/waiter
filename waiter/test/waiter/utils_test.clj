@@ -508,11 +508,11 @@
                      (create-component {:kind :patterns
                                         :patterns {:factory-fn 'waiter.cors/pattern-based-validator
                                                    :allowed-origins []}})))
-      (let [upper-limits {"cpus" 100
-                          "mem" (* 32 1024)}
+      (let [constraints {"cpus" {:max 100}
+                          "mem" {:max (* 32 1024)}}
             builder (create-component {:kind :default
                                        :default {:factory-fn 'waiter.service-description/create-default-service-description-builder}}
-                                      :context {:upper-limits upper-limits})]
+                                      :context {:constraints constraints})]
         (is (instance? DefaultServiceDescriptionBuilder builder))
         (is (:upper-limits-schema builder))
         (waiter.service-description/validate builder {} {})))

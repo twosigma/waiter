@@ -91,6 +91,7 @@
                                                           {:kind s/Keyword
                                                            s/Keyword schema/require-symbol-factory-fn}
                                                           schema/contains-kind-sub-map?)
+   (s/required-key :service-description-constraints) {s/Str {(s/required-key :max) schema/positive-num}}
    ; service-description-defaults should never contain default values for required fields, e.g. version, cmd, run-as-user, etc.
    (s/required-key :service-description-defaults) {(s/required-key "authentication") schema/valid-authentication
                                                    (s/required-key "backend-proto") schema/valid-backend-proto
@@ -116,7 +117,6 @@
                                                    (s/required-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "scale-up-factor") schema/positive-fraction-less-than-1
                                                    (s/required-key "scale-down-factor") schema/positive-fraction-less-than-1}
-   (s/required-key :service-description-upper-limits) {s/Str schema/positive-num}
    (s/required-key :statsd) (s/either (s/eq :disabled)
                                       {(s/required-key :cluster) schema/non-empty-string
                                        (s/required-key :environment) schema/non-empty-string
@@ -266,6 +266,8 @@
    :scheduler-syncer-interval-secs 5
    :service-description-builder-config {:kind :default
                                         :default {:factory-fn 'waiter.service-description/create-default-service-description-builder}}
+   :service-description-constraints {"cpus" {:max 32}
+                                     "mem" {:max (* 128 1024)}}
    :service-description-defaults {"authentication" "standard"
                                   "backend-proto" "http"
                                   "blacklist-on-503" true
@@ -290,8 +292,6 @@
                                   "scale-down-factor" 0.001
                                   "scale-factor" 1
                                   "scale-up-factor" 0.1}
-   :service-description-upper-limits {"cpus" 32
-                                      "mem" (* 128 1024)}
    :statsd :disabled
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url

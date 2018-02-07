@@ -475,9 +475,9 @@
                         (str/starts-with? service-id service-id-prefix))]
                   (utils/create-component scheduler-config :context {:is-waiter-app?-fn is-waiter-app?-fn})))
    :scheduler-state-chan (pc/fnk [] (au/latest-chan))
-   :service-description-builder (pc/fnk [[:settings service-description-builder-config service-description-upper-limits]]
+   :service-description-builder (pc/fnk [[:settings service-description-builder-config service-description-constraints]]
                                   (utils/create-component
-                                    service-description-builder-config :context {:upper-limits service-description-upper-limits}))
+                                    service-description-builder-config :context {:constraints service-description-constraints}))
    :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
    :start-app-cache-atom (pc/fnk []
                            (-> {}

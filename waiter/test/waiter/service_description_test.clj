@@ -1419,8 +1419,9 @@
       "We found common elements in service-description-keys and token-metadata-keys!"))
 
 (deftest test-default-service-description-builder-validate
-  (let [upper-limits {"cpus" 100, "mem" (* 32 1024)}
-        builder (create-default-service-description-builder {:upper-limits upper-limits})
+  (let [constraints {"cpus" {:max 100}
+                     "mem" {:max (* 32 1024)}}
+        builder (create-default-service-description-builder {:constraints constraints})
         basic-service-description {"cpus" 1, "mem" 1, "cmd" "foo", "version" "bar", "run-as-user" "*"}
         validation-settings {:allow-missing-required-fields? false}]
 
@@ -1443,8 +1444,7 @@
           (is false)
           (catch ExceptionInfo ex
             (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
-                                                 \newline
-                                                 "- cpus is 200 but the max allowed is 100")
+                                                 "cpus is 200 but the max allowed is 100")
                     :status 400, :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
 
@@ -1455,9 +1455,7 @@
           (is false)
           (catch ExceptionInfo ex
             (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
-                                                 \newline
-                                                 "- cpus is 200 but the max allowed is 100"
-                                                 \newline
-                                                 "- mem is 40960 but the max allowed is 32768")
+                                                 "cpus is 200 but the max allowed is 100, "
+                                                 "mem is 40960 but the max allowed is 32768")
                     :status 400, :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))
