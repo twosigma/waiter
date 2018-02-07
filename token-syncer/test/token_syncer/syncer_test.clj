@@ -177,7 +177,8 @@
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
                                      "www.cluster-2.com" {:error (Exception. "cluster-2 data cannot be loaded")}}]
-        (is (= {"www.cluster-1.com" {:code :success/token-match}
+        (is (= {"www.cluster-1.com" {:code :error/token-read
+                                     :details {:message "token root missing from latest token description"}}
                 "www.cluster-2.com" {:code :error/token-read
                                      :details {:message "cluster-2 data cannot be loaded"}}}
                (sync-token-on-clusters waiter-functions cluster-urls test-token token-description cluster-url->token-data)))))
@@ -192,7 +193,8 @@
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
                                      "www.cluster-2.com" {}}]
-        (is (= {"www.cluster-1.com" {:code :success/token-match}
+        (is (= {"www.cluster-1.com" {:code :error/token-read
+                                     :details {:message "token root missing from latest token description"}}
                 "www.cluster-2.com" {:code :error/token-read
                                      :details {:message "status missing from response"}}}
                (sync-token-on-clusters waiter-functions cluster-urls test-token token-description cluster-url->token-data)))))
@@ -238,11 +240,14 @@
     (testing "sync cluster with missing owners"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"
-            token-description {"name" "test-name-1"}
-            cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name-1"}
+            token-description {"name" "test-name-1"
+                               "root" "test-cluster-1"}
+            cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name-1"
+                                                                        "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
-                                     "www.cluster-2.com" {:description {"name" "test-name-2"}
+                                     "www.cluster-2.com" {:description {"name" "test-name-2"
+                                                                        "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".2")
                                                           :status 200}}]
         (is (= {"www.cluster-1.com" {:code :success/token-match}
@@ -281,23 +286,25 @@
                                                                         "root" "test-user-2"}
                                                           :token-etag (str test-token-etag ".2")
                                                           :status 200}}]
-        (is (= {"www.cluster-1.com" {:code :success/token-match}
-                "www.cluster-2.com" {:code :error/root-mismatch
-                                     :details {:cluster {"name" "test-name-2"
-                                                         "root" "test-user-2"}
-                                               :latest {"name" "test-name-1"}}}}
+        (is (= {"www.cluster-1.com" {:code :error/token-read
+                                     :details {:message "token root missing from latest token description"}}
+                "www.cluster-2.com" {:code :error/token-read
+                                     :details {:message "token root missing from latest token description"}}}
                (sync-token-on-clusters waiter-functions cluster-urls test-token token-description cluster-url->token-data)))))
 
     (testing "sync cluster successfully"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"
             token-description {"name" "test-name"
-                               "owner" "test-user-1"}
+                               "owner" "test-user-1"
+                               "root" "test-cluster-1"}
             cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
-                                                                        "owner" "test-user-1"}
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
-                                     "www.cluster-2.com" {:description {"owner" "test-user-1"}
+                                     "www.cluster-2.com" {:description {"owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".2")
                                                           :status 200}}]
         (is (= {"www.cluster-1.com" {:code :success/token-match}
@@ -310,12 +317,15 @@
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2-error.com"]
             test-token "test-token-1"
             token-description {"name" "test-name"
-                               "owner" "test-user-1"}
+                               "owner" "test-user-1"
+                               "root" "test-cluster-1"}
             cluster-url->token-data {"www.cluster-1.com" {:description {"name" "test-name"
-                                                                        "owner" "test-user-1"}
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
-                                     "www.cluster-2-error.com" {:description {"owner" "test-user-1"}
+                                     "www.cluster-2-error.com" {:description {"owner" "test-user-1"
+                                                                              "root" "test-cluster-1"}
                                                                 :token-etag (str test-token-etag ".2")
                                                                 :status 200}}]
         (is (= {"www.cluster-1.com" {:code :success/token-match}

@@ -71,13 +71,13 @@
   "Syncs a given token description on all clusters.
    If the cluster-url->token-data says that a given token was not successfully loaded, it is skipped.
    Token sync-ing is also skipped if the owners of the tokens are different."
-  [{:keys [store-token]} cluster-urls token token-description cluster-url->token-data]
+  [{:keys [store-token]} cluster-urls token latest-token-description cluster-url->token-data]
   (pc/map-from-keys
     (fn [cluster-url]
       (let [cluster-result
             (try
               (let [{:keys [description error status] :as token-data} (get cluster-url->token-data cluster-url)
-                    latest-root (get token-description "root")
+                    latest-root (get latest-token-description "root")
                     cluster-root (get description "root")]
                 (cond
                   error
@@ -88,15 +88,19 @@
                   {:code :error/token-read
                    :details {:message "status missing from response"}}
 
+                  (nil? latest-root)
+                  {:code :error/token-read
+                   :details {:message "token root missing from latest token description"}}
+
                   (and (seq description) (not= latest-root cluster-root))
                   {:code :error/root-mismatch
                    :details {:cluster description
-                             :latest token-description}}
+                             :latest latest-token-description}}
 
-                  (not= token-description (get-in cluster-url->token-data [cluster-url :description]))
+                  (not= latest-token-description (get-in cluster-url->token-data [cluster-url :description]))
                   (let [token-etag (:token-etag token-data default-etag)
-                        {:keys [headers status] :as response} (store-token cluster-url token token-etag token-description)]
-                    {:code (if (get token-description "deleted")
+                        {:keys [headers status] :as response} (store-token cluster-url token token-etag latest-token-description)]
+                    {:code (if (get latest-token-description "deleted")
                              (if (utils/successful? response) :success/soft-delete :error/soft-delete)
                              (if (utils/successful? response) :success/sync-update :error/sync-update))
                      :details (cond-> {:status status}
@@ -132,7 +136,7 @@
                                        (token->url->token-data token))]
           (log/info "syncing" token "with token description from" cluster-url
                     {:all-soft-deleted all-soft-deleted, :all-tokens-match all-tokens-match})
-          (let [sync-result (if (and all-tokens-match all-soft-deleted description)
+          (let [sync-result (if (and all-tokens-match all-soft-deleted)
                               (hard-delete-token-on-all-clusters waiter-functions cluster-urls token token-etag)
                               (sync-token-on-clusters waiter-functions remaining-cluster-urls token description
                                                       (token->url->token-data token)))]
