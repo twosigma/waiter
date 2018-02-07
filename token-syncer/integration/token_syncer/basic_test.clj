@@ -41,7 +41,7 @@
   [{:keys [load-token]} waiter-url token-name]
   (-> (load-token waiter-url token-name)
       (get :token-etag)
-      (or 0) ;; Waiter defaults etag to 0
+      (or syncer/default-etag)
       str))
 
 (defn- cleanup-token
@@ -107,10 +107,10 @@
               token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
               token-description (merge basic-description token-metadata)]
 
-          (store-token (first waiter-urls) token-name "0" (assoc token-description "deleted" true))
+          (store-token (first waiter-urls) token-name syncer/default-etag (assoc token-description "deleted" true))
           (doseq [waiter-url (rest waiter-urls)]
             (let [last-update-time-ms (- current-time-ms 10000)]
-              (store-token waiter-url token-name "0"
+              (store-token waiter-url token-name syncer/default-etag
                            (assoc token-description "last-update-time" last-update-time-ms))))
 
           (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
@@ -156,7 +156,7 @@
               token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
               token-description (merge basic-description token-metadata)]
 
-          (store-token (first waiter-urls) token-name "0" token-description)
+          (store-token (first waiter-urls) token-name syncer/default-etag token-description)
 
           (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
 
@@ -202,7 +202,7 @@
               token-description (merge basic-description token-metadata)]
 
           (doseq [waiter-url waiter-urls]
-            (store-token waiter-url token-name "0" token-description))
+            (store-token waiter-url token-name syncer/default-etag token-description))
 
           (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
 
@@ -241,9 +241,9 @@
               token-description (merge basic-description token-metadata)]
 
           (let [last-update-time-ms (- current-time-ms 10000)]
-            (store-token (first waiter-urls) token-name "0" token-description)
+            (store-token (first waiter-urls) token-name syncer/default-etag token-description)
             (doseq [waiter-url (rest waiter-urls)]
-              (store-token waiter-url token-name "0"
+              (store-token waiter-url token-name syncer/default-etag
                            (assoc token-description "cpus" 2, "mem" 2048, "last-update-time" last-update-time-ms))))
 
           (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
@@ -291,7 +291,7 @@
           (doall
             (map-indexed
               (fn [index waiter-url]
-                (store-token waiter-url token-name "0"
+                (store-token waiter-url token-name syncer/default-etag
                              (assoc basic-description
                                "cpus" (inc index)
                                "last-update-time" (- last-update-time-ms index)
@@ -349,7 +349,7 @@
           (doall
             (map-indexed
               (fn [index waiter-url]
-                (store-token waiter-url token-name "0"
+                (store-token waiter-url token-name syncer/default-etag
                              (assoc basic-description
                                "cpus" (inc index)
                                "last-update-time" (- last-update-time-ms index)

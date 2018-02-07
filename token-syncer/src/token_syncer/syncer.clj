@@ -14,6 +14,9 @@
             [plumbing.core :as pc]
             [token-syncer.utils :as utils]))
 
+;; The default etag for new tokens while running in admin mode
+(def ^:const default-etag "E-0")
+
 (defn retrieve-token->url->token-data
   "Given collections of cluster urls and tokens, retrieve the token description on each cluster.
    The resulting data structure is a map as follows: token->cluster->token-data where the
@@ -40,7 +43,7 @@
                           (-> cluster-url->token-data sort reverse))]
                {:cluster-url cluster-url
                 :description (:description token-data)
-                :token-etag (:token-etag token-data "0")}))))
+                :token-etag (:token-etag token-data default-etag)}))))
        (pc/map-vals (fnil identity {}))))
 
 (defn hard-delete-token-on-all-clusters
@@ -91,7 +94,7 @@
                              :latest token-description}}
 
                   (not= token-description (get-in cluster-url->token-data [cluster-url :description]))
-                  (let [token-etag (:token-etag token-data "0")
+                  (let [token-etag (:token-etag token-data default-etag)
                         {:keys [headers status] :as response} (store-token cluster-url token token-etag token-description)]
                     {:code (if (get token-description "deleted")
                              (if (utils/successful? response) :success/soft-delete :error/soft-delete)
