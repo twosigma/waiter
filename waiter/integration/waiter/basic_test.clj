@@ -188,6 +188,7 @@
       (is (seq upper-limits))
       (doseq [[parameter upper-limit] (rest upper-limits)]
         (let [headers {:x-waiter-cmd "false"
+                       :x-waiter-cmd-type "shell"
                        :x-waiter-name (rand-name)
                        :x-waiter-version "1"
                        (keyword (str "x-waiter-" (name parameter))) (inc upper-limit)}
