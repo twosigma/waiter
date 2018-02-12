@@ -40,7 +40,6 @@
                                (is (= {:body test-body
                                        :headers test-headers
                                        :fold-chunked-response? true
-                                       :follow-redirects? false
                                        :query-string test-query-params}
                                       (update in-options :headers dissoc "x-cid")))
                                (let [response-chan (async/promise-chan)]
@@ -62,7 +61,6 @@
                                  (is (= {:body test-body
                                          :headers test-headers
                                          :fold-chunked-response? true
-                                         :follow-redirects? false
                                          :query-string test-query-params}
                                         (-> in-options
                                             (dissoc :auth)

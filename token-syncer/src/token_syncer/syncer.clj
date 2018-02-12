@@ -118,8 +118,8 @@
 
 (defn- perform-token-syncs
   "Perform token syncs for all the specified tokens."
-  [waiter-functions cluster-urls all-tokens]
-  (let [token->url->token-data (retrieve-token->url->token-data waiter-functions cluster-urls all-tokens)
+  [waiter-api cluster-urls all-tokens]
+  (let [token->url->token-data (retrieve-token->url->token-data waiter-api cluster-urls all-tokens)
         token->latest-description (retrieve-token->latest-description token->url->token-data)]
     (pc/map-from-keys
       (fn [token]
@@ -137,8 +137,8 @@
           (log/info "syncing" token "with token description from" cluster-url
                     {:all-soft-deleted all-soft-deleted, :all-tokens-match all-tokens-match})
           (let [sync-result (if (and all-tokens-match all-soft-deleted)
-                              (hard-delete-token-on-all-clusters waiter-functions cluster-urls token token-etag)
-                              (sync-token-on-clusters waiter-functions remaining-cluster-urls token description
+                              (hard-delete-token-on-all-clusters waiter-api cluster-urls token token-etag)
+                              (sync-token-on-clusters waiter-api remaining-cluster-urls token description
                                                       (token->url->token-data token)))]
             {:latest (token->latest-description token)
              :sync-result sync-result})))
@@ -188,8 +188,9 @@
 (defn summarize-sync-result
   "Summarizes the token sync result.
    The summary includes the tokens that were unmodified, successfully synced, and failed to sync.
-   It also includes counts of the total number of tokens that were processed."
-  [token-sync-result synced-tokens]
+   Tokens that were already syncer show up in previously synced entry of the summary.
+   The summary also includes counts of the total number of tokens that were processed."
+  [token-sync-result already-synced-tokens]
   (let [filter-tokens (fn [filter-fn]
                         (->> token-sync-result
                              keys
@@ -204,21 +205,21 @@
                            (set/difference unmodified-tokens))
         failed-tokens (-> token-sync-result keys set (set/difference unmodified-tokens updated-tokens))]
     {:sync {:failed failed-tokens
-            :previously-synced (set synced-tokens)
+            :previously-synced (set already-synced-tokens)
             :unmodified unmodified-tokens
             :updated updated-tokens}
-     :tokens {:num-previously-synced (count synced-tokens)
+     :tokens {:num-previously-synced (count already-synced-tokens)
               :num-processed (count token-sync-result)}}))
 
 (defn sync-tokens
   "Syncs tokens across provided clusters based on cluster-urls and returns the result of token syncing.
    Throws an exception if there was an error during token syncing."
-  [{:keys [load-token-list] :as waiter-functions} cluster-urls]
+  [{:keys [load-token-list] :as waiter-api} cluster-urls]
   (try
     (log/info "syncing tokens on clusters:" cluster-urls)
     (let [cluster-urls-set (set cluster-urls)
           {:keys [all-tokens pending-tokens synced-tokens]} (load-and-classify-tokens load-token-list cluster-urls-set)
-          token-sync-result (perform-token-syncs waiter-functions cluster-urls-set pending-tokens)]
+          token-sync-result (perform-token-syncs waiter-api cluster-urls-set pending-tokens)]
       (log/info "completed syncing tokens")
       {:details token-sync-result
        :summary (-> (summarize-sync-result token-sync-result synced-tokens)

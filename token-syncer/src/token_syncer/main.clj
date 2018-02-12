@@ -58,7 +58,7 @@
     (log/error message))
   (System/exit status))
 
-(defn extract-waiter-functions
+(defn init-waiter-api
   "Creates the map of methods used to interact with Waiter to load, store and delete tokens."
   [{:keys [dry-run] :as options}]
   (let [http-client (http-client-factory options)]
@@ -103,9 +103,9 @@
         (do
           (when (:dry-run options)
             (log/info "executing token syncer in dry-run mode"))
-          (let [waiter-functions (extract-waiter-functions options)
+          (let [waiter-api (init-waiter-api options)
                 cluster-urls-set (set cluster-urls)
-                sync-result (syncer/sync-tokens waiter-functions cluster-urls-set)
+                sync-result (syncer/sync-tokens waiter-api cluster-urls-set)
                 exit-code (-> (get-in sync-result [:summary :sync :error] 0)
                               zero?
                               (if 0 1))]

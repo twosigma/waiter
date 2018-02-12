@@ -26,8 +26,8 @@
         (str/split #",")
         sort)))
 
-(defn- waiter-functions []
-  (main/extract-waiter-functions {:connection-timeout-ms 5000, :idle-timeout-ms 5000}))
+(defn- waiter-api []
+  (main/init-waiter-api {:connection-timeout-ms 5000, :idle-timeout-ms 5000}))
 
 (deftest ^:integration test-environment
   (log/info "****** Running: test-environment")
@@ -45,18 +45,18 @@
       str))
 
 (defn- cleanup-token
-  [{:keys [hard-delete-token] :as waiter-functions} waiter-urls token-name]
+  [{:keys [hard-delete-token] :as waiter-api} waiter-urls token-name]
   (log/info "Cleaning up token:" token-name)
   (doseq [waiter-url waiter-urls]
     (try
-      (let [token-etag (token->etag waiter-functions waiter-url token-name)]
+      (let [token-etag (token->etag waiter-api waiter-url token-name)]
         (hard-delete-token waiter-url token-name token-etag))
       (catch Exception _))))
 
 (deftest ^:integration test-token-hard-delete
   (testing "token sync hard-delete"
     (let [waiter-urls (waiter-urls)
-          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
           token-name (str "test-token-hard-delete-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-hard-delete ARRANGE")
@@ -65,13 +65,13 @@
               token-description (merge basic-description token-metadata)]
 
           (doseq [waiter-url waiter-urls]
-            (let [token-etag (token->etag waiter-functions waiter-url token-name)]
+            (let [token-etag (token->etag waiter-api waiter-url token-name)]
               (store-token waiter-url token-name token-etag token-description)))
 
-          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             (log/info "****** test-token-hard-delete ACT")
-            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
 
               (log/info "****** test-token-hard-delete ASSERT")
               (let [waiter-sync-result (constantly
@@ -94,12 +94,12 @@
                   (let [response (load-token waiter-url token-name)]
                     (is (= 404 (:status response)) (str waiter-url " responded with " response))))))))
         (finally
-          (cleanup-token waiter-functions waiter-urls token-name))))))
+          (cleanup-token waiter-api waiter-urls token-name))))))
 
 (deftest ^:integration test-token-soft-delete
   (testing "token sync soft-delete"
     (let [waiter-urls (waiter-urls)
-          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
           token-name (str "test-token-soft-delete-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-soft-delete ARRANGE")
@@ -113,10 +113,10 @@
               (store-token waiter-url token-name syncer/default-etag
                            (assoc token-description "last-update-time" last-update-time-ms))))
 
-          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             (log/info "****** test-token-soft-delete ACT")
-            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
 
               (log/info "****** test-token-soft-delete ASSERT")
               (let [waiter-sync-result (constantly
@@ -143,12 +143,12 @@
                           :token-etag token-etag}
                          (load-token waiter-url token-name))))))))
         (finally
-          (cleanup-token waiter-functions waiter-urls token-name))))))
+          (cleanup-token waiter-api waiter-urls token-name))))))
 
 (deftest ^:integration test-token-token-on-single-cluster
   (testing "token exists on single cluster"
     (let [waiter-urls (waiter-urls)
-          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
           token-name (str "test-token-token-on-single-cluster-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-token-on-single-cluster ARRANGE")
@@ -158,10 +158,10 @@
 
           (store-token (first waiter-urls) token-name syncer/default-etag token-description)
 
-          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             (log/info "****** test-token-token-on-single-cluster ACT")
-            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
 
               (log/info "****** test-token-token-on-single-cluster ASSERT")
               (let [waiter-sync-result (constantly
@@ -188,12 +188,12 @@
                           :token-etag token-etag}
                          (load-token waiter-url token-name))))))))
         (finally
-          (cleanup-token waiter-functions waiter-urls token-name))))))
+          (cleanup-token waiter-api waiter-urls token-name))))))
 
 (deftest ^:integration test-token-already-synced
   (testing "token already synced"
     (let [waiter-urls (waiter-urls)
-          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
           token-name (str "test-token-already-synced-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-already-synced ARRANGE")
@@ -204,10 +204,10 @@
           (doseq [waiter-url waiter-urls]
             (store-token waiter-url token-name syncer/default-etag token-description))
 
-          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             (log/info "****** test-token-already-synced ACT")
-            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
 
               (log/info "****** test-token-already-synced ASSERT")
               (let [expected-result {:details {}
@@ -227,12 +227,12 @@
                           :token-etag token-etag}
                          (load-token waiter-url token-name))))))))
         (finally
-          (cleanup-token waiter-functions waiter-urls token-name))))))
+          (cleanup-token waiter-api waiter-urls token-name))))))
 
 (deftest ^:integration test-token-update
   (testing "token sync update"
     (let [waiter-urls (waiter-urls)
-          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
           token-name (str "test-token-update-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-update ARRANGE")
@@ -246,10 +246,10 @@
               (store-token waiter-url token-name syncer/default-etag
                            (assoc token-description "cpus" 2, "mem" 2048, "last-update-time" last-update-time-ms))))
 
-          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             (log/info "****** test-token-update ACT")
-            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
 
               (log/info "****** test-token-update ASSERT")
               (let [waiter-sync-result (constantly
@@ -276,12 +276,12 @@
                           :token-etag token-etag}
                          (load-token waiter-url token-name))))))))
         (finally
-          (cleanup-token waiter-functions waiter-urls token-name))))))
+          (cleanup-token waiter-api waiter-urls token-name))))))
 
 (deftest ^:integration test-token-different-owners-but-same-root
   (testing "token sync update with different owners but same root"
     (let [waiter-urls (waiter-urls)
-          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
           token-name (str "test-token-different-owners-but-same-root-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-different-owners-but-same-root ARRANGE")
@@ -299,10 +299,10 @@
                                "root" "common-root")))
               waiter-urls))
 
-          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             (log/info "****** test-token-different-owners-but-same-root ACT")
-            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
 
               (log/info "****** test-token-different-owners-but-same-root ASSERT")
               (let [latest-description (assoc basic-description
@@ -334,12 +334,12 @@
                           :token-etag token-etag}
                          (load-token waiter-url token-name))))))))
         (finally
-          (cleanup-token waiter-functions waiter-urls token-name))))))
+          (cleanup-token waiter-api waiter-urls token-name))))))
 
 (deftest ^:integration test-token-different-roots
   (testing "token sync update with different owners and different roots"
     (let [waiter-urls (waiter-urls)
-          {:keys [load-token store-token] :as waiter-functions} (waiter-functions)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
           token-name (str "test-token-different-roots-" (UUID/randomUUID))]
       (try
         (log/info "****** test-token-different-roots ARRANGE")
@@ -357,10 +357,10 @@
                                "root" waiter-url)))
               waiter-urls))
 
-          (let [token-etag (token->etag waiter-functions (first waiter-urls) token-name)]
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             (log/info "****** test-token-different-roots ACT")
-            (let [actual-result (syncer/sync-tokens waiter-functions waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
 
               (log/info "****** test-token-different-roots ASSERT")
               (let [latest-description (assoc basic-description
@@ -396,7 +396,7 @@
                   (map-indexed
                     (fn [index waiter-url]
                       (let [token-last-modified-time (- last-update-time-ms index)
-                            token-etag (token->etag waiter-functions waiter-url token-name)]
+                            token-etag (token->etag waiter-api waiter-url token-name)]
                         (is (= {:description (assoc basic-description
                                                "cpus" (inc index)
                                                "last-update-time" token-last-modified-time
@@ -409,4 +409,4 @@
                                (load-token waiter-url token-name)))))
                     waiter-urls))))))
         (finally
-          (cleanup-token waiter-functions waiter-urls token-name))))))
+          (cleanup-token waiter-api waiter-urls token-name))))))

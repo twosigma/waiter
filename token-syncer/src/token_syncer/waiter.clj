@@ -48,8 +48,7 @@
                             (merge headers)
                             walk/stringify-keys)
         request-options (cond-> {:headers request-headers
-                                 :fold-chunked-response? true
-                                 :follow-redirects? false}
+                                 :fold-chunked-response? true}
                                 body (assoc :body body)
                                 query-params (assoc :query-string query-params))]
     (log/info (get request-headers "x-cid") "making" (-> method name str/upper-case) "request to" request-url)
@@ -108,21 +107,22 @@
   "Loads the description of a token on a cluster."
   [^HttpClient http-client cluster-url token]
   (try
-    (let [{:keys [body headers status]} (make-http-request http-client (str cluster-url "/token")
-                                                           :headers {"accept" "application/json"
-                                                                     "x-waiter-token" token}
-                                                           :query-params {"include" ["deleted" "metadata"]})]
+    (let [{:keys [body headers status] :as response}
+          (make-http-request http-client (str cluster-url "/token")
+                             :headers {"accept" "application/json"
+                                       "x-waiter-token" token}
+                             :query-params {"include" ["deleted" "metadata"]})]
       (log/info "loading" token "on" cluster-url "responded with status" status
                 (select-keys headers ["content-type" "etag" "x-cid"]))
       (let [token-etag (get headers "etag")
             token-description (->> body
                                    async/<!!
                                    parse-json-data)]
-        (cond-> {:description (if (= status 404)
-                                {}
+        (cond-> {:description (if (utils/successful? response)
                                 (cond-> token-description
                                         (contains? token-description "last-update-time")
-                                        (update "last-update-time" iso8601->millis)))
+                                        (update "last-update-time" iso8601->millis))
+                                {})
                  :headers (extract-relevant-headers headers)
                  :status status}
                 token-etag (assoc :token-etag token-etag))))
@@ -135,51 +135,50 @@
   [^HttpClient http-client cluster-url token token-etag token-description]
   (log/info "storing token:" token ", soft-delete:" (true? (get token-description "deleted"))
             "on" cluster-url "with etag" token-etag)
-  (let [{:keys [body headers status]} (make-http-request http-client (str cluster-url "/token")
-                                                         :body (-> token-description
-                                                                   walk/stringify-keys
-                                                                   (assoc "token" token)
-                                                                   json/write-str)
-                                                         :headers {"accept" "application/json"
-                                                                   "if-match" token-etag}
-                                                         :method :post
-                                                         :query-params {"update-mode" "admin"})
-        body-data (async/<!! body)]
+  (let [{:keys [body headers status] :as response}
+        (make-http-request http-client (str cluster-url "/token")
+                           :body (-> token-description
+                                     walk/stringify-keys
+                                     (assoc "token" token)
+                                     json/write-str)
+                           :headers {"accept" "application/json"
+                                     "if-match" token-etag}
+                           :method :post
+                           :query-params {"update-mode" "admin"})]
     (log/info "storing" token "on" cluster-url "responded with status" status
               (select-keys headers ["content-type" "etag" "x-cid"]))
-    (when (or (nil? status)
-              (< status 200)
-              (> status 299))
-      (log/error "token store failed" body-data)
-      (throw (ex-info "Token store failed"
-                      {:body body-data
-                       :headers (extract-relevant-headers headers)
-                       :status status
-                       :token-data token-description})))
-    {:body (parse-json-data body-data)
-     :headers (extract-relevant-headers headers)
-     :status status}))
+    (let [body-data (async/<!! body)]
+      (when-not (utils/successful? response)
+        (log/error "token store failed" body-data)
+        (throw (ex-info "Token store failed"
+                        {:body body-data
+                         :headers (extract-relevant-headers headers)
+                         :status status
+                         :token-data token-description})))
+      {:body (parse-json-data body-data)
+       :headers (extract-relevant-headers headers)
+       :status status})))
 
 (defn hard-delete-token
   "Hard-delete a token on a specific cluster."
   [^HttpClient http-client cluster-url token token-etag]
   (log/info "hard-delete" token "on" cluster-url)
-  (let [{:keys [body headers status]} (make-http-request http-client (str cluster-url "/token")
-                                                         :headers {"accept" "application/json"
-                                                                   "if-match" token-etag
-                                                                   "x-waiter-token" token}
-                                                         :method :delete
-                                                         :query-params {"hard-delete" "true"})
-        body-data (async/<!! body)]
+  (let [{:keys [body headers status] :as response}
+        (make-http-request http-client (str cluster-url "/token")
+                           :headers {"accept" "application/json"
+                                     "if-match" token-etag
+                                     "x-waiter-token" token}
+                           :method :delete
+                           :query-params {"hard-delete" "true"})]
     (log/info "hard-deleting" token "on" cluster-url "responded with status" status
               (select-keys headers ["content-type" "etag" "x-cid"]))
-    (when (or (nil? status)
-              (not (<= 200 status 299)))
-      (throw (ex-info "Token hard-delete failed"
-                      {:body (parse-json-data body-data)
-                       :headers (extract-relevant-headers headers)
-                       :status status
-                       :token token})))
-    {:body (parse-json-data body-data)
-     :headers (extract-relevant-headers headers)
-     :status status}))
+    (let [body-data (async/<!! body)]
+      (when-not (utils/successful? response)
+        (throw (ex-info "Token hard-delete failed"
+                        {:body (parse-json-data body-data)
+                         :headers (extract-relevant-headers headers)
+                         :status status
+                         :token token})))
+      {:body (parse-json-data body-data)
+       :headers (extract-relevant-headers headers)
+       :status status})))
