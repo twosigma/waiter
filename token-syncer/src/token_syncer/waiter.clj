@@ -141,8 +141,9 @@
                                      walk/stringify-keys
                                      (assoc "token" token)
                                      json/write-str)
-                           :headers {"accept" "application/json"
-                                     "if-match" token-etag}
+                           :headers (cond-> {"accept" "application/json"}
+                                            (not (str/blank? (str token-etag)))
+                                            (assoc "if-match" token-etag))
                            :method :post
                            :query-params {"update-mode" "admin"})]
     (log/info "storing" token "on" cluster-url "responded with status" status
