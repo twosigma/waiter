@@ -11,7 +11,9 @@
 
 set -v
 
-function timeout() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+function timeout() {
+    perl -e 'alarm shift; exec @ARGV' "$@";
+}
 
 function wait_for_server {
     URI=${1}

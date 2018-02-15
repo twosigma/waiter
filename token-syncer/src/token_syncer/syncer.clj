@@ -67,7 +67,7 @@
 (defn sync-token-on-clusters
   "Syncs a given token description on all clusters.
    If the cluster-url->token-data says that a given token was not successfully loaded, it is skipped.
-   Token sync-ing is also skipped if the owners of the tokens are different."
+   Token sync-ing is also skipped if the roots of the tokens are different."
   [{:keys [store-token]} cluster-urls token latest-token-description cluster-url->token-data]
   (pc/map-from-keys
     (fn [cluster-url]
@@ -185,7 +185,7 @@
 (defn summarize-sync-result
   "Summarizes the token sync result.
    The summary includes the tokens that were unmodified, successfully synced, and failed to sync.
-   Tokens that were already syncer show up in previously synced entry of the summary.
+   Tokens that were already synced show up in previously synced entry of the summary.
    The summary also includes counts of the total number of tokens that were processed."
   [token-sync-result already-synced-tokens]
   (let [filter-tokens (fn [filter-fn]

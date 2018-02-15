@@ -47,7 +47,7 @@ exiting with code 0
 The token syncer communicates with Waiter clusters on their respective `/token` endpoints to retrieve and manage individual tokens.
 Outline of steps performed by the syncer:
 1. Loads all tokens on each cluster.
-1. Removes any tokens that have matching etags and are not deleted on all clusters (these tokens are already synced).
+1. Filters out any tokens that have matching etags and are not deleted on all clusters (these tokens are already synced).
 1. Determines the latest version of the tokens using the token last updated times.
 1. Perform the sync operations using following cases:
     1. Report a conflict in sync if the token roots are different.

@@ -9,9 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (defproject token-syncer "0.1.0-SNAPSHOT"
-  :aliases {"test" ["with-profile" "+test" "test"]}
   :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
-[cc.qbits/jet "0.7.10-20180124_201515-g857338f"]
+                 [cc.qbits/jet "0.7.10-20180124_201515-g857338f"]
                  [clj-time "0.12.0"]
                  [commons-codec/commons-codec "1.10"]
                  [org.clojure/clojure "1.8.0"]
