@@ -61,6 +61,15 @@
   (testing "parse-header-value:metadata-int"
     (is (= "1" (parse-header-value "x-waiter-metadata-foo" "1"))))
 
+  (testing "parse-header-value:env-string"
+    (is (= "bar" (parse-header-value "x-waiter-env-foo" "bar"))))
+
+  (testing "parse-header-value:env-null"
+    (is (= "null" (parse-header-value "x-waiter-env-foo-bar" "null"))))
+
+  (testing "parse-header-value:env-int"
+    (is (= "1" (parse-header-value "x-waiter-env-foo_bar" "1"))))
+
   (testing "parse-header-value:metric-group"
     (is (= "foo" (parse-header-value "x-waiter-metric-group" "foo"))))
 

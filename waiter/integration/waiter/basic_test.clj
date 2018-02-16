@@ -192,6 +192,44 @@
       (is (= {:foo "bar", :baz "quux", :begindate "null", :enddate "null", :timestamp "20160713201333949"} value))
       (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-header-environment
+  (testing-using-waiter-url
+    (testing "valid values"
+      (let [headers {:x-waiter-name (rand-name)
+                     :x-waiter-env-begin_date "foo"
+                     :x-waiter-env-end_date "null"
+                     :x-waiter-env-timestamp "20160713201333949"
+                     :x-waiter-env-time2 "201607132013"}
+            {:keys [body status service-id] :as response}
+            (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/environment"))
+            body-json (json/read-str (str body))]
+        (is (= 200 status))
+        (testing "waiter configured environment variables"
+          (is (every? #(contains? body-json %) ["HOME" "LOGNAME" "USER" "WAITER_CPUS" "WAITER_MEM_MB" "WAITER_USERNAME"])
+              (str body-json)))
+        (testing "on-the-fly environment variables"
+          (is (every? #(contains? body-json %) ["BEGIN_DATE" "END_DATE" "TIME2" "TIMESTAMP"])
+              (str body-json)))
+        (is (= {:BEGIN_DATE "foo" :END_DATE "null" :TIME2 "201607132013" :TIMESTAMP "20160713201333949"}
+               (:env (response->service-description waiter-url response))))
+        (delete-service waiter-url service-id)))
+
+    (testing "invalid values"
+      (let [headers {:accept "application/json"
+                     :x-waiter-name (rand-name)
+                     :x-waiter-env-begin-date "foo"
+                     :x-waiter-env-1_invalid "20160713201333949"
+                     :x-waiter-env-123456 "20160713201333949"
+                     :x-waiter-env-end-date "null"
+                     :x-waiter-env-foo "bar"
+                     :x-waiter-env-fee_fie "fum"}
+            {:keys [body status]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+            env-error-message (get-in (json/read-str body) ["waiter-error" "message" "env"])]
+        (is (= 400 status))
+        (is (every? #(str/includes? env-error-message %)
+                    ["The following environment variable keys are invalid:" "1_INVALID" "123456" "BEGIN-DATE" "END-DATE"]))
+        (is (not-any? #(str/includes? (str/lower-case env-error-message) %) ["foo" "fee_fie"]))))))
+
 (deftest ^:parallel ^:integration-fast test-last-request-time
   (testing-using-waiter-url
     (let [waiter-settings (waiter-settings waiter-url)

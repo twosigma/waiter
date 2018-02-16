@@ -32,6 +32,7 @@
   "Parse the header value as json."
   [^String header-name ^String header-value]
   (if (or (contains? waiter-headers-with-str-value header-name)
+          (str/starts-with? header-name (str waiter-header-prefix "env-"))
           (str/starts-with? header-name (str waiter-header-prefix "metadata-")))
     header-value
     (try

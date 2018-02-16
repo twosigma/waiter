@@ -483,7 +483,22 @@
       (cond-> descriptor
               suspended-state (assoc :suspended-state suspended-state)))))
 
-(defn- parse-metadata-headers [service-description]
+(defn- parse-env-headers
+  "Parses env headers into the environment map.
+   The keys in the environment map are formed by stripping the `env-` prefix and then upper casing the string."
+  [service-description]
+  (let [env-keys (filter (fn [key] (str/starts-with? key "env-")) (keys service-description))
+        env-map (select-keys service-description env-keys)]
+    (if (empty? env-map)
+      service-description
+      (let [renamed-env-map (pc/map-keys #(str/upper-case (str/replace % #"^env-" "")) env-map)
+            sanitized-service-description (apply dissoc service-description env-keys)]
+        (assoc sanitized-service-description "env" renamed-env-map)))))
+
+(defn- parse-metadata-headers
+  "Parses metadata headers into the metadata map.
+   The keys in the metadata map are formed by stripping the `metadata-` prefix."
+  [service-description]
   (let [metadata-keys (filter (fn [key] (str/starts-with? key "metadata-")) (keys service-description))
         metadata-map (select-keys service-description metadata-keys)]
     (if (empty? metadata-map)
@@ -501,6 +516,7 @@
   (let [service-description-template-from-headers
         (sanitize-service-description (-> waiter-headers
                                           headers/drop-waiter-header-prefix
+                                          parse-env-headers
                                           parse-metadata-headers))
         {:keys [service-description-template token-authentication-disabled token-preauthorized]}
         (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostname)]
