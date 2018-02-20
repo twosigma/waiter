@@ -554,6 +554,28 @@
                                      :token-preauthorized false,
                                      :tokens {}}
                           }
+                         {:name "prepare-service-description-sources:Parse environment headers:valid keys"
+                          :waiter-headers {"x-waiter-env-foo_bar" "bar"
+                                           "x-waiter-env-baz" "quux"
+                                           "x-waiter-cpus" "1"}
+                          :passthrough-headers {}
+                          :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
+                                     :headers {"env" {"FOO_BAR" "bar", "BAZ" "quux"}, "cpus" "1"},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {}}
+                          }
+                         {:name "prepare-service-description-sources:Parse environment headers:invalid keys"
+                          :waiter-headers {"x-waiter-env-foo-bar" "bar"
+                                           "x-waiter-env-1" "quux"
+                                           "x-waiter-cpus" "1"}
+                          :passthrough-headers {}
+                          :expected {:defaults {"name" "default-name", "health-check-url" "/ping"},
+                                     :headers {"env" {"FOO-BAR" "bar", "1" "quux"}, "cpus" "1"},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :tokens {}}
+                          }
                          )]
         (doseq [{:keys [name waiter-headers passthrough-headers expected]} test-cases]
           (testing (str "Test " name)
@@ -1191,23 +1213,27 @@
             (is (str/includes? friendly-message "Metadata values must be strings.") friendly-message)
             (is (str/includes? friendly-message "did not have string values: c: 1.") friendly-message)))))
     (testing "too many metadata keys"
-      (let [error-msg (generate-friendly-metadata-error-message (s/check service-description-schema
-                                                                         (assoc service-description "metadata"
-                                                                                                    (zipmap (take 200 (iterate #(str % "a") "a"))
-                                                                                                            (take 200 (iterate #(str % "a") "a"))))))]
+      (let [error-msg (generate-friendly-metadata-error-message
+                        (s/check service-description-schema
+                                 (assoc service-description "metadata"
+                                                            (zipmap (take 200 (iterate #(str % "a") "a"))
+                                                                    (take 200 (iterate #(str % "a") "a"))))))]
         (is (str/includes? error-msg "200") error-msg)))
     (testing "not a map"
-      (let [error-msg (generate-friendly-metadata-error-message (s/check service-description-schema
-                                                                         (assoc service-description "metadata" 12)))]
+      (let [error-msg (generate-friendly-metadata-error-message
+                        (s/check service-description-schema
+                                 (assoc service-description "metadata" 12)))]
         (is (str/includes? error-msg "Metadata must be a map") error-msg)))
     (testing "invalid keys"
-      (let [error-msg (generate-friendly-metadata-error-message (s/check service-description-schema
-                                                                         (assoc service-description "metadata" {1 "a", 2 "b"})))]
+      (let [error-msg (generate-friendly-metadata-error-message
+                        (s/check service-description-schema
+                                 (assoc service-description "metadata" {1 "a", 2 "b"})))]
         (is (str/includes? error-msg "The following metadata keys are invalid: 1, 2") error-msg)
         (is (not (str/includes? error-msg "Metadata values must be strings.")) error-msg)))
     (testing "invalid keys and values"
-      (let [error-msg (generate-friendly-metadata-error-message (s/check service-description-schema
-                                                                         (assoc service-description "metadata" {1 "a" "b" 2})))]
+      (let [error-msg (generate-friendly-metadata-error-message
+                        (s/check service-description-schema
+                                 (assoc service-description "metadata" {1 "a" "b" 2})))]
         (is (str/includes? error-msg "The following metadata keys are invalid: 1") error-msg)
         (is (str/includes? error-msg "did not have string values: b: 2.") error-msg)))))
 
@@ -1223,36 +1249,41 @@
             (is (str/includes? friendly-message "did not have string values: ABC: 1.") friendly-message)))))
 
     (testing "too many environment variables"
-      (let [error-msg (generate-friendly-environment-variable-error-message (s/check service-description-schema
-                                                                                     (assoc service-description "env"
-                                                                                                                (zipmap (take 200 (iterate #(str % "A") "A"))
-                                                                                                                        (take 200 (iterate #(str % "a") "a"))))))]
+      (let [error-msg (generate-friendly-environment-variable-error-message
+                        (s/check service-description-schema
+                                 (assoc service-description "env"
+                                                            (zipmap (take 200 (iterate #(str % "A") "A"))
+                                                                    (take 200 (iterate #(str % "a") "a"))))))]
         (is (str/includes? error-msg "200") error-msg)))
 
     (testing "not a map"
-      (let [error-msg (generate-friendly-environment-variable-error-message (s/check service-description-schema
-                                                                                     (assoc service-description "env" 12)))]
+      (let [error-msg (generate-friendly-environment-variable-error-message
+                        (s/check service-description-schema
+                                 (assoc service-description "env" 12)))]
         (is (str/includes? error-msg "Environment variables must be a map") error-msg)))
 
     (testing "invalid keys"
-      (let [error-msg (generate-friendly-environment-variable-error-message (s/check service-description-schema
-                                                                                     (assoc service-description "env" {1 "a", 2 "b"})))]
+      (let [error-msg (generate-friendly-environment-variable-error-message
+                        (s/check service-description-schema
+                                 (assoc service-description "env" {1 "a", 2 "b"})))]
         (is (str/includes? error-msg "The following environment variable keys are invalid: 1, 2") error-msg)
         (is (not (str/includes? error-msg "Environment variable values must be strings.")) error-msg)
         (is (not (str/includes? error-msg "cannot be assigned")) error-msg)))
 
     (testing "invalid keys and values"
-      (let [error-msg (generate-friendly-environment-variable-error-message (s/check service-description-schema
-                                                                                     (assoc service-description "env" {1 "a" "B" 2})))]
+      (let [error-msg (generate-friendly-environment-variable-error-message
+                        (s/check service-description-schema
+                                 (assoc service-description "env" {1 "a" "B" 2})))]
         (is (str/includes? error-msg "The following environment variable keys are invalid: 1") error-msg)
         (is (str/includes? error-msg "did not have string values: B: 2.") error-msg)))
     (testing "using reserved variables"
-      (let [error-msg (generate-friendly-environment-variable-error-message (s/check service-description-schema
-                                                                                     (assoc service-description "env" {"WAITER_USERNAME" "badwaiter"
-                                                                                                                       "MARATHON_HOST" "foo"
-                                                                                                                       "MESOS_TASK_ID" "bar"
-                                                                                                                       "PORT_USED" "123"
-                                                                                                                       "PORT0" "123"})))]
+      (let [error-msg (generate-friendly-environment-variable-error-message
+                        (s/check service-description-schema
+                                 (assoc service-description "env" {"WAITER_USERNAME" "badwaiter"
+                                                                   "MARATHON_HOST" "foo"
+                                                                   "MESOS_TASK_ID" "bar"
+                                                                   "PORT_USED" "123"
+                                                                   "PORT0" "123"})))]
         (is (str/includes? error-msg "WAITER_USERNAME") error-msg)
         (is (str/includes? error-msg "MARATHON_HOST") error-msg)
         (is (str/includes? error-msg "MESOS_TASK_ID") error-msg)
