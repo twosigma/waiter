@@ -179,7 +179,7 @@
       (is (= 400 status))
       (is (str/includes? body "Command type fakecommand is not supported")))))
 
-(deftest ^:parallel ^:integration-fast test-basic-parameters-exceed-limits
+(deftest ^:parallel ^:integration-fast test-basic-parameters-violates-upper-limit-constraints
   (testing-using-waiter-url
     (let [constraints (setting waiter-url [:service-description-constraints])
           upper-limits (->> constraints
