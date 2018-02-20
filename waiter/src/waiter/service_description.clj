@@ -109,10 +109,10 @@
 (def ^:const on-the-fly-service-description-keys (set/union service-description-keys #{"token"}))
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
-(def ^:const token-metadata-keys #{"deleted" "last-update-time" "owner"})
+(def ^:const token-metadata-keys #{"deleted" "last-update-time" "owner" "root"})
 
-; keys allowed in a token description
-(def ^:const token-description-keys (set/union service-description-keys token-metadata-keys))
+; keys allowed in the token data
+(def ^:const token-data-keys (set/union service-description-keys token-metadata-keys))
 
 (defn map-validation-helper [issue key]
   (when-let [error (get issue key)]
@@ -246,17 +246,9 @@
   (let [{:strs [name]} service-description
         prefix (cond-> service-id-prefix
                        name (str (str/replace (str/lower-case name) #"[^a-z0-9]" "") "-"))
-        sorted-service-desc (-> (select-keys service-description service-description-keys)
-                                sort)
-        service-id (loop [[[k v] & kvs] sorted-service-desc
-                          acc (transient [])]
-                     (if k
-                       (recur kvs (-> acc
-                                      (conj! k)
-                                      (conj! (str v))))
-                       (str prefix (digest/digest "MD5" (str/join "" (persistent! acc))))))]
-    (log/debug "Got ID for app" service-description sorted-service-desc service-id)
-    service-id))
+        service-hash (-> (select-keys service-description service-description-keys)
+                         utils/parameters->id)]
+    (str prefix service-hash)))
 
 (defn required-keys-present?
   "Returns true if every required parameter is available in the service description.
@@ -298,8 +290,8 @@
         (when (> min-instances max-instances)
           (sling/throw+ {:type :service-description-error
                          :message exception-message
-                         :friendly-error-message (str "Minimum instances (" min-instances 
-                                                      ") must be <= Maximum instances (" 
+                         :friendly-error-message (str "Minimum instances (" min-instances
+                                                      ") must be <= Maximum instances ("
                                                       max-instances ")")
                          :status 400}))))
 
@@ -307,7 +299,7 @@
     (let [cmd-type (service-description-to-use "cmd-type")]
       (when (and (not (str/blank? cmd-type)) (not ((:valid-cmd-types args-map) cmd-type)))
         (sling/throw+ {:type :service-description-error
-                       :friendly-error-message (str "Command type " cmd-type 
+                       :friendly-error-message (str "Command type " cmd-type
                                                     " is not supported")
                        :status 400})))))
 
@@ -355,29 +347,36 @@
   [service-description]
   (or (get service-description "health-check-url") default-health-check-path))
 
-(defn- token->kv-data
+(defn- token->token-data
   "Retrieves the data stored against the token in the kv-store."
   [kv-store ^String token error-on-missing include-deleted]
-  (let [{:strs [deleted run-as-user] :as data} (when token (kv/fetch kv-store token))
-        data (when data ; populate token owner for backwards compatibility
-               (update-in data ["owner"] (fn [current-owner] (or current-owner run-as-user))))]
-    (when (and error-on-missing (not data))
+  (let [{:strs [deleted run-as-user] :as token-data} (when token (kv/fetch kv-store token))
+        token-data (when token-data ; populate token owner for backwards compatibility
+                     (update-in token-data ["owner"] (fn [current-owner] (or current-owner run-as-user))))]
+    (when (and error-on-missing (not token-data))
       (throw (ex-info (str "Token not found: " token) {:status 400})))
-    (log/debug "Extracted data for" token "is" data)
+    (log/debug "Extracted data for" token "is" token-data)
     (when (or (not deleted) include-deleted)
-      data)))
+      token-data)))
+
+(defn token-data->token-description
+  "Retrieves the token description for the given token when the raw kv data (merged value of service
+   parameters and metadata) is provided.
+   The token-description consists of the following keys: :service-description-template and :token-metadata"
+  [config]
+  {:service-description-template (select-keys config service-description-keys)
+   :token-metadata (select-keys config token-metadata-keys)})
 
 (defn token->token-description
   "Retrieves the token description for the given token."
   [kv-store ^String token & {:keys [include-deleted] :or {include-deleted false}}]
-  (let [config (token->kv-data kv-store token false include-deleted)]
-    {:service-description-template (select-keys config service-description-keys)
-     :token-metadata (select-keys config token-metadata-keys)}))
+  (let [config (token->token-data kv-store token false include-deleted)]
+    (token-data->token-description config)))
 
 (defn token->service-description-template
   "Retrieves the service description template for the given token."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (let [config (token->kv-data kv-store token error-on-missing false)]
+  (let [config (token->token-data kv-store token error-on-missing false)]
     (if (not-empty config)
       (select-keys config service-description-keys)
       {})))

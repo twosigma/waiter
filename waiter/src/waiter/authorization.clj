@@ -17,8 +17,10 @@
 
 (defrecord SimpleEntitlementManager [_]
   EntitlementManager
-  (authorized? [_ subject _ resource]
-    (= subject (:user resource))))
+  (authorized? [_ subject action resource]
+    (or (= subject (:user resource))
+        (and (= :admin action)
+             (= subject (System/getProperty "user.name"))))))
 
 (defn- make-service-resource
   "Creates a resource from a service description for use with an entitlement manager"

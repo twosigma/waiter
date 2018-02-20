@@ -30,7 +30,8 @@
                                     s/Keyword schema/require-symbol-factory-fn}
                                    schema/contains-kind-sub-map?)
    (s/required-key :cluster-config) {(s/required-key :min-routers) schema/positive-int
-                                     (s/required-key :name) schema/non-empty-string}
+                                     (s/required-key :name) schema/non-empty-string
+                                     (s/required-key :service-prefix) schema/non-empty-string}
    (s/required-key :consent-expiry-days) schema/positive-int
    (s/required-key :deployment-error-config) {(s/required-key :min-failed-instances) schema/positive-int
                                               (s/required-key :min-hosts) schema/positive-int}
@@ -189,7 +190,8 @@
    ;; 1. have the same leader-latch-path to participate in leadership election
    ;; 2. have the same discovery path with the same cluster name to allow computing router endpoints
    :cluster-config {:min-routers 1
-                    :name "waiter"}
+                    :name "waiter"
+                    :service-prefix "waiter-service-"}
    :consent-expiry-days 90
    :deployment-error-config {:min-failed-instances 2
                              :min-hosts 2}

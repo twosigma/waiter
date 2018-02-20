@@ -477,15 +477,14 @@
    :scheduler-state-chan (pc/fnk [] (au/latest-chan))
    :service-description-builder (pc/fnk [[:settings service-description-builder-config]]
                                   (utils/create-component service-description-builder-config))
-   :service-id-prefix (pc/fnk [[:settings [:cluster-config name]]]
-                        (str name "-"))
+   :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
    :start-app-cache-atom (pc/fnk []
                            (-> {}
                                (cache/fifo-cache-factory :threshold 100)
                                (cache/ttl-cache-factory :ttl (-> 1 t/minutes t/in-millis))
                                atom))
    :task-threadpool (pc/fnk [] (Executors/newFixedThreadPool 20))
-   :thread-id->stack-state-atom (pc/fnk [] (atom {}))
+   :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :waiter-hostnames (pc/fnk [[:settings hostname]]
                        (set (if (sequential? hostname)
                               hostname
@@ -1222,14 +1221,14 @@
                         (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
    :token-handler-fn (pc/fnk [[:curator kv-store]
                               [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
-                              [:state clock entitlement-manager waiter-hostnames]
+                              [:state clock entitlement-manager token-root waiter-hostnames]
                               handle-secure-request-fn]
                        (fn token-handler-fn [request]
                          (handle-secure-request-fn
                            (fn inner-token-handler-fn [request]
                              (token/handle-token-request
-                               clock synchronize-fn kv-store waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn
-                               validate-service-description-fn request))
+                               clock synchronize-fn kv-store token-root waiter-hostnames entitlement-manager
+                               make-inter-router-requests-sync-fn validate-service-description-fn request))
                            request)))
    :token-list-handler-fn (pc/fnk [[:curator kv-store]
                                    handle-secure-request-fn]
