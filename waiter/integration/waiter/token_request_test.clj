@@ -17,6 +17,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
+            [waiter.service-description :as sd]
             [waiter.utils :as utils])
   (:import (java.net URL)
            (org.joda.time DateTime)))
@@ -665,9 +666,7 @@
 (deftest ^:parallel ^:integration-fast test-token-parameters-exceed-limits
   (testing-using-waiter-url
     (let [constraints (setting waiter-url [:service-description-constraints])
-          max-constraints (->> constraints
-                               (filter (fn [[_ constraint]] (contains? constraint :max)))
-                               (pc/map-vals :max))]
+          max-constraints (sd/extract-max-constraints constraints)]
       (is (seq max-constraints))
       (doseq [[parameter max-constraint] max-constraints]
         (let [{:keys [body status]} (post-token waiter-url {parameter (inc max-constraint) :token (rand-name)})]
