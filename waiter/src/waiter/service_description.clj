@@ -259,7 +259,7 @@
 (defn validate-schema
   "Validates the provided service description template.
    When requested to do so, it populates required fields to ensure validation does not fail for missing required fields."
-  [service-description-template upper-limits-schema
+  [service-description-template max-constraints-schema
    {:keys [allow-missing-required-fields?] :or {allow-missing-required-fields? true} :as args-map}]
   (let [default-valid-service-description (when allow-missing-required-fields?
                                             {"cpus" 1
@@ -287,9 +287,9 @@
           (throw-error e issue friendly-error-message))))
 
     (try
-      (s/validate upper-limits-schema service-description-to-use)
+      (s/validate max-constraints-schema service-description-to-use)
       (catch Exception e
-        (let [issue (s/check upper-limits-schema service-description-to-use)
+        (let [issue (s/check max-constraints-schema service-description-to-use)
               issue->param->limit (fn [issue param]
                                     (-> issue
                                         (get param)
@@ -341,7 +341,7 @@
   [service-description username]
   (assoc service-description "run-as-user" username "permitted-user" username))
 
-(defrecord DefaultServiceDescriptionBuilder [upper-limits-schema]
+(defrecord DefaultServiceDescriptionBuilder [max-constraints-schema]
   ServiceDescriptionBuilder
 
   (build [_ user-service-description {:keys [service-id-prefix metric-group-mappings kv-store defaults assoc-run-as-user-approved? username]}]
@@ -363,19 +363,24 @@
 
   (validate [_ service-description args-map]
     (->> (merge-with set/union args-map {:valid-cmd-types #{"shell"}})
-         (validate-schema service-description upper-limits-schema))))
+         (validate-schema service-description max-constraints-schema))))
+
+(defn extract-max-constraints
+  "Extracts the max constraints from the generic constraints definition."
+  [constraints]
+  (->> constraints
+       (filter (fn [[_ constraint]] (contains? constraint :max)))
+       (pc/map-vals :max)))
 
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
   [{:keys [constraints]}]
-  (let [upper-limits (->> constraints
-                          (filter (fn [[_ constraint]] (contains? constraint :max)))
-                          (pc/map-vals :max))
-        upper-limits-schema (-> (->> upper-limits
-                                     (pc/map-keys s/optional-key)
-                                     (pc/map-vals (fn [v] (s/pred #(<= % v) (symbol (str "limit-" v))))))
-                                (assoc s/Str s/Any))]
-    (->DefaultServiceDescriptionBuilder upper-limits-schema)))
+  (let [max-constraints-schema (-> (->> constraints
+                                        extract-max-constraints
+                                        (pc/map-keys s/optional-key)
+                                        (pc/map-vals (fn [v] (s/pred #(<= % v) (symbol (str "limit-" v))))))
+                                   (assoc s/Str s/Any))]
+    (->DefaultServiceDescriptionBuilder max-constraints-schema)))
 
 (defn service-description->health-check-url
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"

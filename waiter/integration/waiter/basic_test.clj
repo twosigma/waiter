@@ -17,7 +17,6 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
             [waiter.service-description :as sd]
@@ -179,25 +178,23 @@
       (is (= 400 status))
       (is (str/includes? body "Command type fakecommand is not supported")))))
 
-(deftest ^:parallel ^:integration-fast test-basic-parameters-violates-upper-limit-constraints
+(deftest ^:parallel ^:integration-fast test-basic-parameters-violates-max-constraint
   (testing-using-waiter-url
     (let [constraints (setting waiter-url [:service-description-constraints])
-          upper-limits (->> constraints
-                            (filter (fn [[_ constraint]] (contains? constraint :max)))
-                            (pc/map-vals :max))]
-      (is (seq upper-limits))
-      (doseq [[parameter upper-limit] (rest upper-limits)]
+          max-constraints (sd/extract-max-constraints constraints)]
+      (is (seq max-constraints))
+      (doseq [[parameter max-constraint] (rest max-constraints)]
         (let [headers {:x-waiter-cmd "false"
                        :x-waiter-cmd-type "shell"
                        :x-waiter-name (rand-name)
                        :x-waiter-version "1"
-                       (keyword (str "x-waiter-" (name parameter))) (inc upper-limit)}
+                       (keyword (str "x-waiter-" (name parameter))) (inc max-constraint)}
               {:keys [body status]} (make-light-request waiter-url headers)]
           (is (= 400 status))
           (is (not (str/includes? body "clojure")) body)
           (is (every? #(str/includes? body %)
                       ["The following fields exceed their allowed limits"
-                       (str (name parameter) " is " (inc upper-limit) " but the max allowed is " upper-limit)])
+                       (str (name parameter) " is " (inc max-constraint) " but the max allowed is " max-constraint)])
               body))))))
 
 (deftest ^:parallel ^:integration-fast test-header-metadata
