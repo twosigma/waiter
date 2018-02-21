@@ -91,6 +91,7 @@
                                                           {:kind s/Keyword
                                                            s/Keyword schema/require-symbol-factory-fn}
                                                           schema/contains-kind-sub-map?)
+   (s/required-key :service-description-constraints) {s/Str {(s/required-key :max) schema/positive-num}}
    ; service-description-defaults should never contain default values for required fields, e.g. version, cmd, run-as-user, etc.
    (s/required-key :service-description-defaults) {(s/required-key "authentication") schema/valid-authentication
                                                    (s/required-key "backend-proto") schema/valid-backend-proto
@@ -264,8 +265,9 @@
                          :scheduler-gc-interval-ms 60000}
    :scheduler-syncer-interval-secs 5
    :service-description-builder-config {:kind :default
-                                        :default {:factory-fn
-                                                  'waiter.service-description/->DefaultServiceDescriptionBuilder}}
+                                        :default {:factory-fn 'waiter.service-description/create-default-service-description-builder}}
+   :service-description-constraints {"cpus" {:max 32}
+                                     "mem" {:max (* 128 1024)}}
    :service-description-defaults {"authentication" "standard"
                                   "backend-proto" "http"
                                   "blacklist-on-503" true
@@ -294,7 +296,7 @@
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
-   :websocket-config {:ws-max-binary-message-size  (* 1024 1024 40)
+   :websocket-config {:ws-max-binary-message-size (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:offer-help-interval-ms 100
                    :reserve-timeout-ms 1000}

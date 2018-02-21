@@ -171,16 +171,16 @@
                  :uri "/path"
                  :host "localhost"}]
     (testing "html response"
-      (let [{:keys [body headers status]} 
-            (exception->response 
+      (let [{:keys [body headers status]}
+            (exception->response
               (ex-info "TestCase Exception" {:status 400})
               (assoc-in request [:headers "accept"] "text/html"))]
         (is (= 400 status))
         (is (= {"content-type" "text/html"} headers))
         (is (str/includes? body "TestCase Exception"))))
     (testing "html response with links"
-      (let [{:keys [body headers status]} 
-            (exception->response 
+      (let [{:keys [body headers status]}
+            (exception->response
               (ex-info "TestCase Exception" {:status 400
                                              :friendly-error-message "See http://localhost/path"})
               (assoc-in request [:headers "accept"] "text/html"))]
@@ -197,7 +197,7 @@
         (is (str/includes? body "TestCase Exception"))))
     (testing "json response"
       (let [{:keys [body headers status]}
-            (exception->response 
+            (exception->response
               (ex-info "TestCase Exception" {:status 500})
               (assoc-in request [:headers "accept"] "application/json"))]
         (is (= 500 status))
@@ -508,10 +508,14 @@
                      (create-component {:kind :patterns
                                         :patterns {:factory-fn 'waiter.cors/pattern-based-validator
                                                    :allowed-origins []}})))
-      (is (instance? DefaultServiceDescriptionBuilder
-                     (create-component {:kind :default
-                                        :default {:factory-fn
-                                                  'waiter.service-description/->DefaultServiceDescriptionBuilder}}))))
+      (let [constraints {"cpus" {:max 100}
+                         "mem" {:max (* 32 1024)}}
+            builder (create-component {:kind :default
+                                       :default {:factory-fn 'waiter.service-description/create-default-service-description-builder}}
+                                      :context {:constraints constraints})]
+        (is (instance? DefaultServiceDescriptionBuilder builder))
+        (is (:max-constraints-schema builder))
+        (waiter.service-description/validate builder {} {})))
 
     (testing "should throw when config sub-map is missing"
       (is (thrown-with-msg? ExceptionInfo

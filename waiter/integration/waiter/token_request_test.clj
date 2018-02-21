@@ -17,6 +17,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
+            [waiter.service-description :as sd]
             [waiter.utils :as utils])
   (:import (java.net URL)
            (org.joda.time DateTime)))
@@ -661,6 +662,20 @@
       (is (= 400 status))
       (is (not (str/includes? body "clojure")) body)
       (is (str/includes? body "The following environment variable keys are reserved: HOME.") body))))
+
+(deftest ^:parallel ^:integration-fast test-token-parameters-exceed-limits
+  (testing-using-waiter-url
+    (let [constraints (setting waiter-url [:service-description-constraints])
+          max-constraints (sd/extract-max-constraints constraints)]
+      (is (seq max-constraints))
+      (doseq [[parameter max-constraint] max-constraints]
+        (let [{:keys [body status]} (post-token waiter-url {parameter (inc max-constraint) :token (rand-name)})]
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")) body)
+          (is (every? #(str/includes? body %)
+                      ["The following fields exceed their allowed limits"
+                       (str (name parameter) " is " (inc max-constraint) " but the max allowed is " max-constraint)])
+              body))))))
 
 (deftest ^:parallel ^:integration-fast test-auto-run-as-requester-support
   (testing-using-waiter-url

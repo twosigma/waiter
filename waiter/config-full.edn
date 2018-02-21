@@ -320,6 +320,11 @@
                                                 ;; waiter.service-description.ServiceDescriptionBuilder:
                                                 :factory-fn waiter.service-description/->DefaultServiceDescriptionBuilder}}
 
+ ;; Additional configurable constraints on description parameters.
+ ;; Only max is supported currently.
+ :service-description-constraints {"cpus" {:max 40}
+                                   "mem" {:max 32768}} ;; mem is in megabytes
+
  ;; The following service description parameters are required and
  ;; therefore don't have default values:
  ;;

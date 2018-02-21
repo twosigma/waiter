@@ -426,7 +426,7 @@
         can-run-as? #(= %1 %2)
         waiter-hostname "waiter-hostname.app.example.com"
         assoc-run-as-user-approved? (fn [_ _] false)
-        service-builder (sd/->DefaultServiceDescriptionBuilder nil)]
+        service-builder (sd/create-default-service-description-builder {})]
     (testing "missing user in request"
       (with-redefs [sd/request->descriptor (fn [& _] {:service-description {}
                                                       :service-preauthorized false})]
