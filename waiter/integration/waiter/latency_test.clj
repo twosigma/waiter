@@ -80,7 +80,7 @@
                          :x-waiter-scale-down-factor 0.001
                          :x-waiter-scale-up-factor 0.999
                          :x-waiter-concurrency-level waiter-concurrency-level
-                         :x-waiter-metric-group "apache_bench"}
+                         :x-waiter-metric-group "stress_test"}
           headers (merge (kitchen-request-headers) extra-headers)
           endpoint "/endpoint"
           _ (log/info (str "Making canary request..."))
