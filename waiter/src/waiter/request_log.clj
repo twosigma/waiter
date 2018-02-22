@@ -23,7 +23,8 @@
 (defn request->context
   "Convert a request into a context suitable for logging."
   [{:keys [authenticated-principal headers instance-id instance-host instance-port
-           instance-proto query-string request-method service-id timing uri] :as request}]
+           instance-proto metric-group query-string request-method service-id service-name
+           service-version timing uri] :as request}]
   (let [{:keys [received service-discovered instance-reserved sent-to-backend closed]} timing
         {:strs [host x-cid]} headers]
     (cond-> {:cid x-cid
@@ -36,8 +37,11 @@
       instance-id (assoc :instance-id instance-id)
       instance-port (assoc :instance-port instance-port)
       instance-proto (assoc :instance-proto instance-proto)
+      metric-group (assoc :metric-group metric-group)
       query-string (assoc :query-string query-string)
       service-id (assoc :service-id service-id)
+      service-name (assoc :service-name service-name)
+      service-version (assoc :service-version service-version)
       received (assoc :timestamp (-> received
                                      (coerce/from-long)
                                      (utils/date-to-str)))

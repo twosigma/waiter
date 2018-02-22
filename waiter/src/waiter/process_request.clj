@@ -534,10 +534,13 @@
           (try
             (confirm-live-connection-without-abort)
             (let [{:keys [service-id service-description] :as descriptor} (request->descriptor-fn request)
-                  request (-> request
-                              (assoc :service-id service-id)
-                              (utils/mark-request-time :service-discovered))
                   {:strs [metric-group]} service-description
+                  request (-> request
+                              (assoc :metric-group metric-group
+                                     :service-id service-id
+                                     :service-name (get service-description "name")
+                                     :service-version (get service-description "version"))
+                              (utils/mark-request-time :service-discovered))
                   ^DateTime request-time (t/now)]
               (->> (utils/date-to-str request-time utils/formatter-rfc822)
                    (add-debug-header-into-response! "x-waiter-request-date"))
