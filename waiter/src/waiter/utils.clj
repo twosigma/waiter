@@ -531,3 +531,9 @@
                (str (digest/digest "MD5" (str/join "" (persistent! acc))))))]
     (log/debug "got ID" id "for" sorted-parameters)
     id))
+
+(defn mark-request-time
+  "Mark the completion of a timing event with the current time in the request timing map."
+  [request k]
+  (assoc-in request [:timing k] (System/currentTimeMillis)))
+
