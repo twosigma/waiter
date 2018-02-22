@@ -536,4 +536,3 @@
   "Mark the completion of a timing event with the current time in the request timing map."
   [request k]
   (assoc-in request [:timing k] (System/currentTimeMillis)))
-

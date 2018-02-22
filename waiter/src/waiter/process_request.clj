@@ -390,10 +390,10 @@
                     (if-not more-bytes-possibly-available?
                       (let [request (-> request
                                         (utils/mark-request-time :closed))]
-                        (rlog/log (merge (rlog/request->context request)
-                                       {:bytes-streamed bytes-streamed
-                                        :status (:status response)
-                                        :termination-state :success})))
+                        (rlog/log (assoc (rlog/request->context request)
+                                         :bytes-streamed bytes-streamed
+                                         :status (:status response)
+                                         :termination-state :success)))
                       (recur bytes-streamed' bytes-reported-to-statsd'))))))))
         (catch Exception e
           (meters/mark! stream-exception-meter)
@@ -409,10 +409,10 @@
           (let [{:keys [bytes-streamed]} (ex-data e)
                 request (-> request
                             (utils/mark-request-time :closed))]
-            (rlog/log (merge (rlog/request->context request)
-                             {:bytes-streamed bytes-streamed
-                              :status (:status response)
-                              :termination-state :stream-error}))))
+            (rlog/log (assoc (rlog/request->context request)
+                             :bytes-streamed bytes-streamed
+                             :status (:status response)
+                             :termination-state :stream-error))))
         (finally
           (async/close! resp-chan)
           (async/close! body)
@@ -621,9 +621,9 @@
                                                                     (merge @response-headers headers))))
                                     request (-> request
                                                 (utils/mark-request-time :closed))]
-                                (rlog/log (merge (rlog/request->context request)
-                                                 {:status (:status response)
-                                                  :termination-state :backend-error}))
+                                (rlog/log (assoc (rlog/request->context request)
+                                                 :status (:status response)
+                                                 :termination-state :backend-error))
                                 response))))))
                     (catch Exception e
                       (let [{:keys [descriptor]} (ex-data e)
@@ -632,9 +632,9 @@
                                                             (merge @response-headers headers))))
                             request (-> request
                                         (utils/mark-request-time :closed))]
-                        (rlog/log (merge (rlog/request->context request)
-                                         {:status (:status response)
-                                          :termination-state :instance-reservation-error}))
+                        (rlog/log (assoc (rlog/request->context request)
+                                         :status (:status response)
+                                         :termination-state :instance-reservation-error))
                         response))))))
             (catch Exception e
               (let [{:keys [descriptor]} (ex-data e)
@@ -643,9 +643,9 @@
                                                     (merge @response-headers headers))))
                     request (-> request
                                 (utils/mark-request-time :closed))]
-                (rlog/log (merge (rlog/request->context request)
-                                 {:status (:status response)
-                                  :termination-state :service-discovery-error}))
+                (rlog/log (assoc (rlog/request->context request)
+                                 :status (:status response)
+                                 :termination-state :service-discovery-error))
                 response))))))))
 
 (defn handle-suspended-service
