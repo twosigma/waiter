@@ -508,9 +508,9 @@
                                           (update :headers (fn [headers]
                                                              (merge response-headers headers))))
         request (utils/mark-request-time request :closed)]
-    (rlog/log (assoc (rlog/request->context request)
-                     :status status
-                     :termination-state termination-status))
+    (rlog/log-request request
+                      :status status
+                      :termination-state termination-status)
     response))
 
 (let [process-timer (metrics/waiter-timer "core" "process")]
