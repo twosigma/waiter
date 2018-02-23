@@ -623,11 +623,10 @@
                                                 (utils/mark-request-time :closed))]
                                 (rlog/log (assoc (rlog/request->context request)
                                                  :status (:status response)
-                                                 :termination-state :backend-error))
+                                                 :termination-state :gateway-error))
                                 response))))))
                     (catch Exception e
-                      (let [{:keys [descriptor]} (ex-data e)
-                            {:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request e)
+                      (let [{:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request e)
                                                               (update :headers (fn [headers]
                                                                                  (merge @response-headers headers))))
                             request (utils/mark-request-time request :closed)]
@@ -636,8 +635,7 @@
                                           :termination-state :instance-reservation-error)
                         response))))))
             (catch Exception e
-              (let [{:keys [descriptor]} (ex-data e)
-                    {:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request e)
+              (let [{:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request e)
                                                       (update :headers (fn [headers]
                                                                          (merge @response-headers headers))))
                     request (utils/mark-request-time request :closed)]
