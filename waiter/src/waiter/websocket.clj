@@ -358,9 +358,9 @@
 
 (defn process-exception-in-request
   "Processes exceptions thrown while processing a websocket request."
-  [track-process-error-metrics-fn {:keys [out] :as request} descriptor exception]
+  [track-process-error-metrics-fn {:keys [out] :as request} exception]
   (log/error exception "error in processing websocket request")
-  (track-process-error-metrics-fn descriptor)
+  (track-process-error-metrics-fn request)
   (let [exception-response (utils/exception->response exception request)]
     (async/go
       (async/>! out exception-response)

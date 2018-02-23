@@ -417,9 +417,11 @@
           (async/close! request-state-chan))))))
 
 (defn- track-response-status-metrics
-  [service-id {:strs [metric-group]} status]
-  (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
-  (statsd/inc! metric-group (str "response_status_" status)))
+  [{:strs [metric-group service-id]} status]
+  (when service-id
+    (counters/inc! (metrics/service-counter service-id "response-status" (str status))))
+  (when metric-group
+    (statsd/inc! metric-group (str "response_status_" status))))
 
 (defn abort-http-request-callback-factory
   "Creates a callback to abort the http request."
@@ -445,7 +447,7 @@
     (when (and (= 503 status) (get service-description "blacklist-on-503"))
       (log/info "Instance returned 503: " {:instance instance})
       (deliver reservation-status-promise :instance-busy))
-    (track-response-status-metrics service-id service-description status)
+    (track-response-status-metrics request status)
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
@@ -478,7 +480,7 @@
 
 (defn process-exception-in-http-request
   "Processes exceptions thrown while processing a http request."
-  [track-process-error-metrics-fn request descriptor exception]
+  [track-process-error-metrics-fn request exception]
   (if (missing-run-as-user? exception)
     (let [{:keys [query-string uri]} request
           location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
@@ -487,22 +489,18 @@
       {:headers {"location" location}
        :status 303})
     (do
-      (track-process-error-metrics-fn descriptor)
+      (track-process-error-metrics-fn request)
       (let [{:keys [status] :as error-response} (utils/exception->response exception request)]
-        (when descriptor
-          (let [{:keys [service-description service-id]} descriptor]
-            (track-response-status-metrics service-id service-description status)))
+        (track-response-status-metrics request status)
         error-response))))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."
-  [descriptor]
+  [{:keys [metric-group service-id]}]
   (meters/mark! (metrics/waiter-meter "core" "process-errors"))
-  (when descriptor
-    (let [{:keys [service-description service-id]} descriptor
-          {:strs [metric-group]} service-description]
-      (meters/mark! (metrics/service-meter service-id "process-error"))
-      (statsd/inc! metric-group "process_error"))))
+  (when (and service-id metric-group)
+    (meters/mark! (metrics/service-meter service-id "process-error"))
+    (statsd/inc! metric-group "process_error")))
 
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
@@ -618,7 +616,7 @@
                               (deliver reservation-status-promise :generic-error)
                               ; close request-state-chan to mark the request as finished
                               (async/close! request-state-chan)
-                              (let [response (-> (process-exception-fn track-process-error-metrics request descriptor e)
+                              (let [response (-> (process-exception-fn track-process-error-metrics request e)
                                                  (update :headers (fn [headers]
                                                                     (merge @response-headers headers))))
                                     request (-> request
@@ -657,7 +655,7 @@
                                time (assoc :suspended-at (utils/date-to-str time))
                                (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
       (log/info "Service has been suspended" response-map)
-      (track-response-status-metrics service-id service-description 503)
+      (track-response-status-metrics request 503)
       (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
       (-> {:details (str response-map), :message "Service has been suspended", :status 503}
           (utils/data->error-response request)))))
@@ -674,7 +672,7 @@
                           :outstanding-requests outstanding-requests
                           :service-id service-id}]
         (log/info "Max queue length exceeded" response-map)
-        (track-response-status-metrics service-id service-description 503)
+        (track-response-status-metrics request 503)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
         (-> {:details (str response-map), :message "Max queue length exceeded", :status 503}
             (utils/data->error-response request))))))
