@@ -502,6 +502,19 @@
     (meters/mark! (metrics/service-meter service-id "process-error"))
     (statsd/inc! metric-group "process_error")))
 
+(defn- handle-early-termination
+  "Handle an early termination of a request based upon an exception.  Return an error response and log the request."
+  [request process-exception-fn exception response-headers termination-status]
+  (let [{:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request exception)
+                                          (update :headers (fn [headers]
+                                                             (merge @response-headers headers))))
+        request (-> request
+                    (utils/mark-request-time :closed))]
+    (rlog/log (assoc (rlog/request->context request)
+                     :status status
+                     :termination-state termination-status))
+    response))
+
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."
@@ -616,33 +629,11 @@
                               (deliver reservation-status-promise :generic-error)
                               ; close request-state-chan to mark the request as finished
                               (async/close! request-state-chan)
-                              (let [response (-> (process-exception-fn track-process-error-metrics request e)
-                                                 (update :headers (fn [headers]
-                                                                    (merge @response-headers headers))))
-                                    request (-> request
-                                                (utils/mark-request-time :closed))]
-                                (rlog/log (assoc (rlog/request->context request)
-                                                 :status (:status response)
-                                                 :termination-state :gateway-error))
-                                response))))))
+                              (handle-early-termination request process-exception-fn e response-headers :bad-gateway))))))
                     (catch Exception e
-                      (let [{:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request e)
-                                                              (update :headers (fn [headers]
-                                                                                 (merge @response-headers headers))))
-                            request (utils/mark-request-time request :closed)]
-                        (rlog/log-request request
-                                          :status status
-                                          :termination-state :instance-reservation-error)
-                        response))))))
+                      (handle-early-termination request process-exception-fn e response-headers :no-instance))))))
             (catch Exception e
-              (let [{:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request e)
-                                                      (update :headers (fn [headers]
-                                                                         (merge @response-headers headers))))
-                    request (utils/mark-request-time request :closed)]
-                (rlog/log-request request
-                                  :status status
-                                  :termination-state :service-discovery-error)
-                response))))))))
+              (handle-early-termination request process-exception-fn e response-headers :no-service))))))))
 
 (defn handle-suspended-service
   "Check if a service has been suspended and immediately return a 503 response"
