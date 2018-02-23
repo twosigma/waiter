@@ -11,14 +11,13 @@
 (ns waiter.request-log
   (:require [clj-time.core :as t]
             [clojure.string :as str]
+            [clojure.tools.logging :as log]
             [waiter.utils :as utils]))
-
-(def ^:dynamic *request-log-file* "log/request.log")
 
 (defn log
   "Log a request context."
   [context]
-  (spit *request-log-file* (str context \newline) :append true))
+  (log/info context))
 
 (defn request->context
   "Convert a request into a context suitable for logging."
