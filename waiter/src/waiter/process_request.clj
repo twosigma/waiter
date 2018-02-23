@@ -601,7 +601,7 @@
                                                  :instance-port port
                                                  :instance-proto protocol))]
                           (try
-                            (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
+                            (log/info "suggested instance:" id host port)
                             (when waiter-debug-enabled?
                               (swap! response-headers merge (instance->debug-headers instance prepend-waiter-url)))
                             (confirm-live-connection-without-abort)
