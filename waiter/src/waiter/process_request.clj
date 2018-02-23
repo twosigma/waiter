@@ -584,10 +584,12 @@
                                                           (statsd/gauge-delta! metric-group "request_outstanding" -1)
                                                           e)
                               queue-timeout-ms (:queue-timeout-ms instance-request-properties)
-                              request (utils/mark-request-time request :instance-requested)
-                              {:keys [id host port protocol] :as instance}
-                              (<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
-                                                    unable-to-create-instance queue-timeout-ms reservation-status-promise metric-group))
+                              [{:keys [id host port protocol] :as instance} get-available-instance-nanos]
+                              (metrics/with-timer
+                                (metrics/service-timer service-id "get-available-instance")
+                                (<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
+                                                      unable-to-create-instance queue-timeout-ms reservation-status-promise metric-group)))
+                              _ (statsd/histo! metric-group "get_instance" get-available-instance-nanos)
                               request (-> request
                                           (utils/mark-request-time :instance-reserved)
                                           (assoc :instance-id (subs id (inc (count service-id)))
@@ -596,37 +598,25 @@
                                                  :instance-proto protocol))
                               response-headers (when waiter-debug-enabled?
                                                  (merge response-headers (instance->debug-headers instance prepend-waiter-url)))
-                              {{:keys [instance-requested instance-reserved]} :timing} request
                               ; the format implies nanos, but that kind of precision is not required
                               response-headers (when waiter-debug-enabled?
                                                  (assoc response-headers
                                                         "x-waiter-get-available-instance-ns"
-                                                        (-> (t/interval instance-requested instance-reserved)
-                                                            t/in-millis
-                                                            (* 1000000)
-                                                            str)))]
+                                                        (str get-available-instance-nanos)))]
                           (try
                             (log/info "suggested instance:" id host port)
                             (confirm-live-connection-without-abort)
                             (let [endpoint (request->endpoint request waiter-headers)
-                                  request (utils/mark-request-time request :sent-to-backend)
-                                  {:keys [error] :as response}
-                                  (metrics/with-timer!
+                                  [{:keys [error] :as response} backend-response-nanos]
+                                  (metrics/with-timer
                                     (metrics/service-timer service-id "backend-response")
-                                    (fn [nanos]
-                                      (statsd/histo! metric-group "backend_response" nanos))
                                     (async/<!
                                       (make-request-fn instance request instance-request-properties
                                                        passthrough-headers endpoint metric-group)))
-                                  request (utils/mark-request-time request :backend-responded)
-                                  {{:keys [sent-to-backend backend-responded]} :timing} request
-                                  ; same story again with the "nanos"
+                                  _ (statsd/histo! metric-group "backend_response" backend-response-nanos)
                                   response-headers (when waiter-debug-enabled?
                                                      (assoc response-headers "x-waiter-backend-response-ns"
-                                                            (-> (t/interval sent-to-backend backend-responded)
-                                                                t/in-millis
-                                                                (* 1000000)
-                                                                str)))
+                                                            (str backend-response-nanos)))
                                   request-abort-callback (request-abort-callback-factory response)
                                   confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
                               (when error

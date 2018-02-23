@@ -227,55 +227,51 @@
     (cid/with-correlation-id
       (:cid reason-map)
       (try
-        (metrics/with-timer!
-          (metrics/service-timer service-id "get-available-instance")
-          (fn [nanos]
-            (statsd/histo! metric-group "get_instance" nanos))
-          (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
-          (statsd/gauge-delta! metric-group "request_waiting_for_instance" +1)
-          (let [expiry-time (t/plus (t/now) (t/millis queue-timeout-ms))]
-            (loop [iterations 1]
-              (let [instance (get-rand-inst instance-rpc-chan service-id reason-map #{} queue-timeout-ms)]
-                (if-not (nil? (:id instance)) ; instance is nil or :no-matching-instance-found
-                  (do
-                    (histograms/update!
-                      (metrics/service-histogram service-id "iterations-to-find-available-instance")
-                      iterations)
-                    instance)
-                  (if (and instance (not= instance :no-matching-instance-found))
-                    ; instance is a deployment error if it (1) does not have an :id tag, (2) is not nil, and (3) does not equal :no-matching-instance-found
-                    (ex-info (str "Deployment error: " (utils/message instance)) {:service-id service-id :status 503})
-                    (if-not (t/before? (t/now) expiry-time) 
-                      (do
-                        ;; No instances were started in a reasonable amount of time
-                        (meters/mark! (metrics/service-meter service-id "no-available-instance-timeout"))
-                        (statsd/inc! metric-group "no_instance_timeout")
-                        (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
-                              requests-waiting-to-stream (counters/value (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
-                              waiting-for-available-instance (counters/value (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
-                              healthy-instances (counters/value (metrics/service-counter service-id "instance-counts" "healthy")) 
-                              unhealthy-instances (counters/value (metrics/service-counter service-id "instance-counts" "unhealthy"))
-                              failed-instances (counters/value (metrics/service-counter service-id "instance-counts" "failed"))]
-                          (ex-info (str "After " (t/in-seconds (t/millis queue-timeout-ms))
-                                        " seconds, no instance available to handle request."
-                                        (when (and (zero? healthy-instances) (or (pos? unhealthy-instances) (pos? failed-instances)))
-                                          " Check that your service is able to start properly!")
-                                        (when (and (pos? outstanding-requests) (pos? healthy-instances))
-                                          " Check that your service is able to scale properly!"))
-                                   {:service-id service-id
-                                    :outstanding-requests outstanding-requests
-                                    :requests-waiting-to-stream requests-waiting-to-stream
-                                    :waiting-for-available-instance waiting-for-available-instance
-                                    :slots-assigned (counters/value (metrics/service-counter service-id "instance-counts" "slots-assigned"))
-                                    :slots-available (counters/value (metrics/service-counter service-id "instance-counts" "slots-available"))
-                                    :slots-in-use (counters/value (metrics/service-counter service-id "instance-counts" "slots-in-use"))
-                                    :work-stealing-offers-received (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))
-                                    :work-stealing-offers-sent (counters/value (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
-                                    :status 503})))
-                      (do
-                        (app-not-found-fn)
-                        (async/<! (async/timeout 1500))
-                        (recur (inc iterations))))))))))
+        (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
+        (statsd/gauge-delta! metric-group "request_waiting_for_instance" +1)
+        (let [expiry-time (t/plus (t/now) (t/millis queue-timeout-ms))]
+          (loop [iterations 1]
+            (let [instance (get-rand-inst instance-rpc-chan service-id reason-map #{} queue-timeout-ms)]
+              (if-not (nil? (:id instance)) ; instance is nil or :no-matching-instance-found
+                (do
+                  (histograms/update!
+                    (metrics/service-histogram service-id "iterations-to-find-available-instance")
+                    iterations)
+                  instance)
+                (if (and instance (not= instance :no-matching-instance-found))
+                  ; instance is a deployment error if it (1) does not have an :id tag, (2) is not nil, and (3) does not equal :no-matching-instance-found
+                  (ex-info (str "Deployment error: " (utils/message instance)) {:service-id service-id :status 503})
+                  (if-not (t/before? (t/now) expiry-time)
+                    (do
+                      ;; No instances were started in a reasonable amount of time
+                      (meters/mark! (metrics/service-meter service-id "no-available-instance-timeout"))
+                      (statsd/inc! metric-group "no_instance_timeout")
+                      (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
+                            requests-waiting-to-stream (counters/value (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
+                            waiting-for-available-instance (counters/value (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
+                            healthy-instances (counters/value (metrics/service-counter service-id "instance-counts" "healthy")) 
+                            unhealthy-instances (counters/value (metrics/service-counter service-id "instance-counts" "unhealthy"))
+                            failed-instances (counters/value (metrics/service-counter service-id "instance-counts" "failed"))]
+                        (ex-info (str "After " (t/in-seconds (t/millis queue-timeout-ms))
+                                      " seconds, no instance available to handle request."
+                                      (when (and (zero? healthy-instances) (or (pos? unhealthy-instances) (pos? failed-instances)))
+                                        " Check that your service is able to start properly!")
+                                      (when (and (pos? outstanding-requests) (pos? healthy-instances))
+                                        " Check that your service is able to scale properly!"))
+                                 {:service-id service-id
+                                  :outstanding-requests outstanding-requests
+                                  :requests-waiting-to-stream requests-waiting-to-stream
+                                  :waiting-for-available-instance waiting-for-available-instance
+                                  :slots-assigned (counters/value (metrics/service-counter service-id "instance-counts" "slots-assigned"))
+                                  :slots-available (counters/value (metrics/service-counter service-id "instance-counts" "slots-available"))
+                                  :slots-in-use (counters/value (metrics/service-counter service-id "instance-counts" "slots-in-use"))
+                                  :work-stealing-offers-received (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))
+                                  :work-stealing-offers-sent (counters/value (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
+                                  :status 503})))
+                    (do
+                      (app-not-found-fn)
+                      (async/<! (async/timeout 1500))
+                      (recur (inc iterations)))))))))
         (catch Exception e
           (log/error e "Error in get-available-instance")
           e)
