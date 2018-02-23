@@ -142,14 +142,13 @@
    Returns the instance if it was acquired successfully, otherwise,
    will return the output of `ex-handler`"
   [instance-rpc-chan service-id {:keys [request-id] :as reason-map} start-new-service-fn request-state-chan ex-handler
-   queue-timeout-ms reservation-status-promise metric-group add-debug-header-into-response!]
+   queue-timeout-ms reservation-status-promise metric-group]
   (async/go
     (try
       (log/debug "retrieving instance for" service-id "using" (dissoc reason-map :cid :time))
-      (add-debug-header-into-response! "X-Waiter-Service-Id" service-id)
       (let [correlation-id (cid/get-correlation-id)
             instance (<? (service/get-available-instance
-                           instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group add-debug-header-into-response!))]
+                           instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group))]
         (au/on-chan-close request-state-chan
                           (fn on-request-state-chan-close []
                             (cid/cdebug correlation-id "request-state-chan closed")
@@ -184,15 +183,15 @@
 (defn- instance->debug-headers
   "Returns instance specific information as a map for use in the response headers."
   [{:keys [host id port protocol] :as instance} prepend-waiter-url]
-  (let [backend-headers {"X-Waiter-Backend-Id" id
-                         "X-Waiter-Backend-Host" host
-                         "X-Waiter-Backend-Port" (str port)
-                         "X-Waiter-Backend-Proto" protocol}]
+  (let [backend-headers {"x-waiter-backend-id" id
+                         "x-waiter-backend-host" host
+                         "x-waiter-backend-port" (str port)
+                         "x-waiter-backend-proto" protocol}]
     (if-let [backend-directory (:log-directory instance)]
       (let [backend-log-url (handler/generate-log-url prepend-waiter-url instance)]
         (assoc backend-headers
-          "X-Waiter-Backend-Directory" backend-directory
-          "X-Waiter-Backend-Log-Url" backend-log-url))
+          "x-waiter-backend-directory" backend-directory
+          "x-waiter-backend-log-url" backend-log-url))
       backend-headers)))
 
 (defn- wrap-exception
@@ -214,19 +213,19 @@
           (do
             (deliver reservation-status-promise :client-error)
             (-> "Connection unexpectedly closed while sending request"
-                (wrap-exception error instance 400 @response-headers)))
+                (wrap-exception error instance 400 response-headers)))
 
           (instance? TimeoutException error)
           (do
             (deliver reservation-status-promise :instance-error)
             (-> (utils/message :backend-request-timed-out)
-                (wrap-exception error instance 504 @response-headers)))
+                (wrap-exception error instance 504 response-headers)))
 
           :else
           (do
             (deliver reservation-status-promise :instance-error)
             (-> (utils/message :backend-request-failed)
-                (wrap-exception error instance 502 @response-headers))))))
+                (wrap-exception error instance 502 response-headers))))))
 
 (defn http-method-fn
   "Retrieves the qbits.jet.client.http client function that corresponds to the http method."
@@ -437,7 +436,7 @@
   "Processes a response resulting from a http request.
    It includes book-keeping for async requests and asycnhronously streaming the content."
   [post-process-async-request-response-fn _ instance-request-properties descriptor instance
-   request reason-map response-headers-atom reservation-status-promise confirm-live-connection-with-abort
+   request reason-map response-headers reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
   (let [{:keys [service-description service-id waiter-headers]} descriptor
         {:strs [metric-group]} service-description
@@ -453,7 +452,7 @@
     (confirm-live-connection-with-abort)
     (inspect-for-202-async-request-response
       post-process-async-request-response-fn instance-request-properties service-id metric-group
-      instance endpoint request reason-map response response-headers-atom reservation-status-promise)
+      instance endpoint request reason-map response response-headers reservation-status-promise)
     (let [request-abort-callback (abort-http-request-callback-factory response)]
       (stream-http-response response confirm-live-connection-with-abort request-abort-callback
                             resp-chan instance-request-properties reservation-status-promise
@@ -463,7 +462,7 @@
         (assoc :body resp-chan)
         (update-in [:headers] (fn update-response-headers [headers]
                                 (-> (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)
-                                    (merge @response-headers-atom)))))))
+                                    (merge response-headers)))))))
 
 (defn missing-run-as-user?
   "Returns true if the exception is due to a missing run-as-user validation on the service description."
@@ -507,9 +506,8 @@
   [request process-exception-fn exception response-headers termination-status]
   (let [{:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request exception)
                                           (update :headers (fn [headers]
-                                                             (merge @response-headers headers))))
-        request (-> request
-                    (utils/mark-request-time :closed))]
+                                                             (merge response-headers headers))))
+        request (utils/mark-request-time request :closed)]
     (rlog/log (assoc (rlog/request->context request)
                      :status status
                      :termination-state termination-status))
@@ -521,23 +519,18 @@
     [router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
      instance-request-properties handlers prepend-waiter-url determine-priority-fn process-backend-response-fn
      process-exception-fn request-abort-callback-factory local-usage-agent
-     {:keys [ctrl] :as request}]
+     {:keys [ctrl uri] {:keys [received]} :timing :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
           request (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
           confirm-live-connection-factory #(confirm-live-connection-factory control-mult reservation-status-promise %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
-          ; update response headers eagerly to enable reporting these in case of failure
-          response-headers (atom (cond-> {}
-                                         waiter-debug-enabled? (assoc "X-Waiter-Router-Id" router-id)))
-          add-debug-header-into-response! (fn [name value]
-                                            (when waiter-debug-enabled?
-                                              (swap! response-headers assoc (str name) (str value))))]
+          response-headers (when waiter-debug-enabled? {"x-waiter-router-id" router-id})]
       (async/go
         (if waiter-debug-enabled?
-          (log/info "process request to" (get-in request [:headers "host"]) "at path" (:uri request))
-          (log/debug "process request to" (get-in request [:headers "host"]) "at path" (:uri request)))
+          (log/info "process request to" (get-in request [:headers "host"]) "at path" request)
+          (log/debug "process request to" (get-in request [:headers "host"]) "at path" request))
         (timers/start-stop-time!
           process-timer
           (try
@@ -550,10 +543,12 @@
                                      :service-name (get service-description "name")
                                      :service-version (get service-description "version"))
                               (utils/mark-request-time :service-discovered))
-                  ^DateTime request-time (t/now)]
-              (->> (utils/date-to-str request-time utils/formatter-rfc822)
-                   (add-debug-header-into-response! "x-waiter-request-date"))
-              (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
+                  response-headers (when waiter-debug-enabled?
+                                     (-> response-headers
+                                         (assoc "x-waiter-request-date"
+                                                (utils/date-to-str received utils/formatter-rfc822))
+                                         (assoc "x-waiter-service-id" service-id)))]
+              (send local-usage-agent metrics/update-last-request-time-usage-metric service-id received)
               (loop [[handler & remaining-handlers] handlers]
                 (if handler
                   (let [response (handler request descriptor)]
@@ -578,7 +573,7 @@
                               priority (determine-priority-fn waiter-headers)
                               reason-map (cond-> {:reason :serve-request
                                                   :state {:initial (metrics/retrieve-local-stats-for-service service-id)}
-                                                  :time request-time
+                                                  :time received
                                                   :cid (cid/get-correlation-id)
                                                   :request-id request-id}
                                            priority (assoc :priority priority))
@@ -590,33 +585,50 @@
                                                           (statsd/gauge-delta! metric-group "request_outstanding" -1)
                                                           e)
                               queue-timeout-ms (:queue-timeout-ms instance-request-properties)
+                              request (utils/mark-request-time request :instance-requested)
                               {:keys [id host port protocol] :as instance}
                               (<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
-                                                    unable-to-create-instance queue-timeout-ms reservation-status-promise metric-group
-                                                    add-debug-header-into-response!))
+                                                    unable-to-create-instance queue-timeout-ms reservation-status-promise metric-group))
                               request (-> request
                                           (utils/mark-request-time :instance-reserved)
                                           (assoc :instance-id (subs id (inc (count service-id)))
                                                  :instance-host host
                                                  :instance-port port
-                                                 :instance-proto protocol))]
+                                                 :instance-proto protocol))
+                              response-headers (when waiter-debug-enabled?
+                                                 (merge response-headers (instance->debug-headers instance prepend-waiter-url)))
+                              {{:keys [instance-requested instance-reserved]} :timing} request
+                              ; the format implies nanos, but that kind of precision is not required
+                              response-headers (when waiter-debug-enabled?
+                                                 (assoc response-headers
+                                                        "x-waiter-get-available-instance-ns"
+                                                        (-> (t/interval instance-requested instance-reserved)
+                                                            t/in-millis
+                                                            (* 1000000)
+                                                            str
+                                                            )))]
                           (try
                             (log/info "suggested instance:" id host port)
-                            (when waiter-debug-enabled?
-                              (swap! response-headers merge (instance->debug-headers instance prepend-waiter-url)))
                             (confirm-live-connection-without-abort)
                             (let [endpoint (request->endpoint request waiter-headers)
-                                  request (-> request
-                                              (utils/mark-request-time :sent-to-backend))
+                                  request (utils/mark-request-time request :sent-to-backend)
                                   {:keys [error] :as response}
                                   (metrics/with-timer!
                                     (metrics/service-timer service-id "backend-response")
                                     (fn [nanos]
-                                      (add-debug-header-into-response! "X-Waiter-Backend-Response-ns" nanos)
                                       (statsd/histo! metric-group "backend_response" nanos))
                                     (async/<!
                                       (make-request-fn instance request instance-request-properties
                                                        passthrough-headers endpoint metric-group)))
+                                  request (utils/mark-request-time request :backend-responded)
+                                  {{:keys [sent-to-backend backend-responded]} :timing} request
+                                  ; same story again with the "nanos"
+                                  response-headers (when waiter-debug-enabled?
+                                                     (assoc response-headers "x-waiter-backend-response-ns"
+                                                            (-> (t/interval sent-to-backend backend-responded)
+                                                                t/in-millis
+                                                                (* 1000000)
+                                                                str)))
                                   request-abort-callback (request-abort-callback-factory response)
                                   confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
                               (when error

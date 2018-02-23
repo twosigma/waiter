@@ -222,7 +222,7 @@
   "Starts a `clojure.core.async/go` block to query the router state to get an
    available instance to send a request. It will continue to query the state until
    an instance is available."
-  [instance-rpc-chan service-id reason-map app-not-found-fn queue-timeout-ms metric-group add-debug-header-into-response!]
+  [instance-rpc-chan service-id reason-map app-not-found-fn queue-timeout-ms metric-group]
   (async/go
     (cid/with-correlation-id
       (:cid reason-map)
@@ -230,7 +230,6 @@
         (metrics/with-timer!
           (metrics/service-timer service-id "get-available-instance")
           (fn [nanos]
-            (add-debug-header-into-response! "X-Waiter-Get-Available-Instance-ns" nanos)
             (statsd/histo! metric-group "get_instance" nanos))
           (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
           (statsd/gauge-delta! metric-group "request_waiting_for_instance" +1)

@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.request-log
-  (:require [clj-time.coerce :as coerce]
+  (:require [clj-time.core :as t]
+            [clj-time.coerce :as coerce]
             [clojure.string :as str]
             [waiter.utils :as utils]))
 
@@ -45,11 +46,11 @@
       received (assoc :timestamp (-> received
                                      (coerce/from-long)
                                      (utils/date-to-str)))
-      (and closed sent-to-backend) (assoc :backend-latency (- closed sent-to-backend))
-      (and service-discovered received) (assoc :discovery-latency (- service-discovered received))
-      (and instance-reserved received) (assoc :instance-latency (- instance-reserved received))
-      (and sent-to-backend received) (assoc :overhead-latency (- sent-to-backend received))
-      (and closed received) (assoc :total-latency (- closed received)))))
+      (and sent-to-backend closed) (assoc :backend-latency (t/in-millis (t/interval sent-to-backend closed)))
+      (and received service-discovered) (assoc :discovery-latency (t/in-millis (t/interval received service-discovered)))
+      (and received instance-reserved) (assoc :instance-latency (t/in-millis (t/interval received instance-reserved)))
+      (and received sent-to-backend) (assoc :overhead-latency (t/in-millis (t/interval received sent-to-backend)))
+      (and received closed) (assoc :total-latency (t/in-millis (t/interval received closed))))))
 
 (defn log-request
   "Logs a request and any additional context."
