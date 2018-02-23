@@ -605,8 +605,7 @@
                                                         (-> (t/interval instance-requested instance-reserved)
                                                             t/in-millis
                                                             (* 1000000)
-                                                            str
-                                                            )))]
+                                                            str)))]
                           (try
                             (log/info "suggested instance:" id host port)
                             (confirm-live-connection-without-abort)
