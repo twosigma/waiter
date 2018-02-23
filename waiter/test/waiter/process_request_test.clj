@@ -243,7 +243,7 @@
               (recur (+ bytes-streamed bytes-to-stream)))))
         (stream-http-response response confirm-live-connection request-abort-callback resp-chan instance-request-properties
                               reservation-status-promise request-state-chan metric-group
-                              waiter-debug-enabled? (metrics/stream-metric-map service-id))
+                              waiter-debug-enabled? (metrics/stream-metric-map service-id) {})
         (loop []
           (let [message (async/<!! resp-chan)]
             (when message
@@ -621,7 +621,7 @@
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-in-http-request request-abort-callback-factory
                                local-usage-agent request)
-        {:keys [body headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
+        {:keys [body headers status] :as response} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
     (is (= 404 status))
     (is (= "text/plain" (get headers "content-type")))
     (is (str/includes? (str body) "Error message for user"))))

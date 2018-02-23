@@ -526,7 +526,8 @@
           confirm-live-connection-factory #(confirm-live-connection-factory control-mult reservation-status-promise %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
-          response-headers (when waiter-debug-enabled? {"x-waiter-router-id" router-id})]
+          response-headers (when waiter-debug-enabled? {"x-waiter-router-id" router-id
+                                                        "x-waiter-request-date" (utils/date-to-str received utils/formatter-rfc822)})]
       (async/go
         (if waiter-debug-enabled?
           (log/info "process request to" (get-in request [:headers "host"]) "at path" request)
@@ -544,10 +545,7 @@
                                      :service-version (get service-description "version"))
                               (utils/mark-request-time :service-discovered))
                   response-headers (when waiter-debug-enabled?
-                                     (-> response-headers
-                                         (assoc "x-waiter-request-date"
-                                                (utils/date-to-str received utils/formatter-rfc822))
-                                         (assoc "x-waiter-service-id" service-id)))]
+                                     (assoc response-headers "x-waiter-service-id" service-id))]
               (send local-usage-agent metrics/update-last-request-time-usage-metric service-id received)
               (loop [[handler & remaining-handlers] handlers]
                 (if handler

@@ -30,10 +30,10 @@
         {:strs [host x-cid]} headers]
     (cond-> {:cid x-cid
              :host host
-             :method (-> request-method name str/upper-case)
              :path uri
              :principal authenticated-principal
              :scheme (utils/request->scheme request)}
+      request-method (assoc :method (-> request-method name str/upper-case))
       instance-host (assoc :instance-host instance-host)
       instance-id (assoc :instance-id instance-id)
       instance-port (assoc :instance-port instance-port)
