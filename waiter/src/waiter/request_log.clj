@@ -50,3 +50,8 @@
       (and instance-reserved received) (assoc :instance-latency (- instance-reserved received))
       (and sent-to-backend received) (assoc :overhead-latency (- sent-to-backend received))
       (and closed received) (assoc :total-latency (- closed received)))))
+
+(defn log-request
+  "Logs a request and any additional context."
+  [request & {:as additional-context}]
+  (log (merge (request->context request) additional-context)))

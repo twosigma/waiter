@@ -319,7 +319,7 @@
    Otherwise, it is assumed the body is a input stream, in which case, the function
    buffers bytes, and push byte input streams onto the channel until the body input
    stream is exhausted."
-  [{:keys [body error-chan] :as response} confirm-live-connection request-abort-callback resp-chan
+  [{:keys [body error-chan status] :as response} confirm-live-connection request-abort-callback resp-chan
    {:keys [streaming-timeout-ms]}
    reservation-status-promise request-state-chan metric-group waiter-debug-enabled?
    {:keys [throughput-meter requests-streaming requests-waiting-to-stream
@@ -388,12 +388,11 @@
                               bytes-streamed')
                             bytes-reported-to-statsd))]
                     (if-not more-bytes-possibly-available?
-                      (let [request (-> request
-                                        (utils/mark-request-time :closed))]
-                        (rlog/log (assoc (rlog/request->context request)
-                                         :bytes-streamed bytes-streamed
-                                         :status (:status response)
-                                         :termination-state :success)))
+                      (let [request (utils/mark-request-time request :closed)]
+                        (rlog/log-request request
+                                          :bytes-streamed bytes-streamed
+                                          :status status
+                                          :termination-state :success))
                       (recur bytes-streamed' bytes-reported-to-statsd'))))))))
         (catch Exception e
           (meters/mark! stream-exception-meter)
@@ -407,12 +406,11 @@
                 (poison-pill-function output-stream))))
           (log/error e "Exception occurred while streaming response for" service-id)
           (let [{:keys [bytes-streamed]} (ex-data e)
-                request (-> request
-                            (utils/mark-request-time :closed))]
-            (rlog/log (assoc (rlog/request->context request)
-                             :bytes-streamed bytes-streamed
-                             :status (:status response)
-                             :termination-state :stream-error))))
+                request (utils/mark-request-time request :closed)]
+            (rlog/log-request request
+                              :bytes-streamed bytes-streamed
+                              :status status
+                              :termination-state :stream-error)))
         (finally
           (async/close! resp-chan)
           (async/close! body)
@@ -572,7 +570,7 @@
                                                   :time request-time
                                                   :cid (cid/get-correlation-id)
                                                   :request-id request-id}
-                                                 priority (assoc :priority priority))
+                                           priority (assoc :priority priority))
                               ; pass false to keep request-state-chan open after control-mult is closed
                               ; request-state-chan should be explicitly closed after the request finishes processing
                               request-state-chan (async/tap control-mult (au/latest-chan) false)
@@ -581,15 +579,16 @@
                                                           (statsd/gauge-delta! metric-group "request_outstanding" -1)
                                                           e)
                               queue-timeout-ms (:queue-timeout-ms instance-request-properties)
-                              instance (<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
-                                                             unable-to-create-instance queue-timeout-ms reservation-status-promise metric-group
-                                                             add-debug-header-into-response!))
+                              {:keys [id host port protocol] :as instance}
+                              (<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
+                                                    unable-to-create-instance queue-timeout-ms reservation-status-promise metric-group
+                                                    add-debug-header-into-response!))
                               request (-> request
                                           (utils/mark-request-time :instance-reserved)
-                                          (assoc :instance-id (subs (:id instance) (inc (count service-id)))
-                                                 :instance-host (:host instance)
-                                                 :instance-port (:port instance)
-                                                 :instance-proto (:protocol instance)))]
+                                          (assoc :instance-id (subs id (inc (count service-id)))
+                                                 :instance-host host
+                                                 :instance-port port
+                                                 :instance-proto protocol))]
                           (try
                             (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
                             (when waiter-debug-enabled?
@@ -630,25 +629,23 @@
                                 response))))))
                     (catch Exception e
                       (let [{:keys [descriptor]} (ex-data e)
-                            response (-> (process-exception-fn track-process-error-metrics request descriptor e)
-                                         (update :headers (fn [headers]
-                                                            (merge @response-headers headers))))
-                            request (-> request
-                                        (utils/mark-request-time :closed))]
-                        (rlog/log (assoc (rlog/request->context request)
-                                         :status (:status response)
-                                         :termination-state :instance-reservation-error))
+                            {:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request e)
+                                                              (update :headers (fn [headers]
+                                                                                 (merge @response-headers headers))))
+                            request (utils/mark-request-time request :closed)]
+                        (rlog/log-request request
+                                          :status status
+                                          :termination-state :instance-reservation-error)
                         response))))))
             (catch Exception e
               (let [{:keys [descriptor]} (ex-data e)
-                    response (-> (process-exception-fn track-process-error-metrics request descriptor e)
-                                 (update :headers (fn [headers]
-                                                    (merge @response-headers headers))))
-                    request (-> request
-                                (utils/mark-request-time :closed))]
-                (rlog/log (assoc (rlog/request->context request)
-                                 :status (:status response)
-                                 :termination-state :service-discovery-error))
+                    {:keys [status] :as response} (-> (process-exception-fn track-process-error-metrics request e)
+                                                      (update :headers (fn [headers]
+                                                                         (merge @response-headers headers))))
+                    request (utils/mark-request-time request :closed)]
+                (rlog/log-request request
+                                  :status status
+                                  :termination-state :service-discovery-error)
                 response))))))))
 
 (defn handle-suspended-service
