@@ -166,6 +166,8 @@
                                json-response->str
                                json/read-str)))))
 
+(defrecord TestResponse [status friendly-error-message])
+
 (deftest test-exception->response
   (let [request {:request-method :get
                  :uri "/path"
@@ -173,7 +175,7 @@
     (testing "html response"
       (let [{:keys [body headers status]}
             (exception->response
-              (ex-info "TestCase Exception" {:status 400})
+              (ex-info "TestCase Exception" (map->TestResponse {:status 400}))
               (assoc-in request [:headers "accept"] "text/html"))]
         (is (= 400 status))
         (is (= {"content-type" "text/html"} headers))
@@ -181,8 +183,8 @@
     (testing "html response with links"
       (let [{:keys [body headers status]}
             (exception->response
-              (ex-info "TestCase Exception" {:status 400
-                                             :friendly-error-message "See http://localhost/path"})
+              (ex-info "TestCase Exception" (map->TestResponse {:status 400
+                                                                :friendly-error-message "See http://localhost/path"}))
               (assoc-in request [:headers "accept"] "text/html"))]
         (is (= 400 status))
         (is (= {"content-type" "text/html"} headers))
@@ -190,7 +192,7 @@
     (testing "plaintext response"
       (let [{:keys [body headers status]}
             (exception->response
-              (ex-info "TestCase Exception" {:status 400})
+              (ex-info "TestCase Exception" (map->TestResponse {:status 400}))
               (assoc-in request [:headers "accept"] "text/plain"))]
         (is (= 400 status))
         (is (= {"content-type" "text/plain"} headers))
@@ -198,7 +200,7 @@
     (testing "json response"
       (let [{:keys [body headers status]}
             (exception->response
-              (ex-info "TestCase Exception" {:status 500})
+              (ex-info "TestCase Exception" (map->TestResponse {:status 500}))
               (assoc-in request [:headers "accept"] "application/json"))]
         (is (= 500 status))
         (is (= {"content-type" "application/json"} headers))
