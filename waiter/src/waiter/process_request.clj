@@ -526,12 +526,13 @@
           confirm-live-connection-factory #(confirm-live-connection-factory control-mult reservation-status-promise %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
-          response-headers (when waiter-debug-enabled? {"x-waiter-router-id" router-id
-                                                        "x-waiter-request-date" (utils/date-to-str received utils/formatter-rfc822)})]
+          response-headers (when waiter-debug-enabled?
+                             {"x-waiter-router-id" router-id
+                              "x-waiter-request-date" (utils/date-to-str received utils/formatter-rfc822)})]
       (async/go
         (if waiter-debug-enabled?
-          (log/info "process request to" (get-in request [:headers "host"]) "at path" request)
-          (log/debug "process request to" (get-in request [:headers "host"]) "at path" request))
+          (log/info "process request to" (get-in request [:headers "host"]) "at path" uri)
+          (log/debug "process request to" (get-in request [:headers "host"]) "at path" uri))
         (timers/start-stop-time!
           process-timer
           (try
