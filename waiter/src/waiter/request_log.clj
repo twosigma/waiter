@@ -10,7 +10,6 @@
 ;;
 (ns waiter.request-log
   (:require [clj-time.core :as t]
-            [clj-time.coerce :as coerce]
             [clojure.string :as str]
             [waiter.utils :as utils]))
 
@@ -43,9 +42,7 @@
       service-id (assoc :service-id service-id)
       service-name (assoc :service-name service-name)
       service-version (assoc :service-version service-version)
-      received (assoc :timestamp (-> received
-                                     (coerce/from-long)
-                                     (utils/date-to-str)))
+      received (assoc :timestamp (utils/date-to-str received))
       (and sent-to-backend closed) (assoc :backend-latency (t/in-millis (t/interval sent-to-backend closed)))
       (and received service-discovered) (assoc :discovery-latency (t/in-millis (t/interval received service-discovered)))
       (and received instance-reserved) (assoc :instance-latency (t/in-millis (t/interval received instance-reserved)))
