@@ -133,6 +133,7 @@
           (counters/inc! (metrics/waiter-counter "requests" (name handler))))
         (handler-fn request)))))
 
+;; TODO (shams) handle request log per frame
 (defn websocket-handler-factory
   "Creates the handler for processing websocket requests.
    Websockets are currently used for inter-router metrics syncing."
