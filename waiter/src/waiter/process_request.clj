@@ -648,6 +648,7 @@
       (log/info "Service has been suspended" response-map)
       (track-response-status-metrics request 503)
       (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
+      (rlog/log-request request :status 503 :termination-state :service-suspended)
       (-> {:details (str response-map), :message "Service has been suspended", :status 503}
           (utils/data->error-response request)))))
 
@@ -665,6 +666,7 @@
         (log/info "Max queue length exceeded" response-map)
         (track-response-status-metrics request 503)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
+        (rlog/log-request request :status 503 :termination-state :max-queue-length-exceeded)
         (-> {:details (str response-map), :message "Max queue length exceeded", :status 503}
             (utils/data->error-response request))))))
 
