@@ -276,10 +276,10 @@
             (let [reservation-status-promise (promise)
                   post-process-data (atom {})
                   post-process-async-request-response-fn
-                  (fn [_ _ _ auth-user _ _ location _]
+                  (fn [_ _ _ _ auth-user _ _ location]
                     (reset! post-process-data {:auth-user (:username auth-user), :location location}))]
               (inspect-for-202-async-request-response
-                post-process-async-request-response-fn {} "service-id" "metric-group" {}
+                {} post-process-async-request-response-fn {} "service-id" "metric-group" {}
                 endpoint request {} response (atom {}) reservation-status-promise)
               (deliver reservation-status-promise :not-async)
               (assoc @post-process-data :result @reservation-status-promise)))]

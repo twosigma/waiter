@@ -301,17 +301,19 @@
 
 (defn inspect-for-202-async-request-response
   "Helper function that inspects the response and triggers async-request post processing."
-  [post-process-async-request-response-fn instance-request-properties service-id metric-group instance endpoint request
+  [response post-process-async-request-response-fn instance-request-properties service-id metric-group instance endpoint request
    reason-map {:keys [headers status]} response-headers reservation-status-promise]
   (let [location-header (str (get headers "location"))
         location (async-req/normalize-location-header endpoint location-header)]
-    (when (= status 202)
+    (if (= status 202)
       (if (str/starts-with? location "/")
         (do
           (deliver reservation-status-promise :success-async) ;; backend is processing as an asynchronous request
-          (post-process-async-request-response-fn service-id metric-group instance (handler/make-auth-user-map request)
-                                                  reason-map instance-request-properties location response-headers))
-        (log/info "response status 202, not treating as an async request as location is" location)))))
+          (post-process-async-request-response-fn response service-id metric-group instance (handler/make-auth-user-map request)
+                                                  reason-map instance-request-properties location))
+        (do (log/info "response status 202, not treating as an async request as location is" location)
+            response))
+      response)))
 
 (defn stream-http-response
   "Writes byte data to the resp-chan. If the body is a string, just writes the string.
@@ -416,7 +418,7 @@
           (async/close! request-state-chan))))))
 
 (defn- track-response-status-metrics
-  [{:strs [metric-group service-id]} status]
+  [{:keys [metric-group service-id]} status]
   (when service-id
     (counters/inc! (metrics/service-counter service-id "response-status" (str status))))
   (when metric-group
@@ -450,15 +452,15 @@
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
-    (inspect-for-202-async-request-response
-      post-process-async-request-response-fn instance-request-properties service-id metric-group
-      instance endpoint request reason-map response response-headers reservation-status-promise)
     (let [request-abort-callback (abort-http-request-callback-factory response)]
       (stream-http-response response confirm-live-connection-with-abort request-abort-callback
                             resp-chan instance-request-properties reservation-status-promise
                             request-state-chan metric-group waiter-debug-enabled?
                             (metrics/stream-metric-map service-id) request))
     (-> response
+        (inspect-for-202-async-request-response
+          post-process-async-request-response-fn instance-request-properties service-id metric-group
+          instance endpoint request reason-map response response-headers reservation-status-promise)
         (assoc :body resp-chan)
         (update-in [:headers] (fn update-response-headers [headers]
                                 (-> (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)
@@ -629,7 +631,7 @@
                               (deliver reservation-status-promise :generic-error)
                               ; close request-state-chan to mark the request as finished
                               (async/close! request-state-chan)
-                              (handle-early-termination request process-exception-fn e response-headers :bad-gateway))))))
+                              (handle-early-termination request process-exception-fn e response-headers :proxy-error))))))
                     (catch Exception e
                       (handle-early-termination request process-exception-fn e response-headers :no-instance))))))
             (catch Exception e
