@@ -594,7 +594,7 @@
                               _ (statsd/histo! metric-group "get_instance" get-available-instance-nanos)
                               request (-> request
                                           (utils/mark-request-time :instance-reserved)
-                                          (assoc :instance-id (subs id (inc (count service-id)))
+                                          (assoc :instance-id id
                                                  :instance-host host
                                                  :instance-port port
                                                  :instance-proto protocol))

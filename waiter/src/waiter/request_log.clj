@@ -10,6 +10,7 @@
 ;;
 (ns waiter.request-log
   (:require [clj-time.core :as t]
+            [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [waiter.utils :as utils]))
@@ -17,7 +18,7 @@
 (defn log
   "Log a request context."
   [context]
-  (log/info context))
+  (log/info (json/write-str context :escape-slash false)))
 
 (defn request->context
   "Convert a request into a context suitable for logging."
@@ -30,7 +31,10 @@
              :host host
              :path uri
              :principal authenticated-principal
-             :scheme (utils/request->scheme request)}
+             :scheme (let [scheme (utils/request->scheme request)]
+                       (if (keyword? scheme)
+                         (name scheme)
+                         scheme))}
       request-method (assoc :method (-> request-method name str/upper-case))
       instance-host (assoc :instance-host instance-host)
       instance-id (assoc :instance-id instance-id)
@@ -45,7 +49,6 @@
       (and sent-to-backend closed) (assoc :backend-latency (t/in-millis (t/interval sent-to-backend closed)))
       (and received service-discovered) (assoc :discovery-latency (t/in-millis (t/interval received service-discovered)))
       (and received instance-reserved) (assoc :instance-latency (t/in-millis (t/interval received instance-reserved)))
-      (and received sent-to-backend) (assoc :overhead-latency (t/in-millis (t/interval received sent-to-backend)))
       (and received closed) (assoc :total-latency (t/in-millis (t/interval received closed))))))
 
 (defn log-request
