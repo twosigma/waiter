@@ -25,6 +25,7 @@
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
+            [waiter.request-log :as rlog]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
@@ -296,6 +297,9 @@
         request-close-promise-chan (async/promise-chan)
         {:keys [requests-streaming stream stream-complete-rate stream-request-rate] :as metrics-map}
         (metrics/stream-metric-map service-id)]
+
+    ; log the request immediately; don't wait for streaming to finish
+    (rlog/log-request request)
 
     ;; go-block that handles cleanup by closing all channels related to the websocket request
     (async/go
