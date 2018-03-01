@@ -275,13 +275,12 @@
   "Converts an exception into a ring response."
   [^Exception ex {:keys [] :as request}]
   (let [wrapped-ex (wrap-unhandled-exception ex)
-        {:keys [friendly-error-message message status] :as ex-data} (ex-data wrapped-ex)
-        message (or friendly-error-message message (.getMessage wrapped-ex))
-        {:keys [headers suppress-logging]} (ex-data wrapped-ex)
+        {:keys [friendly-error-message headers message status suppress-logging] :as data} (ex-data wrapped-ex)
+        response-msg (or friendly-error-message message (.getMessage wrapped-ex))
         processed-headers (into {} (for [[k v] headers] [(name k) (str v)]))]
     (when-not suppress-logging
       (log/error wrapped-ex))
-    (-> {:details ex-data, :headers processed-headers, :message message, :status status}
+    (-> {:details data, :headers processed-headers, :message response-msg, :status status}
         (data->error-response request))))
 
 (defmacro log-and-suppress-when-exception-thrown
