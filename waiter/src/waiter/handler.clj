@@ -67,7 +67,7 @@
 
 (defn complete-async-handler
   "Completes execution of an async request by propagating a termination message to the request monitor system."
-  [async-request-terminate-fn src-router-id {:keys [route-params uri] :as request}]
+  [async-request-terminate-fn {:keys [route-params uri] {:keys [src-router-id]} :basic-authentication :as request}]
   (try
     (let [{:keys [request-id service-id]} route-params]
       (when (str/blank? service-id)

@@ -152,7 +152,7 @@
 (defn kill-instance-handler
   "Handler that supports killing instances of a particular service on a specific router."
   [scheduler instance-rpc-chan get-instance-timeout-ms blacklist-config peers-acknowledged-blacklist-requests-fn
-   src-router-id {:keys [route-params]}]
+   {:keys [route-params] {:keys [src-router-id]} :basic-authentication}]
   (let [{:keys [service-id]} route-params
         correlation-id (cid/get-correlation-id)]
     (cid/cinfo correlation-id "received request to kill instance of" service-id "from" src-router-id)

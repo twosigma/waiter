@@ -826,14 +826,18 @@
           response-map {:source :async-complete-handler-fn}
           async-request-terminate-fn (Object.)]
       (with-redefs [handler/complete-async-handler
-                    (fn [in-async-request-terminate-fn src-router-id in-request]
+                    (fn [in-async-request-terminate-fn {{:keys [src-router-id]} :basic-authentication :as in-request}]
                       (is (= async-request-terminate-fn in-async-request-terminate-fn))
                       (is (= "router-id" src-router-id))
                       (is (= request (select-keys in-request (keys request))))
                       response-map)]
         (let [waiter-request?-fn (fn [_] true)
               configuration {:routines {:async-request-terminate-fn async-request-terminate-fn}
-                             :handle-inter-router-request-fn (fn [handler request] (handler "router-id" request))}
+                             :wrap-router-auth-fn (fn [handler]
+                                                    (fn [request]
+                                                      (-> request
+                                                          (assoc :basic-authentication {:src-router-id "router-id"})
+                                                          handler)))}
               async-complete-handler-fn ((:async-complete-handler-fn request-handlers) configuration)
               handlers {:async-complete-handler-fn async-complete-handler-fn}]
           (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request))))))))
