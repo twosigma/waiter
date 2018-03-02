@@ -34,11 +34,12 @@
   (testing "missing-request-id"
     (let [src-router-id "src-router-id"
           service-id "test-service-id"
-          request {:headers {"accept" "application/json"}
+          request {:basic-authentication {:src-router-id src-router-id}
+                   :headers {"accept" "application/json"}
                    :route-params {:service-id service-id}
                    :uri (str "/waiter-async/complete//" service-id)}
           async-request-terminate-fn (fn [_] (throw (Exception. "unexpected call!")))
-          {:keys [body headers status]} (complete-async-handler async-request-terminate-fn src-router-id request)]
+          {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
       (is (= 400 status))
       (is (= {"content-type" "application/json"} headers))
       (is (str/includes? body "No request-id specified"))))
@@ -46,11 +47,12 @@
   (testing "missing-service-id"
     (let [src-router-id "src-router-id"
           request-id "test-req-123456"
-          request {:headers {"accept" "application/json"}
+          request {:basic-authentication {:src-router-id src-router-id}
+                   :headers {"accept" "application/json"}
                    :route-params {:request-id request-id}
                    :uri (str "/waiter-async/complete/" request-id "/")}
           async-request-terminate-fn (fn [_] (throw (Exception. "unexpected call!")))
-          {:keys [body headers status]} (complete-async-handler async-request-terminate-fn src-router-id request)]
+          {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
       (is (= 400 status))
       (is (= {"content-type" "application/json"} headers))
       (is (str/includes? body "No service-id specified"))))
@@ -59,10 +61,11 @@
     (let [src-router-id "src-router-id"
           service-id "test-service-id"
           request-id "test-req-123456"
-          request {:route-params {:request-id request-id, :service-id service-id}
+          request {:basic-authentication {:src-router-id src-router-id}
+                   :route-params {:request-id request-id, :service-id service-id}
                    :uri (str "/waiter-async/complete/" request-id "/" service-id)}
           async-request-terminate-fn (fn [in-request-id] (= request-id in-request-id))
-          {:keys [body headers status]} (complete-async-handler async-request-terminate-fn src-router-id request)]
+          {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
       (is (= 200 status))
       (is (= {"content-type" "application/json"} headers))
       (is (= {:request-id request-id, :success true} (pc/keywordize-map (json/read-str body))))))
@@ -71,10 +74,11 @@
     (let [src-router-id "src-router-id"
           service-id "test-service-id"
           request-id "test-req-123456"
-          request {:route-params {:request-id request-id, :service-id service-id}
+          request {:basic-authentication {:src-router-id src-router-id}
+                   :route-params {:request-id request-id, :service-id service-id}
                    :uri (str "/waiter-async/complete/" request-id "/" service-id)}
           async-request-terminate-fn (fn [_] false)
-          {:keys [body headers status]} (complete-async-handler async-request-terminate-fn src-router-id request)]
+          {:keys [body headers status]} (complete-async-handler async-request-terminate-fn request)]
       (is (= 200 status))
       (is (= {"content-type" "application/json"} headers))
       (is (= {:request-id request-id, :success false} (pc/keywordize-map (json/read-str body)))))))

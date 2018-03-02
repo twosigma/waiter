@@ -906,12 +906,10 @@
   {:app-name-handler-fn (pc/fnk [service-id-handler-fn]
                           service-id-handler-fn)
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
-                                       handle-inter-router-request-fn]
-                                (fn async-complete-handler-fn [request]
-                                  (handle-inter-router-request-fn
-                                    (fn inner-async-complete-handler-fn [src-router-id request]
-                                      (handler/complete-async-handler async-request-terminate-fn src-router-id request))
-                                    request)))
+                                       wrap-router-auth-fn]
+                                (wrap-router-auth-fn
+                                  (fn async-complete-handler-fn [request]
+                                    (handler/complete-async-handler async-request-terminate-fn request))))
    :async-result-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]
                                      handle-secure-request-fn]
                               (fn async-result-handler-fn [request]
@@ -927,12 +925,10 @@
                                     (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))
                                   request)))
    :blacklist-instance-handler-fn (pc/fnk [[:state instance-rpc-chan]
-                                           handle-inter-router-request-fn]
-                                    (fn blacklist-instance-handler-fn [request]
-                                      (handle-inter-router-request-fn
-                                        (fn blacklist-instance-handler [_ request]
-                                          (handler/blacklist-instance instance-rpc-chan request))
-                                        request)))
+                                           wrap-router-auth-fn]
+                                    (wrap-router-auth-fn
+                                      (fn blacklist-instance-handler-fn [request]
+                                        (handler/blacklist-instance instance-rpc-chan request))))
    :blacklisted-instances-list-handler-fn (pc/fnk [[:state instance-rpc-chan]]
                                             (fn blacklisted-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                               (handler/get-blacklisted-instances instance-rpc-chan service-id request)))
@@ -1000,25 +996,6 @@
 
                                              :else
                                              (request-handler request)))))
-   :handle-inter-router-request-fn (pc/fnk [[:state passwords router-id]]
-                                     (fn handle-inter-router-request [on-succesful-auth-handler-fn request]
-                                       (let [src-router-id (promise)
-                                             router-comm-authenticated?
-                                             (fn router-comm-authenticated? [my-router-id passwords source-id secret-word]
-                                               (let [expected-word (utils/generate-secret-word source-id my-router-id passwords)
-                                                     authenticated? (= expected-word secret-word)]
-                                                 (log/info "Authenticating inter-router communication from" source-id)
-                                                 (deliver src-router-id source-id)
-                                                 (when-not authenticated?
-                                                   (log/info "inter-router request authentication failed!"
-                                                             {:actual secret-word, :expected expected-word}))
-                                                 authenticated?))
-                                             basic-auth-handler (basic-authentication/wrap-basic-authentication
-                                                                  (fn [request]
-                                                                    (deliver src-router-id "") ; ensure promise has been delivered
-                                                                    (on-succesful-auth-handler-fn @src-router-id request))
-                                                                  (partial router-comm-authenticated? router-id passwords))]
-                                         (basic-auth-handler request))))
    :handle-secure-request-fn (pc/fnk [[:routines authentication-method-wrapper-fn]
                                       [:state cors-validator]]
                                (fn handle-secure-request-fn [request-handler {:keys [uri] :as request}]
@@ -1030,13 +1007,11 @@
    :kill-instance-handler-fn (pc/fnk [[:routines peers-acknowledged-blacklist-requests-fn]
                                       [:settings [:scaling inter-kill-request-wait-time-ms] blacklist-config]
                                       [:state instance-rpc-chan scheduler]
-                                      handle-inter-router-request-fn]
-                               (fn kill-instance-handler-fn [request]
-                                 (handle-inter-router-request-fn
-                                   (fn inner-kill-instance-handler-fn [src-router-id request]
-                                     (scaling/kill-instance-handler scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config
-                                                                    peers-acknowledged-blacklist-requests-fn src-router-id request))
-                                   request)))
+                                      wrap-router-auth-fn]
+                               (wrap-router-auth-fn
+                                 (fn kill-instance-handler-fn [request]
+                                   (scaling/kill-instance-handler scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config
+                                                                  peers-acknowledged-blacklist-requests-fn request))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
@@ -1110,15 +1085,14 @@
                                                                           make-inter-router-requests-sync-fn service-id request))
                                       request)))
    :service-refresh-handler-fn (pc/fnk [[:curator kv-store]
-                                        handle-inter-router-request-fn]
-                                 (fn service-refresh-handler-fn [request]
-                                   (handle-inter-router-request-fn
-                                     (fn innermost-service-refresh-handler [src-router-id {{:keys [service-id]} :route-params}]
-                                       (log/info service-id "refresh triggered by router" src-router-id)
-                                       (sd/fetch-core kv-store service-id :refresh true)
-                                       (sd/service-id->suspended-state kv-store service-id :refresh true)
-                                       (sd/service-id->overrides kv-store service-id :refresh true))
-                                     request)))
+                                        wrap-router-auth-fn]
+                                 (wrap-router-auth-fn
+                                   (fn service-refresh-handler [{{:keys [service-id]} :route-params
+                                                                 {:keys [src-router-id]} :basic-authentication}]
+                                     (log/info service-id "refresh triggered by router" src-router-id)
+                                     (sd/fetch-core kv-store service-id :refresh true)
+                                     (sd/service-id->suspended-state kv-store service-id :refresh true)
+                                     (sd/service-id->overrides kv-store service-id :refresh true))))
    :service-resume-handler-fn (pc/fnk [[:curator kv-store]
                                        [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                        handle-secure-request-fn]
@@ -1254,12 +1228,10 @@
                                     (token/handle-list-token-owners-request kv-store request))
                                   request)))
    :token-refresh-handler-fn (pc/fnk [[:curator kv-store]
-                                      handle-inter-router-request-fn]
-                               (fn token-refresh-handler-fn [request]
-                                 (handle-inter-router-request-fn
-                                   (fn service-refresh-handler [src-router-id request]
-                                     (token/handle-refresh-token-request kv-store src-router-id request))
-                                   request)))
+                                      wrap-router-auth-fn]
+                               (wrap-router-auth-fn
+                                 (fn token-refresh-handler-fn [request]
+                                   (token/handle-refresh-token-request kv-store request))))
    :token-reindex-handler-fn (pc/fnk [[:curator kv-store]
                                       [:routines list-tokens-fn make-inter-router-requests-sync-fn synchronize-fn]
                                       handle-secure-request-fn]
@@ -1304,8 +1276,21 @@
    :welcome-handler-fn (pc/fnk [handle-secure-request-fn settings]
                          (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]
-                                      handle-inter-router-request-fn]
-                               (fn work-stealing-handler-fn [request]
-                                 (handle-inter-router-request-fn
-                                   (fn [_ request] (handler/work-stealing-handler instance-rpc-chan request))
-                                   request)))})
+                                      wrap-router-auth-fn]
+                               (wrap-router-auth-fn
+                                 (fn [request]
+                                   (handler/work-stealing-handler instance-rpc-chan request))))
+   :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
+                          (fn wrap-router-auth-fn [handler]
+                            (fn [request]
+                              (let [router-comm-authenticated?
+                                    (fn router-comm-authenticated? [source-id secret-word]
+                                      (let [expected-word (utils/generate-secret-word source-id router-id passwords)
+                                            authenticated? (= expected-word secret-word)]
+                                        (log/info "Authenticating inter-router communication from" source-id)
+                                        (if-not authenticated?
+                                          (log/info "inter-router request authentication failed!"
+                                                    {:actual secret-word, :expected expected-word})
+                                          {:src-router-id source-id})))
+                                    basic-auth-handler (basic-authentication/wrap-basic-authentication handler router-comm-authenticated?)]
+                                (basic-auth-handler request)))))})

@@ -460,7 +460,7 @@
 
 (defn handle-refresh-token-request
   "Handle a request to refresh token data directly from the KV store, skipping the cache."
-  [kv-store src-router-id {:keys [body] :as req}]
+  [kv-store {:keys [body] {:keys [src-router-id]} :basic-authentication :as req}]
   (try
     (let [{:strs [token owner index] :as json-data} (json/read-str (slurp body))]
       (log/info "received token refresh request" json-data)
