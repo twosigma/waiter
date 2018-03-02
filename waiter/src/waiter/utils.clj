@@ -530,3 +530,9 @@
                (str (digest/digest "MD5" (str/join "" (persistent! acc))))))]
     (log/debug "got ID" id "for" sorted-parameters)
     id))
+
+(defn wrap-identity
+  "A wrapper middleware that does nothing."
+  [handler]
+  (fn [request]
+    (handler request)))
