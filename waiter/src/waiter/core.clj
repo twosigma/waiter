@@ -1284,13 +1284,13 @@
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]
                               (let [router-comm-authenticated?
-                                  (fn router-comm-authenticated? [source-id secret-word]
-                                    (let [expected-word (utils/generate-secret-word source-id router-id passwords)
-                                          authenticated? (= expected-word secret-word)]
-                                      (log/info "Authenticating inter-router communication from" source-id)
-                                      (if-not authenticated?
-                                        (log/info "inter-router request authentication failed!"
-                                                  {:actual secret-word, :expected expected-word})
-                                        {:src-router-id source-id})))
-                                  basic-auth-handler (basic-authentication/wrap-basic-authentication handler router-comm-authenticated?)]
-                              (basic-auth-handler request)))))})
+                                    (fn router-comm-authenticated? [source-id secret-word]
+                                      (let [expected-word (utils/generate-secret-word source-id router-id passwords)
+                                            authenticated? (= expected-word secret-word)]
+                                        (log/info "Authenticating inter-router communication from" source-id)
+                                        (if-not authenticated?
+                                          (log/info "inter-router request authentication failed!"
+                                                    {:actual secret-word, :expected expected-word})
+                                          {:src-router-id source-id})))
+                                    basic-auth-handler (basic-authentication/wrap-basic-authentication handler router-comm-authenticated?)]
+                                (basic-auth-handler request)))))})

@@ -151,7 +151,7 @@
                       correlation-id
                       (kill-instance-handler
                         scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config peers-acknowledged-blacklist-requests-fn
-                        {:route-params {:service-id test-service-id} :basic-authentication {:src-router-id src-router-id}}))
+                        {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                     {:keys [body headers status]} (async/<!! response-chan)]
                 (is (= 200 status))
                 (is (= {"content-type" "application/json", "x-cid" correlation-id} headers))
@@ -175,7 +175,7 @@
                     correlation-id
                     (kill-instance-handler
                       scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config peers-acknowledged-blacklist-requests-fn
-                      {:route-params {:service-id test-service-id} :basic-authentication {:src-router-id src-router-id}}))
+                      {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
               (is (= {"content-type" "application/json", "x-cid" correlation-id} headers))
@@ -203,7 +203,7 @@
                     correlation-id
                     (kill-instance-handler
                       scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config peers-acknowledged-blacklist-requests-fn
-                      {:route-params {:service-id test-service-id} :basic-authentication {:src-router-id src-router-id}}))
+                      {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
               (is (= {"content-type" "application/json", "x-cid" correlation-id} headers))
