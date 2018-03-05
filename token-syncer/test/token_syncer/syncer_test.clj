@@ -525,4 +525,4 @@
                         :tokens {:num-previously-synced 1
                                  :num-processed 3
                                  :total 4}}}
-             (sync-tokens waiter-api cluster-urls))))))
+             (sync-tokens waiter-api cluster-urls (inc (count token->latest-description))))))))

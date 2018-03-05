@@ -56,9 +56,10 @@
   (testing "token sync hard-delete"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit nil
           token-name (str "test-token-hard-delete-" (UUID/randomUUID))]
       (try
-         ;; ARRANGE
+        ;; ARRANGE
         (let [last-update-time-ms (- (System/currentTimeMillis) 10000)
               token-metadata {"deleted" true, "last-update-time" last-update-time-ms, "owner" "test-user", "root" "src1"}
               token-description (merge basic-description token-metadata)]
@@ -70,7 +71,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
 
               ;; ASSERT
               (let [waiter-sync-result (constantly
@@ -99,9 +100,10 @@
   (testing "token sync soft-delete"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit nil
           token-name (str "test-token-soft-delete-" (UUID/randomUUID))]
       (try
-         ;; ARRANGE
+        ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
               token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
               token-description (merge basic-description token-metadata)]
@@ -114,10 +116,10 @@
 
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
-             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
 
-               ;; ASSERT
+              ;; ASSERT
               (let [waiter-sync-result (constantly
                                          {:code :success/soft-delete
                                           :details {:etag token-etag
@@ -148,9 +150,10 @@
   (testing "token exists on single cluster"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit nil
           token-name (str "test-token-token-on-single-cluster-" (UUID/randomUUID))]
       (try
-         ;; ARRANGE
+        ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
               token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
               token-description (merge basic-description token-metadata)]
@@ -159,10 +162,10 @@
 
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
-             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
 
-               ;; ASSERT
+              ;; ASSERT
               (let [waiter-sync-result (constantly
                                          {:code :success/sync-update
                                           :details {:etag token-etag
@@ -193,9 +196,10 @@
   (testing "token already synced"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit nil
           token-name (str "test-token-already-synced-" (UUID/randomUUID))]
       (try
-         ;; ARRANGE
+        ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
               token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
               token-description (merge basic-description token-metadata)]
@@ -205,10 +209,10 @@
 
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
-             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
 
-               ;; ASSERT
+              ;; ASSERT
               (let [expected-result {:details {}
                                      :summary {:sync {:failed #{}
                                                       :previously-synced #{token-name}
@@ -232,9 +236,10 @@
   (testing "token sync update"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit nil
           token-name (str "test-token-update-" (UUID/randomUUID))]
       (try
-         ;; ARRANGE
+        ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
               token-metadata {"last-update-time" current-time-ms, "owner" "test-user", "root" "src1"}
               token-description (merge basic-description token-metadata)]
@@ -247,10 +252,10 @@
 
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
-             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
 
-               ;; ASSERT
+              ;; ASSERT
               (let [waiter-sync-result (constantly
                                          {:code :success/sync-update
                                           :details {:etag token-etag
@@ -281,9 +286,10 @@
   (testing "token sync update with different owners but same root"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit nil
           token-name (str "test-token-different-owners-but-same-root-" (UUID/randomUUID))]
       (try
-         ;; ARRANGE
+        ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
               last-update-time-ms (- current-time-ms 10000)]
 
@@ -300,10 +306,10 @@
 
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
-             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
 
-               ;; ASSERT
+              ;; ASSERT
               (let [latest-description (assoc basic-description
                                          "cpus" 1
                                          "last-update-time" last-update-time-ms
@@ -339,9 +345,10 @@
   (testing "token sync update with different owners and different roots"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit nil
           token-name (str "test-token-different-roots-" (UUID/randomUUID))]
       (try
-         ;; ARRANGE
+        ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
               last-update-time-ms (- current-time-ms 10000)]
 
@@ -358,10 +365,10 @@
 
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
-             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls)]
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
 
-               ;; ASSERT
+              ;; ASSERT
               (let [latest-description (assoc basic-description
                                          "cpus" 1
                                          "last-update-time" last-update-time-ms

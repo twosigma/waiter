@@ -44,6 +44,9 @@
          :default 30000
          :parse-fn #(Integer/parseInt %)
          :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]
+        ["-l" "--limit limit" "The maximum number of tokens to attempt to sync"
+         :parse-fn #(Integer/parseInt %)
+         :validate [#(< 0 % 10001) "Must be between 0 and 10000"]]
         ["-t" "--connection-timeout-ms timeout" "The connection timeout in milliseconds"
          :default 1000
          :parse-fn #(Integer/parseInt %)
@@ -82,7 +85,7 @@
   (setup-exception-handler)
   (log/info "command-line arguments:" (vec args))
   (let [{:keys [arguments errors options summary]} (parse-cli-options args)
-        {:keys [help]} options
+        {:keys [help limit]} options
         cluster-urls arguments]
     (try
       (cond
@@ -105,7 +108,7 @@
             (log/info "executing token syncer in dry-run mode"))
           (let [waiter-api (init-waiter-api options)
                 cluster-urls-set (set cluster-urls)
-                sync-result (syncer/sync-tokens waiter-api cluster-urls-set)
+                sync-result (syncer/sync-tokens waiter-api cluster-urls-set limit)
                 exit-code (-> (get-in sync-result [:summary :sync :error] 0)
                               zero?
                               (if 0 1))]

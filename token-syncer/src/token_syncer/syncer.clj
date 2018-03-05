@@ -211,13 +211,18 @@
 (defn sync-tokens
   "Syncs tokens across provided clusters based on cluster-urls and returns the result of token syncing.
    Throws an exception if there was an error during token syncing."
-  [{:keys [load-token-list] :as waiter-api} cluster-urls]
+  [{:keys [load-token-list] :as waiter-api} cluster-urls limit]
   (try
     (log/info "syncing tokens on clusters:" cluster-urls)
     (let [cluster-urls-set (set cluster-urls)
           {:keys [all-tokens pending-tokens synced-tokens]} (load-and-classify-tokens load-token-list cluster-urls-set)
-          token-sync-result (perform-token-syncs waiter-api cluster-urls-set pending-tokens)]
-      (log/info "completed syncing tokens")
+          use-limited-tokens? (and (integer? limit) (pos? limit))
+          selected-tokens (cond->> (sort pending-tokens)
+                                   use-limited-tokens? (take limit))
+          token-sync-result (perform-token-syncs waiter-api cluster-urls-set selected-tokens)]
+      (log/info "completed syncing tokens"
+                (str (when use-limited-tokens?
+                       (str "limited to " (min limit (count pending-tokens))))))
       {:details token-sync-result
        :summary (-> (summarize-sync-result token-sync-result synced-tokens)
                     (assoc-in [:tokens :total] (count all-tokens)))})
