@@ -139,8 +139,8 @@
    The function assumes location begins with a slash.
    This method wires up the completion and status check callbacks for the monitoring system.
    It also modifies the status check endpoint in the response header."
-  [router-id async-request-store-atom make-http-request-fn instance-rpc-chan service-id metric-group {:keys [host port] :as instance}
-   {:keys [request-id] :as reason-map} request-properties location response-headers]
+  [router-id async-request-store-atom make-http-request-fn instance-rpc-chan response service-id metric-group {:keys [host port] :as instance}
+   {:keys [request-id] :as reason-map} request-properties location]
   (let [correlation-id (cid/get-correlation-id)
         status-endpoint (scheduler/end-point-url instance location)
         _ (log/info "status endpoint for async request is" status-endpoint)
@@ -172,4 +172,4 @@
     (let [param-map {:host host, :location location, :port port, :request-id request-id, :router-id router-id, :service-id service-id}
           status-location (route-params->uri "/waiter-async/status/" param-map)]
       (log/info "updating status location to" status-location "from" location)
-      (swap! response-headers assoc "location" status-location))))
+      (assoc-in response [:headers "location"] status-location))))

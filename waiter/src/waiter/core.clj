@@ -120,35 +120,37 @@
   "Creates the handler for processing http requests."
   [waiter-request?-fn {:keys [cors-preflight-handler-fn process-request-fn] :as handlers}]
   (fn http-handler [{:keys [uri] :as request}]
-    (cond
-      (cors/preflight-request? request)
-      (do
-        (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
-        (cors-preflight-handler-fn request))
+    (let [request (utils/mark-request-time request :received)]
+      (cond
+        (cors/preflight-request? request)
+        (do
+          (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
+          (cors-preflight-handler-fn request))
 
-      (not (waiter-request?-fn request))
-      (do
-        (counters/inc! (metrics/waiter-counter "requests" "service-request"))
-        (process-request-fn request))
+        (not (waiter-request?-fn request))
+        (do
+          (counters/inc! (metrics/waiter-counter "requests" "service-request"))
+          (process-request-fn request))
 
-      :else
-      (let [{:keys [handler route-params]} (routes-mapper request)
-            request (assoc request :route-params (or route-params {}))
-            handler-fn (get handlers handler process-request-fn)]
-        (when (and (not= handler :process-request-fn) (= handler-fn process-request-fn))
-          (log/warn "using default handler as no mapping found for" handler "at uri" uri))
-        (when handler
-          (counters/inc! (metrics/waiter-counter "requests" (name handler))))
-        (handler-fn request)))))
+        :else
+        (let [{:keys [handler route-params]} (routes-mapper request)
+              request (assoc request :route-params (or route-params {}))
+              handler-fn (get handlers handler process-request-fn)]
+          (when (and (not= handler :process-request-fn) (= handler-fn process-request-fn))
+            (log/warn "using default handler as no mapping found for" handler "at uri" uri))
+          (when handler
+            (counters/inc! (metrics/waiter-counter "requests" (name handler))))
+          (handler-fn request))))))
 
 (defn websocket-handler-factory
   "Creates the handler for processing websocket requests.
    Websockets are currently used for inter-router metrics syncing."
   [{:keys [default-websocket-handler-fn router-metrics-handler-fn]}]
   (fn websocket-handler [{:keys [uri] :as request}]
-    (case uri
-      "/waiter-router-metrics" (router-metrics-handler-fn request)
-      (default-websocket-handler-fn request))))
+    (let [request (utils/mark-request-time request :received)]
+      (case uri
+        "/waiter-router-metrics" (router-metrics-handler-fn request)
+        (default-websocket-handler-fn request)))))
 
 (defn correlation-id-middleware
   "Attaches an x-cid header to the request and response if one is not already provided."
@@ -663,10 +665,10 @@
    :post-process-async-request-response-fn (pc/fnk [[:state async-request-store-atom instance-rpc-chan router-id]
                                                     make-http-request-fn]
                                              (fn post-process-async-request-response-wrapper
-                                               [service-id metric-group instance _ reason-map request-properties location response-headers]
+                                               [response service-id metric-group instance _ reason-map request-properties location]
                                                (async-req/post-process-async-request-response
-                                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan service-id metric-group
-                                                 instance reason-map request-properties location response-headers)))
+                                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan response service-id metric-group
+                                                 instance reason-map request-properties location)))
    :prepend-waiter-url (pc/fnk [[:settings port hostname]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                            (fn [endpoint-url]

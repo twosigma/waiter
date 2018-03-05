@@ -243,7 +243,7 @@
               (recur (+ bytes-streamed bytes-to-stream)))))
         (stream-http-response response confirm-live-connection request-abort-callback resp-chan instance-request-properties
                               reservation-status-promise request-state-chan metric-group
-                              waiter-debug-enabled? (metrics/stream-metric-map service-id))
+                              waiter-debug-enabled? (metrics/stream-metric-map service-id) {})
         (loop []
           (let [message (async/<!! resp-chan)]
             (when message
@@ -276,10 +276,10 @@
             (let [reservation-status-promise (promise)
                   post-process-data (atom {})
                   post-process-async-request-response-fn
-                  (fn [_ _ _ auth-user _ _ location _]
+                  (fn [_ _ _ _ auth-user _ _ location]
                     (reset! post-process-data {:auth-user (:username auth-user), :location location}))]
               (inspect-for-202-async-request-response
-                post-process-async-request-response-fn {} "service-id" "metric-group" {}
+                {} post-process-async-request-response-fn {} "service-id" "metric-group" {}
                 endpoint request {} response (atom {}) reservation-status-promise)
               (deliver reservation-status-promise :not-async)
               (assoc @post-process-data :result @reservation-status-promise)))]
@@ -621,7 +621,7 @@
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-in-http-request request-abort-callback-factory
                                local-usage-agent request)
-        {:keys [body headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
+        {:keys [body headers status] :as response} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
     (is (= 404 status))
     (is (= "text/plain" (get headers "content-type")))
     (is (str/includes? (str body) "Error message for user"))))

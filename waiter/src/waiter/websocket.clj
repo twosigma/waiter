@@ -25,6 +25,7 @@
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
+            [waiter.request-log :as rlog]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
@@ -297,6 +298,9 @@
         {:keys [requests-streaming stream stream-complete-rate stream-request-rate] :as metrics-map}
         (metrics/stream-metric-map service-id)]
 
+    ; log the request immediately; don't wait for streaming to finish
+    (rlog/log-request request)
+
     ;; go-block that handles cleanup by closing all channels related to the websocket request
     (async/go
       ;; approximate streaming rate by when the connection is closed
@@ -358,9 +362,9 @@
 
 (defn process-exception-in-request
   "Processes exceptions thrown while processing a websocket request."
-  [track-process-error-metrics-fn {:keys [out] :as request} descriptor exception]
+  [track-process-error-metrics-fn {:keys [out] :as request} exception]
   (log/error exception "error in processing websocket request")
-  (track-process-error-metrics-fn descriptor)
+  (track-process-error-metrics-fn request)
   (let [exception-response (utils/exception->response exception request)]
     (async/go
       (async/>! out exception-response)

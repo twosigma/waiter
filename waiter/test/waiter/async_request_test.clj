@@ -286,8 +286,8 @@
         request-id "request-2394613984619"
         reason-map {:request-id request-id}
         request-properties {:async-check-interval-ms 100, :async-request-timeout-ms 200}
+        response {}
         location (str "/location/" request-id)
-        response-headers (atom {})
         make-http-request-fn (fn [in-instance in-request end-route metric-group]
                                (is (= instance in-instance))
                                (is (= {:body nil, :headers {}, :request-method :get} in-request))
@@ -306,12 +306,13 @@
                     (is exit-chan)
                     (make-get-request-fn)
                     (reset! complete-async-request-atom complete-async-request-fn))]
-      (post-process-async-request-response
-        router-id async-request-store-atom make-http-request-fn instance-rpc-chan service-id metric-group instance
-        reason-map request-properties location response-headers)
+      (let [{:keys [headers]} (post-process-async-request-response
+                                router-id async-request-store-atom make-http-request-fn
+                                instance-rpc-chan response service-id metric-group instance
+                                reason-map request-properties location)]
+        (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location)
+               (get headers "location"))))
       (is (get @async-request-store-atom request-id))
-      (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location)
-             (get @response-headers "location")))
       (let [complete-async-request-fn @complete-async-request-atom]
         (is complete-async-request-fn)
         (complete-async-request-fn :success)
