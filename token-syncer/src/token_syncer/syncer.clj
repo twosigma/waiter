@@ -162,12 +162,12 @@
                            (filter
                              (fn [token]
                                (let [cluster-data (map
-                                                     (fn [cluster-url]
-                                                       (-> cluster-url->token->index-entries
-                                                           (get cluster-url)
-                                                           (get token)
-                                                           (select-keys ["deleted" "etag"])))
-                                                     cluster-urls-set)
+                                                    (fn [cluster-url]
+                                                      (-> cluster-url->token->index-entries
+                                                          (get cluster-url)
+                                                          (get token)
+                                                          (select-keys ["deleted" "etag"])))
+                                                    cluster-urls-set)
                                      cluster-deleted (map #(get % "deleted") cluster-data)
                                      cluster-etags (map #(get % "etag") cluster-data)
                                      already-synced? (and (every? false? cluster-deleted)
