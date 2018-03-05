@@ -990,16 +990,6 @@
 
                                              :else
                                              (request-handler request)))))
-   :wrap-secure-request-fn (pc/fnk [[:routines authentication-method-wrapper-fn]
-                                    [:state cors-validator]]
-                             (fn wrap-secure-request-fn
-                               [request-handler]
-                               (let [handler (-> request-handler
-                                                 (cors/handler cors-validator)
-                                                 authentication-method-wrapper-fn)]
-                                 (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
-                                   (log/debug "secure request received at" uri)
-                                   (handler request)))))
    :kill-instance-handler-fn (pc/fnk [[:routines peers-acknowledged-blacklist-requests-fn]
                                       [:settings [:scaling inter-kill-request-wait-time-ms] blacklist-config]
                                       [:state instance-rpc-chan scheduler]
@@ -1241,4 +1231,14 @@
                                                     {:actual secret-word, :expected expected-word})
                                           {:src-router-id source-id})))
                                     basic-auth-handler (basic-authentication/wrap-basic-authentication handler router-comm-authenticated?)]
-                                (basic-auth-handler request)))))})
+                                (basic-auth-handler request)))))
+   :wrap-secure-request-fn (pc/fnk [[:routines authentication-method-wrapper-fn]
+                                    [:state cors-validator]]
+                             (fn wrap-secure-request-fn
+                               [request-handler]
+                               (let [handler (-> request-handler
+                                                 (cors/handler cors-validator)
+                                                 authentication-method-wrapper-fn)]
+                                 (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
+                                   (log/debug "secure request received at" uri)
+                                   (handler request)))))})
