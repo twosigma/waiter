@@ -911,19 +911,15 @@
                                   (fn async-complete-handler-fn [request]
                                     (handler/complete-async-handler async-request-terminate-fn request))))
    :async-result-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]
-                                     handle-secure-request-fn]
-                              (fn async-result-handler-fn [request]
-                                (handle-secure-request-fn
-                                  (fn inner-async-result-handler-fn [request]
-                                    (handler/async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))
-                                  request)))
+                                     wrap-secure-request-fn]
+                              (wrap-secure-request-fn
+                                (fn async-result-handler-fn [request]
+                                  (handler/async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))))
    :async-status-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]
-                                     handle-secure-request-fn]
-                              (fn async-status-handler-fn [request]
-                                (handle-secure-request-fn
-                                  (fn inner-async-status-handler-fn [request]
-                                    (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))
-                                  request)))
+                                     wrap-secure-request-fn]
+                              (wrap-secure-request-fn
+                                (fn async-status-handler-fn [request]
+                                  (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))))
    :blacklist-instance-handler-fn (pc/fnk [[:state instance-rpc-chan]
                                            wrap-router-auth-fn]
                                     (wrap-router-auth-fn
@@ -956,12 +952,10 @@
                                                              determine-priority-fn ws/process-response! ws/process-exception-in-request
                                                              ws/abort-request-callback-factory local-usage-agent request))]
                                          (ws/request-handler password process-request-fn request)))))
-   :display-settings-handler-fn (pc/fnk [handle-secure-request-fn settings]
-                                  (fn display-settings-handler-fn [request]
-                                    (handle-secure-request-fn
-                                      (fn inner-display-settings-handler-fn [_]
-                                        (settings/display-settings settings))
-                                      request)))
+   :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
+                                  (wrap-secure-request-fn
+                                    (fn display-settings-handler-fn [_]
+                                      (settings/display-settings settings))))
    :favicon-handler-fn (pc/fnk []
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
@@ -996,14 +990,6 @@
 
                                              :else
                                              (request-handler request)))))
-   :handle-secure-request-fn (pc/fnk [[:routines authentication-method-wrapper-fn]
-                                      [:state cors-validator]]
-                               (fn handle-secure-request-fn [request-handler {:keys [uri] :as request}]
-                                 (log/debug "secure request received at" uri)
-                                 (let [handler (-> request-handler
-                                                   (cors/handler cors-validator)
-                                                   authentication-method-wrapper-fn)]
-                                   (handler request))))
    :kill-instance-handler-fn (pc/fnk [[:routines peers-acknowledged-blacklist-requests-fn]
                                       [:settings [:scaling inter-kill-request-wait-time-ms] blacklist-config]
                                       [:state instance-rpc-chan scheduler]
@@ -1020,7 +1006,7 @@
                                  prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
                                 [:state http-client instance-rpc-chan local-usage-agent router-id]
-                                handle-authentication-wrapper-fn handle-secure-request-fn]
+                                handle-authentication-wrapper-fn wrap-secure-request-fn]
                          (let [process-handlers [pr/handle-suspended-service pr/handle-too-many-requests]
                                make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
                                                  (pr/make-request http-client make-basic-auth-fn service-id->password-fn
@@ -1028,14 +1014,12 @@
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
                            (fn process-request [request]
                              (handle-authentication-wrapper-fn
-                               (fn handle-auth-process-request [request]
-                                 (handle-secure-request-fn
-                                   (fn inner-process-request [request]
-                                     (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
-                                                 instance-request-properties process-handlers prepend-waiter-url
-                                                 determine-priority-fn process-response-fn pr/process-exception-in-http-request
-                                                 pr/abort-http-request-callback-factory local-usage-agent request))
-                                   request))
+                               (wrap-secure-request-fn
+                                 (fn inner-process-request [request]
+                                   (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
+                                               instance-request-properties process-handlers prepend-waiter-url
+                                               determine-priority-fn process-response-fn pr/process-exception-in-http-request
+                                               pr/abort-http-request-callback-factory local-usage-agent request)))
                                request))))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
@@ -1047,43 +1031,35 @@
    :service-handler-fn (pc/fnk [[:curator kv-store]
                                 [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn prepend-waiter-url]
                                 [:state router-id scheduler]
-                                handle-secure-request-fn]
-                         (fn service-handler-fn [request]
-                           (handle-secure-request-fn
-                             (fn inner-service-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                               (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
-                                                        prepend-waiter-url make-inter-router-requests-sync-fn request))
-                             request)))
+                                wrap-secure-request-fn]
+                         (wrap-secure-request-fn
+                           (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
+                             (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
+                                                      prepend-waiter-url make-inter-router-requests-sync-fn request))))
    :service-id-handler-fn (pc/fnk [[:curator kv-store]
                                    [:routines request->descriptor-fn store-service-description-fn]
-                                   handle-secure-request-fn]
-                            (fn service-name-handler-fn [request]
-                              (handle-secure-request-fn
-                                (fn inner-service-name-handler-fn [request]
-                                  (handler/service-name-handler request request->descriptor-fn kv-store store-service-description-fn))
-                                request)))
+                                   wrap-secure-request-fn]
+                            (wrap-secure-request-fn
+                              (fn service-name-handler-fn [request]
+                                (handler/service-name-handler request request->descriptor-fn kv-store store-service-description-fn))))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers service-id->service-description-fn]
                                      [:state entitlement-manager]
-                                     handle-secure-request-fn]
+                                     wrap-secure-request-fn]
                               (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
                                     {:keys [service-id->metrics-fn]} router-metrics-helpers]
-                                (fn service-list-handler-fn [request]
-                                  (handle-secure-request-fn
-                                    (fn inner-service-list-handler-fn [request]
-                                      (handler/list-services-handler entitlement-manager state-chan prepend-waiter-url
-                                                                     service-id->service-description-fn service-id->metrics-fn
-                                                                     request))
-                                    request))))
+                                (wrap-secure-request-fn
+                                  (fn service-list-handler-fn [request]
+                                    (handler/list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                                                   service-id->service-description-fn service-id->metrics-fn
+                                                                   request)))))
    :service-override-handler-fn (pc/fnk [[:curator kv-store]
                                          [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
-                                         handle-secure-request-fn]
-                                  (fn service-override-handler-fn [request]
-                                    (handle-secure-request-fn
-                                      (fn inner-service-override-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                                        (handler/override-service-handler kv-store allowed-to-manage-service?-fn
-                                                                          make-inter-router-requests-sync-fn service-id request))
-                                      request)))
+                                         wrap-secure-request-fn]
+                                  (wrap-secure-request-fn
+                                    (fn service-override-handler-fn [{:as request {:keys [service-id]} :route-params}]
+                                      (handler/override-service-handler kv-store allowed-to-manage-service?-fn
+                                                                        make-inter-router-requests-sync-fn service-id request))))
    :service-refresh-handler-fn (pc/fnk [[:curator kv-store]
                                         wrap-router-auth-fn]
                                  (wrap-router-auth-fn
@@ -1095,138 +1071,108 @@
                                      (sd/service-id->overrides kv-store service-id :refresh true))))
    :service-resume-handler-fn (pc/fnk [[:curator kv-store]
                                        [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
-                                       handle-secure-request-fn]
-                                (fn service-resume-handler-fn [request]
-                                  (handle-secure-request-fn
-                                    (fn inner-service-resume-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                                      (handler/suspend-or-resume-service-handler
-                                        kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :resume request))
-                                    request)))
+                                       wrap-secure-request-fn]
+                                (wrap-secure-request-fn
+                                  (fn service-resume-handler-fn [{:as request {:keys [service-id]} :route-params}]
+                                    (handler/suspend-or-resume-service-handler
+                                      kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :resume request))))
    :service-suspend-handler-fn (pc/fnk [[:curator kv-store]
                                         [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
-                                        handle-secure-request-fn]
-                                 (fn service-suspend-handler-fn [request]
-                                   (handle-secure-request-fn
-                                     (fn inner-service-suspend-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                                       (handler/suspend-or-resume-service-handler
-                                         kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :suspend request))
-                                     request)))
+                                        wrap-secure-request-fn]
+                                 (wrap-secure-request-fn
+                                   (fn service-suspend-handler-fn [{:as request {:keys [service-id]} :route-params}]
+                                     (handler/suspend-or-resume-service-handler
+                                       kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :suspend request))))
    :service-view-logs-handler-fn (pc/fnk [[:routines prepend-waiter-url]
                                           [:state scheduler]
-                                          handle-secure-request-fn]
-                                   (fn service-view-logs-handler-fn [request]
-                                     (handle-secure-request-fn
-                                       (fn inner-service-view-logs-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                                         (handler/service-view-logs-handler scheduler service-id prepend-waiter-url request))
-                                       request)))
+                                          wrap-secure-request-fn]
+                                   (wrap-secure-request-fn
+                                     (fn service-view-logs-handler-fn [{:as request {:keys [service-id]} :route-params}]
+                                       (handler/service-view-logs-handler scheduler service-id prepend-waiter-url request))))
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
    :state-all-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
                                   [:daemons router-state-maintainer scheduler-maintainer]
                                   [:routines router-metrics-helpers]
                                   [:state local-usage-agent]
-                                  handle-secure-request-fn]
+                                  wrap-secure-request-fn]
                            (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
                                  scheduler-query-chan (:query-chan scheduler-maintainer)
                                  router-metrics-state-fn (:router-metrics-state-fn router-metrics-helpers)]
-                             (fn state-all-handler-fn [request]
-                               (handle-secure-request-fn
-                                 (fn inner-state-all-handler-fn [request]
-                                   (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn
-                                                             kv-store leader?-fn local-usage-agent request))
-                                 request))))
+                             (wrap-secure-request-fn
+                               (fn state-all-handler-fn [request]
+                                 (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn
+                                                           kv-store leader?-fn local-usage-agent request)))))
    :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
                                        [:state router-id]
-                                       handle-secure-request-fn]
-                                (fn kv-store-state-handler-fn [request]
-                                  (handle-secure-request-fn
-                                    (fn inner-kv-store-state-handler-fn [request]
-                                      (handler/get-kv-store-state router-id kv-store request))
-                                    request)))
+                                       wrap-secure-request-fn]
+                                (wrap-secure-request-fn
+                                  (fn kv-store-state-handler-fn [request]
+                                    (handler/get-kv-store-state router-id kv-store request))))
    :state-leader-handler-fn (pc/fnk [[:curator leader?-fn leader-id-fn]
                                      [:state router-id]
-                                     handle-secure-request-fn]
-                              (fn leader-state-handler-fn [request]
-                                (handle-secure-request-fn
-                                  (fn inner-leader-state-handler-fn [request]
-                                    (handler/get-leader-state router-id leader?-fn leader-id-fn request))
-                                  request)))
+                                     wrap-secure-request-fn]
+                              (wrap-secure-request-fn
+                                (fn leader-state-handler-fn [request]
+                                  (handler/get-leader-state router-id leader?-fn leader-id-fn request))))
    :state-local-usage-handler-fn (pc/fnk [[:state local-usage-agent router-id]
-                                            handle-secure-request-fn]
+                                            wrap-secure-request-fn]
+                                   (wrap-secure-request-fn
                                      (fn local-usage-state-handler-fn [request]
-                                       (handle-secure-request-fn
-                                         (fn inner-local-usage-state-handler-fn [request]
-                                           (handler/get-local-usage-state router-id local-usage-agent request))
-                                         request)))
+                                       (handler/get-local-usage-state router-id local-usage-agent request))))
    :state-maintainer-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                          [:state router-id]
-                                         handle-secure-request-fn]
+                                         wrap-secure-request-fn]
                                   (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
-                                    (fn maintainer-state-handler-fn [request]
-                                      (handle-secure-request-fn
-                                        (fn inner-maintainer-state-handler-fn [request]
-                                          (handler/get-maintainer-state router-id state-chan request))
-                                        request))))
+                                    (wrap-secure-request-fn
+                                      (fn maintainer-state-handler-fn [request]
+                                        (handler/get-maintainer-state router-id state-chan request)))))
    :state-router-metrics-handler-fn (pc/fnk [[:routines router-metrics-helpers]
                                              [:state router-id]
-                                             handle-secure-request-fn]
+                                             wrap-secure-request-fn]
                                       (let [router-metrics-state-fn (:router-metrics-state-fn router-metrics-helpers)]
-                                        (fn router-metrics-state-handler-fn [request]
-                                          (handle-secure-request-fn
-                                            (fn inner-router-metrics-state-handler-fn [request]
-                                              (handler/get-router-metrics-state router-id router-metrics-state-fn request))
-                                            request))))
+                                        (wrap-secure-request-fn
+                                          (fn r-router-metrics-state-handler-fn [request]
+                                            (handler/get-router-metrics-state router-id router-metrics-state-fn request)))))
    :state-scheduler-handler-fn (pc/fnk [[:daemons scheduler-maintainer]
                                         [:state router-id]
-                                        handle-secure-request-fn]
+                                        wrap-secure-request-fn]
                                  (let [scheduler-query-chan (:query-chan scheduler-maintainer)]
-                                   (fn scheduler-state-handler-fn [request]
-                                     (handle-secure-request-fn
-                                       (fn inner-scheduler-state-handler-fn [request]
-                                         (handler/get-scheduler-state router-id scheduler-query-chan request))
-                                       request))))
+                                   (wrap-secure-request-fn
+                                     (fn scheduler-state-handler-fn [request]
+                                       (handler/get-scheduler-state router-id scheduler-query-chan request)))))
    :state-service-handler-fn (pc/fnk [[:daemons state-query-chans]
                                       [:state instance-rpc-chan local-usage-agent router-id]
-                                      handle-secure-request-fn]
-                               (fn service-state-handler-fn [request]
-                                 (handle-secure-request-fn
-                                   (fn inner-service-state-handler-fn [{{:keys [service-id]} :route-params}]
-                                     (handler/get-service-state router-id instance-rpc-chan local-usage-agent
-                                                                service-id state-query-chans request))
-                                   request)))
+                                      wrap-secure-request-fn]
+                               (wrap-secure-request-fn
+                                 (fn service-state-handler-fn [{{:keys [service-id]} :route-params :as request}]
+                                   (handler/get-service-state router-id instance-rpc-chan local-usage-agent
+                                                              service-id state-query-chans request))))
    :state-statsd-handler-fn (pc/fnk [[:state router-id]
-                                     handle-secure-request-fn]
-                              (fn statsd-state-handler-fn [request]
-                                (handle-secure-request-fn
-                                  (fn inner-settings-handler-fn [request]
-                                    (handler/get-statsd-state router-id request))
-                                  request)))
+                                     wrap-secure-request-fn]
+                              (wrap-secure-request-fn
+                                (fn state-statsd-handler-fn [request]
+                                  (handler/get-statsd-state router-id request))))
    :status-handler-fn (pc/fnk []
                         (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
    :token-handler-fn (pc/fnk [[:curator kv-store]
                               [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
                               [:state clock entitlement-manager token-root waiter-hostnames]
-                              handle-secure-request-fn]
-                       (fn token-handler-fn [request]
-                         (handle-secure-request-fn
-                           (fn inner-token-handler-fn [request]
-                             (token/handle-token-request
-                               clock synchronize-fn kv-store token-root waiter-hostnames entitlement-manager
-                               make-inter-router-requests-sync-fn validate-service-description-fn request))
-                           request)))
+                              wrap-secure-request-fn]
+                       (wrap-secure-request-fn
+                         (fn token-handler-fn [request]
+                           (token/handle-token-request
+                             clock synchronize-fn kv-store token-root waiter-hostnames entitlement-manager
+                             make-inter-router-requests-sync-fn validate-service-description-fn request))))
    :token-list-handler-fn (pc/fnk [[:curator kv-store]
-                                   handle-secure-request-fn]
-                            (fn token-list-handler-fn [request]
-                              (handle-secure-request-fn
-                                (fn inner-token-handler-fn [request]
-                                  (token/handle-list-tokens-request kv-store request))
-                                request)))
+                                   wrap-secure-request-fn]
+                            (wrap-secure-request-fn
+                              (fn token-handler-fn [request]
+                                (token/handle-list-tokens-request kv-store request))))
    :token-owners-handler-fn (pc/fnk [[:curator kv-store]
-                                     handle-secure-request-fn]
-                              (fn token-owners-handler-fn [request]
-                                (handle-secure-request-fn
-                                  (fn inner-token-owners-handler-fn [request]
-                                    (token/handle-list-token-owners-request kv-store request))
-                                  request)))
+                                     wrap-secure-request-fn]
+                              (wrap-secure-request-fn
+                                (fn token-owners-handler-fn [request]
+                                  (token/handle-list-token-owners-request kv-store request))))
    :token-refresh-handler-fn (pc/fnk [[:curator kv-store]
                                       wrap-router-auth-fn]
                                (wrap-router-auth-fn
@@ -1234,46 +1180,38 @@
                                    (token/handle-refresh-token-request kv-store request))))
    :token-reindex-handler-fn (pc/fnk [[:curator kv-store]
                                       [:routines list-tokens-fn make-inter-router-requests-sync-fn synchronize-fn]
-                                      handle-secure-request-fn]
-                               (fn token-reindex-handler-fn [request]
-                                 (handle-secure-request-fn
-                                   (fn inner-token-handler-fn [request]
-                                     (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
-                                                                          kv-store list-tokens-fn request))
-                                   request)))
-   :waiter-auth-handler-fn (pc/fnk [handle-secure-request-fn]
-                             (fn waiter-auth-handler-fn [request]
-                               (handle-secure-request-fn
-                                 (fn inner-waiter-auth-handler-fn [request]
-                                   {:body (str (:authorization/user request)), :status 200})
-                                 request)))
+                                      wrap-secure-request-fn]
+                               (wrap-secure-request-fn
+                                 (fn token-handler-fn [request]
+                                   (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
+                                                                        kv-store list-tokens-fn request))))
+   :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
+                             (wrap-secure-request-fn
+                               (fn waiter-auth-handler-fn [request]
+                                 {:body (str (:authorization/user request)), :status 200})))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->token-description]
                                                    [:settings consent-expiry-days]
                                                    [:state clock passwords]
-                                                   handle-secure-request-fn]
+                                                   wrap-secure-request-fn]
                                             (let [password (first passwords)]
                                               (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
                                                         (cookie-support/add-encoded-cookie response password cookie-name value expiry-days))
                                                       (consent-cookie-value [mode service-id token token-metadata]
                                                         (sd/consent-cookie-value clock mode service-id token token-metadata))]
-                                                (fn waiter-acknowledge-consent-handler-fn [request]
-                                                  (handle-secure-request-fn
-                                                    (fn inner-waiter-acknowledge-consent-handler-fn [request]
-                                                      (handler/acknowledge-consent-handler
-                                                        token->token-description service-description->service-id
-                                                        consent-cookie-value add-encoded-cookie consent-expiry-days request))
-                                                    request)))))
+                                                (wrap-secure-request-fn
+                                                  (fn inner-waiter-acknowledge-consent-handler-fn [request]
+                                                    (handler/acknowledge-consent-handler
+                                                      token->token-description service-description->service-id
+                                                      consent-cookie-value add-encoded-cookie consent-expiry-days request))))))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]
-                                               handle-secure-request-fn]
-                                        (fn waiter-request-consent-handler-fn [request]
-                                          (handle-secure-request-fn
-                                            (fn inner-waiter-request-consent-handler-fn [request]
-                                              (handler/request-consent-handler
-                                                token->service-description-template service-description->service-id
-                                                consent-expiry-days request))
-                                            request)))
-   :welcome-handler-fn (pc/fnk [handle-secure-request-fn settings]
+                                               wrap-secure-request-fn]
+                                        (wrap-secure-request-fn
+                                          (fn waiter-request-consent-handler-fn [request]
+                                            (handler/request-consent-handler
+                                              token->service-description-template service-description->service-id
+                                              consent-expiry-days request))))
+   :welcome-handler-fn (pc/fnk [settings]
                          (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]
                                       wrap-router-auth-fn]
@@ -1293,4 +1231,14 @@
                                                     {:actual secret-word, :expected expected-word})
                                           {:src-router-id source-id})))
                                     basic-auth-handler (basic-authentication/wrap-basic-authentication handler router-comm-authenticated?)]
-                                (basic-auth-handler request)))))})
+                                (basic-auth-handler request)))))
+   :wrap-secure-request-fn (pc/fnk [[:routines authentication-method-wrapper-fn]
+                                    [:state cors-validator]]
+                             (fn wrap-secure-request-fn
+                               [request-handler]
+                               (let [handler (-> request-handler
+                                                 (cors/handler cors-validator)
+                                                 authentication-method-wrapper-fn)]
+                                 (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
+                                   (log/debug "secure request received at" uri)
+                                   (handler request)))))})

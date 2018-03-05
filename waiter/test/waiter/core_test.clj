@@ -172,10 +172,10 @@
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         make-inter-router-requests-sync-fn (fn [path _ _] (is (str/includes? path "service-id-")))
         configuration {:curator {:kv-store kv-store}
-                       :handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
-                                  :service-description-defaults service-description-defaults}}
+                                  :service-description-defaults service-description-defaults}
+                       :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-resume-handler-fn ((:service-resume-handler-fn request-handlers) configuration)
                   :service-suspend-handler-fn ((:service-suspend-handler-fn request-handlers) configuration)}
         test-service-id "service-id-1"]
@@ -216,10 +216,10 @@
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         make-inter-router-requests-sync-fn (fn [path _ _] (is (str/includes? path "service-id-")))
         configuration {:curator {:kv-store kv-store}
-                       :handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
-                                  :service-description-defaults service-description-defaults}}
+                                  :service-description-defaults service-description-defaults}
+                       :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-override-handler-fn ((:service-override-handler-fn request-handlers) configuration)}
         request-handler (-> (ring-handler-factory waiter-request?-fn handlers) wrap-error-handling)
         test-service-id "service-id-1"]
@@ -283,9 +283,9 @@
 (deftest test-service-view-logs-handler
   (let [scheduler (marathon/->MarathonScheduler (Object.) {:slave-port 5051} (fn [] nil) "/home/path/"
                                                 (atom {}) (atom {}) 0 (constantly true))
-        configuration {:handle-secure-request-fn (fn [handler request] (handler request))
-                       :routines {:prepend-waiter-url identity}
-                       :state {:scheduler scheduler}}
+        configuration {:routines {:prepend-waiter-url identity}
+                       :state {:scheduler scheduler}
+                       :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-view-logs-handler-fn ((:service-view-logs-handler-fn request-handlers) configuration)}
         waiter-request?-fn (fn [_] true)
         test-service-id "test-service-id"
@@ -388,12 +388,12 @@
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         configuration {:curator {:kv-store nil}
-                       :handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :make-inter-router-requests-sync-fn nil
                                   :prepend-waiter-url nil}
                        :state {:router-id "router-id"
-                               :scheduler (Object.)}}
+                               :scheduler (Object.)}
+                       :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
     (testing "service-handler:delete-successful"
       (with-redefs [scheduler/delete-app (fn [_ service-id] {:result :deleted, :service-id service-id})
@@ -460,18 +460,17 @@
         service-id "test-service-1"
         waiter-request?-fn (fn [_] true)
         configuration {:curator {:kv-store nil}
-                       :handle-secure-request-fn (fn [handler request] (handler request))
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :make-inter-router-requests-sync-fn nil
                                   :prepend-waiter-url #(str "http://www.example.com" %)}
                        :state {:router-id "router-id"
-                               :scheduler (Object.)}}
+                               :scheduler (Object.)}
+                       :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
     (testing "service-handler:get-missing-service-description"
       (with-redefs [sd/fetch-core (constantly nil)]
-        (let [request {:authorization/user user
-                       :headers {"accept" "application/json"}
+        (let [request {:headers {"accept" "application/json"}
                        :request-method :get
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
@@ -491,8 +490,7 @@
                                                                    :port 31045,
                                                                    :started-at "2014-09-13T002446.959Z"}]
                                                :failed-instances []})]
-        (let [request {:authorization/user user
-                       :headers {"accept" "application/json"}
+        (let [request {:headers {"accept" "application/json"}
                        :request-method :get
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
@@ -519,7 +517,7 @@
                                               {:active-instances [{:id (str service-id ".A"), :service-id service-id}]
                                                :failed-instances [{:id (str service-id ".F"), :service-id service-id}]
                                                :killed-instances [{:id (str service-id ".K"), :service-id service-id}]})]
-        (let [request {:request-method :get, :uri (str "/apps/" service-id), :authorization/user user}
+        (let [request {:request-method :get, :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
           (is (= {"content-type" "application/json"} headers))
@@ -782,41 +780,25 @@
 
 (deftest test-async-result-handler-call
   (testing "test-async-result-handler-call"
-    (with-redefs [cors/handler (fn [handler _] handler)]
-      (let [request {:authorization/user "test-user"
-                     :request-method :get
-                     :uri "/waiter-async/result/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location"}
-            response-map {:source :async-result-handler-fn}
-            waiter-request?-fn (fn [_] true)
-            handlers {:async-result-handler-fn
-                      (fn [in-request]
-                        (is (= request (select-keys in-request (keys request))))
-                        response-map)
-                      :handle-secure-request-fn ((:handle-secure-request-fn request-handlers)
-                                                  {:routines {:authentication-method-wrapper-fn identity}
-                                                   :state {:authenticator (auth/one-user-authenticator {})
-                                                           :cors-validator []
-                                                           :passwords []}})}]
-        (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
+    (let [request {:uri "/waiter-async/result/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location"}
+          response-map {:source :async-result-handler-fn}
+          waiter-request?-fn (fn [_] true)
+          handlers {:async-result-handler-fn
+                    (fn [in-request]
+                      (is (= request (select-keys in-request (keys request))))
+                      response-map)}]
+      (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request))))))
 
 (deftest test-async-status-handler-call
   (testing "test-async-status-handler-call"
-    (with-redefs [cors/handler (fn [handler _] handler)]
-      (let [request {:authorization/user "test-user"
-                     :request-method :get
-                     :uri "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location"}
-            response-map {:source :async-status-handler-fn}
-            waiter-request?-fn (fn [_] true)
-            handlers {:async-status-handler-fn
-                      (fn [in-request]
-                        (is (= request (select-keys in-request (keys request))))
-                        response-map)
-                      :handle-secure-request-fn ((:handle-secure-request-fn request-handlers)
-                                                  {:routines {:authentication-method-wrapper-fn identity}
-                                                   :state {:authenticator (auth/one-user-authenticator {})
-                                                           :cors-validator []
-                                                           :passwords []}})}]
-        (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request)))))))
+    (let [request {:uri "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location"}
+          response-map {:source :async-status-handler-fn}
+          waiter-request?-fn (fn [_] true)
+          handlers {:async-status-handler-fn
+                    (fn [in-request]
+                      (is (= request (select-keys in-request (keys request))))
+                      response-map)}]
+      (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request))))))
 
 (deftest test-async-complete-handler-call
   (testing "test-async-complete-handler-call"
