@@ -8,13 +8,15 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns token-syncer.syncer-test
+(ns token-syncer.commands.syncer-test
   (:require [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [clojure.tools.cli :as tools-cli]
             [clojure.walk :as walk]
             [plumbing.core :as pc]
-            [token-syncer.syncer :refer :all]))
+            [token-syncer.commands.syncer :refer :all]
+            [token-syncer.cli :as cli]))
 
 (deftest test-retrieve-token->url->token-data
   (let [test-cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com"]
@@ -546,3 +548,54 @@
                          :selected {:count 3 :value #{"token-2" "token-3" "token-4"}}
                          :total {:count 4 :value #{"token-1" "token-2" "token-3" "token-4"}}}}
                summary))))))
+
+(deftest test-parse-sync-clusters-cli-options
+  (let [option-specs (:option-specs sync-clusters-config)
+        parse-cli-options (fn [args] (tools-cli/parse-opts args option-specs))]
+    (is (= ["Unknown option: \"-c\""]
+           (:errors (parse-cli-options ["-c" "abcd"]))))
+    (is (= ["Unknown option: \"-c\""]
+           (:errors (parse-cli-options ["-c" "abcd,abcd"]))))
+    (is (= ["Missing required argument for \"-l LIMIT\""]
+           (:errors (parse-cli-options ["-l"]))))
+    (is (= {:limit 200}
+           (:options (parse-cli-options ["-l" "200"]))))
+    (is (= {:limit 200}
+           (:options (parse-cli-options ["--limit" "200"]))))))
+
+(deftest test-sync-clusters-config
+  (let [test-command-config (assoc sync-clusters-config :command-name "test-command")
+        waiter-api (Object.)
+        context {:waiter-api waiter-api}]
+    (let [args []]
+      (is (= {:exit-code 1
+              :message "test-command: at least two different cluster urls required, provided: []"}
+             (cli/process-command test-command-config context args))))
+    (let [args ["-h"]]
+      (is (= {:exit-code 0
+              :message "test-command: displayed documentation"}
+             (cli/process-command test-command-config context args))))
+    (let [args ["http://cluster-1.com"]]
+      (is (= {:exit-code 1
+              :message "test-command: at least two different cluster urls required, provided: [\"http://cluster-1.com\"]"}
+             (cli/process-command test-command-config context args))))
+    (let [args ["http://cluster-1.com" "http://cluster-1.com"]]
+      (is (= {:exit-code 1
+              :message "test-command: at least two different cluster urls required, provided: [\"http://cluster-1.com\" \"http://cluster-1.com\"]"}
+             (cli/process-command test-command-config context args))))
+    (let [args ["http://cluster-1.com" "http://cluster-2.com"]]
+      (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit]
+                                  (is (= waiter-api in-waiter-api))
+                                  (is (= #{"http://cluster-1.com" "http://cluster-2.com"} cluster-urls-set))
+                                  (is (nil? limit)))]
+        (is (= {:exit-code 0
+                :message "test-command: exiting with code 0"}
+               (cli/process-command test-command-config context args)))))
+    (let [args ["-l" "20" "http://cluster-1.com" "http://cluster-2.com"]]
+      (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit]
+                                  (is (= waiter-api in-waiter-api))
+                                  (is (= #{"http://cluster-1.com" "http://cluster-2.com"} cluster-urls-set))
+                                  (is (= 20 limit)))]
+        (is (= {:exit-code 0
+                :message "test-command: exiting with code 0"}
+               (cli/process-command test-command-config context args)))))))

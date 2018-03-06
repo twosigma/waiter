@@ -13,8 +13,8 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
-            [token-syncer.main :as main]
-            [token-syncer.syncer :as syncer])
+            [token-syncer.commands.syncer :as syncer]
+            [token-syncer.main :as main])
   (:import (java.util UUID)))
 
 (def basic-description {"cmd" "echo 'Hello World'", "cpus" 1, "mem" 2048, "metric-group" "syncer-test"})

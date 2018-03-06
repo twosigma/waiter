@@ -9,22 +9,14 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns token-syncer.main
-  (:require [clojure.pprint :as pp]
-            [clojure.string :as str]
-            [clojure.tools.cli :as cli]
+  (:require [clojure.string :as str]
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
-            [token-syncer.syncer :as syncer]
+            [token-syncer.cli :as cli]
+            [token-syncer.commands.syncer :as syncer]
             [token-syncer.waiter :as waiter])
   (:import (org.eclipse.jetty.client HttpClient))
   (:gen-class))
-
-(defn ^HttpClient http-client-factory
-  "Creates an instance of HttpClient with the specified timeout."
-  [{:keys [connection-timeout-ms idle-timeout-ms]}]
-  (http/client {:connect-timeout connection-timeout-ms
-                :idle-timeout idle-timeout-ms
-                :follow-redirects? false}))
 
 (defn- setup-exception-handler
   "Sets up the UncaughtExceptionHandler."
@@ -34,25 +26,6 @@
       (uncaughtException [_ thread throwable]
         (log/error throwable (str (.getName thread) " threw exception: " (.getMessage throwable)))))))
 
-(defn parse-cli-options
-  "Parses and returns the cli options passed to the token syncer."
-  [args]
-  (->> [["-d" "--dry-run"
-         "Runs the syncer in dry run mode where it doesn't perform any token delete or update operations"]
-        ["-h" "--help"]
-        ["-i" "--idle-timeout-ms timeout" "The idle timeout in milliseconds"
-         :default 30000
-         :parse-fn #(Integer/parseInt %)
-         :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]
-        ["-l" "--limit limit" "The maximum number of tokens to attempt to sync"
-         :parse-fn #(Integer/parseInt %)
-         :validate [#(< 0 % 10001) "Must be between 0 and 10000"]]
-        ["-t" "--connection-timeout-ms timeout" "The connection timeout in milliseconds"
-         :default 1000
-         :parse-fn #(Integer/parseInt %)
-         :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]]
-       (cli/parse-opts args)))
-
 (defn exit
   "Helper function that prints the message and triggers a System exit."
   [status message]
@@ -60,6 +33,13 @@
     (log/info message)
     (log/error message))
   (System/exit status))
+
+(defn ^HttpClient http-client-factory
+  "Creates an instance of HttpClient with the specified timeout."
+  [{:keys [connection-timeout-ms idle-timeout-ms]}]
+  (http/client {:connect-timeout connection-timeout-ms
+                :idle-timeout idle-timeout-ms
+                :follow-redirects? false}))
 
 (defn init-waiter-api
   "Creates the map of methods used to interact with Waiter to load, store and delete tokens."
@@ -79,41 +59,54 @@
                       {:status "dry-run"})
                     (partial waiter/store-token http-client))}))
 
+(def base-command-config
+  {:build-context (fn build-base-context
+                    [context {:keys [options]}]
+                    (when (:dry-run options)
+                      (log/info "executing token syncer in dry-run mode"))
+                    (assoc context :waiter-api (init-waiter-api options)))
+   :execute-command (fn execute-base-command
+                      [{:keys [sub-command->config] :as context} arguments]
+                      (if-not (seq arguments)
+                        {:exit-code 1
+                         :message "no sub-command specified"}
+                        (let [sub-command (first arguments)]
+                          (if-not (contains? sub-command->config sub-command)
+                            {:exit-code 1
+                             :message (str "unsupported sub-command: " sub-command)}
+                            (let [sub-command-config (-> (sub-command->config sub-command)
+                                                         (assoc :command-name sub-command))]
+                              (cli/process-command sub-command-config context (rest arguments)))))))
+   :option-specs [["-d" "--dry-run"
+                   "Runs the syncer in dry run mode where it doesn't perform any write operations"]
+                  ["-i" "--idle-timeout-ms TIMEOUT" "The idle timeout in milliseconds, must be between 1 and 300000"
+                   :default 30000
+                   :parse-fn #(Integer/parseInt %)
+                   :validate [#(< 0 % 300001) "Must be between 0 and 300000"]]
+                  ["-t" "--connection-timeout-ms TIMEOUT" "The connection timeout in milliseconds, must be between 1 and 300000"
+                   :default 1000
+                   :parse-fn #(Integer/parseInt %)
+                   :validate [#(< 0 % 300001) "Must be between 1 and 300000"]]]
+   :retrieve-documentation (fn retrieve-base-documentation
+                             [command-name {:keys [sub-command->config]} summary]
+                             (str "Name: " command-name " - performs token syncing operations on Waiter cluster(s)" \newline
+                                  "Usage: " command-name " [OPTION]... SUB-COMMAND [OPTION]..." \newline
+                                  "Description: delegates operations to the sub-commands (see Sub-commands section below)." \newline
+                                  "Sub-commands: " (str/join " " (-> sub-command->config keys sort))
+                                  (str " [use " command-name "SUB-COMMAND -h to see documentation on the sub-command(s)].") \newline
+                                  "Options:" \newline
+                                  summary))})
+
 (defn -main
   "The main entry point."
   [& args]
   (setup-exception-handler)
-  (log/info "command-line arguments:" (vec args))
-  (let [{:keys [arguments errors options summary]} (parse-cli-options args)
-        {:keys [help limit]} options
-        cluster-urls arguments]
-    (try
-      (cond
-        help
-        (log/info summary)
-
-        (seq errors)
-        (do
-          (doseq [error-message errors]
-            (log/error error-message)
-            (println System/err error-message))
-          (exit 1 "error in parsing arguments"))
-
-        (<= (-> cluster-urls set count) 1)
-        (exit 1 (str "must provide at least two different cluster urls, provided:" cluster-urls))
-
-        :else
-        (do
-          (when (:dry-run options)
-            (log/info "executing token syncer in dry-run mode"))
-          (let [waiter-api (init-waiter-api options)
-                cluster-urls-set (set cluster-urls)
-                sync-result (syncer/sync-tokens waiter-api cluster-urls-set limit)
-                exit-code (-> (get-in sync-result [:summary :sync :error] 0)
-                              zero?
-                              (if 0 1))]
-            (log/info (-> sync-result pp/pprint with-out-str str/trim))
-            (exit exit-code (str "exiting with code " exit-code)))))
-      (catch Exception e
-        (log/error e "error in syncing tokens")
-        (exit 1 (str "encountered error starting token-syncer: " (.getMessage e)))))))
+  (try
+    (log/info "command-line arguments:" (vec args))
+    (let [token-syncer-command-config (assoc base-command-config :command-name "token-syncer")
+          context {:sub-command->config {"sync-clusters" syncer/sync-clusters-config}}
+          {:keys [exit-code message]} (cli/process-command token-syncer-command-config context args)]
+      (exit exit-code message))
+    (catch Exception e
+      (log/error e "error in syncing tokens")
+      (exit 1 (str "encountered error running token-syncer: " (.getMessage e))))))
