@@ -25,6 +25,8 @@
          (:options (parse-cli-options ["-h"]))))
   (is (= {:connection-timeout-ms 1000, :idle-timeout-ms 10000}
          (:options (parse-cli-options ["-i" "10000"]))))
+  (is (= {:connection-timeout-ms 1000, :idle-timeout-ms 30000, :limit 100}
+         (:options (parse-cli-options ["-l" "100"]))))
   (is (= {:connection-timeout-ms 10000, :idle-timeout-ms 30000}
          (:options (parse-cli-options ["-t" "10000"]))))
   (is (= {:connection-timeout-ms 10000, :idle-timeout-ms 20000}
