@@ -187,7 +187,7 @@
    The summary includes the tokens that were unmodified, successfully synced, and failed to sync.
    Tokens that were already synced show up in previously synced entry of the summary.
    The summary also includes counts of the total number of tokens that were processed."
-  [token-sync-result already-synced-tokens]
+  [{:keys [all-tokens already-synced-tokens pending-tokens selected-tokens]} token-sync-result]
   (let [filter-tokens (fn [filter-fn]
                         (->> token-sync-result
                              keys
@@ -200,13 +200,17 @@
         updated-filter-fn (fn [result] (-> result :code namespace (= "success")))
         updated-tokens (-> (filter-tokens updated-filter-fn)
                            (set/difference unmodified-tokens))
-        failed-tokens (-> token-sync-result keys set (set/difference unmodified-tokens updated-tokens))]
+        failed-tokens (-> token-sync-result keys set (set/difference unmodified-tokens updated-tokens))
+        tokens->value-count (fn [tokens] {:count (count tokens)
+                                          :value (->> tokens set (into (sorted-set)))})]
     {:sync {:failed failed-tokens
-            :previously-synced (set already-synced-tokens)
             :unmodified unmodified-tokens
             :updated updated-tokens}
-     :tokens {:num-previously-synced (count already-synced-tokens)
-              :num-processed (count token-sync-result)}}))
+     :tokens {:pending (tokens->value-count pending-tokens)
+              :previously-synced (tokens->value-count already-synced-tokens)
+              :processed (tokens->value-count (keys token-sync-result))
+              :selected (tokens->value-count selected-tokens)
+              :total (tokens->value-count all-tokens)}}))
 
 (defn sync-tokens
   "Syncs tokens across provided clusters based on cluster-urls and returns the result of token syncing.
@@ -224,8 +228,11 @@
                 (str (when use-limited-tokens?
                        (str "limited to " (min limit (count pending-tokens))))))
       {:details token-sync-result
-       :summary (-> (summarize-sync-result token-sync-result synced-tokens)
-                    (assoc-in [:tokens :total] (count all-tokens)))})
+       :summary (-> {:all-tokens all-tokens
+                     :already-synced-tokens synced-tokens
+                     :pending-tokens pending-tokens
+                     :selected-tokens selected-tokens}
+                    (summarize-sync-result token-sync-result))})
     (catch Throwable th
       (log/error th "unable to sync tokens")
       (throw th))))

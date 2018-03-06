@@ -83,12 +83,13 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result waiter-urls)}}
                                      :summary {:sync {:failed #{}
-                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-previously-synced 0
-                                                        :num-processed 1
-                                                        :total 1}}}]
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (let [response (load-token waiter-url token-name)]
@@ -129,12 +130,13 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
                                      :summary {:sync {:failed #{}
-                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-previously-synced 0
-                                                        :num-processed 1
-                                                        :total 1}}}]
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description (assoc token-description "deleted" true)
@@ -175,12 +177,13 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
                                      :summary {:sync {:failed #{}
-                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-previously-synced 0
-                                                        :num-processed 1
-                                                        :total 1}}}]
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description token-description
@@ -215,12 +218,13 @@
               ;; ASSERT
               (let [expected-result {:details {}
                                      :summary {:sync {:failed #{}
-                                                      :previously-synced #{token-name}
                                                       :unmodified #{}
                                                       :updated #{}}
-                                               :tokens {:num-previously-synced 1
-                                                        :num-processed 0
-                                                        :total 1}}}]
+                                               :tokens {:pending {:count 0 :value #{}}
+                                                        :previously-synced {:count 1 :value #{token-name}}
+                                                        :processed {:count 0 :value #{}}
+                                                        :selected {:count 0 :value #{}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description token-description
@@ -265,12 +269,13 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
                                      :summary {:sync {:failed #{}
-                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-previously-synced 0
-                                                        :num-processed 1
-                                                        :total 1}}}]
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description token-description
@@ -324,12 +329,13 @@
                                                                     :token-etag token-etag}
                                                            :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
                                      :summary {:sync {:failed #{}
-                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:num-previously-synced 0
-                                                        :num-processed 1
-                                                        :total 1}}}]
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description latest-description
@@ -391,12 +397,13 @@
                                                                     :token-etag token-etag}
                                                            :sync-result sync-result}}
                                      :summary {:sync {:failed #{token-name}
-                                                      :previously-synced #{}
                                                       :unmodified #{}
                                                       :updated #{}}
-                                               :tokens {:num-previously-synced 0
-                                                        :num-processed 1
-                                                        :total 1}}}]
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (doall
                   (map-indexed

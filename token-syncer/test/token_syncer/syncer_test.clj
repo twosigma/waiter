@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns token-syncer.syncer-test
-  (:require [clojure.string :as str]
+  (:require [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [plumbing.core :as pc]
@@ -393,28 +394,44 @@
         (load-and-classify-tokens load-token-list cluster-urls))))
 
 (deftest test-summarize-sync-result
-  (is (= {:sync {:failed #{"token-1B" "token-4B"}
-                 :previously-synced #{"token-5"}
-                 :unmodified #{"token-1A"}
-                 :updated #{"token-2" "token-3" "token-4A"}}
-          :tokens {:num-previously-synced 1
-                   :num-processed 6}}
-         (summarize-sync-result
-           {"token-1A" {:sync-result {"www.cluster-2.com" {:code :success/token-match}
-                                      "www.cluster-3.com" {:code :success/token-match}}}
-            "token-1B" {:sync-result {"www.cluster-2.com" {:code :success/token-match}
-                                      "www.cluster-3.com" {:code :error/token-sync}}}
-            "token-2" {:sync-result {"www.cluster-2.com" {:code :success/sync-update}
-                                     "www.cluster-3.com" {:code :success/sync-update}}}
-            "token-3" {:sync-result {"www.cluster-1.com" {:code :success/soft-delete}
-                                     "www.cluster-3.com" {:code :success/soft-delete}}}
-            "token-4A" {:sync-result {"www.cluster-1.com" {:code :success/hard-delete}
-                                      "www.cluster-2.com" {:code :success/hard-delete}
-                                      "www.cluster-3.com" {:code :success/hard-delete}}}
-            "token-4B" {:sync-result {"www.cluster-1.com" {:code :success/hard-delete}
-                                      "www.cluster-2.com" {:code :error/hard-delete}
-                                      "www.cluster-3.com" {:code :success/hard-delete}}}}
-           #{"token-5"}))))
+  (let [token-sync-result {"token-1A" {:sync-result {"www.cluster-2.com" {:code :success/token-match}
+                                                     "www.cluster-3.com" {:code :success/token-match}}}
+                           "token-1B" {:sync-result {"www.cluster-2.com" {:code :success/token-match}
+                                                     "www.cluster-3.com" {:code :error/token-sync}}}
+                           "token-2" {:sync-result {"www.cluster-2.com" {:code :success/sync-update}
+                                                    "www.cluster-3.com" {:code :success/sync-update}}}
+                           "token-3" {:sync-result {"www.cluster-1.com" {:code :success/soft-delete}
+                                                    "www.cluster-3.com" {:code :success/soft-delete}}}
+                           "token-4A" {:sync-result {"www.cluster-1.com" {:code :success/hard-delete}
+                                                     "www.cluster-2.com" {:code :success/hard-delete}
+                                                     "www.cluster-3.com" {:code :success/hard-delete}}}
+                           "token-4B" {:sync-result {"www.cluster-1.com" {:code :success/hard-delete}
+                                                     "www.cluster-2.com" {:code :error/hard-delete}
+                                                     "www.cluster-3.com" {:code :success/hard-delete}}}}
+        selected-tokens (-> token-sync-result keys set)
+        unselected-tokens #{"token-6A" "token-6b"}
+        pending-tokens (into unselected-tokens selected-tokens)
+        already-synced-tokens #{"token-5"}
+        all-tokens (set/union already-synced-tokens pending-tokens)]
+    (is (= {:sync {:failed #{"token-1B" "token-4B"}
+                   :unmodified #{"token-1A"}
+                   :updated #{"token-2" "token-3" "token-4A"}}
+            :tokens {:pending {:count (count pending-tokens)
+                               :value pending-tokens}
+                     :previously-synced {:count (count already-synced-tokens)
+                                         :value already-synced-tokens}
+                     :processed {:count (count selected-tokens)
+                                 :value selected-tokens}
+                     :selected {:count (count selected-tokens)
+                                :value selected-tokens}
+                     :total {:count (count all-tokens)
+                             :value all-tokens}}}
+           (summarize-sync-result
+             {:all-tokens all-tokens
+              :already-synced-tokens already-synced-tokens
+              :pending-tokens pending-tokens
+              :selected-tokens selected-tokens}
+             token-sync-result)))))
 
 (deftest test-sync-tokens
   (let [current-time-ms (System/currentTimeMillis)
@@ -509,20 +526,23 @@
                                                         (str/includes? token-name "soft-delete") :success/soft-delete
                                                         :else :error/token-sync)]
                                              (compute-sync-result cluster-urls token code)))]
-      (is (= {:details {"token-2" {:latest (token->latest-description "token-2")
-                                   :sync-result (-> [cluster-2 cluster-3]
-                                                    (compute-sync-result "token-2" :success/sync-update))}
-                        "token-3" {:latest (token->latest-description "token-3")
-                                   :sync-result (-> [cluster-1 cluster-3]
-                                                    (compute-sync-result "token-3" :success/soft-delete))}
-                        "token-4" {:latest (token->latest-description "token-4")
-                                   :sync-result (-> [cluster-1 cluster-2 cluster-3]
-                                                    (compute-sync-result "token-4" :success/hard-delete))}}
-              :summary {:sync {:failed #{}
-                               :previously-synced #{"token-1"}
-                               :unmodified #{}
-                               :updated #{"token-2" "token-3" "token-4"}}
-                        :tokens {:num-previously-synced 1
-                                 :num-processed 3
-                                 :total 4}}}
-             (sync-tokens waiter-api cluster-urls (inc (count token->latest-description))))))))
+      (let [{:keys [details summary]} (sync-tokens waiter-api cluster-urls (inc (count token->latest-description)))]
+        (is (= {"token-2" {:latest (token->latest-description "token-2")
+                           :sync-result (-> [cluster-2 cluster-3]
+                                            (compute-sync-result "token-2" :success/sync-update))}
+                "token-3" {:latest (token->latest-description "token-3")
+                           :sync-result (-> [cluster-1 cluster-3]
+                                            (compute-sync-result "token-3" :success/soft-delete))}
+                "token-4" {:latest (token->latest-description "token-4")
+                           :sync-result (-> [cluster-1 cluster-2 cluster-3]
+                                            (compute-sync-result "token-4" :success/hard-delete))}}
+               details))
+        (is (= {:sync {:failed #{}
+                       :unmodified #{}
+                       :updated #{"token-2" "token-3" "token-4"}}
+                :tokens {:pending {:count 3 :value #{"token-2" "token-3" "token-4"}}
+                         :previously-synced {:count 1 :value #{"token-1"}}
+                         :processed {:count 3 :value #{"token-2" "token-3" "token-4"}}
+                         :selected {:count 3 :value #{"token-2" "token-3" "token-4"}}
+                         :total {:count 4 :value #{"token-1" "token-2" "token-3" "token-4"}}}}
+               summary))))))
