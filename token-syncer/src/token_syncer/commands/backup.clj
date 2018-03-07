@@ -1,0 +1,97 @@
+;;
+;;       Copyright (c) 2018 Two Sigma Investments, LP.
+;;       All Rights Reserved
+;;
+;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+;;       Two Sigma Investments, LP.
+;;
+;;       The copyright notice above does not evidence any
+;;       actual or intended publication of such source code.
+;;
+(ns token-syncer.commands.backup
+  (:require [clojure.data.json :as json]
+            [clojure.java.io :as io]
+            [clojure.string :as str]
+            [clojure.tools.logging :as log]
+            [plumbing.core :as pc])
+  (:import (java.io File)))
+
+(defn backup-tokens
+  "Reads all the latest token descriptions from the specified cluster and writes it to the specified file.
+   When accrete-mode is true, content is read from the specified file and merged before writing the new tokens."
+  [{:keys [load-token load-token-list]} {:keys [read-from-file write-to-file]}
+   cluster-url filename accrete-mode]
+  (let [existing-token->token-description (when accrete-mode
+                                            (read-from-file filename))
+        index-entries (load-token-list cluster-url)
+        all-tokens (->> index-entries
+                        (map #(get % "token"))
+                        (remove nil?)
+                        sort)
+        _ (log/info "found" (count all-tokens) "tokens on" cluster-url ":" (into (sorted-set) all-tokens))
+        current-token->token-description (pc/map-from-keys
+                                           (fn [token]
+                                             (-> (load-token cluster-url token)
+                                                 (select-keys [:description :token-etag])))
+                                           all-tokens)]
+    (->> current-token->token-description
+         (merge existing-token->token-description)
+         (into (sorted-map))
+         (write-to-file filename))))
+
+(defn read-from-file
+  "Reads the contents of the file as a json string."
+  [filename]
+  (if (.exists ^File (io/as-file filename))
+    (do
+      (log/info "reading contents from" filename)
+      (let [result (-> filename slurp json/read-str)]
+        (if (and (map? result)
+                 (every? string? (keys result)))
+          (do
+            (log/info "found" (count result) "tokens in" filename ":" (keys result))
+            result)
+          (log/warn "contents of" filename "will be ignored as it is not a map with string keys:" result))))
+    (log/warn "not reading contents from" filename "as it does not exist!")))
+
+(defn write-to-file
+  "Writes the content to the specified file as a json string."
+  [filename content]
+  (log/info "writing" (count content) "tokens to" filename ":" (keys content))
+  (->> content
+       json/write-str
+       (spit filename)))
+
+(defn init-file-operations-api
+  "Creates the map of methods used to read/write tokens from/to a file."
+  [dry-run]
+  {:read-from-file read-from-file
+   :write-to-file (if dry-run
+                    (fn write-to-file-dry-run-version [filename token->token-description]
+                      (log/info "[dry-run] writing to" filename "content:" token->token-description))
+                    write-to-file)})
+
+(def backup-tokens-config
+  {:execute-command (fn execute-backup-tokens-command
+                      [{:keys [waiter-api] :as parent-context} {:keys [options]} arguments]
+                      (let [{:keys [accrete]} options]
+                        (if-not (= (count arguments) 2)
+                          {:exit-code 1
+                           :message (str "expected 2 arguments FILE URL, provided " (count arguments) ": " (vec arguments))}
+                          (let [dry-run (get-in parent-context [:options :dry-run])
+                                file-operations-api (init-file-operations-api dry-run)
+                                file (first arguments)
+                                cluster-url (second arguments)]
+                            (log/info "backing up tokens from" cluster-url "to" file
+                                      (if accrete "in accretion mode" "in overwrite mode")
+                                      (str (when dry-run "with dry-run enabled")))
+                            (backup-tokens waiter-api file-operations-api cluster-url file accrete)
+                            {:exit-code 0
+                             :message "exiting with code 0"}))))
+   :option-specs [["-a" "--accrete"
+                   (str "Accrete new token descriptions into the backup file if it exists. "
+                        "The default behavior (when this flag is not enabled) is overwriting the file with only the new token descriptions.")]]
+   :retrieve-documentation (fn retrieve-sync-clusters-documentation
+                             [command-name _]
+                             {:description (str "Syncs tokens from a Waiter cluster specified in the URL to the FILE")
+                              :usage (str command-name " [OPTION]... FILE URL")})})

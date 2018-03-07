@@ -13,6 +13,7 @@
             [clojure.tools.logging :as log]
             [qbits.jet.client.http :as http]
             [token-syncer.cli :as cli]
+            [token-syncer.commands.backup :as backup]
             [token-syncer.commands.syncer :as syncer]
             [token-syncer.waiter :as waiter])
   (:import (org.eclipse.jetty.client HttpClient))
@@ -102,7 +103,8 @@
   (try
     (log/info "command-line arguments:" (vec args))
     (let [token-syncer-command-config (assoc base-command-config :command-name "token-syncer")
-          context {:sub-command->config {"sync-clusters" syncer/sync-clusters-config}}
+          context {:sub-command->config {"backup-tokens" backup/backup-tokens-config
+                                         "sync-clusters" syncer/sync-clusters-config}}
           {:keys [exit-code message]} (cli/process-command token-syncer-command-config context args)]
       (exit exit-code message))
     (catch Exception e
