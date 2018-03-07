@@ -8,8 +8,10 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns token-syncer.syncer
-  (:require [clojure.set :as set]
+(ns token-syncer.commands.syncer
+  (:require [clojure.pprint :as pp]
+            [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
             [token-syncer.utils :as utils]))
@@ -220,13 +222,10 @@
     (log/info "syncing tokens on clusters:" cluster-urls)
     (let [cluster-urls-set (set cluster-urls)
           {:keys [all-tokens pending-tokens synced-tokens]} (load-and-classify-tokens load-token-list cluster-urls-set)
-          use-limited-tokens? (and (integer? limit) (pos? limit))
-          selected-tokens (cond->> (sort pending-tokens)
-                                   use-limited-tokens? (take limit))
+          selected-tokens (->> (sort pending-tokens)
+                               (take limit))
           token-sync-result (perform-token-syncs waiter-api cluster-urls-set selected-tokens)]
-      (log/info "completed syncing tokens"
-                (str (when use-limited-tokens?
-                       (str "limited to " (min limit (count pending-tokens))))))
+      (log/info "completed syncing tokens (limited to " (min limit (count pending-tokens)) "tokens)")
       {:details token-sync-result
        :summary (-> {:all-tokens all-tokens
                      :already-synced-tokens synced-tokens
@@ -236,3 +235,30 @@
     (catch Throwable th
       (log/error th "unable to sync tokens")
       (throw th))))
+
+(def sync-clusters-config
+  {:execute-command (fn execute-sync-clusters-command
+                      [{:keys [waiter-api]} {:keys [options]} arguments]
+                      (let [{:keys [limit]} options
+                            cluster-urls-set (set arguments)]
+                        (cond
+                          (<= (-> cluster-urls-set set count) 1)
+                          {:exit-code 1
+                           :message (str "at least two different cluster urls required, provided: " (vec arguments))}
+
+                          :else
+                          (let [sync-result (sync-tokens waiter-api cluster-urls-set limit)
+                                exit-code (-> (get-in sync-result [:summary :sync :error] 0)
+                                              zero?
+                                              (if 0 1))]
+                            (log/info (-> sync-result pp/pprint with-out-str str/trim))
+                            {:exit-code exit-code
+                             :message (str "exiting with code " exit-code)}))))
+   :option-specs [["-l" "--limit LIMIT" "The maximum number of tokens to attempt to sync, must be between 1 and 10000"
+                   :default 1000
+                   :parse-fn #(Integer/parseInt %)
+                   :validate [#(< 0 % 10001) "Must be between 1 and 10000"]]]
+   :retrieve-documentation (fn retrieve-sync-clusters-documentation
+                             [command-name _]
+                             {:description (str "Syncs tokens across (at least two) Waiter clusters specified in the URL(s)")
+                              :usage (str command-name " [OPTION]... URL URL...")})})
