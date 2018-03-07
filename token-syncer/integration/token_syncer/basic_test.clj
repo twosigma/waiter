@@ -56,7 +56,7 @@
   (testing "token sync hard-delete"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
-          limit nil
+          limit 10
           token-name (str "test-token-hard-delete-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -101,7 +101,7 @@
   (testing "token sync soft-delete"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
-          limit nil
+          limit 10
           token-name (str "test-token-soft-delete-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -152,7 +152,7 @@
   (testing "token exists on single cluster"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
-          limit nil
+          limit 10
           token-name (str "test-token-token-on-single-cluster-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -199,7 +199,7 @@
   (testing "token already synced"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
-          limit nil
+          limit 10
           token-name (str "test-token-already-synced-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -240,7 +240,7 @@
   (testing "token sync update"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
-          limit nil
+          limit 10
           token-name (str "test-token-update-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -291,7 +291,7 @@
   (testing "token sync update with different owners but same root"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
-          limit nil
+          limit 10
           token-name (str "test-token-different-owners-but-same-root-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -351,7 +351,7 @@
   (testing "token sync update with different owners and different roots"
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
-          limit nil
+          limit 10
           token-name (str "test-token-different-roots-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
