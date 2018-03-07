@@ -237,14 +237,9 @@
       (throw th))))
 
 (def sync-clusters-config
-  {:build-context (fn build-sync-clusters-context
-                    [parent-context {:keys [options]}]
-                    {:context parent-context
-                     :options options})
-   :execute-command (fn execute-sync-clusters-command
-                      [{:keys [context options]} arguments]
-                      (let [{:keys [waiter-api]} context
-                            {:keys [limit]} options
+  {:execute-command (fn execute-sync-clusters-command
+                      [{:keys [waiter-api]} {:keys [options]} arguments]
+                      (let [{:keys [limit]} options
                             cluster-urls-set (set arguments)]
                         (cond
                           (<= (-> cluster-urls-set set count) 1)
@@ -264,9 +259,6 @@
                    :parse-fn #(Integer/parseInt %)
                    :validate [#(< 0 % 10001) "Must be between 1 and 10000"]]]
    :retrieve-documentation (fn retrieve-sync-clusters-documentation
-                             [command-name _ summary]
-                             (str "Name: " command-name " - performs token syncing across Waiter clusters" \newline
-                                  "Usage: " command-name " [OPTION]... URL URL..." \newline
-                                  "Description: syncs tokens among (at least two) Waiter clusters in the URL(s)." \newline
-                                  "Options:" \newline
-                                  summary \newline))})
+                             [command-name _]
+                             {:description (str "Syncs tokens across (at least two) Waiter clusters specified in the URL(s)")
+                              :usage (str command-name " [OPTION]... URL URL...")})})

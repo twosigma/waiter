@@ -13,12 +13,11 @@
             [token-syncer.cli :refer :all]))
 
 (deftest test-process-command
-  (let [build-context (fn [parent-context {:keys [options]}]
-                        (assoc parent-context :options options))
-        command-name "test-command"
-        execute-command (fn [context arguments]
+  (let [command-name "test-command"
+        execute-command (fn [context {:keys [options]} arguments]
                           {:data {:arguments arguments
-                                  :context context}
+                                  :context context
+                                  :options options}
                            :exit-code 0})
         option-specs [["-a" "--activate" "For test only, configures the activate flag"]
                       ["-b" "--build-number BUILD" "For test only, name of binary"
@@ -27,21 +26,23 @@
                        :validate [pos? "Must be positive"]]
                       ["-f" "--fee NAME" "For test only, the fee name"]
                       [nil "--fum" "For test only, the fum flag"]]
-        command-config {:build-context build-context
-                        :command-name command-name
+        command-config {:command-name command-name
                         :execute-command execute-command
                         :option-specs option-specs}
         parent-context {}]
 
     (is (= {:data {:arguments ["sub-command" "-x" "--y" "z"]
-                   :context {:options {:activate true :build-number 100 :fee "fie" :fum true}}}
+                   :context {}
+                   :options {:activate true :build-number 100 :fee "fie" :fum true}}
             :exit-code 0
             :message (str command-name ": exiting")}
            (->> ["-a" "-b" "100" "--fee" "fie" "--fum" "sub-command" "-x" "--y" "z"]
                 (process-command command-config parent-context))))
 
-    (is (= {:data ["Unknown option: \"-c\"" "Unknown option: \"-d\""]
-            :exit-code 1
-            :message (str command-name ": error in parsing arguments")}
-           (->> ["-a" "-b" "200" "-c" "-d" "400" "sub-command" "-x" "--y" "z"]
-                (process-command command-config parent-context))))))
+    (with-out-str
+      (binding [*err* *out*]
+        (is (= {:data ["Unknown option: \"-c\"" "Unknown option: \"-d\""]
+                :exit-code 1
+                :message (str command-name ": error in parsing arguments")}
+               (->> ["-a" "-b" "200" "-c" "-d" "400" "sub-command" "-x" "--y" "z"]
+                    (process-command command-config parent-context))))))))

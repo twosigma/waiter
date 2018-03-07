@@ -572,9 +572,10 @@
               :message "test-command: at least two different cluster urls required, provided: []"}
              (cli/process-command test-command-config context args))))
     (let [args ["-h"]]
-      (is (= {:exit-code 0
-              :message "test-command: displayed documentation"}
-             (cli/process-command test-command-config context args))))
+      (with-out-str
+        (is (= {:exit-code 0
+                :message "test-command: displayed documentation"}
+               (cli/process-command test-command-config context args)))))
     (let [args ["http://cluster-1.com"]]
       (is (= {:exit-code 1
               :message "test-command: at least two different cluster urls required, provided: [\"http://cluster-1.com\"]"}
@@ -587,7 +588,7 @@
       (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit]
                                   (is (= waiter-api in-waiter-api))
                                   (is (= #{"http://cluster-1.com" "http://cluster-2.com"} cluster-urls-set))
-                                  (is (nil? limit)))]
+                                  (is (= 1000 limit)))]
         (is (= {:exit-code 0
                 :message "test-command: exiting with code 0"}
                (cli/process-command test-command-config context args)))))

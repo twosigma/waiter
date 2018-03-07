@@ -36,13 +36,10 @@
       (is (= {:connection-timeout-ms 10000, :idle-timeout-ms 20000} (:options parsed-arguments))))))
 
 (deftest test-base-command-config
-  (let [test-sub-command-config {:build-context (fn build-base-context
-                                                  [context {:keys [options]}]
-                                                  (assoc context :options options))
-                                 :execute-command (fn execute-base-command
-                                                    [context arguments]
+  (let [test-sub-command-config {:execute-command (fn execute-base-command
+                                                    [_ {:keys [options]} arguments]
                                                     {:arguments arguments
-                                                     :options (:options context)
+                                                     :options options
                                                      :exit-code 0})
                                  :option-specs [["-a" "--activate" "For test only, activate"]]
                                  :retrieve-documentation (constantly "")}
@@ -50,9 +47,10 @@
         context {:sub-command->config sub-command->config}
         test-command-config (assoc base-command-config :command-name "test-command")]
     (let [args ["-d" "test-sub-command" "-h"]]
-      (is (= {:exit-code 0
-              :message "test-command: test-sub-command: displayed documentation"}
-             (cli/process-command test-command-config context args))))
+      (with-out-str
+        (is (= {:exit-code 0
+                :message "test-command: test-sub-command: displayed documentation"}
+               (cli/process-command test-command-config context args)))))
     (let [args ["-d" "test-sub-command" "-a"]]
       (is (= {:arguments []
               :exit-code 0

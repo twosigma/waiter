@@ -60,13 +60,8 @@
                     (partial waiter/store-token http-client))}))
 
 (def base-command-config
-  {:build-context (fn build-base-context
-                    [context {:keys [options]}]
-                    (when (:dry-run options)
-                      (log/info "executing token syncer in dry-run mode"))
-                    (assoc context :waiter-api (init-waiter-api options)))
-   :execute-command (fn execute-base-command
-                      [{:keys [sub-command->config] :as context} arguments]
+  {:execute-command (fn execute-base-command
+                      [{:keys [sub-command->config] :as context} {:keys [options]} arguments]
                       (if-not (seq arguments)
                         {:exit-code 1
                          :message "no sub-command specified"}
@@ -74,9 +69,15 @@
                           (if-not (contains? sub-command->config sub-command)
                             {:exit-code 1
                              :message (str "unsupported sub-command: " sub-command)}
-                            (let [sub-command-config (-> (sub-command->config sub-command)
-                                                         (assoc :command-name sub-command))]
-                              (cli/process-command sub-command-config context (rest arguments)))))))
+                            (do
+                              (when (:dry-run options)
+                                (log/info "executing token syncer in dry-run mode"))
+                              (let [context' (assoc context
+                                               :options options
+                                               :waiter-api (init-waiter-api options))
+                                    sub-command-config (-> (sub-command->config sub-command)
+                                                           (assoc :command-name sub-command))]
+                                (cli/process-command sub-command-config context' (rest arguments))))))))
    :option-specs [["-d" "--dry-run"
                    "Runs the syncer in dry run mode where it doesn't perform any write operations"]
                   ["-i" "--idle-timeout-ms TIMEOUT" "The idle timeout in milliseconds, must be between 1 and 300000"
@@ -88,14 +89,11 @@
                    :parse-fn #(Integer/parseInt %)
                    :validate [#(< 0 % 300001) "Must be between 1 and 300000"]]]
    :retrieve-documentation (fn retrieve-base-documentation
-                             [command-name {:keys [sub-command->config]} summary]
-                             (str "Name: " command-name " - performs token syncing operations on Waiter cluster(s)" \newline
-                                  "Usage: " command-name " [OPTION]... SUB-COMMAND [OPTION]..." \newline
-                                  "Description: delegates operations to the sub-commands (see Sub-commands section below)." \newline
-                                  "Sub-commands: " (str/join " " (-> sub-command->config keys sort))
-                                  (str " [use " command-name "SUB-COMMAND -h to see documentation on the sub-command(s)].") \newline
-                                  "Options:" \newline
-                                  summary))})
+                             [command-name {:keys [sub-command->config]}]
+                             {:description (str "delegates operations to the sub-commands (see Sub-commands section below)." \newline
+                                                " Supported sub-commands: " (str/join ", " (-> sub-command->config keys sort)) "." \newline
+                                                " Use '" command-name " SUB-COMMAND -h' to see documentation on the sub-command(s).")
+                              :usage (str command-name " [OPTION]... SUB-COMMAND [OPTION]...")})})
 
 (defn -main
   "The main entry point."
