@@ -37,8 +37,9 @@
 
 (deftest test-base-command-config
   (let [test-sub-command-config {:execute-command (fn execute-base-command
-                                                    [_ {:keys [options]} arguments]
+                                                    [context {:keys [options]} arguments]
                                                     {:arguments arguments
+                                                     :context context
                                                      :options options
                                                      :exit-code 0})
                                  :option-specs [["-a" "--activate" "For test only, activate"]]
@@ -51,9 +52,11 @@
         (is (= {:exit-code 0
                 :message "test-command: test-sub-command: displayed documentation"}
                (cli/process-command test-command-config context args)))))
-    (let [args ["-d" "test-sub-command" "-a"]]
+    (let [args ["-d" "test-sub-command" "-a"]
+          result (cli/process-command test-command-config context args)]
       (is (= {:arguments []
               :exit-code 0
               :message "test-command: test-sub-command: exiting"
               :options {:activate true}}
-             (cli/process-command test-command-config context args))))))
+             (dissoc result :context)))
+      (is (every? #(contains? (:context result) %) [:options :sub-command->config :waiter-api])))))
