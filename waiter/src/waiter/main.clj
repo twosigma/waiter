@@ -21,6 +21,7 @@
             [qbits.jet.server :as server]
             [schema.core :as s]
             [waiter.core :as core]
+            [waiter.cors :as cors]
             [waiter.correlation-id :as cid]
             [waiter.settings :as settings]
             [waiter.utils :as utils])
@@ -67,9 +68,11 @@
    :state core/state
    :http-server (pc/fnk [[:routines waiter-request?-fn websocket-request-authenticator]
                          [:settings host port websocket-config support-info]
+                         [:state cors-validator]
                          handlers] ; Insist that all systems are running before we start server
                   (let [options (merge websocket-config
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
+                                                          (cors/wrap-cors cors-validator)
                                                           core/wrap-error-handling
                                                           core/correlation-id-middleware
                                                           (core/wrap-support-info support-info)

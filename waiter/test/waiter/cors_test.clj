@@ -10,7 +10,8 @@
 ;;
 (ns waiter.cors-test
   (:require [clojure.test :refer :all]
-            [waiter.cors :refer :all])
+            [waiter.cors :refer :all]
+            [waiter.core :as core])
   (:import waiter.cors.PatternBasedCorsValidator))
 
 (deftest pattern-validator-test
@@ -41,3 +42,22 @@
   (is (thrown? Throwable (pattern-based-validator {:allowed-origins [#"foo" "bar"]})))
   (is (thrown? Throwable (pattern-based-validator {:allowed-origins [#"foo" #"bar" "baz"]})))
   (is (instance? PatternBasedCorsValidator (pattern-based-validator {:allowed-origins [#"foo" #"bar" #"baz"]}))))
+
+(deftest test-wrap-cors
+  (testing "cors request denied"
+    (let [deny-all (deny-all-validator {})
+          request {:headers {"origin" "doesnt.matter"}}
+          handler (-> (fn [request] {:status 200})
+                      (wrap-cors deny-all)
+                      (core/wrap-error-handling))
+          {:keys [status] :as response} (handler request)]
+      (is (= 403 status))))
+  (testing "cors request allowed"
+    (let [deny-all (allow-all-validator {})
+          request {:headers {"origin" "doesnt.matter"}}
+          handler (-> (fn [request] {:status 200})
+                      (wrap-cors deny-all))
+          {:keys [headers status] :as response} (handler request)]
+      (is (= 200 status))
+      (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
+      (is (= "true" (get headers "Access-Control-Allow-Credentials"))))))

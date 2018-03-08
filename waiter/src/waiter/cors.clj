@@ -43,7 +43,7 @@
                  "Access-Control-Allow-Credentials" "true"
                  "Access-Control-Max-Age" (str max-age)}})))
 
-(defn handler [request-handler cors-validator]
+(defn wrap-cors [request-handler cors-validator]
   (fn [req]
     (let [{:keys [headers request-method]} req
           {:strs [origin]} headers
@@ -91,3 +91,13 @@
   "Creates a CORS validator that allows all cross-origin requests."
   [_]
   (->AllowAllCorsValidator))
+
+(defrecord DenyAllCorsValidator []
+  CorsValidator
+  (preflight-allowed? [_ _] false)
+  (request-allowed? [_ _] false))
+
+(defn deny-all-validator
+  "Creates a CORS validator that denies all cross-origin requests."
+  [_]
+  (->DenyAllCorsValidator))

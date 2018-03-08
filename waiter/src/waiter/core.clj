@@ -1232,12 +1232,10 @@
                                           {:src-router-id source-id})))
                                     basic-auth-handler (basic-authentication/wrap-basic-authentication handler router-comm-authenticated?)]
                                 (basic-auth-handler request)))))
-   :wrap-secure-request-fn (pc/fnk [[:routines authentication-method-wrapper-fn]
-                                    [:state cors-validator]]
+   :wrap-secure-request-fn (pc/fnk [[:routines authentication-method-wrapper-fn]]
                              (fn wrap-secure-request-fn
                                [request-handler]
                                (let [handler (-> request-handler
-                                                 (cors/handler cors-validator)
                                                  authentication-method-wrapper-fn)]
                                  (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                    (log/debug "secure request received at" uri)
