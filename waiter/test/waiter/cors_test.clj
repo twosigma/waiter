@@ -53,10 +53,10 @@
           {:keys [status] :as response} (handler request)]
       (is (= 403 status))))
   (testing "cors request allowed"
-    (let [deny-all (allow-all-validator {})
+    (let [allow-all (allow-all-validator {})
           request {:headers {"origin" "doesnt.matter"}}
           handler (-> (fn [request] {:status 200})
-                      (wrap-cors deny-all))
+                      (wrap-cors allow-all))
           {:keys [headers status] :as response} (handler request)]
       (is (= 200 status))
       (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
