@@ -118,20 +118,12 @@
 
 (defn ring-handler-factory
   "Creates the handler for processing http requests."
-  [waiter-request?-fn {:keys [cors-preflight-handler-fn process-request-fn] :as handlers}]
+  [waiter-request?-fn {:keys [process-request-fn] :as handlers}]
   (fn http-handler [{:keys [uri] :as request}]
-    (cond
-      (cors/preflight-request? request)
-      (do
-        (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
-        (cors-preflight-handler-fn request))
-
-      (not (waiter-request?-fn request))
+    (if-not (waiter-request?-fn request)
       (do
         (counters/inc! (metrics/waiter-counter "requests" "service-request"))
         (process-request-fn request))
-
-      :else
       (let [{:keys [handler route-params]} (routes-mapper request)
             request (assoc request :route-params (or route-params {}))
             handler-fn (get handlers handler process-request-fn)]
@@ -928,14 +920,6 @@
    :blacklisted-instances-list-handler-fn (pc/fnk [[:state instance-rpc-chan]]
                                             (fn blacklisted-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                               (handler/get-blacklisted-instances instance-rpc-chan service-id request)))
-   :cors-preflight-handler-fn (pc/fnk [[:settings cors-config]
-                                       [:state cors-validator]]
-                                (let [{max-age :max-age} cors-config]
-                                  (fn cors-preflight-handler-fn [request]
-                                    (try
-                                      (cors/preflight-handler cors-validator max-age request)
-                                      (catch Exception e
-                                        (utils/exception->response e request))))))
    :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
                                           [:state instance-rpc-chan local-usage-agent passwords router-id websocket-client]]

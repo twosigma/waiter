@@ -10,6 +10,8 @@
 ;;
 (ns waiter.cors
   (:require [clojure.core.async :as async]
+            [metrics.counters :as counters]
+            [waiter.metrics :as metrics]
             [waiter.utils :as utils])
   (:import java.util.regex.Pattern))
 
@@ -21,29 +23,38 @@
   (request-allowed? [this request]
     "Returns true if the CORS request is allowed."))
 
-(defn preflight-request? [request]
+(defn preflight-request?
+  "Determines if a request is a CORS preflight request."
+  [request]
   (= :options (:request-method request)))
 
-(defn preflight-handler [cors-validator max-age request]
-  (when-not (preflight-request? request)
-    (throw (ex-info "Not a preflight request" {})))
-  (let [{:keys [headers request-method]} request
-        {:strs [origin]} headers]
-    (when-not origin
-      (throw (ex-info "No origin provided" {:status 403})))
-    (when-not (preflight-allowed? cors-validator request)
-      (throw (ex-info "Cross-origin request not allowed" {:origin origin
-                                                          :request-method request-method
-                                                          :status 403})))
-    (let [{:strs [access-control-request-headers]} headers]
-      {:status 200
-       :headers {"Access-Control-Allow-Origin" origin
-                 "Access-Control-Allow-Headers" access-control-request-headers
-                 "Access-Control-Allow-Methods" "POST, GET, OPTIONS, DELETE"
-                 "Access-Control-Allow-Credentials" "true"
-                 "Access-Control-Max-Age" (str max-age)}})))
+(defn wrap-cors-preflight
+  "Preflight request handling middleware."
+  [handler cors-validator max-age]
+  (fn wrap-cors-preflight-fn [request]
+    (if (preflight-request? request)
+      (do
+        (counters/inc!  (metrics/waiter-counter "requests" "cors-preflight"))
+        (let [{:keys [headers request-method]} request
+              {:strs [origin]} headers]
+          (when-not origin
+            (throw (ex-info "No origin provided" {:status 403})))
+          (when-not (preflight-allowed? cors-validator request)
+            (throw (ex-info "Cross-origin request not allowed" {:origin origin
+                                                                :request-method request-method
+                                                                :status 403})))
+          (let [{:strs [access-control-request-headers]} headers]
+            {:status 200
+             :headers {"Access-Control-Allow-Origin" origin
+                       "Access-Control-Allow-Headers" access-control-request-headers
+                       "Access-Control-Allow-Methods" "POST, GET, OPTIONS, DELETE"
+                       "Access-Control-Allow-Credentials" "true"
+                       "Access-Control-Max-Age" (str max-age)}})))
+      (handler request))))
 
-(defn wrap-cors [request-handler cors-validator]
+(defn wrap-cors-request
+  "Middleware that handles CORS request authorization."
+  [handler cors-validator]
   (fn wrap-cors-fn [req]
     (let [{:keys [headers request-method]} req
           {:strs [origin]} headers
@@ -54,7 +65,7 @@
                    %)]
       (-> req
           (#(if (or (not origin) (request-allowed? cors-validator %))
-              (request-handler %)
+              (handler %)
               (throw (ex-info "Cross-origin request not allowed"
                               {:origin origin
                                :request-method request-method
@@ -62,6 +73,13 @@
           (#(if (map? %)
               (bless %)
               (async/go (bless (async/<! %)))))))))
+
+(defn wrap-cors
+  "Middleware that handles CORS preflights and requests."
+  [handler cors-validator max-age]
+  (-> handler
+      (wrap-cors-request cors-validator)
+      (wrap-cors-preflight cors-validator max-age)))
 
 (defrecord PatternBasedCorsValidator [pattern-matches?]
   CorsValidator
