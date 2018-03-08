@@ -10,8 +10,8 @@
 ;;
 (ns waiter.cors-test
   (:require [clojure.test :refer :all]
-            [waiter.cors :refer :all]
-            [waiter.core :as core])
+            [waiter.core :as core]
+            [waiter.cors :refer :all])
   (:import waiter.cors.PatternBasedCorsValidator))
 
 (deftest pattern-validator-test
@@ -85,5 +85,5 @@
       (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
       (is (= "x-test-header" (get headers "Access-Control-Allow-Headers")))
       (is (= "POST, GET, OPTIONS, DELETE" (get headers "Access-Control-Allow-Methods")))
-      (is (= "100" (get headers "Access-Control-Max-Age")))
+      (is (= (str max-age) (get headers "Access-Control-Max-Age")))
       (is (= "true" (get headers "Access-Control-Allow-Credentials"))))))

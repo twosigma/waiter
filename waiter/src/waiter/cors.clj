@@ -55,15 +55,15 @@
 (defn wrap-cors-request
   "Middleware that handles CORS request authorization."
   [handler cors-validator]
-  (fn wrap-cors-fn [req]
-    (let [{:keys [headers request-method]} req
+  (fn wrap-cors-fn [request]
+    (let [{:keys [headers request-method]} request
           {:strs [origin]} headers
-          bless #(if (and origin (request-allowed? cors-validator req))
+          bless #(if (and origin (request-allowed? cors-validator request))
                    (update-in % [:headers] assoc
                               "Access-Control-Allow-Origin" origin
                               "Access-Control-Allow-Credentials" "true")
                    %)]
-      (-> req
+      (-> request
           (#(if (or (not origin) (request-allowed? cors-validator %))
               (handler %)
               (throw (ex-info "Cross-origin request not allowed"

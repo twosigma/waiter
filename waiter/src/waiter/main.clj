@@ -21,7 +21,6 @@
             [qbits.jet.server :as server]
             [schema.core :as s]
             [waiter.core :as core]
-            [waiter.cors :as cors]
             [waiter.correlation-id :as cid]
             [waiter.settings :as settings]
             [waiter.utils :as utils])
