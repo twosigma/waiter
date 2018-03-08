@@ -44,7 +44,7 @@
                  "Access-Control-Max-Age" (str max-age)}})))
 
 (defn wrap-cors [request-handler cors-validator]
-  (fn [req]
+  (fn wrap-cors-fn [req]
     (let [{:keys [headers request-method]} req
           {:strs [origin]} headers
           bless #(if (and origin (request-allowed? cors-validator req))
