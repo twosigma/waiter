@@ -67,12 +67,10 @@
    :handlers core/request-handlers
    :state core/state
    :http-server (pc/fnk [[:routines waiter-request?-fn websocket-request-authenticator]
-                         [:settings cors-config host port support-info websocket-config]
-                         [:state cors-validator]
+                         [:settings host port support-info websocket-config]
                          handlers] ; Insist that all systems are running before we start server
                   (let [options (merge websocket-config
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
-                                                          (cors/wrap-cors cors-validator (:max-age cors-config))
                                                           core/wrap-error-handling
                                                           core/correlation-id-middleware
                                                           (core/wrap-support-info support-info)
