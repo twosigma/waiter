@@ -10,6 +10,7 @@
 ;;
 (ns waiter.cors-test
   (:require [clojure.test :refer :all]
+            [waiter.core :as core]
             [waiter.cors :refer :all])
   (:import waiter.cors.PatternBasedCorsValidator))
 
@@ -41,3 +42,48 @@
   (is (thrown? Throwable (pattern-based-validator {:allowed-origins [#"foo" "bar"]})))
   (is (thrown? Throwable (pattern-based-validator {:allowed-origins [#"foo" #"bar" "baz"]})))
   (is (instance? PatternBasedCorsValidator (pattern-based-validator {:allowed-origins [#"foo" #"bar" #"baz"]}))))
+
+(deftest test-wrap-cors-request
+  (testing "cors request denied"
+    (let [deny-all (deny-all-validator {})
+          request {:headers {"origin" "doesnt.matter"}}
+          handler (-> (fn [request] {:status 200})
+                      (wrap-cors-request deny-all)
+                      (core/wrap-error-handling))
+          {:keys [status] :as response} (handler request)]
+      (is (= 403 status))))
+  (testing "cors request allowed"
+    (let [allow-all (allow-all-validator {})
+          request {:headers {"origin" "doesnt.matter"}}
+          handler (-> (fn [request] {:status 200})
+                      (wrap-cors-request allow-all))
+          {:keys [headers status] :as response} (handler request)]
+      (is (= 200 status))
+      (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
+      (is (= "true" (get headers "Access-Control-Allow-Credentials"))))))
+
+(deftest test-wrap-cors-preflight
+  (testing "cors preflight request denied"
+    (let [deny-all (deny-all-validator {})
+          max-age 100
+          request {:request-method :options}
+          handler (-> (fn [request] {:status 200})
+                      (wrap-cors-preflight deny-all max-age)
+                      (core/wrap-error-handling))
+          {:keys [status] :as response} (handler request)]
+      (is (= 403 status))))
+  (testing "cors preflight request allowed"
+    (let [allow-all (allow-all-validator {})
+          max-age 100
+          request {:headers {"origin" "doesnt.matter"
+                             "access-control-request-headers" "x-test-header"}
+                   :request-method :options}
+          handler (-> (fn [request] {:status 200})
+                      (wrap-cors-preflight allow-all max-age))
+          {:keys [headers status] :as response} (handler request)]
+      (is (= 200 status))
+      (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
+      (is (= "x-test-header" (get headers "Access-Control-Allow-Headers")))
+      (is (= "POST, GET, OPTIONS, DELETE" (get headers "Access-Control-Allow-Methods")))
+      (is (= (str max-age) (get headers "Access-Control-Max-Age")))
+      (is (= "true" (get headers "Access-Control-Allow-Credentials"))))))
