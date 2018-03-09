@@ -24,6 +24,7 @@
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
+           clojure.lang.ExceptionInfo
            clojure.lang.PersistentQueue
            java.io.OutputStreamWriter
            java.lang.Process
@@ -536,3 +537,10 @@
   [handler]
   (fn [request]
     (handler request)))
+
+(defn merge-exception
+  "Enriches an exception with a data map, regardless of whether it's an ExceptionInfo or just Exception."
+  [^Exception e m]
+  (if (instance? ExceptionInfo e)
+    (ex-info (.getMessage e) (merge (ex-data e) m) (.getCause e))
+    (ex-info (.getMessage e) m (.getCause e))))

@@ -930,12 +930,14 @@
                                                              [instance request request-properties passthrough-headers end-route metric-group]
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
                                                                               passthrough-headers end-route metric-group))]
-                                       (letfn [(process-request-fn [request]
-                                                 (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
-                                                             instance-request-properties process-handlers prepend-waiter-url
-                                                             determine-priority-fn ws/process-response! ws/process-exception-in-request
-                                                             ws/abort-request-callback-factory local-usage-agent request))]
-                                         (ws/request-handler password process-request-fn request)))))
+                                       (let [process-request-fn (fn process-request-fn [request]
+                                                                  (pr/process router-id make-request-fn instance-rpc-chan start-new-service-fn
+                                                                              instance-request-properties process-handlers prepend-waiter-url
+                                                                              determine-priority-fn ws/process-response! ws/process-exception-in-request
+                                                                              ws/abort-request-callback-factory local-usage-agent request))
+                                             handler (-> process-request-fn
+                                                         (pr/wrap-descriptor request->descriptor-fn))]
+                                         (ws/request-handler password handler request)))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
@@ -995,15 +997,17 @@
                                make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
                                                  (pr/make-request http-client make-basic-auth-fn service-id->password-fn
                                                                   instance request request-properties passthrough-headers end-route metric-group))
-                               process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
+                               process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
+                               inner-process-request-fn (fn inner-process-request [request]
+                                                          (pr/process router-id make-request-fn instance-rpc-chan start-new-service-fn
+                                                                      instance-request-properties process-handlers prepend-waiter-url
+                                                                      determine-priority-fn process-response-fn pr/process-exception-in-http-request
+                                                                      pr/abort-http-request-callback-factory local-usage-agent request))]
                            (fn process-request [request]
                              (handle-authentication-wrapper-fn
-                               (wrap-secure-request-fn
-                                 (fn inner-process-request [request]
-                                   (pr/process router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
-                                               instance-request-properties process-handlers prepend-waiter-url
-                                               determine-priority-fn process-response-fn pr/process-exception-in-http-request
-                                               pr/abort-http-request-callback-factory local-usage-agent request)))
+                               (-> inner-process-request-fn
+                                   (pr/wrap-descriptor request->descriptor-fn)
+                                   wrap-secure-request-fn)
                                request))))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
