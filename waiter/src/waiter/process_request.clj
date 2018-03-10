@@ -484,16 +484,15 @@
 
 (defn wrap-descriptor
   "Adds the descriptor to the request/response.
-   Redirects users in the case of missing user/run-as-requestor."
+  Redirects users in the case of missing user/run-as-requestor."
   [handler request->descriptor-fn]
   (fn [request]
-    (try
-      (let [descriptor (request->descriptor-fn request)
-            handler (-> handler
-                        (middleware/wrap-context {:descriptor descriptor}))]
-        (handler request))
-      (catch Exception e
-        (if (missing-run-as-user? e)
+    (let [[descriptor error] (utils/tryv (request->descriptor-fn request))]
+      (if-not error
+        (let [handler (-> handler
+                          (middleware/wrap-context {:descriptor descriptor}))]
+          (handler request))
+        (if (missing-run-as-user? error)
           (let [{:keys [query-string uri]} request
                 location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
             (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
@@ -502,7 +501,7 @@
              :status 303})
           (do
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
-            (utils/exception->response e request)))))))
+            (utils/exception->response error request)))))))
 
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process

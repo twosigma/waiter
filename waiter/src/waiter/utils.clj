@@ -544,3 +544,11 @@
   (if (instance? ExceptionInfo e)
     (ex-info (.getMessage e) (merge (ex-data e) m) (.getCause e))
     (ex-info (.getMessage e) m (.getCause e))))
+
+(defmacro tryv
+  "Like try, but [result exception]"
+  [& body]
+  `(try
+     [(do
+        ~@body) nil]
+     (catch Exception e# [nil e#])))

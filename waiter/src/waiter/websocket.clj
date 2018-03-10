@@ -360,7 +360,6 @@
   "Processes exceptions thrown while processing a websocket request."
   [track-process-error-metrics-fn {:keys [descriptor out] :as request} exception]
   (log/error exception "error in processing websocket request")
-  (log/info "descriptor is " descriptor)
   (track-process-error-metrics-fn descriptor)
   (let [exception-response (utils/exception->response exception request)]
     ; FIXME writing http response into websocket stream
