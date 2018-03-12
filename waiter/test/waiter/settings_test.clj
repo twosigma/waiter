@@ -251,3 +251,39 @@
           (is (nil? (s/check settings-schema settings)))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
+
+(deftest test-sanitize-settings
+  (is (= {:example {:foo {:kind :test
+                          :test {:factory-fn "create-test" :param "value-test"}}}
+          :example-2 {:kind :not-present}
+          :kv-config {:kind :zk
+                      :zk {:factory-fn "create-zk-kv-store" :sync-timeout-ms 2000}
+                      :cache {:threshold 1000 :ttl 60}
+                      :encrypt true
+                      :relative-path "tokens"}
+          :scheduler-config {:cache {:ttl 100}
+                             :kind :marathon
+                             :marathon {:factory-fn "create-marathon-scheduler" :url "http://marathon.example.com:8080"}}
+          :work-stealing {:offer-help-interval-ms 100
+                          :reserve-timeout-ms 1000}
+          :zookeeper {:gc-relative-path "gc-state"
+                      :leader-latch-relative-path "leader-latch"}}
+         (sanitize-settings {:example {:foo {:kind :test
+                                             :test {:factory-fn "create-test" :param "value-test"}
+                                             :prod {:factory-fn "create-prod" :param "value-prod"}}}
+                             :example-2 {:kind :not-present
+                                         :present {:factory-fn "create-present"}}
+                             :kv-config {:kind :zk
+                                         :zk {:factory-fn "create-zk-kv-store" :sync-timeout-ms 2000}
+                                         :cache {:threshold 1000 :ttl 60}
+                                         :encrypt true
+                                         :relative-path "tokens"}
+                             :scheduler-config {:cache {:ttl 100}
+                                                :kind :marathon
+                                                :marathon {:factory-fn "create-marathon-scheduler" :url "http://marathon.example.com:8080"}
+                                                :shell {:factory-fn "create-shell-scheduler" :working-directory "/path/to/some/directory"}}
+                             :work-stealing {:offer-help-interval-ms 100
+                                             :reserve-timeout-ms 1000}
+                             :zookeeper {:connect-string "test-connect-string"
+                                         :gc-relative-path "gc-state"
+                                         :leader-latch-relative-path "leader-latch"}}))))
