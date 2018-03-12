@@ -29,7 +29,9 @@
   (= :options (:request-method request)))
 
 (defn wrap-cors-preflight
-  "Preflight request handling middleware."
+  "Preflight request handling middleware.
+  This middleware needs to precede any authentication middleware since CORS preflight
+  requests do not support authentication."
   [handler cors-validator max-age]
   (fn wrap-cors-preflight-fn [request]
     (if (preflight-request? request)
@@ -53,7 +55,9 @@
       (handler request))))
 
 (defn wrap-cors-request
-  "Middleware that handles CORS request authorization."
+  "Middleware that handles CORS request authorization.
+  This middleware needs to come after any authentication middleware as the CORS
+  validator may require the authenticated principal."
   [handler cors-validator]
   (fn wrap-cors-fn [request]
     (let [{:keys [headers request-method]} request
@@ -73,13 +77,6 @@
           (#(if (map? %)
               (bless %)
               (async/go (bless (async/<! %)))))))))
-
-(defn wrap-cors
-  "Middleware that handles CORS preflights and requests."
-  [handler cors-validator max-age]
-  (-> handler
-      (wrap-cors-request cors-validator)
-      (wrap-cors-preflight cors-validator max-age)))
 
 (defrecord PatternBasedCorsValidator [pattern-matches?]
   CorsValidator
