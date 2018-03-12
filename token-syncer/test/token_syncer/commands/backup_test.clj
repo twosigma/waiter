@@ -55,9 +55,9 @@
                                    :token-etag (str "etag-" token)})
                     :load-token-list (fn [cluster-url]
                                        (is (= test-cluster-url cluster-url))
-                                       [{"token" "token-1"}
-                                        {"token" "token-2"}
-                                        {"token" "token-3"}])}
+                                       [{"etag" "etag-token-1", "token" "token-1"}
+                                        {"etag" "etag-token-2", "token" "token-2"}
+                                        {"etag" "etag-token-3", "token" "token-3"}])}
         file-operations-api {:read-from-file read-from-file
                              :write-to-file write-to-file}]
 
@@ -65,10 +65,10 @@
       (with-temp-file
         [my-temp-file (create-temp-file)]
         (let [my-temp-file-path (file->path my-temp-file)
-              initial-content {"token-1" {"foo1" "bar", "hello" "world1"}
-                               "token-3" {"foo3" "bar", "hello" "world3"}
-                               "token-5" {"foo5" "bar", "hello" "world5"}
-                               "token-7" {"foo7" "bar", "hello" "world7"}}]
+              initial-content {"token-1" {"foo1" "bar", "hello" "world1", "token-etag" "etag-token-1-old"}
+                               "token-3" {"foo3" "bar", "hello" "world3", "token-etag" "etag-token-3-old"}
+                               "token-5" {"foo5" "bar", "hello" "world5", "token-etag" "etag-token-5-old"}
+                               "token-7" {"foo7" "bar", "hello" "world7", "token-etag" "etag-token-7-old"}}]
           (write-to-file my-temp-file-path initial-content)
 
           (backup-tokens waiter-api file-operations-api test-cluster-url my-temp-file-path true)
@@ -79,8 +79,8 @@
                              "token-etag" "etag-token-2"}
                   "token-3" {"description" {"cpus" 1, "mem" 1024, "name" "token-3", "owner" "test-user"}
                              "token-etag" "etag-token-3"}
-                  "token-5" {"foo5" "bar", "hello" "world5"}
-                  "token-7" {"foo7" "bar", "hello" "world7"}}
+                  "token-5" {"foo5" "bar", "hello" "world5", "token-etag" "etag-token-5-old"}
+                  "token-7" {"foo7" "bar", "hello" "world7", "token-etag" "etag-token-7-old"}}
                  (read-from-file my-temp-file-path))))))
 
     (testing "backup without accrete mode"

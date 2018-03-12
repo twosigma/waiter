@@ -12,6 +12,7 @@
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [clojure.walk :as walk]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc])
   (:import (java.io File)))
@@ -21,21 +22,28 @@
    When accrete-mode is true, content is read from the specified file and merged before writing the new tokens."
   [{:keys [load-token load-token-list]} {:keys [read-from-file write-to-file]}
    cluster-url filename accrete-mode]
-  (let [existing-token->token-description (when accrete-mode
-                                            (read-from-file filename))
+  (let [existing-token->token-description (read-from-file filename)
         index-entries (load-token-list cluster-url)
-        all-tokens (->> index-entries
-                        (map #(get % "token"))
-                        (remove nil?)
-                        sort)
-        _ (log/info "found" (count all-tokens) "tokens on" cluster-url ":" (into (sorted-set) all-tokens))
+        token->etag (->> index-entries
+                         (map (fn [{:strs [etag token]}] [token etag]))
+                         (into (sorted-map)))
+        _ (log/info "found" (count token->etag) "tokens on" cluster-url ":" (keys token->etag))
         current-token->token-description (pc/map-from-keys
                                            (fn [token]
-                                             (-> (load-token cluster-url token)
-                                                 (select-keys [:description :token-etag])))
-                                           all-tokens)]
-    (->> current-token->token-description
-         (merge existing-token->token-description)
+                                             ;; use existing token information if etags match, else load from Waiter
+                                             (let [existing-etag (get-in existing-token->token-description [token "token-etag"])]
+                                               (if (and (not (str/blank? existing-etag))
+                                                        (= existing-etag (token->etag token)))
+                                                 (do
+                                                   (log/info "using existing token description for" token "with etag" existing-etag)
+                                                   (get existing-token->token-description token))
+                                                 (-> (load-token cluster-url token)
+                                                     (select-keys [:description :token-etag])
+                                                     (walk/stringify-keys)))))
+                                           (keys token->etag))]
+    (->> (cond->> current-token->token-description
+                  accrete-mode
+                  (merge existing-token->token-description))
          (into (sorted-map))
          (write-to-file filename))))
 
@@ -45,7 +53,8 @@
   (if (.exists ^File (io/as-file filename))
     (do
       (log/info "reading contents from" filename)
-      (let [result (-> filename slurp json/read-str)]
+      (let [file-content (slurp filename)
+            result (if (str/blank? file-content) {} (json/read-str file-content))]
         (if (and (map? result)
                  (every? string? (keys result)))
           (do
