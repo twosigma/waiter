@@ -223,10 +223,12 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [body client cookies content-type form-params headers http-method-fn multipart query-params verbose]
+    {:keys [body client cookies content-type disable-auth form-params headers
+            http-method-fn multipart query-params verbose]
      :or {body nil
           client http-client
           cookies []
+          disable-auth false
           headers {}
           http-method-fn http/get
           query-params {}
@@ -241,7 +243,7 @@
          (log/info "request url:" request-url)
          (log/info "request headers:" (into (sorted-map) request-headers)))
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
-             add-spnego-auth (and use-spnego (not waiter-auth-cookie))
+             add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
              {:keys [body headers status]}
              (async/<!! (http-method-fn
                           client
