@@ -294,13 +294,14 @@
 
 (defn kitchen-params
   []
-  {:cpus 0.1
-   :mem 256
-   :cmd-type "shell"
-   :version "version-does-not-matter"
+  {:cmd-type "shell"
    :cmd (kitchen-cmd "-p $PORT0")
+   :cpus 0.1
+   :grace-period-secs 120
    :health-check-url "/status"
-   :idle-timeout-mins 10})
+   :idle-timeout-mins 10
+   :mem 256
+   :version "version-does-not-matter"})
 
 (defn kitchen-request-headers
   [& {:keys [prefix] :or {prefix "x-waiter-"}}]
