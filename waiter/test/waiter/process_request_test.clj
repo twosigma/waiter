@@ -229,6 +229,7 @@
             request-state-chan (async/chan)
             metric-group nil
             waiter-debug-enabled? nil
+            request-id "request-id"
             service-id "service-id"
             abort-request-chan (async/chan)
             error-chan (async/chan)
@@ -243,7 +244,7 @@
               (recur (+ bytes-streamed bytes-to-stream)))))
         (stream-http-response response confirm-live-connection request-abort-callback resp-chan instance-request-properties
                               reservation-status-promise request-state-chan metric-group
-                              waiter-debug-enabled? (metrics/stream-metric-map service-id))
+                              waiter-debug-enabled? request-id (metrics/stream-metric-map service-id))
         (loop []
           (let [message (async/<!! resp-chan)]
             (when message
@@ -561,7 +562,7 @@
     (is (missing-run-as-user? exception))))
 
 (deftest test-redirect-on-process-error
-  (let [ctrl-chan (async/promise-chan)
+  (let [control-mult (async/mult (async/promise-chan))
         local-usage-agent (agent {})
         prepend-waiter-url (fn [x] (str "http://www.waiter.com:7890" x))
         request->descriptor-fn (fn [_]
@@ -571,7 +572,7 @@
                                                               :x-waiter-headers {"queue-length" 100}})))
         request-abort-callback-factory (fn [_] (constantly nil))]
     (testing "with-query-params"
-      (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
+      (let [request {:control-mult control-mult,:headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory
                                    local-usage-agent request)
@@ -580,7 +581,7 @@
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
     (testing "with-query-params-and-default-port"
-      (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
+      (let [request {:control-mult control-mult,:headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory
                                    local-usage-agent request)
@@ -589,7 +590,7 @@
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
     (testing "without-query-params"
-      (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :uri "/path"}
+      (let [request {:control-mult control-mult,:headers {"host" "www.example.com:1234"}, :uri "/path"}
             response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
                                    process-exception-in-http-request request-abort-callback-factory
                                    local-usage-agent request)
@@ -598,10 +599,10 @@
         (is (= "/waiter-consent/path" (get headers "location")))))))
 
 (deftest test-no-redirect-on-process-error
-  (let [ctrl-chan (async/promise-chan)
+  (let [control-mult (async/mult (async/promise-chan))
         local-usage-agent (agent {})
         request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
-        request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
+        request {:control-mult control-mult, :headers {"host" "www.example.com:1234"}}
         request-abort-callback-factory (fn [_] (constantly nil))
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-in-http-request request-abort-callback-factory
@@ -613,10 +614,10 @@
     (is (str/includes? (str body) "Internal error"))))
 
 (deftest test-message-reaches-user-on-process-error
-  (let [ctrl-chan (async/promise-chan)
+  (let [control-mult (async/mult (async/promise-chan))
         local-usage-agent (agent {})
         request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status 404})))
-        request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
+        request {:control-mult control-mult, :headers {"host" "www.example.com:1234"}}
         request-abort-callback-factory (fn [_] (constantly nil))
         response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
                                process-exception-in-http-request request-abort-callback-factory
