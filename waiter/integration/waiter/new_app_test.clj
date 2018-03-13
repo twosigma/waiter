@@ -56,7 +56,7 @@
   (testing-using-waiter-url
     (if (can-query-for-grace-period? waiter-url)
       (let [headers (-> (kitchen-request-headers)
-                        (merge {:x-waiter-name (rand-name)})
+                        (assoc :x-waiter-name (rand-name))
                         (dissoc :x-waiter-grace-period-secs))
             {:keys [service-id]} (make-request-with-debug-info headers #(make-request waiter-url "/endpoint" :headers %))
             settings-json (waiter-settings waiter-url)
@@ -70,8 +70,8 @@
     (if (can-query-for-grace-period? waiter-url)
       (let [custom-grace-period-secs 120
             headers (-> (kitchen-request-headers)
-                        (merge {:x-waiter-name (rand-name)
-                                :x-waiter-grace-period-secs custom-grace-period-secs}))
+                        (assoc :x-waiter-name (rand-name)
+                               :x-waiter-grace-period-secs custom-grace-period-secs))
             {:keys [service-id]} (make-request-with-debug-info headers #(make-request waiter-url "/endpoint" :headers %))]
         (is (= custom-grace-period-secs (service-id->grace-period waiter-url service-id)))
         (delete-service waiter-url service-id))
