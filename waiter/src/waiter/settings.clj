@@ -12,6 +12,7 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.tools.logging :as log]
+            [clojure.walk :as walk]
             [schema.core :as s]
             [waiter.schema :as schema]
             [waiter.utils :as utils]))
@@ -170,7 +171,17 @@
 (defn sanitize-settings
   "Sanitizes settings for eventual conversion to JSON"
   [settings]
-  (utils/dissoc-in settings [:zookeeper :connect-string]))
+  (->> (utils/dissoc-in settings [:zookeeper :connect-string])
+       (walk/postwalk (fn [data]
+                        (if-not (and (map? data) (contains? data :kind))
+                          data
+                          (->> (-> data keys)
+                               (remove #(let [nested-data (get data %)]
+                                          (and (not= % :kind)
+                                               (not= % (:kind data))
+                                               (map? nested-data)
+                                               (contains? nested-data :factory-fn))))
+                               (select-keys data)))))))
 
 (defn display-settings
   "Endpoint to display the current settings in use."
