@@ -348,8 +348,7 @@
   (let [out (async/chan 1)
         request {:out out :headers {"accept" "application/json"}}
         ex (Exception.)
-        desc "error descriptor"
-        _ (process-exception-in-request identity request desc ex)
+        _ (process-exception-in-request identity request ex)
         ex-msg (-> out async/<!! :body json/read-str (get-in ["waiter-error" "message"]))]
     ;; response should indicate an internal server error
     (is (= "Internal error" ex-msg))

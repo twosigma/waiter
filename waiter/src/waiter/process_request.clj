@@ -23,6 +23,7 @@
             [qbits.jet.client.http :as http]
             [qbits.jet.servlet :as servlet]
             [slingshot.slingshot :refer [try+]]
+            [try-let :refer [try-let]]
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
@@ -30,6 +31,7 @@
             [waiter.handler :as handler]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
+            [waiter.middleware :as middleware]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.service-description :as sd]
@@ -465,39 +467,50 @@
 
 (defn process-exception-in-http-request
   "Processes exceptions thrown while processing a http request."
-  [track-process-error-metrics-fn request descriptor exception]
-  (if (missing-run-as-user? exception)
-    (let [{:keys [query-string uri]} request
-          location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
-      (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
-      (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
-      {:headers {"location" location}
-       :status 303})
-    (do
-      (track-process-error-metrics-fn descriptor)
-      (let [{:keys [status] :as error-response} (utils/exception->response exception request)]
-        (when descriptor
-          (let [{:keys [service-description service-id]} descriptor]
-            (track-response-status-metrics service-id service-description status)))
-        error-response))))
+  [track-process-error-metrics-fn {:keys [descriptor] :as request} exception]
+  (track-process-error-metrics-fn descriptor)
+  (let [{:keys [status] :as error-response} (utils/exception->response exception request)
+        {:keys [service-description service-id]} descriptor]
+    (track-response-status-metrics service-id service-description status)
+    error-response))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."
   [descriptor]
   (meters/mark! (metrics/waiter-meter "core" "process-errors"))
-  (when descriptor
-    (let [{:keys [service-description service-id]} descriptor
-          {:strs [metric-group]} service-description]
-      (meters/mark! (metrics/service-meter service-id "process-error"))
-      (statsd/inc! metric-group "process_error"))))
+  (let [{:keys [service-description service-id]} descriptor
+        {:strs [metric-group]} service-description]
+    (meters/mark! (metrics/service-meter service-id "process-error"))
+    (statsd/inc! metric-group "process_error")))
+
+(defn wrap-descriptor
+  "Adds the descriptor to the request/response.
+  Redirects users in the case of missing user/run-as-requestor."
+  [handler request->descriptor-fn]
+  (fn [request]
+    (try-let [descriptor (request->descriptor-fn request)]
+      (let [handler (-> handler
+                        (middleware/wrap-context {:descriptor descriptor}))]
+        (handler request))
+      (catch Exception e
+        (if (missing-run-as-user? e)
+          (let [{:keys [query-string uri]} request
+                location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
+            (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
+            (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
+            {:headers {"location" location} :status 303})
+          (do
+            ; For consistency with historical data, count errors looking up the descriptor as a "process error"
+            (meters/mark! (metrics/waiter-meter "core" "process-errors"))
+            (utils/exception->response e request)))))))
 
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."
-    [router-id make-request-fn instance-rpc-chan request->descriptor-fn start-new-service-fn
+    [router-id make-request-fn instance-rpc-chan start-new-service-fn
      instance-request-properties handlers prepend-waiter-url determine-priority-fn process-backend-response-fn
      process-exception-fn request-abort-callback-factory local-usage-agent
-     {:keys [ctrl] :as request}]
+     {:keys [ctrl descriptor] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
           request (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
@@ -518,7 +531,7 @@
           process-timer
           (try
             (confirm-live-connection-without-abort)
-            (let [{:keys [service-id service-description] :as descriptor} (request->descriptor-fn request)
+            (let [{:keys [service-id service-description]} descriptor
                   {:strs [metric-group]} service-description
                   ^DateTime request-time (t/now)]
               (->> (utils/date-to-str request-time utils/formatter-rfc822)
@@ -598,7 +611,7 @@
             (catch Exception e
               (let [{:keys [descriptor source]} (ex-data e)
                     exception (if (= source :pr/process) (.getCause e) e)]
-                (-> (process-exception-fn track-process-error-metrics request descriptor exception)
+                (-> (process-exception-fn track-process-error-metrics request exception)
                     (update :headers (fn [headers]
                                        (merge @response-headers headers))))))))))))
 

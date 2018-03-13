@@ -561,67 +561,45 @@
     (is (missing-run-as-user? exception))))
 
 (deftest test-redirect-on-process-error
-  (let [ctrl-chan (async/promise-chan)
-        local-usage-agent (agent {})
-        prepend-waiter-url (fn [x] (str "http://www.waiter.com:7890" x))
-        request->descriptor-fn (fn [_]
+  (let [request->descriptor-fn (fn [_]
                                  (throw
                                    (ex-info "Test exception" {:type :service-description-error
                                                               :issue {"run-as-user" "missing-required-key"}
                                                               :x-waiter-headers {"queue-length" 100}})))
-        request-abort-callback-factory (fn [_] (constantly nil))]
+        handler (wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn)]
     (testing "with-query-params"
-      (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
-            response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
-                                   process-exception-in-http-request request-abort-callback-factory
-                                   local-usage-agent request)
-            {:keys [headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
+      (let [request {:headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
+            {:keys [headers status]} (handler request)]
         (is (= 303 status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
     (testing "with-query-params-and-default-port"
-      (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
-            response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
-                                   process-exception-in-http-request request-abort-callback-factory
-                                   local-usage-agent request)
-            {:keys [headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
+      (let [request {:headers {"host" "www.example.com"}, :query-string "a=b&c=d", :uri "/path"}
+            {:keys [headers status]} (handler request)]
         (is (= 303 status))
         (is (= "/waiter-consent/path?a=b&c=d" (get headers "location")))))
 
     (testing "without-query-params"
-      (let [request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}, :uri "/path"}
-            response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] prepend-waiter-url nil nil
-                                   process-exception-in-http-request request-abort-callback-factory
-                                   local-usage-agent request)
-            {:keys [headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
+      (let [request {:headers {"host" "www.example.com:1234"}, :uri "/path"}
+            {:keys [headers status]} (handler request)]
         (is (= 303 status))
         (is (= "/waiter-consent/path" (get headers "location")))))))
 
 (deftest test-no-redirect-on-process-error
-  (let [ctrl-chan (async/promise-chan)
-        local-usage-agent (agent {})
-        request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
-        request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
-        request-abort-callback-factory (fn [_] (constantly nil))
-        response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
-                               process-exception-in-http-request request-abort-callback-factory
-                               local-usage-agent request)
-        {:keys [body headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
+  (let [request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
+        request {}
+        handler (wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn)
+        {:keys [body headers status]} (handler request)]
     (is (= 500 status))
     (is (nil? (get headers "location")))
     (is (= "text/plain" (get headers "content-type")))
     (is (str/includes? (str body) "Internal error"))))
 
 (deftest test-message-reaches-user-on-process-error
-  (let [ctrl-chan (async/promise-chan)
-        local-usage-agent (agent {})
-        request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status 404})))
-        request {:ctrl ctrl-chan, :headers {"host" "www.example.com:1234"}}
-        request-abort-callback-factory (fn [_] (constantly nil))
-        response-chan (process "router-id" nil nil request->descriptor-fn nil {} [] nil nil nil
-                               process-exception-in-http-request request-abort-callback-factory
-                               local-usage-agent request)
-        {:keys [body headers status]} (cond-> response-chan (au/chan? response-chan) (async/<!!))]
+  (let [request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status 404})))
+        request {}
+        handler (wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn)
+        {:keys [body headers status]} (handler request)]
     (is (= 404 status))
     (is (= "text/plain" (get headers "content-type")))
     (is (str/includes? (str body) "Error message for user"))))
