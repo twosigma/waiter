@@ -835,13 +835,13 @@
 
         (testing "successful request"
           (let [{:keys [body] :as response}
-                (make-request waiter-url "/hello-world" :headers request-headers :spnego-auth false)]
+                (make-request waiter-url "/hello-world" :headers request-headers :disable-auth true)]
             (assert-response-status response 200)
             (is (= "Hello World" body))))
 
         (testing "backend request headers"
           (let [{:keys [body] :as response}
-                (make-request waiter-url "/request-info" :headers request-headers :spnego-auth false)
+                (make-request waiter-url "/request-info" :headers request-headers :disable-auth true)
                 {:strs [headers]} (json/read-str (str body))
                 service-id (retrieve-service-id waiter-url (:request-headers response))]
             (assert-response-status response 200)
