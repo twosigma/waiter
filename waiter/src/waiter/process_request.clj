@@ -23,6 +23,7 @@
             [qbits.jet.client.http :as http]
             [qbits.jet.servlet :as servlet]
             [slingshot.slingshot :refer [try+]]
+            [try-let :refer [try-let]]
             [waiter.async-request :as async-req]
             [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
@@ -487,21 +488,21 @@
   Redirects users in the case of missing user/run-as-requestor."
   [handler request->descriptor-fn]
   (fn [request]
-    (let [[descriptor error] (utils/tryv (request->descriptor-fn request))]
-      (if-not error
-        (let [handler (-> handler
-                          (middleware/wrap-context {:descriptor descriptor}))]
-          (handler request))
-        (if (missing-run-as-user? error)
+    (try-let [descriptor (request->descriptor-fn request)]
+      (let [handler (-> handler
+                        (middleware/wrap-context {:descriptor descriptor}))]
+        (handler request))
+      (catch Exception e
+        (if (missing-run-as-user? e)
           (let [{:keys [query-string uri]} request
                 location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
             (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
             (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
-            {:headers {"location" location}
-             :status 303})
+            {:headers {"location" location} :status 303})
           (do
+            ; For consistency with historical data, count errors looking up the descriptor as a "process error"
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
-            (utils/exception->response error request)))))))
+            (utils/exception->response e request)))))))
 
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process

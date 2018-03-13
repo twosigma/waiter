@@ -84,7 +84,8 @@
                  [ring/ring-core "1.5.0"
                   :exclusions [org.clojure/tools.reader]]
                  [ring-basic-authentication "1.0.5"]
-                 [slingshot "0.12.2"]]
+                 [slingshot "0.12.2"]
+                 [try-let "1.1.0"]]
 
   :resource-paths ["resources"]
   :main waiter.main
