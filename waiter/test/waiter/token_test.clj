@@ -295,11 +295,25 @@
             (is (= {"last-update-time" (clock-millis), "owner" "tu2", "root" token-root} token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id1)))))
 
-      (testing "get:new-service-description"
+      (testing "get:new-service-description:x-waiter-token header"
         (let [{:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:request-method :get, :headers {"x-waiter-token" token}})
+              json-keys ["metadata" "env"]]
+          (is (= 200 status))
+          (is (= "application/json" (get headers "content-type")))
+          (is (not (str/includes? body "last-update-time")))
+          (doseq [key (keys (apply dissoc (select-keys service-description1 sd/service-description-keys) json-keys))]
+            (is (str/includes? body (str (get service-description1 key)))))
+          (doseq [key json-keys]
+            (is (str/includes? body (json/write-str (get service-description1 key)))))))
+
+      (testing "get:new-service-description:token query parameter"
+        (let [{:keys [body headers status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
+                {:request-method :get, :headers {}, :query-params {"token" token}})
               json-keys ["metadata" "env"]]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
