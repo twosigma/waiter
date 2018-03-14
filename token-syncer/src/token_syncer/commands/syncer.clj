@@ -175,8 +175,9 @@
                                      already-synced? (and (every? false? cluster-deleted)
                                                           (not-any? nil? cluster-etags)
                                                           (= 1 (-> cluster-etags set count)))]
-                                 (when already-synced?
-                                   (log/info token "has already been synced across clusters at time" (first cluster-etags)))
+                                 (if already-synced?
+                                   (log/info token "already synced across clusters with etag" (first cluster-etags))
+                                   (log/info token "not synced across clusters" {:deleted cluster-deleted :etags cluster-etags}))
                                  already-synced?)))
                            set)]
     (log/info "found" (count all-tokens) "across the clusters," (count synced-tokens) "previously synced")
@@ -196,13 +197,18 @@
                              (filter
                                (fn [token]
                                  (every? filter-fn (-> token-sync-result (get token) :sync-result vals))))
-                             set))
+                             (into (sorted-set))))
         unmodified-filter-fn (fn [result] (-> result :code (= :success/token-match)))
         unmodified-tokens (filter-tokens unmodified-filter-fn)
         updated-filter-fn (fn [result] (-> result :code namespace (= "success")))
-        updated-tokens (-> (filter-tokens updated-filter-fn)
-                           (set/difference unmodified-tokens))
-        failed-tokens (-> token-sync-result keys set (set/difference unmodified-tokens updated-tokens))
+        updated-tokens (into (sorted-set)
+                             (-> (filter-tokens updated-filter-fn)
+                                 (set/difference unmodified-tokens)))
+        failed-tokens (into (sorted-set)
+                            (-> token-sync-result
+                                keys
+                                set
+                                (set/difference unmodified-tokens updated-tokens)))
         tokens->value-count (fn [tokens] {:count (count tokens)
                                           :value (->> tokens set (into (sorted-set)))})]
     {:sync {:failed failed-tokens
