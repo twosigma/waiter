@@ -61,7 +61,7 @@
                         f
                         (kv/store kv-store k)))
       new-owner-key (fn [] (str "^TOKEN_OWNERS_" (utils/unique-identifier)))
-      ensure-owner-key (fn ensure-owner-key [kv-store owner->owner-key owner]
+      ensure-owner-key (fn ensure-owner-key [kv-store owner->owner-key owner] ;; must be invoked inside a critical section
                          (when-not owner
                            (throw (ex-info "nil owner passed to ensure-owner-key"
                                            {:owner->owner-key owner->owner-key})))
@@ -149,9 +149,10 @@
     (let [refreshed-token (kv/fetch kv-store token :refresh true)]
       (when owner
         ; NOTE: The token may still show up temporarily in the old owners list
-        (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh true)
-              owner-key (ensure-owner-key kv-store owner->owner-key owner)]
-          (kv/fetch kv-store owner-key :refresh true)))
+        (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh true)]
+          (if-let [owner-key (owner->owner-key owner)]
+            (kv/fetch kv-store owner-key :refresh true)
+            (throw (ex-info "no owner-key found" {:owner owner :status 500})))))
       refreshed-token))
 
   (defn refresh-token-index
@@ -164,10 +165,11 @@
   (defn list-index-entries-for-owner
     "List all tokens for a given user."
     [kv-store owner]
-    (let [owner->owner-key (kv/fetch kv-store token-owners-key)
-          owner-key (ensure-owner-key kv-store owner->owner-key owner)]
-      (-> (kv/fetch kv-store owner-key)
-          token-index-sanitizer)))
+    (let [owner->owner-key (kv/fetch kv-store token-owners-key)]
+      (if-let [owner-key (owner->owner-key owner)]
+        (-> (kv/fetch kv-store owner-key)
+            token-index-sanitizer)
+        (throw (ex-info "no owner-key found" {:owner owner :status 500})))))
 
   (defn list-token-owners
     "List token owners."
