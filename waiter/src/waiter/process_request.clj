@@ -508,7 +508,7 @@
   (defn process
     "Process the incoming request and stream back the response."
     [router-id make-request-fn instance-rpc-chan start-new-service-fn
-     instance-request-properties handlers prepend-waiter-url determine-priority-fn process-backend-response-fn
+     instance-request-properties prepend-waiter-url determine-priority-fn process-backend-response-fn
      process-exception-fn request-abort-callback-factory local-usage-agent
      {:keys [ctrl descriptor] :as request}]
     (let [reservation-status-promise (promise)
@@ -537,77 +537,71 @@
               (->> (utils/date-to-str request-time utils/formatter-rfc822)
                    (add-debug-header-into-response! "x-waiter-request-date"))
               (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
-              (loop [[handler & remaining-handlers] handlers]
-                (if handler
-                  (let [response (handler request descriptor)]
-                    (if-not response
-                      (recur remaining-handlers)
-                      response))
-                  (try
-                    (let [{:keys [waiter-headers passthrough-headers]} descriptor]
-                      (meters/mark! (metrics/service-meter service-id "request-rate"))
-                      (counters/inc! (metrics/service-counter service-id "request-counts" "total"))
-                      (statsd/inc! metric-group "request")
-                      (when-let [auth-user (:authorization/user request)]
-                        (statsd/unique! metric-group "auth_users" auth-user))
-                      (counters/inc! (metrics/service-counter service-id "request-counts" "outstanding"))
-                      (statsd/gauge-delta! metric-group "request_outstanding" +1)
-                      (metrics/with-timer!
-                        (metrics/service-timer service-id "process")
-                        (fn [nanos] (statsd/histo! metric-group "process" nanos))
-                        (let [instance-request-properties (prepare-request-properties instance-request-properties waiter-headers)
-                              start-new-service-fn (fn start-new-service-in-process [] (start-new-service-fn descriptor))
-                              request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
-                              priority (determine-priority-fn waiter-headers)
-                              reason-map (cond-> {:reason :serve-request
-                                                  :state {:initial (metrics/retrieve-local-stats-for-service service-id)}
-                                                  :time request-time
-                                                  :cid (cid/get-correlation-id)
-                                                  :request-id request-id}
-                                                 priority (assoc :priority priority))
-                              ; pass false to keep request-state-chan open after control-mult is closed
-                              ; request-state-chan should be explicitly closed after the request finishes processing
-                              request-state-chan (async/tap control-mult (au/latest-chan) false)
-                              unable-to-create-instance (fn unable-to-create-instance [e]
-                                                          (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
-                                                          (statsd/gauge-delta! metric-group "request_outstanding" -1)
-                                                          e)
-                              queue-timeout-ms (:queue-timeout-ms instance-request-properties)
-                              instance (<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
-                                                             unable-to-create-instance queue-timeout-ms reservation-status-promise metric-group
-                                                             add-debug-header-into-response!))]
-                          (try
-                            (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
-                            (when waiter-debug-enabled?
-                              (swap! response-headers merge (instance->debug-headers instance prepend-waiter-url)))
-                            (confirm-live-connection-without-abort)
-                            (let [endpoint (request->endpoint request waiter-headers)
-                                  {:keys [error] :as response}
-                                  (metrics/with-timer!
-                                    (metrics/service-timer service-id "backend-response")
-                                    (fn [nanos]
-                                      (add-debug-header-into-response! "X-Waiter-Backend-Response-ns" nanos)
-                                      (statsd/histo! metric-group "backend_response" nanos))
-                                    (async/<!
-                                      (make-request-fn instance request instance-request-properties
-                                                       passthrough-headers endpoint metric-group)))
-                                  request-abort-callback (request-abort-callback-factory response)
-                                  confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
-                              (when error
-                                (throw-response-error error reservation-status-promise instance response-headers))
-                              (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
-                                                           reason-map response-headers reservation-status-promise
-                                                           confirm-live-connection-with-abort request-state-chan response))
-                            (catch Exception e
-                              ; A :client-error or :instance-error may already be in the channel in which case our :generic-error will be ignored.
-                              (deliver reservation-status-promise :generic-error)
-                              ; close request-state-chan to mark the request as finished
-                              (async/close! request-state-chan)
-                              ; Handle error lower down
-                              (throw e))))))
-                    (catch Exception e
-                      ; Handle error lower down
-                      (throw (ex-info "Rethrowing exception from process" {:descriptor descriptor :source :pr/process} e)))))))
+              (try
+                (let [{:keys [waiter-headers passthrough-headers]} descriptor]
+                  (meters/mark! (metrics/service-meter service-id "request-rate"))
+                  (counters/inc! (metrics/service-counter service-id "request-counts" "total"))
+                  (statsd/inc! metric-group "request")
+                  (when-let [auth-user (:authorization/user request)]
+                    (statsd/unique! metric-group "auth_users" auth-user))
+                  (counters/inc! (metrics/service-counter service-id "request-counts" "outstanding"))
+                  (statsd/gauge-delta! metric-group "request_outstanding" +1)
+                  (metrics/with-timer!
+                    (metrics/service-timer service-id "process")
+                    (fn [nanos] (statsd/histo! metric-group "process" nanos))
+                    (let [instance-request-properties (prepare-request-properties instance-request-properties waiter-headers)
+                          start-new-service-fn (fn start-new-service-in-process [] (start-new-service-fn descriptor))
+                          request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
+                          priority (determine-priority-fn waiter-headers)
+                          reason-map (cond-> {:reason :serve-request
+                                              :state {:initial (metrics/retrieve-local-stats-for-service service-id)}
+                                              :time request-time
+                                              :cid (cid/get-correlation-id)
+                                              :request-id request-id}
+                                       priority (assoc :priority priority))
+                          ; pass false to keep request-state-chan open after control-mult is closed
+                          ; request-state-chan should be explicitly closed after the request finishes processing
+                          request-state-chan (async/tap control-mult (au/latest-chan) false)
+                          unable-to-create-instance (fn unable-to-create-instance [e]
+                                                      (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
+                                                      (statsd/gauge-delta! metric-group "request_outstanding" -1)
+                                                      e)
+                          queue-timeout-ms (:queue-timeout-ms instance-request-properties)
+                          instance (<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
+                                                         unable-to-create-instance queue-timeout-ms reservation-status-promise metric-group
+                                                         add-debug-header-into-response!))]
+                      (try
+                        (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
+                        (when waiter-debug-enabled?
+                          (swap! response-headers merge (instance->debug-headers instance prepend-waiter-url)))
+                        (confirm-live-connection-without-abort)
+                        (let [endpoint (request->endpoint request waiter-headers)
+                              {:keys [error] :as response}
+                              (metrics/with-timer!
+                                (metrics/service-timer service-id "backend-response")
+                                (fn [nanos]
+                                  (add-debug-header-into-response! "X-Waiter-Backend-Response-ns" nanos)
+                                  (statsd/histo! metric-group "backend_response" nanos))
+                                (async/<!
+                                  (make-request-fn instance request instance-request-properties
+                                                   passthrough-headers endpoint metric-group)))
+                              request-abort-callback (request-abort-callback-factory response)
+                              confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
+                          (when error
+                            (throw-response-error error reservation-status-promise instance response-headers))
+                          (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
+                                                       reason-map response-headers reservation-status-promise
+                                                       confirm-live-connection-with-abort request-state-chan response))
+                        (catch Exception e
+                          ; A :client-error or :instance-error may already be in the channel in which case our :generic-error will be ignored.
+                          (deliver reservation-status-promise :generic-error)
+                          ; close request-state-chan to mark the request as finished
+                          (async/close! request-state-chan)
+                          ; Handle error lower down
+                          (throw e))))))
+                (catch Exception e
+                  ; Handle error lower down
+                  (throw (ex-info "Rethrowing exception from process" {:descriptor descriptor :source :pr/process} e)))))
             (catch Exception e
               (let [{:keys [descriptor source]} (ex-data e)
                     exception (if (= source :pr/process) (.getCause e) e)]
@@ -615,36 +609,40 @@
                     (update :headers (fn [headers]
                                        (merge @response-headers headers))))))))))))
 
-(defn handle-suspended-service
+(defn wrap-suspended-service
   "Check if a service has been suspended and immediately return a 503 response"
-  [request {:keys [suspended-state service-description service-id]}]
-  (when (get suspended-state :suspended false)
-    (let [{:keys [last-updated-by time]} suspended-state
-          response-map (cond-> {:service-id service-id}
-                               time (assoc :suspended-at (utils/date-to-str time))
-                               (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
-      (log/info "Service has been suspended" response-map)
-      (track-response-status-metrics service-id service-description 503)
-      (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
-      (-> {:details (str response-map), :message "Service has been suspended", :status 503}
-          (utils/data->error-response request)))))
-
-(defn handle-too-many-requests
-  "Check if a service has more pending requests than max-queue-length and immediately return a 503"
-  [request {:keys [service-id service-description]}]
-  (let [max-queue-length (get service-description "max-queue-length")
-        current-queue-length (counters/value (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))]
-    (when (> current-queue-length max-queue-length)
-      (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
-            response-map {:current-queue-length current-queue-length
-                          :max-queue-length max-queue-length
-                          :outstanding-requests outstanding-requests
-                          :service-id service-id}]
-        (log/info "Max queue length exceeded" response-map)
+  [handler]
+  (fn [{{:keys [suspended-state service-description service-id]} :descriptor :as request}]
+    (if (get suspended-state :suspended false)
+      (let [{:keys [last-updated-by time]} suspended-state
+            response-map (cond-> {:service-id service-id}
+                           time (assoc :suspended-at (utils/date-to-str time))
+                           (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
+        (log/info "Service has been suspended" response-map)
         (track-response-status-metrics service-id service-description 503)
-        (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
-        (-> {:details (str response-map), :message "Max queue length exceeded", :status 503}
-            (utils/data->error-response request))))))
+        (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
+        (-> {:details (str response-map), :message "Service has been suspended", :status 503}
+            (utils/data->error-response request)))
+      (handler request))))
+
+(defn wrap-too-many-requests
+  "Check if a service has more pending requests than max-queue-length and immediately return a 503"
+  [handler]
+  (fn [{{:keys [service-id service-description]} :descriptor :as request}]
+    (let [max-queue-length (get service-description "max-queue-length")
+          current-queue-length (counters/value (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))]
+      (if (> current-queue-length max-queue-length)
+        (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
+              response-map {:current-queue-length current-queue-length
+                            :max-queue-length max-queue-length
+                            :outstanding-requests outstanding-requests
+                            :service-id service-id}]
+          (log/info "Max queue length exceeded" response-map)
+          (track-response-status-metrics service-id service-description 503)
+          (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
+          (-> {:details (str response-map), :message "Max queue length exceeded", :status 503}
+              (utils/data->error-response request)))
+        (handler request)))))
 
 (defn request-authorized?
   "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "
