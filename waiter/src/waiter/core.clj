@@ -925,14 +925,13 @@
                                           [:state instance-rpc-chan local-usage-agent passwords router-id websocket-client]]
                                    (fn default-websocket-handler-fn [request]
                                      (let [password (first passwords)
-                                           process-handlers []
                                            make-request-fn (fn make-ws-request
                                                              [instance request request-properties passthrough-headers end-route metric-group]
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
                                                                               passthrough-headers end-route metric-group))]
                                        (let [process-request-fn (fn process-request-fn [request]
                                                                   (pr/process router-id make-request-fn instance-rpc-chan start-new-service-fn
-                                                                              instance-request-properties process-handlers prepend-waiter-url
+                                                                              instance-request-properties prepend-waiter-url
                                                                               determine-priority-fn ws/process-response! ws/process-exception-in-request
                                                                               ws/abort-request-callback-factory local-usage-agent request))
                                              handler (-> process-request-fn
@@ -993,19 +992,20 @@
                                 [:settings instance-request-properties]
                                 [:state http-client instance-rpc-chan local-usage-agent router-id]
                                 handle-authentication-wrapper-fn wrap-secure-request-fn]
-                         (let [process-handlers [pr/handle-suspended-service pr/handle-too-many-requests]
-                               make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
+                         (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
                                                  (pr/make-request http-client make-basic-auth-fn service-id->password-fn
                                                                   instance request request-properties passthrough-headers end-route metric-group))
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
                                inner-process-request-fn (fn inner-process-request [request]
                                                           (pr/process router-id make-request-fn instance-rpc-chan start-new-service-fn
-                                                                      instance-request-properties process-handlers prepend-waiter-url
+                                                                      instance-request-properties prepend-waiter-url
                                                                       determine-priority-fn process-response-fn pr/process-exception-in-http-request
                                                                       pr/abort-http-request-callback-factory local-usage-agent request))]
                            (fn process-request [request]
                              (handle-authentication-wrapper-fn
                                (-> inner-process-request-fn
+                                   pr/wrap-too-many-requests
+                                   pr/wrap-suspended-service
                                    (pr/wrap-descriptor request->descriptor-fn)
                                    wrap-secure-request-fn)
                                request))))

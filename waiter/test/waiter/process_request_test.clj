@@ -500,27 +500,37 @@
           (is (not (nil? (request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostname
                                               can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))))
 
-(deftest test-handle-suspended-service
+(deftest test-wrap-suspended-service
   (testing "returns error for suspended app"
-    (let [{:keys [status body]} (handle-suspended-service nil {:service-id "service-id-1"
-                                                               :suspended-state {:suspended true
-                                                                                 :last-updated-by "test-user"
-                                                                                 :time (t/now)}})]
+    (let [handler (-> (fn [_] {:status 200})
+                      wrap-suspended-service)
+          request {:descriptor {:service-id "service-id-1"
+                                :suspended-state {:suspended true
+                                                  :last-updated-by "test-user"
+                                                  :time (t/now)}}}
+          {:keys [status body]} (handler request)]
       (is (= 503 status))
       (is (str/includes? body "Service has been suspended"))
       (is (str/includes? body "test-user"))))
 
   (testing "passes apps by default"
-    (is (nil? (handle-suspended-service nil {})))))
+    (let [handler (-> (fn [_] {:status 200})
+                      wrap-suspended-service)
+          request {}
+          {:keys [status body]} (handler request)]
+      (is (= 200 status)))))
 
-(deftest test-handle-too-many-requests
+(deftest test-wrap-too-many-requests
   (testing "returns error for too many requests"
     (let [service-id "my-service"
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 10)
-      (let [{:keys [status body]} (handle-too-many-requests nil {:service-id service-id
-                                                                 :service-description {"max-queue-length" 5}})]
+      (let [handler (-> (fn [_] {:status 200})
+                        wrap-too-many-requests)
+            request {:descriptor {:service-id service-id
+                                  :service-description {"max-queue-length" 5}}}
+            {:keys [status body]} (handler request)]
         (is (= 503 status))
         (is (str/includes? body "Max queue length")))))
 
@@ -529,8 +539,12 @@
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 3)
-      (is (nil? (handle-too-many-requests nil {:service-id service-id
-                                               :service-description {"max-queue-length" 10}}))))))
+      (let [handler (-> (fn [_] {:status 200})
+                        wrap-too-many-requests)
+            request {:descriptor {:service-id service-id
+                                  :service-description {"max-queue-length" 10}}}
+            {:keys [status body]} (handler request)]
+        (is (= 200 status))))))
 
 (deftest test-missing-run-as-user?
   (let [exception (ex-info "Test exception" {})]
