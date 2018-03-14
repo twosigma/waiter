@@ -67,6 +67,7 @@
                                            {:owner->owner-key owner->owner-key})))
                          (or (get owner->owner-key owner)
                              (let [new-owner-key (new-owner-key)]
+                               (log/info "storing" new-owner-key "for" owner "in the token-owners-key")
                                (kv/store kv-store token-owners-key (assoc owner->owner-key owner new-owner-key))
                                new-owner-key)))
       token-index-sanitizer (fn token-index-sanitizer [index-entries]
@@ -102,11 +103,13 @@
           ; Remove token from previous owner
           (when (and existing-owner (not= owner existing-owner))
             (let [previous-owner-key (ensure-owner-key kv-store owner->owner-key existing-owner)]
+              (log/info "removing" token "from index of" existing-owner)
               (update-kv! kv-store previous-owner-key (fn [index] (delete-token-from-index index token)))))
           ; Add token to new owner
           (when owner
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)
                   token-etag' (token-data->etag new-token-data)]
+              (log/info "inserting" token "into index of" owner)
               (update-kv! kv-store owner-key (fn [index] (insert-token-into-index index token token-etag' deleted)))))
           (log/info "stored service description template for" token)))))
 
@@ -146,7 +149,7 @@
     (let [refreshed-token (kv/fetch kv-store token :refresh true)]
       (when owner
         ; NOTE: The token may still show up temporarily in the old owners list
-        (let [owner->owner-key (kv/fetch kv-store token-owners-key)
+        (let [owner->owner-key (kv/fetch kv-store token-owners-key :refresh true)
               owner-key (ensure-owner-key kv-store owner->owner-key owner)]
           (kv/fetch kv-store owner-key :refresh true)))
       refreshed-token))
