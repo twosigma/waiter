@@ -264,7 +264,8 @@
   (let [request-params (:query-params (ring-params/params-request request))
         include-deleted (utils/param-contains? request-params "include" "deleted")
         show-metadata (utils/param-contains? request-params "include" "metadata")
-        {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
+        token (or (get request-params "token")
+                  (:token (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)))
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
         {:keys [service-description-template token-metadata]} token-description
         token-etag (token-description->etag token-description)]

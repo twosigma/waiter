@@ -854,8 +854,9 @@
 
 (defn get-token
   "Gets the token with the given name"
-  [waiter-url token & {:keys [cookies query-params] :or {cookies {}, query-params {"include" "metadata"}}}]
-  (let [request-headers (clojure.walk/stringify-keys {:host token})
+  [waiter-url token & {:keys [cookies query-params request-headers] :or
+                       {cookies {}, query-params {"include" "metadata"}}}]
+  (let [request-headers (or request-headers {"host" token})
         token-response (make-request waiter-url "/token"
                                      :cookies cookies
                                      :headers request-headers
