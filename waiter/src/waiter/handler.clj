@@ -760,14 +760,14 @@
 
 (defn welcome-handler
   "Response with a welcome page."
-  [{:keys [host hostname port support-info]} {:keys [request-method] :as request}]
+  [{:keys [host hostname port support-info]} {:keys [request-method request-time] :as request}]
   (let [welcome-info {:cid (cid/get-correlation-id)
                       :host host
                       :hostname hostname
                       :message "Welcome to Waiter"
                       :port port
                       :support-info support-info
-                      :timestamp (utils/date-to-str (t/now))}
+                      :timestamp (utils/date-to-str request-time)}
         content-type (utils/request->content-type request)]
     (try
       (case request-method

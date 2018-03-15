@@ -207,7 +207,7 @@
   "Creates a context from a data map and a request.
    The data map is expected to contain the following keys: details, message, and status."
   [{:keys [details message status]}
-   {:keys [headers query-string request-method support-info uri]}]
+   {:keys [headers query-string request-method request-time support-info uri]}]
   (let [{:strs [host x-cid]} headers]
     {:cid x-cid
      :details details
@@ -217,7 +217,7 @@
      :request-method (-> (or request-method "") name str/upper-case)
      :status status
      :support-info support-info
-     :timestamp (date-to-str (t/now))
+     :timestamp (date-to-str request-time)
      :uri uri}))
 
 (let [html-fn (template/fn

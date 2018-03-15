@@ -163,13 +163,35 @@
                   (cid/ensure-correlation-id nested-response get-request-cid)
                   nested-response)))))))))
 
-(defn wrap-support-info
-  "Attaches support-info to the request."
-  [handler support-info]
-  (fn wrap-support-info-fn [request]
+(defn wrap-request-info
+  "Attaches request info to the request."
+  [handler router-id support-info]
+  (fn wrap-request-info-fn [request]
     (-> request
-        (assoc :support-info support-info)
+        (assoc :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
+               :request-time (t/now)
+               :router-id router-id
+               :support-info support-info)
         handler)))
+
+(defn wrap-debug
+  "Attaches debugging headers to requests when enabled."
+  [handler]
+  (fn wrap-debug-fn
+    [{:keys [request-id request-time router-id] :as request}]
+    (if (utils/request->debug-enabled? request)
+      (let [response (handler request)
+            add-headers (fn [response]
+                          (update response :headers
+                                  (fn [headers]
+                                    (-> headers
+                                        (assoc "X-Waiter-Request-Date" (utils/date-to-str request-time utils/formatter-rfc822))
+                                        (assoc "X-Waiter-Request-Id" request-id)
+                                        (assoc "X-Waiter-Router-Id" router-id)))))]
+        (if (au/chan? response)
+          (async/go (add-headers (async/<! response)))
+          (add-headers response)))
+      (handler request))))
 
 (defn wrap-error-handling
   "Catches any uncaught exceptions and returns an error response."
@@ -411,7 +433,8 @@
                      (valid-waiter-hostnames (-> host
                                                  (str/split #":")
                                                  first)))
-                 (not-any? #(str/starts-with? (key %) headers/waiter-header-prefix) headers)))))))
+                 (not-any? #(str/starts-with? (key %) headers/waiter-header-prefix)
+                           (remove #(= "x-waiter-debug" (key %)) headers))))))))
 
 (defn leader-fn-factory
   "Creates the leader? function.
@@ -922,7 +945,7 @@
                                               (handler/get-blacklisted-instances instance-rpc-chan service-id request)))
    :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
-                                          [:state instance-rpc-chan local-usage-agent passwords router-id websocket-client]]
+                                          [:state instance-rpc-chan local-usage-agent passwords websocket-client]]
                                    (fn default-websocket-handler-fn [request]
                                      (let [password (first passwords)
                                            make-request-fn (fn make-ws-request
@@ -930,7 +953,7 @@
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
                                                                               passthrough-headers end-route metric-group))]
                                        (let [process-request-fn (fn process-request-fn [request]
-                                                                  (pr/process router-id make-request-fn instance-rpc-chan start-new-service-fn
+                                                                  (pr/process make-request-fn instance-rpc-chan start-new-service-fn
                                                                               instance-request-properties prepend-waiter-url
                                                                               determine-priority-fn ws/process-response! ws/process-exception-in-request
                                                                               ws/abort-request-callback-factory local-usage-agent request))
@@ -967,7 +990,7 @@
                                                                   instance request request-properties passthrough-headers end-route metric-group))
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
                                inner-process-request-fn (fn inner-process-request [request]
-                                                          (pr/process router-id make-request-fn instance-rpc-chan start-new-service-fn
+                                                          (pr/process make-request-fn instance-rpc-chan start-new-service-fn
                                                                       instance-request-properties prepend-waiter-url
                                                                       determine-priority-fn process-response-fn pr/process-exception-in-http-request
                                                                       pr/abort-http-request-callback-factory local-usage-agent request))]
