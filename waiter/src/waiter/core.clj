@@ -945,36 +945,6 @@
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
                             :content-type "image/png"}))
-   :handle-authentication-wrapper-fn (pc/fnk [[:curator kv-store]
-                                              [:state waiter-hostnames]]
-                                       (fn handle-authentication-wrapper-fn [request-handler {:keys [headers] :as request}]
-                                         (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
-                                               {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
-                                               {:strs [authentication] :as service-description} (and token (sd/token->service-description-template kv-store token :error-on-missing false))
-                                               authentication-disabled? (= authentication "disabled")]
-                                           (cond
-                                             (contains? waiter-headers "x-waiter-authentication")
-                                             (do
-                                               (log/info "x-waiter-authentication is not supported as an on-the-fly header"
-                                                         {:service-description service-description, :token token})
-                                               (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
-                                                                         :status 400))
-
-                                             ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
-                                             (and authentication-disabled? (some sd/service-description-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
-                                             (do
-                                               (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
-                                                         {:service-description service-description, :token token})
-                                               (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
-                                                                         :status 400))
-
-                                             authentication-disabled?
-                                             (do
-                                               (log/info "request configured to skip authentication")
-                                               (request-handler (assoc request :skip-authentication true)))
-
-                                             :else
-                                             (request-handler request)))))
    :kill-instance-handler-fn (pc/fnk [[:routines peers-acknowledged-blacklist-requests-fn]
                                       [:settings [:scaling inter-kill-request-wait-time-ms] blacklist-config]
                                       [:state instance-rpc-chan scheduler]
@@ -991,7 +961,7 @@
                                  prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
                                 [:state http-client instance-rpc-chan local-usage-agent router-id]
-                                handle-authentication-wrapper-fn wrap-secure-request-fn]
+                                wrap-auth-bypass-fn wrap-secure-request-fn]
                          (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
                                                  (pr/make-request http-client make-basic-auth-fn service-id->password-fn
                                                                   instance request request-properties passthrough-headers end-route metric-group))
@@ -1001,14 +971,12 @@
                                                                       instance-request-properties prepend-waiter-url
                                                                       determine-priority-fn process-response-fn pr/process-exception-in-http-request
                                                                       pr/abort-http-request-callback-factory local-usage-agent request))]
-                           (fn process-request [request]
-                             (handle-authentication-wrapper-fn
-                               (-> inner-process-request-fn
-                                   pr/wrap-too-many-requests
-                                   pr/wrap-suspended-service
-                                   (pr/wrap-descriptor request->descriptor-fn)
-                                   wrap-secure-request-fn)
-                               request))))
+                           (-> inner-process-request-fn
+                               pr/wrap-too-many-requests
+                               pr/wrap-suspended-service
+                               (pr/wrap-descriptor request->descriptor-fn)
+                               wrap-secure-request-fn
+                               wrap-auth-bypass-fn)))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
                                        [:state router-metrics-agent]]
@@ -1206,6 +1174,38 @@
                                (wrap-router-auth-fn
                                  (fn [request]
                                    (handler/work-stealing-handler instance-rpc-chan request))))
+   :wrap-auth-bypass-fn (pc/fnk [[:curator kv-store]
+                                 [:state waiter-hostnames]]
+                          (fn wrap-auth-bypass-fn
+                            [handler]
+                            (fn [{:keys [headers] :as request}]
+                              (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
+                                    {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
+                                    {:strs [authentication] :as service-description} (and token (sd/token->service-description-template kv-store token :error-on-missing false))
+                                    authentication-disabled? (= authentication "disabled")]
+                                (cond
+                                  (contains? waiter-headers "x-waiter-authentication")
+                                  (do
+                                    (log/info "x-waiter-authentication is not supported as an on-the-fly header"
+                                              {:service-description service-description, :token token})
+                                    (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+                                                              :status 400))
+
+                                  ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
+                                  (and authentication-disabled? (some sd/service-description-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
+                                  (do
+                                    (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
+                                              {:service-description service-description, :token token})
+                                    (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+                                                              :status 400))
+
+                                  authentication-disabled?
+                                  (do
+                                    (log/info "request configured to skip authentication")
+                                    (handler (assoc request :skip-authentication true)))
+
+                                  :else
+                                  (handler request))))))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]

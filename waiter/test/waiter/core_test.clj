@@ -1005,18 +1005,18 @@
       (delegate-instance-kill-request-fn service-id)
       (is (= router-ids @make-kill-instance-peer-ids-atom)))))
 
-(deftest test-handle-authentication-wrapper-fn
+(deftest test-wrap-auth-bypass
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         configuration {:curator {:kv-store kv-store}
                        :state {:waiter-hostnames #{"www.waiter-router.com"}}}
-        handle-authentication-wrapper-fn ((:handle-authentication-wrapper-fn request-handlers) configuration)
+        wrap-auth-bypass-fn ((:wrap-auth-bypass-fn request-handlers) configuration)
         handler-response (Object.)
         execute-request (fn execute-request-fn [test-request]
                           (let [request-handler-argument-atom (atom nil)
                                 test-request-handler (fn request-handler-fn [request]
                                                        (reset! request-handler-argument-atom request)
                                                        handler-response)
-                                test-response (handle-authentication-wrapper-fn test-request-handler test-request)]
+                                test-response ((wrap-auth-bypass-fn test-request-handler) test-request)]
                             {:handled-request @request-handler-argument-atom
                              :response test-response}))]
 
