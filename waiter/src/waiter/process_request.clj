@@ -405,10 +405,21 @@
           (async/close! body)
           (async/close! request-state-chan))))))
 
-(defn- track-response-status-metrics
-  [service-id {:strs [metric-group]} status]
-  (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
-  (statsd/inc! metric-group (str "response_status_" status)))
+(defn wrap-response-status-metrics
+  "Wraps a handler and updates service metrics based upon the result."
+  [handler]
+  (fn wrap-response-status-metrics-fn
+    [{:keys [descriptor] :as request}]
+    (let [{:keys [service-id] {:strs [metric-group]} :service-description} descriptor
+          response (handler request)
+          update (fn [{:keys [status] :as response}]
+                   (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
+                   (statsd/inc! metric-group (str "response_status_" status))
+                   response)]
+      (if (au/chan? response)
+        (async/go
+          (update (async/<! response)))
+        (update response)))))
 
 (defn abort-http-request-callback-factory
   "Creates a callback to abort the http request."
@@ -434,7 +445,6 @@
     (when (and (= 503 status) (get service-description "blacklist-on-503"))
       (log/info "Instance returned 503: " {:instance instance})
       (deliver reservation-status-promise :instance-busy))
-    (track-response-status-metrics service-id service-description status)
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
@@ -469,10 +479,7 @@
   "Processes exceptions thrown while processing a http request."
   [track-process-error-metrics-fn {:keys [descriptor] :as request} exception]
   (track-process-error-metrics-fn descriptor)
-  (let [{:keys [status] :as error-response} (utils/exception->response exception request)
-        {:keys [service-description service-id]} descriptor]
-    (track-response-status-metrics service-id service-description status)
-    error-response))
+  (utils/exception->response exception request))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."
@@ -607,14 +614,13 @@
 (defn wrap-suspended-service
   "Check if a service has been suspended and immediately return a 503 response"
   [handler]
-  (fn [{{:keys [suspended-state service-description service-id]} :descriptor :as request}]
+  (fn [{{:keys [suspended-state service-id]} :descriptor :as request}]
     (if (get suspended-state :suspended false)
       (let [{:keys [last-updated-by time]} suspended-state
             response-map (cond-> {:service-id service-id}
                            time (assoc :suspended-at (utils/date-to-str time))
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "Service has been suspended" response-map)
-        (track-response-status-metrics service-id service-description 503)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
         (-> {:details (str response-map), :message "Service has been suspended", :status 503}
             (utils/data->error-response request)))
@@ -633,7 +639,6 @@
                             :outstanding-requests outstanding-requests
                             :service-id service-id}]
           (log/info "Max queue length exceeded" response-map)
-          (track-response-status-metrics service-id service-description 503)
           (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
           (-> {:details (str response-map), :message "Max queue length exceeded", :status 503}
               (utils/data->error-response request)))
