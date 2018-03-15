@@ -43,6 +43,7 @@
             [waiter.metrics-sync :as metrics-sync]
             [waiter.password-store :as password-store]
             [waiter.process-request :as pr]
+            [waiter.ring-utils :as ru]
             [waiter.scaling :as scaling]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
@@ -185,12 +186,10 @@
                           (update response :headers
                                   (fn [headers]
                                     (-> headers
-                                        (assoc "X-Waiter-Request-Date" (utils/date-to-str request-time utils/formatter-rfc822))
-                                        (assoc "X-Waiter-Request-Id" request-id)
-                                        (assoc "X-Waiter-Router-Id" router-id)))))]
-        (if (au/chan? response)
-          (async/go (add-headers (async/<! response)))
-          (add-headers response)))
+                                        (assoc "x-waiter-request-date" (utils/date-to-str request-time utils/formatter-rfc822))
+                                        (assoc "x-waiter-request-id" request-id)
+                                        (assoc "x-waiter-router-id" router-id)))))]
+        (ru/update-response response add-headers))
       (handler request))))
 
 (defn wrap-error-handling
