@@ -507,10 +507,10 @@
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."
-    [router-id make-request-fn instance-rpc-chan start-new-service-fn
+    [make-request-fn instance-rpc-chan start-new-service-fn
      instance-request-properties prepend-waiter-url determine-priority-fn process-backend-response-fn
      process-exception-fn request-abort-callback-factory local-usage-agent
-     {:keys [ctrl descriptor] :as request}]
+     {:keys [ctrl descriptor request-id request-time] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
           request (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
@@ -518,8 +518,7 @@
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
           ; update response headers eagerly to enable reporting these in case of failure
-          response-headers (atom (cond-> {}
-                                         waiter-debug-enabled? (assoc "X-Waiter-Router-Id" router-id)))
+          response-headers (atom {})
           add-debug-header-into-response! (fn [name value]
                                             (when waiter-debug-enabled?
                                               (swap! response-headers assoc (str name) (str value))))]
@@ -532,10 +531,7 @@
           (try
             (confirm-live-connection-without-abort)
             (let [{:keys [service-id service-description]} descriptor
-                  {:strs [metric-group]} service-description
-                  ^DateTime request-time (t/now)]
-              (->> (utils/date-to-str request-time utils/formatter-rfc822)
-                   (add-debug-header-into-response! "x-waiter-request-date"))
+                  {:strs [metric-group]} service-description]
               (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
               (try
                 (let [{:keys [waiter-headers passthrough-headers]} descriptor]
@@ -551,7 +547,6 @@
                     (fn [nanos] (statsd/histo! metric-group "process" nanos))
                     (let [instance-request-properties (prepare-request-properties instance-request-properties waiter-headers)
                           start-new-service-fn (fn start-new-service-in-process [] (start-new-service-fn descriptor))
-                          request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
                           priority (determine-priority-fn waiter-headers)
                           reason-map (cond-> {:reason :serve-request
                                               :state {:initial (metrics/retrieve-local-stats-for-service service-id)}
