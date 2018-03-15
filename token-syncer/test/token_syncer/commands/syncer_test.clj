@@ -599,4 +599,13 @@
                                   (is (= 20 limit)))]
         (is (= {:exit-code 0
                 :message "test-command: exiting with code 0"}
+               (cli/process-command test-command-config context args)))))
+    (let [args ["http://cluster-1.com" "http://cluster-2.com"]]
+      (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit]
+                                  (is (= waiter-api in-waiter-api))
+                                  (is (= #{"http://cluster-1.com" "http://cluster-2.com"} cluster-urls-set))
+                                  (is (= 1000 limit))
+                                  {:summary {:sync {:failed #{"foo"}}}})]
+        (is (= {:exit-code 1
+                :message "test-command: exiting with code 1"}
                (cli/process-command test-command-config context args)))))))
