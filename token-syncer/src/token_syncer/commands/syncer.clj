@@ -248,8 +248,8 @@
 
                           :else
                           (let [sync-result (sync-tokens waiter-api cluster-urls-set limit)
-                                exit-code (-> (get-in sync-result [:summary :sync :error] 0)
-                                              zero?
+                                exit-code (-> (get-in sync-result [:summary :sync :failed])
+                                              empty?
                                               (if 0 1))]
                             (log/info (-> sync-result pp/pprint with-out-str str/trim))
                             {:exit-code exit-code
