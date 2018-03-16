@@ -533,7 +533,9 @@
             (is (= {:num-reserved-ports 11} ex-data))
             (is (= "Unable to reserve 20 ports" (.getMessage ex)))))))))
 
-(deftest test-retry-failed-instances
+; Marked explicit due to:
+; - https://github.com/twosigma/waiter/issues/235
+(deftest ^:explicit test-retry-failed-instances
   (let [scheduler-config {:health-check-timeout-ms 1
                           :port-grace-period-ms 1
                           :port-range [10000 11000]
