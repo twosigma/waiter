@@ -994,9 +994,9 @@
                                                                       determine-priority-fn process-response-fn pr/process-exception-in-http-request
                                                                       pr/abort-http-request-callback-factory local-usage-agent request))]
                            (-> inner-process-request-fn
-                               pr/wrap-response-status-metrics
                                pr/wrap-too-many-requests
                                pr/wrap-suspended-service
+                               pr/wrap-response-status-metrics
                                (pr/wrap-descriptor request->descriptor-fn)
                                wrap-secure-request-fn
                                wrap-auth-bypass-fn)))
