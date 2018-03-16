@@ -32,6 +32,7 @@
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.middleware :as middleware]
+            [waiter.ring-utils :as ru]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.service-description :as sd]
@@ -412,14 +413,11 @@
     [{:keys [descriptor] :as request}]
     (let [{:keys [service-id] {:strs [metric-group]} :service-description} descriptor
           response (handler request)
-          update (fn [{:keys [status] :as response}]
+          update! (fn [{:keys [status] :as response}]
                    (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
                    (statsd/inc! metric-group (str "response_status_" status))
                    response)]
-      (if (au/chan? response)
-        (async/go
-          (update (async/<! response)))
-        (update response)))))
+      (ru/update-response response update!))))
 
 (defn abort-http-request-callback-factory
   "Creates a callback to abort the http request."
