@@ -148,7 +148,6 @@
   (async/go
     (try
       (log/debug "retrieving instance for" service-id "using" (dissoc reason-map :cid :time))
-      (add-debug-header-into-response! "X-Waiter-Service-Id" service-id)
       (let [correlation-id (cid/get-correlation-id)
             instance (<? (service/get-available-instance
                            instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group add-debug-header-into-response!))]
@@ -473,12 +472,6 @@
              (set/intersection sd/on-the-fly-service-description-keys)
              (empty?)))))
 
-(defn process-exception-in-http-request
-  "Processes exceptions thrown while processing a http request."
-  [track-process-error-metrics-fn {:keys [descriptor] :as request} exception]
-  (track-process-error-metrics-fn descriptor)
-  (utils/exception->response exception request))
-
 (defn track-process-error-metrics
   "Updates metrics for process errors."
   [descriptor]
@@ -509,12 +502,21 @@
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
             (utils/exception->response e request)))))))
 
+(defn handle-process-exception
+  "Handles an error during process."
+  [exception {:keys [descriptor] :as request} response-headers]
+  (log/error exception "error during process")
+  (track-process-error-metrics descriptor)
+  (-> (utils/exception->response exception request)
+      (update :headers (fn [headers]
+                         (merge response-headers headers)))))
+
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."
     [make-request-fn instance-rpc-chan start-new-service-fn
-     instance-request-properties prepend-waiter-url determine-priority-fn process-backend-response-fn
-     process-exception-fn request-abort-callback-factory local-usage-agent
+     instance-request-properties determine-priority-fn process-backend-response-fn
+     request-abort-callback-factory local-usage-agent
      {:keys [ctrl descriptor request-id request-time] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
@@ -572,8 +574,6 @@
                                                          add-debug-header-into-response!))]
                       (try
                         (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
-                        (when waiter-debug-enabled?
-                          (swap! response-headers merge (instance->debug-headers instance prepend-waiter-url)))
                         (confirm-live-connection-without-abort)
                         (let [endpoint (request->endpoint request waiter-headers)
                               {:keys [error] :as response}
@@ -589,25 +589,21 @@
                               confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
                           (when error
                             (throw-response-error error reservation-status-promise instance response-headers))
-                          (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
-                                                       reason-map response-headers reservation-status-promise
-                                                       confirm-live-connection-with-abort request-state-chan response))
+                          (-> (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
+                                                           reason-map response-headers reservation-status-promise
+                                                           confirm-live-connection-with-abort request-state-chan response)
+                              (assoc :instance instance)))
                         (catch Exception e
                           ; A :client-error or :instance-error may already be in the channel in which case our :generic-error will be ignored.
                           (deliver reservation-status-promise :generic-error)
                           ; close request-state-chan to mark the request as finished
                           (async/close! request-state-chan)
-                          ; Handle error lower down
-                          (throw e))))))
+                          (-> (handle-process-exception e request @response-headers)
+                              (assoc :instance instance)))))))
                 (catch Exception e
-                  ; Handle error lower down
-                  (throw (ex-info "Rethrowing exception from process" {:descriptor descriptor :source :pr/process} e)))))
+                  (handle-process-exception e request @response-headers))))
             (catch Exception e
-              (let [{:keys [descriptor source]} (ex-data e)
-                    exception (if (= source :pr/process) (.getCause e) e)]
-                (-> (process-exception-fn track-process-error-metrics request exception)
-                    (update :headers (fn [headers]
-                                       (merge @response-headers headers))))))))))))
+              (handle-process-exception e request @response-headers))))))))
 
 (defn wrap-suspended-service
   "Check if a service has been suspended and immediately return a 503 response"

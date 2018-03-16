@@ -25,6 +25,7 @@
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
+            [waiter.ring-utils :as ru]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.utils :as utils])
@@ -344,7 +345,7 @@
         (async/go
           (let [timeout-ch (async/timeout time-left-ms)
                 [_ selected-chan] (async/alts! [request-close-promise-chan timeout-ch] :priority true)]
-            (if (= timeout-ch selected-chan)
+            (when (= timeout-ch selected-chan)
               (try
                 ;; close connections if the request is still live
                 (confirm-live-connection-with-abort)
@@ -354,16 +355,16 @@
                   (log/debug "ignoring exception generated from closed connection")))))))
       (catch Exception e
         (async/>!! request-close-promise-chan :process-error)
-        (throw e)))))
+        (throw e))))
+  {}) ;; return an empty response map to maintain consistency with the http case
 
-(defn process-exception-in-request
-  "Processes exceptions thrown while processing a websocket request."
-  [track-process-error-metrics-fn {:keys [descriptor out] :as request} exception]
-  (log/error exception "error in processing websocket request")
-  (track-process-error-metrics-fn descriptor)
-  (let [exception-response (utils/exception->response exception request)]
-    ; FIXME writing http response into websocket stream
-    (async/go
-      (async/>! out exception-response)
-      (async/close! out))
-    exception-response))
+(defn wrap-ws-close-on-error
+  "Closes the out chan when the handler returns an error."
+  [handler]
+  (fn [{:keys [out] :as request}]
+    (let [response (handler request)]
+      (ru/update-response response
+                          (fn [response]
+                            (when (ru/error-response? response)
+                              (async/close! out))
+                            response)))))

@@ -177,18 +177,29 @@
 
 (defn wrap-debug
   "Attaches debugging headers to requests when enabled."
-  [handler]
+  [handler prepend-waiter-url]
   (fn wrap-debug-fn
     [{:keys [request-id request-time router-id] :as request}]
     (if (utils/request->debug-enabled? request)
       (let [response (handler request)
-            add-headers (fn [response]
-                          (update response :headers
-                                  (fn [headers]
-                                    (-> headers
-                                        (assoc "x-waiter-request-date" (utils/date-to-str request-time utils/formatter-rfc822))
-                                        (assoc "x-waiter-request-id" request-id)
-                                        (assoc "x-waiter-router-id" router-id)))))]
+            add-headers (fn [{:keys [descriptor instance] :as response}]
+                          (let [backend-directory (:log-directory instance)
+                                backend-log-url (and backend-directory
+                                                     (handler/generate-log-url prepend-waiter-url instance))
+                                request-date (and request-time (utils/date-to-str request-time utils/formatter-rfc822))]
+                            (update response :headers
+                                    (fn [headers]
+                                      (cond-> headers
+                                        request-time (assoc "x-waiter-request-date" request-date)
+                                        request-id (assoc "x-waiter-request-id" request-id)
+                                        router-id (assoc "x-waiter-router-id" router-id)
+                                        descriptor (assoc "x-waiter-service-id" (:service-id descriptor))
+                                        instance (assoc "x-waiter-backend-id" (:id instance)
+                                                        "x-waiter-backend-host" (:host instance)
+                                                        "x-waiter-backend-port" (str (:port instance))
+                                                        "x-waiter-backend-proto" (:protocol instance))
+                                        backend-directory (assoc "x-waiter-backend-directory" backend-directory
+                                                                 "x-waiter-backend-log-url" backend-log-url))))))]
         (ru/update-response response add-headers))
       (handler request))))
 
@@ -953,10 +964,10 @@
                                                                               passthrough-headers end-route metric-group))]
                                        (let [process-request-fn (fn process-request-fn [request]
                                                                   (pr/process make-request-fn instance-rpc-chan start-new-service-fn
-                                                                              instance-request-properties prepend-waiter-url
-                                                                              determine-priority-fn ws/process-response! ws/process-exception-in-request
+                                                                              instance-request-properties determine-priority-fn ws/process-response!
                                                                               ws/abort-request-callback-factory local-usage-agent request))
                                              handler (-> process-request-fn
+                                                         (ws/wrap-ws-close-on-error)
                                                          (pr/wrap-descriptor request->descriptor-fn))]
                                          (ws/request-handler password handler request)))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
@@ -990,8 +1001,7 @@
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
                                inner-process-request-fn (fn inner-process-request [request]
                                                           (pr/process make-request-fn instance-rpc-chan start-new-service-fn
-                                                                      instance-request-properties prepend-waiter-url
-                                                                      determine-priority-fn process-response-fn pr/process-exception-in-http-request
+                                                                      instance-request-properties determine-priority-fn process-response-fn
                                                                       pr/abort-http-request-callback-factory local-usage-agent request))]
                            (-> inner-process-request-fn
                                pr/wrap-too-many-requests

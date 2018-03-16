@@ -344,13 +344,27 @@
         (is (= :test-name-error @reservation-status-promise))
         (is (= server-termination-on-unexpected-condition @status-callback-atom))))))
 
-(deftest test-exception-processing
-  (let [out (async/chan 1)
-        request {:out out :headers {"accept" "application/json"}}
-        ex (Exception.)
-        _ (process-exception-in-request identity request ex)
-        ex-msg (-> out async/<!! :body json/read-str (get-in ["waiter-error" "message"]))]
-    ;; response should indicate an internal server error
-    (is (= "Internal error" ex-msg))
-    ;; channels should be closed
-    (is (not (async/>!! out :out-data)))))
+(deftest test-wrap-ws-close-on-error
+  (testing "error case"
+    (let [out (async/chan 1)
+          request {:out out}
+          handler (-> (fn [_] {:status 500})
+                      wrap-ws-close-on-error)
+          {:keys [status]} (handler request)]
+      ;; response should indicate an error
+      (is (= 500 status))
+      ;; channels should be closed
+      (is (not (async/>!! out :out-data)))))
+  (testing "non-error case"
+    (let [out (async/chan 1)
+          request {:out out}
+          handler (-> (fn [{:keys [out]}]
+                        (async/go
+                          (async/>! out :data)
+                          {:status 200}))
+                      wrap-ws-close-on-error)
+          {:keys [status] :as response} (async/<!! (handler request))]
+      ;; response should indicate an internal server error
+      (is (= 200 status))
+      ;; channels should contain data and not be closed
+      (is (= :data (async/<!! out))))))

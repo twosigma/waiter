@@ -35,3 +35,10 @@
   [request]
   (let [encoding (or (ring-request/character-encoding request) "UTF-8")]
     (ring-params/assoc-query-params request encoding)))
+
+(defn error-response?
+  "Determines if a response is an error"
+  [{:keys [status]}]
+  (and status
+       (>= status 400)
+       (<= status 599)))
