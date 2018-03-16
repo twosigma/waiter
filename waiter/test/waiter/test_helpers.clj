@@ -24,6 +24,7 @@
 
 (def ^:const ANSI-RESET "\033[0m")
 (def ^:const ANSI-BLUE "\033[34m")
+(def ^:const ANSI-CYAN "\033[36m")
 (def ^:const ANSI-MAGENTA "\033[1m\033[35m")
 
 (defonce ^:private replaced-layout
@@ -31,6 +32,7 @@
 
 (defn blue [message] (str ANSI-BLUE message ANSI-RESET))
 (defn magenta [message] (str ANSI-MAGENTA message ANSI-RESET))
+(defn cyan [message] (str ANSI-CYAN message ANSI-RESET))
 
 (defn- full-test-name
   [m]
@@ -47,7 +49,15 @@
         max-mem (.maxMemory runtime)]
     (log/debug "free memory:" free-mem "total memory:" total-mem "used memory:" used-mem "max memory:" max-mem)))
 
-(let [running-tests (atom {})]
+(defn- format-duration
+  "Formats a duration in ms."
+  [ms]
+  (cond (< ms 1e4) (str ms "ms")
+        :else (str (int (/ ms 1e3)) "s")))
+
+(let [running-tests (atom {})
+      start-millis (atom {})
+      test-durations (atom {})]
   (defn- log-running-tests []
     (let [tests @running-tests]
       (log/debug (count tests) "running test(s):" tests))
@@ -58,15 +68,30 @@
       @replaced-layout
       (with-test-out
         (println \tab (magenta "START: ") test-name))
+      (swap! start-millis #(assoc % test-name (System/currentTimeMillis)))
       (swap! running-tests #(assoc % test-name (str (t/now))))
       (log-running-tests)))
 
   (defmethod report :end-test-var [m]
-    (let [test-name (full-test-name m)]
+    (let [test-name (full-test-name m)
+          elapsed-millis (- (System/currentTimeMillis) (get @start-millis test-name))]
       (with-test-out
-        (println \tab (blue "FINISH:") test-name @*report-counters*))
+        (println \tab (blue "FINISH:") test-name (cyan (format-duration elapsed-millis)) @*report-counters*))
+      (swap! test-durations #(assoc % test-name elapsed-millis))
       (swap! running-tests #(dissoc % test-name))
-      (log-running-tests))))
+      (log-running-tests)))
+
+  (defmethod report :summary [m]
+    (with-test-out
+      (println "\nLongest running tests:")
+      (doseq [[test-name duration] (->> @test-durations
+                                        (sort-by second)
+                                        (reverse)
+                                        (take 10))]
+        (println test-name (cyan (format-duration duration))))
+      (println "\nRan" (:test m) "tests containing"
+               (+ (:pass m) (:fail m) (:error m)) "assertions.")
+      (println (:fail m) "failures," (:error m) "errors."))))
 
 ;; Overrides the default reporter for :error so that the ex-data of
 ;; an exception is printed.  The default report doesn't print the ex-data.
