@@ -10,6 +10,9 @@
 ;;
 (ns waiter.ring-utils
   (:require [clojure.core.async :as async]
+            [clojure.data.json :as json]
+            [ring.middleware.params :as ring-params]
+            [ring.util.request :as ring-request]
             [waiter.async-utils :as au]))
 
 (defn update-response
@@ -18,3 +21,17 @@
   (if (au/chan? response)
     (async/go (response-fn (async/<! response)))
     (response-fn response)))
+
+(defn json-request
+  "Tries to parse a request body as JSON, if error, throw 400."
+  [{:keys [body] {:strs [content-type]} :headers :as request}]
+  (try
+    (assoc request :body (-> body slurp (json/read-str)))
+    (catch Exception e
+      (throw (ex-info "Invalid JSON payload" {:status 400} e)))))
+
+(defn query-params-request
+  "Like Ring's params-request, but doesn't try to pull params from the body."
+  [request]
+  (let [encoding (or (ring-request/character-encoding request) "UTF-8")]
+    (ring-params/assoc-query-params request encoding)))

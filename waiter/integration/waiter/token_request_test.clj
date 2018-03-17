@@ -646,6 +646,14 @@
           register-response (post-token waiter-url service-desc)]
       (is (= 400 (:status register-response))))))
 
+(deftest ^:parallel ^:integration-fast test-token-bad-payload
+  (testing-using-waiter-url
+    (let [{:keys [status]} (make-request waiter-url "/token"
+                                         :body "i'm bad at json"
+                                         :headers {"host" "test-token"}
+                                         :http-method-fn http/post)]
+      (is (= 400 status)))))
+
 (deftest ^:parallel ^:integration-fast test-token-environment-variables
   (testing-using-waiter-url
     (let [token (rand-name)

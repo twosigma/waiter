@@ -22,13 +22,13 @@
             [metrics.meters :as meters]
             [plumbing.core :as pc]
             [ring.middleware.multipart-params :as multipart-params]
-            [ring.middleware.params :as ring-params]
             [waiter.async-request :as async-req]
             [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
+            [waiter.ring-utils :as ru]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.service-description :as sd]
@@ -133,8 +133,7 @@
   [instance-rpc-chan request]
   (async/go
     (try
-      (let [request-body (slurp (:body request))
-            {:strs [instance period-in-ms reason] :as request-body-map} (json/read-str request-body)
+      (let [{:strs [instance period-in-ms reason] :as request-body-map} (-> request ru/json-request :body)
             instance-id (get instance "id")
             service-id (get instance "service-id")]
         (if (or (str/blank? reason)
@@ -193,7 +192,7 @@
   "Retrieves the codahale metrics for a service-id present at this router."
   [request]
   (try
-    (let [request-params (:params (ring-params/params-request request))
+    (let [request-params (-> request ru/query-params-request :query-params)
           exclude-services (utils/request-flag request-params "exclude-services")
           service-id (get request-params "service-id" nil)
           include-jvm-metrics (utils/request-flag request-params "include-jvm-metrics")
@@ -230,7 +229,7 @@
                         :priority true)]
     (if (= :timeout current-state)
       (throw (ex-info "Query for service state timed out" {:status 503}))
-      (let [request-params (:params (ring-params/params-request request))
+      (let [request-params (-> request ru/query-params-request :query-params)
             auth-user (get request :authorization/user)
             run-as-user-param (get request-params "run-as-user")
             viewable-services (filter
@@ -437,7 +436,7 @@
         (log/info auth-user "wants to update overrides for" service-id)
         (if (allowed-to-manage-service? service-id auth-user)
           (do
-            (let [service-description-overrides (json/read-str (slurp (:body request)))]
+            (let [service-description-overrides (-> request ru/json-request :body)]
               (sd/store-service-description-overrides kv-store service-id auth-user service-description-overrides))
             (trigger-service-refresh make-inter-router-requests-fn service-id)
             (utils/map->json-response {:service-id service-id, :success true}))
@@ -450,7 +449,7 @@
   "Redirects user to the log directory on the slave"
   [scheduler service-id prepend-waiter-url request]
   (try
-    (let [{:strs [instance-id host directory]} (:params (ring-params/params-request request))
+    (let [{:strs [instance-id host directory]} (-> request ru/query-params-request :query-params)
           _ (when-not instance-id
               (throw (ex-info "Missing instance-id parameter" {:status 400})))
           _ (when-not host
@@ -475,7 +474,7 @@
   (async/go
     (try
       (let [{:keys [cid instance request-id router-id service-id] :as request-body-map}
-            (-> request (:body) (slurp) (json/read-str) (walk/keywordize-keys))]
+            (-> request ru/json-request :body walk/keywordize-keys)]
         (log/info "received work-stealing offer" (:id instance) "of" service-id "from" router-id)
         (if-not (and cid instance request-id router-id service-id)
           (throw (ex-info "Missing one of cid, instance, request-id, router-id or service-id"
