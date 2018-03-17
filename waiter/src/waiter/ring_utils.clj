@@ -26,7 +26,7 @@
   "Tries to parse a request body as JSON, if error, throw 400."
   [{:keys [body] {:strs [content-type]} :headers :as request}]
   (try
-    (assoc request :body (-> body slurp (json/read-str)))
+    (assoc request :body (-> body slurp json/read-str))
     (catch Exception e
       (throw (ex-info "Invalid JSON payload" {:status 400} e)))))
 
