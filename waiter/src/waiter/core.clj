@@ -177,16 +177,17 @@
 
 (defn wrap-debug
   "Attaches debugging headers to requests when enabled."
-  [handler prepend-waiter-url]
+  [handler generate-log-url-fn]
   (fn wrap-debug-fn
     [{:keys [request-id request-time router-id] :as request}]
     (if (utils/request->debug-enabled? request)
       (let [response (handler request)
             add-headers (fn [{:keys [descriptor instance] :as response}]
                           (let [backend-directory (:log-directory instance)
-                                backend-log-url (and backend-directory
-                                                     (handler/generate-log-url prepend-waiter-url instance))
-                                request-date (and request-time (utils/date-to-str request-time utils/formatter-rfc822))]
+                                backend-log-url (when backend-directory
+                                                  (generate-log-url-fn instance))
+                                request-date (when request-time
+                                               (utils/date-to-str request-time utils/formatter-rfc822))]
                             (update response :headers
                                     (fn [headers]
                                       (cond-> headers
@@ -645,6 +646,8 @@
                             (let [position-generator-atom (atom 0)]
                               (fn determine-priority-fn [waiter-headers]
                                 (pr/determine-priority position-generator-atom waiter-headers))))
+   :generate-log-url-fn (pc/fnk [prepend-waiter-url]
+                          (partial handler/generate-log-url prepend-waiter-url))
    :list-tokens-fn (pc/fnk [[:curator curator]
                             [:settings [:zookeeper base-path] kv-config]]
                      (fn list-tokens-fn []
@@ -1018,13 +1021,13 @@
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
    :service-handler-fn (pc/fnk [[:curator kv-store]
-                                [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn prepend-waiter-url]
+                                [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn]
                                 [:state router-id scheduler]
                                 wrap-secure-request-fn]
                          (wrap-secure-request-fn
                            (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
                              (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
-                                                      prepend-waiter-url make-inter-router-requests-sync-fn request))))
+                                                      generate-log-url-fn make-inter-router-requests-sync-fn request))))
    :service-id-handler-fn (pc/fnk [[:curator kv-store]
                                    [:routines request->descriptor-fn store-service-description-fn]
                                    wrap-secure-request-fn]
@@ -1072,12 +1075,12 @@
                                    (fn service-suspend-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                      (handler/suspend-or-resume-service-handler
                                        kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :suspend request))))
-   :service-view-logs-handler-fn (pc/fnk [[:routines prepend-waiter-url]
+   :service-view-logs-handler-fn (pc/fnk [[:routines generate-log-url-fn]
                                           [:state scheduler]
                                           wrap-secure-request-fn]
                                    (wrap-secure-request-fn
                                      (fn service-view-logs-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                                       (handler/service-view-logs-handler scheduler service-id prepend-waiter-url request))))
+                                       (handler/service-view-logs-handler scheduler service-id generate-log-url-fn request))))
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
    :state-all-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
                                   [:daemons router-state-maintainer scheduler-maintainer]

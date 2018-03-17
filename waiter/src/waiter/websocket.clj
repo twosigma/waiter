@@ -355,7 +355,7 @@
                   (log/debug "ignoring exception generated from closed connection")))))))
       (catch Exception e
         (async/>!! request-close-promise-chan :process-error)
-        (throw e))))
+        (log/error e "error while processing websocket response"))))
   {}) ;; return an empty response map to maintain consistency with the http case
 
 (defn wrap-ws-close-on-error
