@@ -14,9 +14,9 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
-            [ring.middleware.params :as ring-params]
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
+            [waiter.ring-utils :as ru]
             [waiter.service-description :as sd]
             [waiter.utils :as utils])
   (:import (org.joda.time DateTime)))
@@ -226,7 +226,7 @@
   [clock synchronize-fn kv-store waiter-hostnames entitlement-manager make-peer-requests-fn {:keys [headers] :as request}]
   (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
         authenticated-user (get request :authorization/user)
-        request-params (:query-params (ring-params/params-request request))
+        request-params (-> request ru/query-params-request :query-params)
         hard-delete (utils/request-flag request-params "hard-delete")]
     (if token
       (let [token-description (sd/token->token-description kv-store token :include-deleted hard-delete)
@@ -266,7 +266,7 @@
   "Returns the configuration if found.
    Anyone can see the configuration, b/c it shouldn't contain any sensitive data."
   [kv-store token-root waiter-hostnames {:keys [headers] :as request}]
-  (let [request-params (:query-params (ring-params/params-request request))
+  (let [request-params (-> request ru/query-params-request :query-params)
         include-deleted (utils/param-contains? request-params "include" "deleted")
         show-metadata (utils/param-contains? request-params "include" "metadata")
         token (or (get request-params "token")
@@ -297,9 +297,9 @@
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn
    validate-service-description-fn {:keys [headers] :as request}]
-  (let [request-params (:query-params (ring-params/params-request request))
+  (let [request-params (-> request ru/query-params-request :query-params)
         authenticated-user (get request :authorization/user)
-        {:strs [token] :as new-token-description} (json/read-str (slurp (:body request)))
+        {:strs [token] :as new-token-description} (-> request ru/json-request :body)
         new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
         {:strs [authentication permitted-user run-as-user] :as new-service-description-template}
         (select-keys new-token-description sd/service-description-keys)
@@ -424,7 +424,7 @@
   [kv-store {:keys [request-method] :as req}]
   (try
     (case request-method
-      :get (let [request-params (:params (ring-params/params-request req))
+      :get (let [request-params (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
                  owner (get request-params "owner")
@@ -468,7 +468,7 @@
   "Handle a request to refresh token data directly from the KV store, skipping the cache."
   [kv-store {:keys [body] {:keys [src-router-id]} :basic-authentication :as req}]
   (try
-    (let [{:strs [token owner index] :as json-data} (json/read-str (slurp body))]
+    (let [{:strs [token owner index] :as json-data} (-> req ru/json-request :body)]
       (log/info "received token refresh request" json-data)
       (when index
         (log/info src-router-id "is force refreshing the token index")
