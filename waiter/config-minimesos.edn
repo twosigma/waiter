@@ -31,4 +31,7 @@
                                               :spnego-auth false}}}
 
  ; ---------- CORS ----------
- :cors-config {:kind :allow-all }}
+ :cors-config {:kind :allow-all }
+
+;; Require fewer failed health checks
+:health-check-config {:failed-check-threshold 2}}

@@ -18,20 +18,25 @@
 
 (deftest ^:parallel ^:integration-slow test-busy-instance-not-reserved
   (testing-using-waiter-url
-    (let [req-headers (walk/stringify-keys
-                        (merge (kitchen-request-headers)
-                               {:x-waiter-name (rand-name)
-                                :x-waiter-debug true}))
-          make-request-fn (fn []
-                            (log/info "making kitchen request")
-                            (make-request waiter-url "/endpoint" :headers (assoc req-headers :x-kitchen-delay-ms 4000)))]
+    (let [extra-headers {:x-waiter-name (rand-name)
+                         :x-waiter-scale-up-factor 0.99}
+          parallelism 8
+          canceled (promise)
+          make-request-fn (fn [headers]
+                            (make-request-with-debug-info (merge extra-headers headers) #(make-kitchen-request waiter-url %)))
+          _ (log/info "making canary request")
+          {:keys [service-id] :as canary-response} (make-request-fn {})]
 
       ;; Make requests to get instances started and avoid shuffling among routers later
-      (parallelize-requests 8 10 make-request-fn :verbose true)
+      (let [canceled (promise)]
+        (future (parallelize-requests parallelism 100 (partial make-request-fn {:x-kitchen-delay-ms 1000})
+                                      :verbose true :canceled? (partial realized? canceled)))
+        (wait-for #(<= parallelism (num-instances waiter-url service-id)) :timeout 60)
+        (deliver canceled :cancel))
 
       ;; Make a request that returns a 503
       (let [start-millis (System/currentTimeMillis)
-            {:keys [headers]} (make-request waiter-url "/endpoint" :headers (assoc req-headers "x-kitchen-act-busy" "true"))
+            {:keys [headers]} (make-request-fn {:x-kitchen-act-busy "true"})
             router-id (get headers "X-Waiter-Router-Id")
             backend-id (get headers "X-Waiter-Backend-Id")
             blacklist-time-millis (get-in (waiter-settings waiter-url) [:blacklist-config :blacklist-backoff-base-time-ms])]
@@ -39,17 +44,21 @@
         (is (integer? blacklist-time-millis))
 
         ;; We shouldn't see the same instance for blacklist-time-millis from the same router
-        (let [results (parallelize-requests
-                        2
-                        30
-                        #(let [{:keys [headers]} (make-request waiter-url "/endpoint" :headers req-headers)]
-                           (when (-> (System/currentTimeMillis) (- start-millis) (< (- blacklist-time-millis 1000)))
+        (let [canceled (promise)
+              results (parallelize-requests
+                        parallelism
+                        100
+                        #(let [{:keys [headers]} (make-request-fn {:x-kitchen-delay-ms 1000})]
+                           (if (-> (System/currentTimeMillis) (- start-millis) (< (- blacklist-time-millis 1000)))
                              (and (= backend-id (get headers "x-waiter-backend-id"))
-                                  (= router-id (get headers "x-waiter-router-id")))))
-                        :verbose true)]
+                                  (= router-id (get headers "x-waiter-router-id")))
+                             (do (deliver canceled :canceled)
+                                 false)))
+                        :verbose true
+                        :canceled? (partial realized? canceled))]
           (is (every? #(not %) results))))
 
-      (delete-service waiter-url (retrieve-service-id waiter-url req-headers)))))
+      (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-max-queue-length
   (testing-using-waiter-url

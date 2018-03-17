@@ -71,25 +71,13 @@
             (is (<= num-instances (count responses-map))))
           (is (every? (fn [[_ num-requests]] (pos? num-requests)) responses-map)
               (str "Response distribution:" responses-map)))
+
+        ;; check slot metrics
+        (let [metrics-routers (keys (get-in service-settings [:metrics :routers]))]
+          (doseq [router metrics-routers]
+          (let [slots-in-use (get-in service-settings [:metrics :routers router :counters :instance-counts :slots-in-use])]
+            (is (zero? slots-in-use) (str "Expected zero slots-in-use, but found " slots-in-use " in router " (name router))))))
+
         ;; cleanup
         (log/info "Deleting" service-id)
         (delete-service waiter-url service-id)))))
-
-(deftest ^:parallel ^:integration-slow test-slots-in-use-consistency
-  (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name)
-                   :x-waiter-max-instances 7
-                   :x-kitchen-delay-ms 4000}
-          {:keys [service-id request-headers cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
-          _ (parallelize-requests 7 20 #(let [target-url (rand-router-url waiter-url)]
-                                         (make-kitchen-request target-url (dissoc request-headers "x-cid") :cookies cookies)))
-          waiter-settings (waiter-settings waiter-url)
-          _ (Thread/sleep (* 4 (get-in waiter-settings [:work-stealing :offer-help-interval-ms])))
-          service-settings (service-settings waiter-url service-id)
-          metrics-routers (keys (get-in service-settings [:metrics :routers]))]
-      (when (= 1 (count (routers waiter-url)))
-        (log/info "Assertions will be trivially true as only one router is running"))
-      (doseq [router metrics-routers]
-        (let [slots-in-use (get-in service-settings [:metrics :routers router :counters :instance-counts :slots-in-use])]
-          (is (zero? slots-in-use) (str "Expected zero slots-in-use, but found " slots-in-use " in router " (name router)))))
-      (delete-service waiter-url service-id))))

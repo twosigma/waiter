@@ -101,7 +101,7 @@
 
 (deftest ^:parallel ^:integration-fast test-request-queue-timeout-slow-start-app
   (testing-using-waiter-url
-    (let [timeout-period-sec 30
+    (let [timeout-period-sec 10
           timeout-period-ms (time/in-millis (time/seconds timeout-period-sec))
           start-time-ms (System/currentTimeMillis)
           start-up-sleep-ms (* 2 timeout-period-ms)
@@ -116,7 +116,7 @@
 (deftest ^:parallel ^:integration-slow test-request-queue-timeout-faulty-app
   (testing-using-waiter-url
     (log/info (str "request-queue-timeout-faulty-app: if we can't get an instance quickly (should take " (colored-time "~1 minute") ")"))
-    (let [timeout-period-sec 60
+    (let [timeout-period-sec 10
           start-time-ms (System/currentTimeMillis)
           request-headers (walk/stringify-keys
                             {:x-waiter-name (rand-name)
