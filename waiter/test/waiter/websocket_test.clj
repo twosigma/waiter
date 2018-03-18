@@ -131,10 +131,11 @@
             process-request-atom (atom false)
             process-request-fn (fn process-request-fn [in-request]
                                  (is (= in-request
-                                        (assoc request :authorization/time auth-time
-                                                       :authorization/user auth-user
-                                                       :authenticated-principal auth-principal)))
-                                 (reset! process-request-atom true))]
+                                        (assoc request :authorization/principal auth-principal
+                                                       :authorization/time auth-time
+                                                       :authorization/user auth-user)))
+                                 (reset! process-request-atom true)
+                                 {})]
         (with-redefs [auth/get-auth-cookie-value identity
                       auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))

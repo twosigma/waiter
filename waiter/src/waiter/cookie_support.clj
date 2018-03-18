@@ -16,6 +16,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [taoensso.nippy :as nippy]
+            [waiter.ring-utils :as ru]
             [waiter.utils :as utils])
   (:import clojure.lang.ExceptionInfo
            org.eclipse.jetty.util.UrlEncoded))
@@ -68,9 +69,7 @@
                                (string? existing-header) [existing-header set-cookie-header]
                                :else (conj existing-header set-cookie-header))]
               (assoc-in response [:headers "set-cookie"] new-header)))]
-    (if (map? response)
-      (add-cookie-into-response response)
-      (async/go (add-cookie-into-response (async/<! response))))))
+    (ru/update-response response add-cookie-into-response)))
 
 (defn decode-cookie
   "Decode Waiter encoded cookie."

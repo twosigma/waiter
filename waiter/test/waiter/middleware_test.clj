@@ -13,31 +13,31 @@
             [clojure.test :refer :all]
             [waiter.middleware :refer :all]))
 
-(deftest test-wrap-context
-  (testing "wrap context, sync"
+(deftest test-wrap-update
+  (testing "sync"
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
                         {:status 200})
-                      (wrap-context {:key :value}))]
+                      (wrap-update #(assoc % :key :value)))]
       (is (= :value (-> {} handler :key)))))
-  (testing "wrap context, async"
+  (testing "async"
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
                         (async/go {:status 200}))
-                      (wrap-context {:key :value}))]
+                      (wrap-update #(assoc % :key :value)))]
       (is (= :value (-> {} handler async/<!! :key)))))
-  (testing "wrap context, sync w/ exception"
+  (testing "sync w/ exception"
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
                         (throw (ex-data "test" {})))
-                      (wrap-context {:key :value}))]
+                      (wrap-update #(assoc % :key :value)))]
       (try
         (handler {})
         (catch Exception e
           (is (= :value (-> e ex-data :key)))))))
-  (testing "wrap context, async w/ exception"
+  (testing "async w/ exception"
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
                         (async/go (ex-info "test" {})))
-                      (wrap-context {:key :value}))]
+                      (wrap-update #(assoc % :key :value)))]
       (is (= :value (-> {} handler async/<!! ex-data :key))))))

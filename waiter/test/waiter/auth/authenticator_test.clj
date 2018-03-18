@@ -22,8 +22,8 @@
     (let [request-handler (wrap-auth-handler authenticator identity)
           request {}
           expected-request (assoc request
-                             :authorization/user username
-                             :authenticated-principal username)
+                             :authorization/principal username
+                             :authorization/user username)
           actual-result (request-handler request)]
       (is (= expected-request (dissoc actual-result :headers)))
       (is (str/includes? (get-in actual-result [:headers "set-cookie"]) "x-waiter-auth="))

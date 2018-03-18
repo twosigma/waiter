@@ -586,6 +586,6 @@
     (is (= {:a 4, :b 2, :m 20}
            (merge-by merge-fn {:a 1, :b 2} {:a 3, :m 4} {:m 5})))))
 
-(deftest test-merge-exception
-  (is (= {:a 1 :b 2} (ex-data (merge-exception (ex-info "test" {:a 1}) {:b 2}))))
-  (is (= {:b 2} (ex-data (merge-exception (RuntimeException. "test") {:b 2})))))
+(deftest test-update-exception
+  (is (= {:a 1 :b 2} (ex-data (update-exception (ex-info "test" {:a 1}) #(assoc % :b 2)))))
+  (is (= {:b 2} (ex-data (update-exception (RuntimeException. "test") #(assoc % :b 2))))))
