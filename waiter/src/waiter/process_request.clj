@@ -274,7 +274,7 @@
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
-  [http-client make-basic-auth-fn service-id->password-fn instance {:keys [body request-method] :as request}
+  [http-client make-basic-auth-fn service-id->password-fn {:keys [service-id] :as instance} {:keys [body request-method] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group]
   (let [instance-endpoint (scheduler/end-point-url instance end-route)
         service-id (scheduler/instance->service-id instance)
@@ -282,7 +282,8 @@
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
         ; Also remove hop-by-hop headers https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
         headers (-> (dissoc passthrough-headers "authorization" "expect")
-                    (headers/dissoc-hop-by-hop-headers)
+                    headers/dissoc-hop-by-hop-headers
+                    (headers/append-header "via" (str "1.1 " service-id))
                     ;; ensure a value (potentially nil) is available for content-type to prevent Jetty from generating a default content-type
                     ;; please see org.eclipse.jetty.client.HttpConnection#normalizeRequest(request) for the control-flow for content-type header
                     (assoc "content-type" (get passthrough-headers "content-type"))
@@ -458,6 +459,7 @@
         (assoc :body resp-chan)
         (update-in [:headers] (fn update-response-headers [headers]
                                 (-> (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)
+                                    (headers/append-header "via" (str "1.1 " service-id))
                                     (merge @response-headers-atom)))))))
 
 (defn missing-run-as-user?

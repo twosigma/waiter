@@ -93,3 +93,11 @@
   (cond-> headers
           username (assoc "x-waiter-auth-principal" username)
           principal (assoc "x-waiter-authenticated-principal" principal)))
+
+(defn append-header
+  "Appends a value onto a header in a response."
+  [headers header value]
+  (update headers header (fn [existing-value]
+                           (if existing-value
+                             (str existing-value ", " value)
+                             value))))
