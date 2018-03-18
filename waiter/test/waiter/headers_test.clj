@@ -134,3 +134,17 @@
       (let [token (apply str (repeat 30 "foo"))]
         (is (= 90 (count token)))
         (is (= {"x-waiter-token" token} (truncate-header-values {"x-waiter-token" token})))))))
+
+
+(deftest test-append-header
+  (testing "header doesn't already exists"
+    (is (= "value1"
+           (-> {}
+               (append-header "test-header" "value1")
+               (get "test-header")))))
+
+  (testing "header already exists"
+    (is (= "value1, value2"
+         (-> {"test-header" "value1"}
+             (append-header "test-header" "value2")
+             (get "test-header"))))))

@@ -48,9 +48,16 @@
           (is (get-in body-json ["headers" "authorization"]) (str body))
           (is (get-in body-json ["headers" "x-waiter-auth-principal"]) (str body))
           (is (get-in body-json ["headers" "x-cid"]) (str body))
+          (is (get-in body-json ["headers" "via"]) (str body))
           (is (nil? (get-in body-json ["headers" "content-type"])) (str body))
           (is (= "0" (get-in body-json ["headers" "content-length"])) (str body))
           (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body))))
+
+      (testing "loop detection"
+        (let [response (make-kitchen-request waiter-url
+                                             (assoc request-headers
+                                                    "via" (str "1.1 " service-id)))]
+          (assert-response-status response 482)))
 
       (testing "http methods"
         (log/info "Basic test for empty body in request")

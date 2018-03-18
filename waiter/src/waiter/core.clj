@@ -997,6 +997,7 @@
                                pr/wrap-too-many-requests
                                pr/wrap-suspended-service
                                pr/wrap-response-status-metrics
+                               pr/wrap-loop-detection
                                (pr/wrap-descriptor request->descriptor-fn)
                                wrap-secure-request-fn
                                wrap-auth-bypass-fn)))
