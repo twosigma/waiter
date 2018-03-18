@@ -38,8 +38,8 @@
 (defn assoc-auth-params
   "Associate values for authenticated user in the request."
   ([request principal]
-   (assoc-auth-params request (first (str/split principal #"@" 2)) principal))
-  ([request user principal]
+   (assoc-auth-params request principal (first (str/split principal #"@" 2))))
+  ([request principal user]
    (assoc request
           :authorization/principal principal
           :authorization/user user)))
@@ -48,7 +48,7 @@
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
   [handler request user principal password]
-  (let [assoc-auth-params-fn #(assoc-auth-params % user principal)
+  (let [assoc-auth-params-fn #(assoc-auth-params % principal user)
         handler' (middleware/wrap-update handler assoc-auth-params-fn)]
     (-> request
         handler'
