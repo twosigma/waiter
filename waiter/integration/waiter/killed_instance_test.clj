@@ -41,14 +41,16 @@
 
 (deftest ^:parallel ^:integration-slow test-delegate-kill-instance
   (testing-using-waiter-url
-    (let [requests-per-thread 10
-          parallelism 10
+    (let [requests-per-thread 5
+          router-count (count (routers waiter-url))
+          parallelism router-count
           extra-headers {:x-waiter-min-instances 0
                          :x-waiter-distribution-scheme "simple"
-                         :x-waiter-scale-down-factor 0.9
-                         :x-waiter-scale-up-factor 0.9
+                         :x-waiter-scale-down-factor 0.99
+                         :x-waiter-scale-up-factor 0.99
                          :x-kitchen-delay-ms 5000
                          :x-waiter-name (rand-name)}
+          canceled (promise)
           request-fn (fn []
                        (log/info "making kitchen request")
                        (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %)))
@@ -57,9 +59,10 @@
       (assert-response-status canary-response 200)
       (with-service-cleanup
         service-id
-        (time-it (str service-id ":" parallelism "x" requests-per-thread)
-                 (parallelize-requests parallelism requests-per-thread #(request-fn) :verbose true))
-        (is (< (* 2 (count (routers waiter-url))) (num-instances waiter-url service-id)))
+        (future (parallelize-requests parallelism requests-per-thread #(request-fn)
+                                      :verbose true :canceled? (partial realized? canceled)))
+        (wait-for #(<= router-count (num-instances waiter-url service-id)) :timeout 180)
+        (deliver canceled :canceled)
         (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180)))))
 
 ; Marked explicit due to:

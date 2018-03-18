@@ -184,7 +184,7 @@
           headers {:x-waiter-name (rand-name)
                    :x-waiter-concurrency-level 5}
           {:keys [request-headers service-id cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
-          request-processing-time-ms 60000
+          request-processing-time-ms 30000
           num-threads 20
           num-requests-to-delete 10
           async-responses (parallelize-requests
