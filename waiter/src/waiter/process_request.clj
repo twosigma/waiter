@@ -14,7 +14,7 @@
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [full.async :refer (<?? <? go-try)]
+            [full.async :as fa]
             [metrics.core]
             [metrics.counters :as counters]
             [metrics.histograms :as histograms]
@@ -139,16 +139,15 @@
    `request-state-chan` is closed. Takes `instance-rpc-chan`, `service-id` and
    `reason-map` to acquire the instance.
    If an exception has occurred, no instance was acquired.
-
-   Returns the instance if it was acquired successfully, otherwise,
-   will return the output of `ex-handler`"
+   Returns the instance if it was acquired successfully,
+   or an exception if there was an error"
   [instance-rpc-chan service-id {:keys [request-id] :as reason-map} start-new-service-fn request-state-chan
    queue-timeout-ms reservation-status-promise metric-group add-debug-header-into-response!]
-  (go-try
+  (fa/go-try
     (log/debug "retrieving instance for" service-id "using" (dissoc reason-map :cid :time))
     (let [correlation-id (cid/get-correlation-id)
-          instance (<? (service/get-available-instance
-                         instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group add-debug-header-into-response!))]
+          instance (fa/<? (service/get-available-instance
+                            instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group add-debug-header-into-response!))]
       (au/on-chan-close request-state-chan
                         (fn on-request-state-chan-close []
                           (cid/cdebug correlation-id "request-state-chan closed")
@@ -545,9 +544,9 @@
                         ; request-state-chan should be explicitly closed after the request finishes processing
                         request-state-chan (async/tap control-mult (au/latest-chan) false)
                         queue-timeout-ms (:queue-timeout-ms instance-request-properties)
-                        instance (<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
-                                                       queue-timeout-ms reservation-status-promise metric-group
-                                                       add-debug-header-into-response!))]
+                        instance (fa/<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
+                                                          queue-timeout-ms reservation-status-promise metric-group
+                                                          add-debug-header-into-response!))]
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
                           (confirm-live-connection-without-abort)
