@@ -219,8 +219,8 @@
      :principal principal
      :query-string query-string
      :request-method (-> (or request-method "") name str/upper-case)
-     :status status
      :service-id service-id
+     :status status
      :support-info support-info
      :timestamp (date-to-str request-time)
      :uri uri}))
