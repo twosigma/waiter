@@ -511,6 +511,15 @@
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
             (utils/exception->response e request)))))))
 
+(defn wrap-loop-detection
+  "Prevents loops in requests between services."
+  [handler]
+  (fn wrap-loop-detection-fn
+    [{{:keys [service-id]} :descriptor {:strs [via]} :headers :as request}]
+    (if (and via (str/includes? via service-id))
+      (utils/exception->response (ex-info "Loop detected" {:status 482 :via via}) request)
+      (handler request))))
+
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."

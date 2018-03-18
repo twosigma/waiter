@@ -53,6 +53,12 @@
           (is (= "0" (get-in body-json ["headers" "content-length"])) (str body))
           (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body))))
 
+      (testing "loop detection"
+        (let [response (make-kitchen-request waiter-url
+                                             (assoc request-headers
+                                                    "via" (str "1.1 " service-id)))]
+          (assert-response-status response 482)))
+
       (testing "http methods"
         (log/info "Basic test for empty body in request")
         (let [http-method-helper (fn http-method-helper [http-method]

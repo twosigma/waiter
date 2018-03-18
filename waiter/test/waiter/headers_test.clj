@@ -141,10 +141,10 @@
     (is (= "value1"
            (-> {}
                (append-header "test-header" "value1")
-               (get-in [:headers "test-header"])))))
+               (get "test-header")))))
 
   (testing "header already exists"
     (is (= "value1, value2"
-         (-> {:headers {"test-header" "value1"}}
+         (-> {"test-header" "value1"}
              (append-header "test-header" "value2")
-             (get-in [:headers "test-header"]))))))
+             (get "test-header"))))))
