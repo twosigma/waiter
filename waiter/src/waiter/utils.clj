@@ -206,22 +206,28 @@
 (defn- build-error-context
   "Creates a context from a data map and a request.
    The data map is expected to contain the following keys: details, message, and status."
-  [{:keys [details message status]}
-   {:keys [headers query-string request-method request-time support-info uri]}]
-  (let [{:strs [host x-cid]} headers]
+  [{:keys [details message status] :as data-map}
+   {:keys [headers query-string request-method request-time support-info uri] :as request}]
+  (let [{:strs [host x-cid]} headers
+        {:keys [authorization/principal descriptor instance]} (merge request details)
+        {:keys [service-id]} descriptor]
     {:cid x-cid
      :details details
      :host host
+     :instance-id (:id instance)
      :message message
+     :principal principal
      :query-string query-string
      :request-method (-> (or request-method "") name str/upper-case)
      :status status
+     :service-id service-id
      :support-info support-info
      :timestamp (date-to-str request-time)
      :uri uri}))
 
 (let [html-fn (template/fn
-                [{:keys [cid details host message query-string request-method status support-info timestamp uri]}]
+                [{:keys [cid details host instance-id message principal query-string request-method
+                         service-id status support-info timestamp uri]}]
                 (slurp (io/resource "web/error.html")))]
   (defn- render-error-html
     "Renders error html"
@@ -229,7 +235,8 @@
     (html-fn context)))
 
 (let [text-fn (template/fn
-                [{:keys [cid details host message query-string request-method status support-info timestamp uri]}]
+                [{:keys [cid details host instance-id message principal query-string request-method
+                         service-id status support-info timestamp uri]}]
                 (slurp (io/resource "web/error.txt")))]
   (defn- render-error-text
     "Renders error text"
