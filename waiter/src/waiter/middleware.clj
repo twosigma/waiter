@@ -15,7 +15,8 @@
             [waiter.utils :as utils]))
 
 (defn wrap-update
-  "Wraps a handler, calling update on the request and response."
+  "Wraps a handler, calling update on the request and the response.
+  If there was an error, also updates the exception."
   [handler update-fn]
   (fn [request]
     (try
@@ -29,3 +30,9 @@
           (update-fn response)))
       (catch Exception e
         (throw (utils/update-exception e update-fn))))))
+
+(defn wrap-assoc
+  "Wraps a handler, calling assoc on the request and the response.
+  If there was an error, also calls assoc on the exception."
+  [handler k v]
+  (wrap-update handler #(assoc % k v)))

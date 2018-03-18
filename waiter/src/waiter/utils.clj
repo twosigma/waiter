@@ -544,3 +544,8 @@
   (if (instance? ExceptionInfo e)
     (ex-info (.getMessage e) (update-fn (ex-data e)) (.getCause e))
     (ex-info (.getMessage e) (update-fn {}) (.getCause e))))
+
+(defn assoc-exception
+  "Assoc-es data onto an exception, regardless of whether it's an ExceptionInfo or just Exception."
+  [^Exception e k v]
+  (update-exception #(assoc % k v)))
