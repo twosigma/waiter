@@ -449,6 +449,16 @@
      (~handle-elapsed-nanos-fn elapsed#)
      out#))
 
+(defmacro with-timer
+  "Times the operation specified by body using the provided
+  timer and calls handle-elapsed-nanos-fn with the epased
+  time in nanoseconds. Returns [value of body, nanos]."
+  [timer & body]
+  `(let [^Timer$Context start# (metrics.timers/start ~timer)
+         out# (do ~@body)
+         elapsed# (metrics.timers/stop start#)]
+     {:out out# :elapsed elapsed#}))
+
 (defn stream-metric-map
   "Returns a map containing metrics used for reporting streaming metrics for a given service."
   [service-id]

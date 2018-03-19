@@ -142,12 +142,12 @@
    Returns the instance if it was acquired successfully,
    or an exception if there was an error"
   [instance-rpc-chan service-id {:keys [request-id] :as reason-map} start-new-service-fn request-state-chan
-   queue-timeout-ms reservation-status-promise metric-group add-debug-header-into-response!]
+   queue-timeout-ms reservation-status-promise metric-group]
   (fa/go-try
     (log/debug "retrieving instance for" service-id "using" (dissoc reason-map :cid :time))
     (let [correlation-id (cid/get-correlation-id)
           instance (fa/<? (service/get-available-instance
-                            instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group add-debug-header-into-response!))]
+                            instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group))]
       (au/on-chan-close request-state-chan
                         (fn on-request-state-chan-close []
                           (cid/cdebug correlation-id "request-state-chan closed")
@@ -547,9 +547,16 @@
                         ; request-state-chan should be explicitly closed after the request finishes processing
                         request-state-chan (async/tap control-mult (au/latest-chan) false)
                         queue-timeout-ms (:queue-timeout-ms instance-request-properties)
-                        instance (fa/<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
-                                                          queue-timeout-ms reservation-status-promise metric-group
-                                                          add-debug-header-into-response!))]
+                        instance-timer (metrics/service-timer service-id "get-available-instance")
+                        timed-instance (metrics/with-timer
+                                         instance-timer
+                                         (fa/<? (prepare-instance instance-rpc-chan service-id reason-map
+                                                                  start-new-service-fn request-state-chan queue-timeout-ms
+                                                                  reservation-status-promise metric-group)))
+                        instance (:out timed-instance)
+                        instance-elapsed (:elapsed timed-instance)]
+                    (add-debug-header-into-response! "X-Waiter-Get-Available-Instance-ns" instance-elapsed)
+                    (statsd/histo! metric-group "get_instance" instance-elapsed)
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
                           (confirm-live-connection-without-abort)
