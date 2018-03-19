@@ -179,36 +179,36 @@
 
 (defn- wrap-exception
   "Includes metadata such as cid and status along with the exception."
-  [message exception instance status headers]
+  [message exception instance status]
   (ex-info message
            (merge (metrics/retrieve-local-stats-for-service (scheduler/instance->service-id instance))
-                  {:instance instance
-                   :cid (cid/get-correlation-id)
-                   :status status
-                   :headers headers})
+                  {:cid (cid/get-correlation-id)
+                   :status status})
            exception))
 
-(defn- throw-response-error
-  "Wraps the error from making a request in an ex-info with an appropriate message and status."
-  [error reservation-status-promise instance response-headers]
-  (throw
-    (cond (instance? EofException error)
-          (do
-            (deliver reservation-status-promise :client-error)
-            (-> "Connection unexpectedly closed while sending request"
-                (wrap-exception error instance 400 response-headers)))
+(defn- handle-response-error
+  "Handles error responses from the backend."
+  [error reservation-status-promise instance request]
+  (cond (instance? EofException error)
+        (do
+          (deliver reservation-status-promise :client-error)
+          (-> "Connection unexpectedly closed while sending request"
+              (wrap-exception error instance 400)
+              (utils/exception->response request)))
 
-          (instance? TimeoutException error)
-          (do
-            (deliver reservation-status-promise :instance-error)
-            (-> (utils/message :backend-request-timed-out)
-                (wrap-exception error instance 504 response-headers)))
+        (instance? TimeoutException error)
+        (do
+          (deliver reservation-status-promise :instance-error)
+          (-> (utils/message :backend-request-timed-out)
+              (wrap-exception error instance 504)
+              (utils/exception->response request)))
 
-          :else
-          (do
-            (deliver reservation-status-promise :instance-error)
-            (-> (utils/message :backend-request-failed)
-                (wrap-exception error instance 502 response-headers))))))
+        :else
+        (do
+          (deliver reservation-status-promise :instance-error)
+          (-> (utils/message :backend-request-failed)
+              (wrap-exception error instance 502)
+              (utils/exception->response request)))))
 
 (defn http-method-fn
   "Retrieves the qbits.jet.client.http client function that corresponds to the http method."
@@ -488,12 +488,10 @@
 
 (defn handle-process-exception
   "Handles an error during process."
-  [exception {:keys [descriptor] :as request} response-headers]
+  [exception {:keys [descriptor] :as request} ]
   (log/error exception "error during process")
   (track-process-error-metrics descriptor)
-  (-> (utils/exception->response exception request)
-      (update :headers (fn [headers]
-                         (merge response-headers headers)))))
+  (utils/exception->response exception request))
 
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
@@ -508,11 +506,10 @@
           confirm-live-connection-factory #(confirm-live-connection-factory control-mult reservation-status-promise %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
-          ; update response headers eagerly to enable reporting these in case of failure
-          response-headers (atom {})
-          add-debug-header-into-response! (fn [name value]
-                                            (when waiter-debug-enabled?
-                                              (swap! response-headers assoc (str name) (str value))))]
+          add-debug-header (fn [response header value]
+                             (if waiter-debug-enabled?
+                               (assoc-in response [:headers header] value)
+                               response))]
       (async/go
         (if waiter-debug-enabled?
           (log/info "process request to" (get-in request [:headers "host"]) "at path" (:uri request))
@@ -555,41 +552,41 @@
                                                                   reservation-status-promise metric-group)))
                         instance (:out timed-instance)
                         instance-elapsed (:elapsed timed-instance)]
-                    (add-debug-header-into-response! "X-Waiter-Get-Available-Instance-ns" instance-elapsed)
                     (statsd/histo! metric-group "get_instance" instance-elapsed)
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
                           (confirm-live-connection-without-abort)
                           (let [endpoint (request->endpoint request waiter-headers)
-                                {:keys [error] :as response}
-                                (metrics/with-timer!
-                                  (metrics/service-timer service-id "backend-response")
-                                  (fn [nanos]
-                                    (add-debug-header-into-response! "X-Waiter-Backend-Response-ns" nanos)
-                                    (statsd/histo! metric-group "backend_response" nanos))
-                                  (async/<!
-                                    (make-request-fn instance request instance-request-properties
-                                                     passthrough-headers endpoint metric-group)))
+                                backend-timer (metrics/service-timer service-id "backend-response")
+                                timed-response (metrics/with-timer
+                                                 backend-timer
+                                                 (async/<!
+                                                   (make-request-fn instance request instance-request-properties
+                                                                    passthrough-headers endpoint metric-group)))
+                                response-elapsed (:elapsed timed-response)
+                                {:keys [error] :as response} (:out timed-response)
                                 request-abort-callback (request-abort-callback-factory response)
                                 confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
-                            (when error
-                              (throw-response-error error reservation-status-promise instance @response-headers))
-                            (-> (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
-                                                             reason-map reservation-status-promise confirm-live-connection-with-abort
-                                                             request-state-chan response)
-                                (update :headers (fn [headers]
-                                                   (merge headers @response-headers)))))
+                            (statsd/histo! metric-group "backend_response" response-elapsed)
+                            (-> (if error
+                                  (do
+                                    (async/close! request-state-chan)
+                                    (handle-response-error error reservation-status-promise instance request))
+                                  (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
+                                                               reason-map reservation-status-promise confirm-live-connection-with-abort
+                                                               request-state-chan response))
+                                (add-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
                           (catch Exception e
-                            ; A :client-error or :instance-error may already be in the channel in which case our :generic-error will be ignored.
                             (deliver reservation-status-promise :generic-error)
                             ; close request-state-chan to mark the request as finished
                             (async/close! request-state-chan)
-                            (handle-process-exception e request @response-headers)))
-                        (assoc :instance instance)))))
+                            (handle-process-exception e request)))
+                        (assoc :instance instance)
+                        (add-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                 (statsd/gauge-delta! metric-group "request_outstanding" -1)
-                (handle-process-exception e request @response-headers)))))))))
+                (handle-process-exception e request)))))))))
 
 (defn wrap-suspended-service
   "Check if a service has been suspended and immediately return a 503 response"
