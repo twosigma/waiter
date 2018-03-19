@@ -86,7 +86,8 @@
                                         :join? false
                                         :max-threads 250
                                         :port port
-                                        :request-header-size 32768})]
+                                        :request-header-size 32768
+                                        :send-server-version? false})]
                     (server/run-jetty options)))})
 
 (defn start-waiter [config-file]
