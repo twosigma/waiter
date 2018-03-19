@@ -590,7 +590,7 @@
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "Service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
-        (-> {:details (str response-map), :message "Service has been suspended", :status 503}
+        (-> {:details response-map, :message "Service has been suspended", :status 503}
             (utils/data->error-response request)))
       (handler request))))
 
@@ -608,7 +608,7 @@
                             :service-id service-id}]
           (log/info "Max queue length exceeded" response-map)
           (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
-          (-> {:details (str response-map), :message "Max queue length exceeded", :status 503}
+          (-> {:details response-map, :message "Max queue length exceeded", :status 503}
               (utils/data->error-response request)))
         (handler request)))))
 

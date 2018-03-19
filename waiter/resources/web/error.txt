@@ -12,7 +12,10 @@ Request Info
   Query String: <%= (or query-string "") %>
         Method: <%= request-method %>
            CID: <%= cid %>
-          Time: <%= timestamp %>
+          Time: <%= timestamp %><% (when principal %>
+     Principal: <%= principal %><% ) %><% (when service-id %>
+    Service Id: <%= service-id %><% ) %><% (when instance-id %>
+   Instance Id: <%= instance-id %><% ) %>
 
 <% (when details %>
 Additional Info
