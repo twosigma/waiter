@@ -284,17 +284,21 @@
 
 (defn inspect-for-202-async-request-response
   "Helper function that inspects the response and triggers async-request post processing."
-  [post-process-async-request-response-fn instance-request-properties service-id metric-group instance endpoint request
-   reason-map {:keys [headers status]} response-headers reservation-status-promise]
+  [{:keys [headers status] :as response} post-process-async-request-response-fn instance-request-properties
+   service-id metric-group instance endpoint request reason-map reservation-status-promise]
   (let [location-header (str (get headers "location"))
         location (async-req/normalize-location-header endpoint location-header)]
-    (when (= status 202)
+    (if (= status 202)
       (if (str/starts-with? location "/")
         (do
           (deliver reservation-status-promise :success-async) ;; backend is processing as an asynchronous request
-          (post-process-async-request-response-fn service-id metric-group instance (handler/make-auth-user-map request)
-                                                  reason-map instance-request-properties location response-headers))
-        (log/info "response status 202, not treating as an async request as location is" location)))))
+          (post-process-async-request-response-fn response service-id metric-group instance
+                                                  (handler/make-auth-user-map request) reason-map
+                                                  instance-request-properties location))
+        (do
+          (log/info "response status 202, not treating as an async request as location is" location)
+          response))
+      response)))
 
 (defn stream-http-response
   "Writes byte data to the resp-chan. If the body is a string, just writes the string.
@@ -426,15 +430,15 @@
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
-    (inspect-for-202-async-request-response
-      post-process-async-request-response-fn instance-request-properties service-id metric-group
-      instance endpoint request reason-map response response-headers-atom reservation-status-promise)
     (let [request-abort-callback (abort-http-request-callback-factory response)]
       (stream-http-response response confirm-live-connection-with-abort request-abort-callback
                             resp-chan instance-request-properties reservation-status-promise
                             request-state-chan metric-group waiter-debug-enabled?
                             (metrics/stream-metric-map service-id)))
     (-> response
+        (inspect-for-202-async-request-response
+          post-process-async-request-response-fn instance-request-properties service-id metric-group
+          instance endpoint request reason-map reservation-status-promise)
         (assoc :body resp-chan)
         (update-in [:headers] (fn update-response-headers [headers]
                                 (-> (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)

@@ -691,10 +691,10 @@
    :post-process-async-request-response-fn (pc/fnk [[:state async-request-store-atom instance-rpc-chan router-id]
                                                     make-http-request-fn]
                                              (fn post-process-async-request-response-wrapper
-                                               [service-id metric-group instance _ reason-map request-properties location response-headers]
+                                               [response service-id metric-group instance _ reason-map request-properties location]
                                                (async-req/post-process-async-request-response
-                                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan service-id metric-group
-                                                 instance reason-map request-properties location response-headers)))
+                                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
+                                                 service-id metric-group instance reason-map request-properties location)))
    :prepend-waiter-url (pc/fnk [[:settings port hostname]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                            (fn [endpoint-url]
