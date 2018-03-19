@@ -196,19 +196,19 @@
           (do
             (deliver reservation-status-promise :client-error)
             (-> "Connection unexpectedly closed while sending request"
-                (wrap-exception error instance 400 @response-headers)))
+                (wrap-exception error instance 400 response-headers)))
 
           (instance? TimeoutException error)
           (do
             (deliver reservation-status-promise :instance-error)
             (-> (utils/message :backend-request-timed-out)
-                (wrap-exception error instance 504 @response-headers)))
+                (wrap-exception error instance 504 response-headers)))
 
           :else
           (do
             (deliver reservation-status-promise :instance-error)
             (-> (utils/message :backend-request-failed)
-                (wrap-exception error instance 502 @response-headers))))))
+                (wrap-exception error instance 502 response-headers))))))
 
 (defn http-method-fn
   "Retrieves the qbits.jet.client.http client function that corresponds to the http method."
@@ -563,7 +563,7 @@
                                 request-abort-callback (request-abort-callback-factory response)
                                 confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
                             (when error
-                              (throw-response-error error reservation-status-promise instance response-headers))
+                              (throw-response-error error reservation-status-promise instance @response-headers))
                             (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
                                                          reason-map response-headers reservation-status-promise
                                                          confirm-live-connection-with-abort request-state-chan response))
