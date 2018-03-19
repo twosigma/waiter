@@ -66,7 +66,7 @@
    :daemons core/daemons
    :handlers core/request-handlers
    :state core/state
-   :http-server (pc/fnk [[:routines waiter-request?-fn websocket-request-authenticator]
+   :http-server (pc/fnk [[:routines generate-log-url-fn waiter-request?-fn websocket-request-authenticator]
                          [:settings cors-config host port support-info websocket-config]
                          [:state cors-validator router-id]
                          handlers] ; Insist that all systems are running before we start server
@@ -74,7 +74,7 @@
                                        {:ring-handler (-> (core/ring-handler-factory waiter-request?-fn handlers)
                                                           (cors/wrap-cors-preflight cors-validator (:max-age cors-config))
                                                           core/wrap-error-handling
-                                                          core/wrap-debug
+                                                          (core/wrap-debug generate-log-url-fn)
                                                           core/correlation-id-middleware
                                                           (core/wrap-request-info router-id support-info)
                                                           consume-request-stream)

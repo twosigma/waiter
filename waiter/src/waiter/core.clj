@@ -177,18 +177,30 @@
 
 (defn wrap-debug
   "Attaches debugging headers to requests when enabled."
-  [handler]
+  [handler generate-log-url-fn]
   (fn wrap-debug-fn
     [{:keys [request-id request-time router-id] :as request}]
     (if (utils/request->debug-enabled? request)
       (let [response (handler request)
-            add-headers (fn [response]
-                          (update response :headers
-                                  (fn [headers]
-                                    (-> headers
-                                        (assoc "x-waiter-request-date" (utils/date-to-str request-time utils/formatter-rfc822))
-                                        (assoc "x-waiter-request-id" request-id)
-                                        (assoc "x-waiter-router-id" router-id)))))]
+            add-headers (fn [{:keys [descriptor instance] :as response}]
+                          (let [backend-directory (:log-directory instance)
+                                backend-log-url (when backend-directory
+                                                  (generate-log-url-fn instance))
+                                request-date (when request-time
+                                               (utils/date-to-str request-time utils/formatter-rfc822))]
+                            (update response :headers
+                                    (fn [headers]
+                                      (cond-> headers
+                                        request-time (assoc "x-waiter-request-date" request-date)
+                                        request-id (assoc "x-waiter-request-id" request-id)
+                                        router-id (assoc "x-waiter-router-id" router-id)
+                                        descriptor (assoc "x-waiter-service-id" (:service-id descriptor))
+                                        instance (assoc "x-waiter-backend-id" (:id instance)
+                                                        "x-waiter-backend-host" (:host instance)
+                                                        "x-waiter-backend-port" (str (:port instance))
+                                                        "x-waiter-backend-proto" (:protocol instance))
+                                        backend-directory (assoc "x-waiter-backend-directory" backend-directory
+                                                                 "x-waiter-backend-log-url" backend-log-url))))))]
         (ru/update-response response add-headers))
       (handler request))))
 
@@ -634,6 +646,8 @@
                             (let [position-generator-atom (atom 0)]
                               (fn determine-priority-fn [waiter-headers]
                                 (pr/determine-priority position-generator-atom waiter-headers))))
+   :generate-log-url-fn (pc/fnk [prepend-waiter-url]
+                          (partial handler/generate-log-url prepend-waiter-url))
    :list-tokens-fn (pc/fnk [[:curator curator]
                             [:settings [:zookeeper base-path] kv-config]]
                      (fn list-tokens-fn []
@@ -953,10 +967,10 @@
                                                                               passthrough-headers end-route metric-group))]
                                        (let [process-request-fn (fn process-request-fn [request]
                                                                   (pr/process make-request-fn instance-rpc-chan start-new-service-fn
-                                                                              instance-request-properties prepend-waiter-url
-                                                                              determine-priority-fn ws/process-response! ws/process-exception-in-request
+                                                                              instance-request-properties determine-priority-fn ws/process-response!
                                                                               ws/abort-request-callback-factory local-usage-agent request))
                                              handler (-> process-request-fn
+                                                         (ws/wrap-ws-close-on-error)
                                                          (pr/wrap-descriptor request->descriptor-fn))]
                                          (ws/request-handler password handler request)))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
@@ -990,8 +1004,7 @@
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
                                inner-process-request-fn (fn inner-process-request [request]
                                                           (pr/process make-request-fn instance-rpc-chan start-new-service-fn
-                                                                      instance-request-properties prepend-waiter-url
-                                                                      determine-priority-fn process-response-fn pr/process-exception-in-http-request
+                                                                      instance-request-properties determine-priority-fn process-response-fn
                                                                       pr/abort-http-request-callback-factory local-usage-agent request))]
                            (-> inner-process-request-fn
                                pr/wrap-too-many-requests
@@ -1008,13 +1021,13 @@
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
    :service-handler-fn (pc/fnk [[:curator kv-store]
-                                [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn prepend-waiter-url]
+                                [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn]
                                 [:state router-id scheduler]
                                 wrap-secure-request-fn]
                          (wrap-secure-request-fn
                            (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
                              (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
-                                                      prepend-waiter-url make-inter-router-requests-sync-fn request))))
+                                                      generate-log-url-fn make-inter-router-requests-sync-fn request))))
    :service-id-handler-fn (pc/fnk [[:curator kv-store]
                                    [:routines request->descriptor-fn store-service-description-fn]
                                    wrap-secure-request-fn]
@@ -1062,12 +1075,12 @@
                                    (fn service-suspend-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                      (handler/suspend-or-resume-service-handler
                                        kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :suspend request))))
-   :service-view-logs-handler-fn (pc/fnk [[:routines prepend-waiter-url]
+   :service-view-logs-handler-fn (pc/fnk [[:routines generate-log-url-fn]
                                           [:state scheduler]
                                           wrap-secure-request-fn]
                                    (wrap-secure-request-fn
                                      (fn service-view-logs-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                                       (handler/service-view-logs-handler scheduler service-id prepend-waiter-url request))))
+                                       (handler/service-view-logs-handler scheduler service-id generate-log-url-fn request))))
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
    :state-all-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
                                   [:daemons router-state-maintainer scheduler-maintainer]

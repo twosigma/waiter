@@ -283,7 +283,7 @@
 (deftest test-service-view-logs-handler
   (let [scheduler (marathon/->MarathonScheduler (Object.) {:slave-port 5051} (fn [] nil) "/home/path/"
                                                 (atom {}) (atom {}) 0 (constantly true))
-        configuration {:routines {:prepend-waiter-url identity}
+        configuration {:routines {:generate-log-url-fn (partial handler/generate-log-url identity)}
                        :state {:scheduler scheduler}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-view-logs-handler-fn ((:service-view-logs-handler-fn request-handlers) configuration)}
@@ -389,8 +389,8 @@
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         configuration {:curator {:kv-store nil}
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
-                                  :make-inter-router-requests-sync-fn nil
-                                  :prepend-waiter-url nil}
+                                  :generate-log-url-fn nil
+                                  :make-inter-router-requests-sync-fn nil}
                        :state {:router-id "router-id"
                                :scheduler (Object.)}
                        :wrap-secure-request-fn utils/wrap-identity}
@@ -461,8 +461,8 @@
         waiter-request?-fn (fn [_] true)
         configuration {:curator {:kv-store nil}
                        :routines {:allowed-to-manage-service?-fn (constantly true)
-                                  :make-inter-router-requests-sync-fn nil
-                                  :prepend-waiter-url #(str "http://www.example.com" %)}
+                                  :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
+                                  :make-inter-router-requests-sync-fn nil}
                        :state {:router-id "router-id"
                                :scheduler (Object.)}
                        :wrap-secure-request-fn utils/wrap-identity}

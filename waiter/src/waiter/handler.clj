@@ -288,17 +288,17 @@
 
 (defn- assoc-log-url
   "Appends the :log-url field for an instance"
-  [prepend-waiter-url service-instance]
-  (assoc service-instance :log-url (generate-log-url prepend-waiter-url service-instance)))
+  [generate-log-url-fn service-instance]
+  (assoc service-instance :log-url (generate-log-url-fn service-instance)))
 
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
-  [router-id service-id core-service-description scheduler kv-store prepend-waiter-url make-inter-router-requests-fn]
+  [router-id service-id core-service-description scheduler kv-store generate-log-url-fn make-inter-router-requests-fn]
   (let [service-instance-maps (try
                                 (let [assoc-log-url-to-instances
                                       (fn assoc-log-url-to-instances [instances]
                                         (when (not-empty instances)
-                                          (map #(assoc-log-url prepend-waiter-url %1) instances)))]
+                                          (map #(assoc-log-url generate-log-url-fn %) instances)))]
                                   (-> (scheduler/get-instances scheduler service-id core-service-description)
                                       (update-in [:active-instances] assoc-log-url-to-instances)
                                       (update-in [:failed-instances] assoc-log-url-to-instances)
@@ -354,7 +354,7 @@
    It supports the following request methods:
      :delete deletes the service from the scheduler (after authorization checks).
      :get returns details about the service such as the service description, metrics, instances, etc."
-  [router-id service-id scheduler kv-store allowed-to-manage-service?-fn prepend-waiter-url make-inter-router-requests-fn request]
+  [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn request]
   (try
     (when (not service-id)
       (throw (ex-info "Missing service-id" {:status 400})))
@@ -364,7 +364,7 @@
         (case (:request-method request)
           :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn request)
           :get (get-service-handler router-id service-id core-service-description scheduler kv-store
-                                    prepend-waiter-url make-inter-router-requests-fn))))
+                                    generate-log-url-fn make-inter-router-requests-fn))))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -447,7 +447,7 @@
 
 (defn service-view-logs-handler
   "Redirects user to the log directory on the slave"
-  [scheduler service-id prepend-waiter-url request]
+  [scheduler service-id generate-log-url-fn request]
   (try
     (let [{:strs [instance-id host directory]} (-> request ru/query-params-request :query-params)
           _ (when-not instance-id
@@ -458,11 +458,10 @@
                                    (if (= type "file")
                                      entry
                                      (-> (dissoc entry :path)
-                                         (assoc :url (generate-log-url prepend-waiter-url
-                                                                       {:directory path
-                                                                        :host host
-                                                                        :id instance-id
-                                                                        :service-id service-id})))))
+                                         (assoc :url (generate-log-url-fn {:directory path
+                                                                           :host host
+                                                                           :id instance-id
+                                                                           :service-id service-id})))))
                                  (scheduler/retrieve-directory-content scheduler service-id instance-id host directory))]
       (utils/map->json-response (vec directory-content)))
     (catch Exception ex
