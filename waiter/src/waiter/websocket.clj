@@ -290,7 +290,7 @@
 (defn process-response!
   "Processes a response resulting from a websocket request.
    It includes asynchronously streaming the content."
-  [local-usage-agent instance-request-properties descriptor _ request _ _ reservation-status-promise
+  [local-usage-agent instance-request-properties descriptor _ request _ reservation-status-promise
    confirm-live-connection-with-abort request-state-chan response]
   (let [{:keys [service-description service-id]} descriptor
         {:strs [metric-group]} service-description

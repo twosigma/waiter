@@ -417,7 +417,7 @@
   "Processes a response resulting from a http request.
    It includes book-keeping for async requests and asycnhronously streaming the content."
   [post-process-async-request-response-fn _ instance-request-properties descriptor instance
-   request reason-map response-headers-atom reservation-status-promise confirm-live-connection-with-abort
+   request reason-map reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
   (let [{:keys [service-description service-id waiter-headers]} descriptor
         {:strs [metric-group]} service-description
@@ -441,8 +441,7 @@
           instance endpoint request reason-map reservation-status-promise)
         (assoc :body resp-chan)
         (update-in [:headers] (fn update-response-headers [headers]
-                                (-> (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)
-                                    (merge @response-headers-atom)))))))
+                                (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers))))))
 
 (defn missing-run-as-user?
   "Returns true if the exception is due to a missing run-as-user validation on the service description."
@@ -568,9 +567,11 @@
                                 confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
                             (when error
                               (throw-response-error error reservation-status-promise instance @response-headers))
-                            (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
-                                                         reason-map response-headers reservation-status-promise
-                                                         confirm-live-connection-with-abort request-state-chan response))
+                            (-> (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
+                                                             reason-map reservation-status-promise confirm-live-connection-with-abort
+                                                             request-state-chan response)
+                                (update :headers (fn [headers]
+                                                   (merge headers @response-headers)))))
                           (catch Exception e
                             ; A :client-error or :instance-error may already be in the channel in which case our :generic-error will be ignored.
                             (deliver reservation-status-promise :generic-error)
