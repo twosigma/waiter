@@ -177,38 +177,20 @@
     (cond-> uri
             (not (str/blank? query-string)) (str "?" query-string))))
 
-(defn- wrap-exception
-  "Includes metadata such as cid and status along with the exception."
-  [message exception instance status]
-  (ex-info message
-           (merge (metrics/retrieve-local-stats-for-service (scheduler/instance->service-id instance))
-                  {:cid (cid/get-correlation-id)
-                   :status status})
-           exception))
-
 (defn- handle-response-error
   "Handles error responses from the backend."
-  [error reservation-status-promise instance request]
-  (cond (instance? EofException error)
-        (do
-          (deliver reservation-status-promise :client-error)
-          (-> "Connection unexpectedly closed while sending request"
-              (wrap-exception error instance 400)
-              (utils/exception->response request)))
-
-        (instance? TimeoutException error)
-        (do
-          (deliver reservation-status-promise :instance-error)
-          (-> (utils/message :backend-request-timed-out)
-              (wrap-exception error instance 504)
-              (utils/exception->response request)))
-
-        :else
-        (do
-          (deliver reservation-status-promise :instance-error)
-          (-> (utils/message :backend-request-failed)
-              (wrap-exception error instance 502)
-              (utils/exception->response request)))))
+  [error reservation-status-promise service-id request]
+  (let [metrics-map (metrics/retrieve-local-stats-for-service service-id)
+        [promise-value message status]
+        (cond (instance? EofException error)
+              [:client-error "Connection unexpectedly closed while sending request" 400]
+              (instance? TimeoutException error)
+              [:instance-error (utils/message :backend-request-timed-out) 504]
+              :else
+              [:instance-error (utils/message :backend-request-failed) 502])]
+    (deliver reservation-status-promise promise-value)
+    (-> (ex-info message (assoc metrics-map :status status) error)
+        (utils/exception->response request))))
 
 (defn http-method-fn
   "Retrieves the qbits.jet.client.http client function that corresponds to the http method."
@@ -488,7 +470,7 @@
 
 (defn handle-process-exception
   "Handles an error during process."
-  [exception {:keys [descriptor] :as request} ]
+  [exception {:keys [descriptor] :as request}]
   (log/error exception "error during process")
   (track-process-error-metrics descriptor)
   (utils/exception->response exception request))
@@ -571,7 +553,7 @@
                             (-> (if error
                                   (do
                                     (async/close! request-state-chan)
-                                    (handle-response-error error reservation-status-promise instance request))
+                                    (handle-response-error error reservation-status-promise service-id request))
                                   (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
                                                                reason-map reservation-status-promise confirm-live-connection-with-abort
                                                                request-state-chan response))
