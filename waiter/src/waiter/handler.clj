@@ -38,8 +38,8 @@
 (defn make-auth-user-map
   "Creates a map containing the username and principal from a request"
   [request]
-  {:username (:authorization/user request)
-   :principal (:authenticated-principal request)})
+  {:principal (:authorization/principal request)
+   :username (:authorization/user request)})
 
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."

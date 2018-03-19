@@ -127,8 +127,8 @@
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "error-in-checking-backend-status"
-      (let [request {:authorization/user "test-user"
-                     :authenticated-principal "test-user@DOMAIN"
+      (let [request {:authorization/pricipal "test-user@DOMAIN"
+                     :authorization/user "test-user"
                      :headers {"accept" "application/json"}
                      :request-method :http-method
                      :route-params (make-route-params "local")}
@@ -173,8 +173,8 @@
                                                  (is (= (if (= router-type "local") my-router-id remote-router-id) target-router-id))
                                                  (is (= service-id in-service-id))
                                                  (is (= (request-id-fn router-type) request-id)))
-                    request {:authorization/user "test-user"
-                             :authenticated-principal "test-user@DOMAIN"
+                    request {:authorization/principal "test-user@DOMAIN"
+                             :authorization/user "test-user"
                              :headers {"accept" "application/json"}
                              :request-method request-method,
                              :route-params (make-route-params router-type)}
@@ -278,8 +278,8 @@
         (is (str/includes? body "Missing host, location, port, request-id, router-id or service-id in uri"))))
 
     (testing "error-in-checking-backend-status"
-      (let [request {:authorization/user "test-user"
-                     :authenticated-principal "test-user@DOMAIN"
+      (let [request {:authorization/principal "test-user@DOMAIN"
+                     :authorization/user "test-user"
                      :headers {"accept" "application/json"}
                      :route-params (make-route-params "local")
                      :request-method :http-method}
@@ -329,8 +329,8 @@
                                                  (is (= (if (= router-type "local") my-router-id remote-router-id) target-router-id))
                                                  (is (= service-id in-service-id))
                                                  (is (= (request-id-fn router-type) request-id)))
-                    request {:authorization/user "test-user"
-                             :authenticated-principal "test-user@DOMAIN"
+                    request {:authorization/principal "test-user@DOMAIN"
+                             :authorization/user "test-user"
                              :request-method request-method
                              :route-params (make-route-params router-type)}
                     make-http-request-fn (fn [instance in-request end-route metric-group]

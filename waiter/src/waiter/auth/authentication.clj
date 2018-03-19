@@ -12,7 +12,8 @@
   (:require [clj-time.core :as t]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [waiter.cookie-support :as cookie-support]))
+            [waiter.cookie-support :as cookie-support]
+            [waiter.middleware :as middleware]))
 
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
@@ -28,21 +29,29 @@
     "Attaches middleware that enables the application to perform authentication.
      The middleware should
      - either issue a 401 challenge asking the client to authenticate itself,
-     - or upon successful authentication populate the request with :authorization/user and :authenticated-principal"))
+     - or upon successful authentication populate the request with :authorization/user and :authorization/principal"))
 
 (defn- add-cached-auth
   [response password principal]
   (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (System/currentTimeMillis)] 1))
 
+(defn auth-params-map
+  "Creates a map intendted to be merged into requests/responses."
+  ([principal]
+   (auth-params-map principal (first (str/split principal #"@" 2))))
+  ([principal user]
+   {:authorization/principal principal
+    :authorization/user user}))
+
 (defn handle-request-auth
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
-  [request-handler request user principal password]
-  (-> request
-      (assoc :authorization/user user
-             :authenticated-principal principal)
-      request-handler
-      (add-cached-auth password principal)))
+  [handler request user principal password]
+  (let [auth-params-map (auth-params-map principal user)
+        handler' (middleware/wrap-merge handler auth-params-map)]
+    (-> request
+        handler'
+        (add-cached-auth password principal))))
 
 (defn decode-auth-cookie
   "Decodes the provided cookie using the provided password.
@@ -80,13 +89,6 @@
   "Removes the auth cookie"
   [cookie-string]
   (cookie-support/remove-cookie cookie-string AUTH-COOKIE-NAME))
-
-(defn assoc-auth-in-request
-  "Associate values for authenticated user in the request."
-  [request auth-principal]
-  (assoc request
-    :authenticated-principal auth-principal
-    :authorization/user (first (str/split auth-principal #"@" 2))))
 
 ;; An anonymous request does not contain any authentication information.
 ;; This is equivalent to granting everyone access to the resource.

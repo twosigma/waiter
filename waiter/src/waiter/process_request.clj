@@ -469,7 +469,7 @@
   (fn [request]
     (try-let [descriptor (request->descriptor-fn request)]
       (let [handler (-> handler
-                        (middleware/wrap-context {:descriptor descriptor}))]
+                        (middleware/wrap-assoc :descriptor descriptor))]
         (handler request))
       (catch Exception e
         (if (missing-run-as-user? e)

@@ -25,6 +25,7 @@
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
+            [waiter.middleware :as middleware]
             [waiter.ring-utils :as ru]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
@@ -78,11 +79,13 @@
    It populates the kerberos credentials and invokes process-request-fn."
   [password process-request-fn {:keys [headers] :as request}]
   (let [auth-cookie (-> headers (get "cookie") str auth/get-auth-cookie-value) ;; auth-cookie is assumed to be valid
-        [auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)]
+        [auth-principal auth-time] (auth/decode-auth-cookie auth-cookie password)
+        auth-params-map (auth/auth-params-map auth-principal)
+        handler (middleware/wrap-merge process-request-fn auth-params-map)]
     (log/info "processing websocket request" {:user auth-principal})
-    (-> (auth/assoc-auth-in-request request auth-principal)
+    (-> request
         (assoc :authorization/time auth-time)
-        process-request-fn)))
+        handler)))
 
 (defn abort-request-callback-factory
   "Creates a callback to abort the http request."
@@ -118,7 +121,7 @@
                                   (headers/dissoc-hop-by-hop-headers)
                                   (dissoc-forbidden-headers)
                                   (assoc "Authorization" (str "Basic " (String. ^bytes (b64/encode (.getBytes (str "waiter:" service-password) "utf-8")) "utf-8")))
-                                  (headers/assoc-auth-headers (:authorization/user ws-request) (:authenticated-principal ws-request)))]
+                                  (headers/assoc-auth-headers (:authorization/user ws-request) (:authorization/principal ws-request)))]
                           (add-headers-to-upgrade-request! request headers)))
         response (async/promise-chan)
         ctrl-chan (async/chan)

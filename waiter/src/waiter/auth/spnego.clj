@@ -18,6 +18,7 @@
             [ring.middleware.cookies :as cookies]
             [ring.util.response :as rr]
             [waiter.auth.authentication :as auth]
+            [waiter.middleware :as middleware]
             [waiter.metrics :as metrics])
   (:import (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client.api Authentication$Result Request)
@@ -80,12 +81,13 @@
   [request-handler password]
   (fn require-gss-handler [{:keys [headers] :as req}]
     (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
-          [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
+          [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)
+          auth-params-map (auth/auth-params-map auth-principal)]
       (cond
         ;; Use the cookie, if not expired
         (auth/decoded-auth-valid? decoded-auth-cookie)
-        (-> (auth/assoc-auth-in-request req auth-principal)
-            (request-handler))
+        (let [request-handler' (middleware/wrap-merge request-handler auth-params-map)]
+          (request-handler' req))
         ;; Try and authenticate using kerberos and add cookie in response when valid
         (get-in req [:headers "authorization"])
         (let [^GSSContext gss_context (gss-context-init)

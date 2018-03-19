@@ -352,8 +352,8 @@
 
 (deftest test-make-request
   (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "proto"}
-        request {:authorization/user "test-user"
-                 :authenticated-principal "test-user@test.com"
+        request {:authorization/principal "test-user@test.com"
+                 :authorization/user "test-user"
                  :body "body"}
         request-properties {:connection-timeout-ms 123456, :initial-socket-timeout-ms 654321}
         passthrough-headers {"accept" "text/html"

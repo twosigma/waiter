@@ -538,9 +538,9 @@
   (fn [request]
     (handler request)))
 
-(defn merge-exception
-  "Enriches an exception with a data map, regardless of whether it's an ExceptionInfo or just Exception."
-  [^Exception e m]
+(defn update-exception
+  "Updates an exception, regardless of whether it's an ExceptionInfo or just Exception."
+  [^Exception e update-fn]
   (if (instance? ExceptionInfo e)
-    (ex-info (.getMessage e) (merge (ex-data e) m) (.getCause e))
-    (ex-info (.getMessage e) m (.getCause e))))
+    (ex-info (.getMessage e) (update-fn (ex-data e)) (.getCause e))
+    (ex-info (.getMessage e) (update-fn {}) (.getCause e))))
