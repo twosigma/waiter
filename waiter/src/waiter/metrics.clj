@@ -452,7 +452,7 @@
 (defmacro with-timer
   "Times the operation specified by body using the provided
   timer and calls handle-elapsed-nanos-fn with the epased
-  time in nanoseconds. Returns [value of body, nanos]."
+  time in nanoseconds. Returns a map with :out and :elapsed keys."
   [timer & body]
   `(let [^Timer$Context start# (metrics.timers/start ~timer)
          out# (do ~@body)
