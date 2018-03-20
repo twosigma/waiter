@@ -488,10 +488,10 @@
           confirm-live-connection-factory #(confirm-live-connection-factory control-mult reservation-status-promise %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
-          add-debug-header (fn [response header value]
-                             (if waiter-debug-enabled?
-                               (assoc-in response [:headers header] value)
-                               response))]
+          assoc-debug-header (fn [response header value]
+                               (if waiter-debug-enabled?
+                                 (assoc-in response [:headers header] value)
+                                 response))]
       (async/go
         (if waiter-debug-enabled?
           (log/info "process request to" (get-in request [:headers "host"]) "at path" (:uri request))
@@ -557,14 +557,14 @@
                                   (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
                                                                reason-map reservation-status-promise confirm-live-connection-with-abort
                                                                request-state-chan response))
-                                (add-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
+                                (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
                           (catch Exception e
                             (deliver reservation-status-promise :generic-error)
                             ; close request-state-chan to mark the request as finished
                             (async/close! request-state-chan)
                             (handle-process-exception e request)))
                         (assoc :instance instance)
-                        (add-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
+                        (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                 (statsd/gauge-delta! metric-group "request_outstanding" -1)
