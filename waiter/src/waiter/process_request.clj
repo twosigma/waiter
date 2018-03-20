@@ -526,9 +526,8 @@
                         ; request-state-chan should be explicitly closed after the request finishes processing
                         request-state-chan (async/tap control-mult (au/latest-chan) false)
                         queue-timeout-ms (:queue-timeout-ms instance-request-properties)
-                        instance-timer (metrics/service-timer service-id "get-available-instance")
                         timed-instance (metrics/with-timer
-                                         instance-timer
+                                         (metrics/service-timer service-id "get-available-instance")
                                          (fa/<? (prepare-instance instance-rpc-chan service-id reason-map
                                                                   start-new-service-fn request-state-chan queue-timeout-ms
                                                                   reservation-status-promise metric-group)))
@@ -539,9 +538,8 @@
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
                           (confirm-live-connection-without-abort)
                           (let [endpoint (request->endpoint request waiter-headers)
-                                backend-timer (metrics/service-timer service-id "backend-response")
                                 timed-response (metrics/with-timer
-                                                 backend-timer
+                                                 (metrics/service-timer service-id "backend-response")
                                                  (async/<!
                                                    (make-request-fn instance request instance-request-properties
                                                                     passthrough-headers endpoint metric-group)))
