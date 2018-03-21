@@ -142,12 +142,12 @@
    Returns the instance if it was acquired successfully,
    or an exception if there was an error"
   [instance-rpc-chan service-id {:keys [request-id] :as reason-map} start-new-service-fn request-state-chan
-   queue-timeout-ms reservation-status-promise metric-group add-debug-header-into-response!]
+   queue-timeout-ms reservation-status-promise metric-group]
   (fa/go-try
     (log/debug "retrieving instance for" service-id "using" (dissoc reason-map :cid :time))
     (let [correlation-id (cid/get-correlation-id)
           instance (fa/<? (service/get-available-instance
-                            instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group add-debug-header-into-response!))]
+                            instance-rpc-chan service-id reason-map start-new-service-fn queue-timeout-ms metric-group))]
       (au/on-chan-close request-state-chan
                         (fn on-request-state-chan-close []
                           (cid/cdebug correlation-id "request-state-chan closed")
@@ -177,38 +177,20 @@
     (cond-> uri
             (not (str/blank? query-string)) (str "?" query-string))))
 
-(defn- wrap-exception
-  "Includes metadata such as cid and status along with the exception."
-  [message exception instance status headers]
-  (ex-info message
-           (merge (metrics/retrieve-local-stats-for-service (scheduler/instance->service-id instance))
-                  {:instance instance
-                   :cid (cid/get-correlation-id)
-                   :status status
-                   :headers headers})
-           exception))
-
-(defn- throw-response-error
-  "Wraps the error from making a request in an ex-info with an appropriate message and status."
-  [error reservation-status-promise instance response-headers]
-  (throw
-    (cond (instance? EofException error)
-          (do
-            (deliver reservation-status-promise :client-error)
-            (-> "Connection unexpectedly closed while sending request"
-                (wrap-exception error instance 400 @response-headers)))
-
-          (instance? TimeoutException error)
-          (do
-            (deliver reservation-status-promise :instance-error)
-            (-> (utils/message :backend-request-timed-out)
-                (wrap-exception error instance 504 @response-headers)))
-
-          :else
-          (do
-            (deliver reservation-status-promise :instance-error)
-            (-> (utils/message :backend-request-failed)
-                (wrap-exception error instance 502 @response-headers))))))
+(defn- handle-response-error
+  "Handles error responses from the backend."
+  [error reservation-status-promise service-id request]
+  (let [metrics-map (metrics/retrieve-local-stats-for-service service-id)
+        [promise-value message status]
+        (cond (instance? EofException error)
+              [:client-error "Connection unexpectedly closed while sending request" 400]
+              (instance? TimeoutException error)
+              [:instance-error (utils/message :backend-request-timed-out) 504]
+              :else
+              [:instance-error (utils/message :backend-request-failed) 502])]
+    (deliver reservation-status-promise promise-value)
+    (-> (ex-info message (assoc metrics-map :status status) error)
+        (utils/exception->response request))))
 
 (defn http-method-fn
   "Retrieves the qbits.jet.client.http client function that corresponds to the http method."
@@ -284,17 +266,21 @@
 
 (defn inspect-for-202-async-request-response
   "Helper function that inspects the response and triggers async-request post processing."
-  [post-process-async-request-response-fn instance-request-properties service-id metric-group instance endpoint request
-   reason-map {:keys [headers status]} response-headers reservation-status-promise]
+  [{:keys [headers status] :as response} post-process-async-request-response-fn instance-request-properties
+   service-id metric-group instance endpoint request reason-map reservation-status-promise]
   (let [location-header (str (get headers "location"))
         location (async-req/normalize-location-header endpoint location-header)]
-    (when (= status 202)
+    (if (= status 202)
       (if (str/starts-with? location "/")
         (do
           (deliver reservation-status-promise :success-async) ;; backend is processing as an asynchronous request
-          (post-process-async-request-response-fn service-id metric-group instance (handler/make-auth-user-map request)
-                                                  reason-map instance-request-properties location response-headers))
-        (log/info "response status 202, not treating as an async request as location is" location)))))
+          (post-process-async-request-response-fn response service-id metric-group instance
+                                                  (handler/make-auth-user-map request) reason-map
+                                                  instance-request-properties location))
+        (do
+          (log/info "response status 202, not treating as an async request as location is" location)
+          response))
+      response)))
 
 (defn stream-http-response
   "Writes byte data to the resp-chan. If the body is a string, just writes the string.
@@ -413,7 +399,7 @@
   "Processes a response resulting from a http request.
    It includes book-keeping for async requests and asycnhronously streaming the content."
   [post-process-async-request-response-fn _ instance-request-properties descriptor instance
-   request reason-map response-headers-atom reservation-status-promise confirm-live-connection-with-abort
+   request reason-map reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
   (let [{:keys [service-description service-id waiter-headers]} descriptor
         {:strs [metric-group]} service-description
@@ -426,19 +412,18 @@
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
-    (inspect-for-202-async-request-response
-      post-process-async-request-response-fn instance-request-properties service-id metric-group
-      instance endpoint request reason-map response response-headers-atom reservation-status-promise)
     (let [request-abort-callback (abort-http-request-callback-factory response)]
       (stream-http-response response confirm-live-connection-with-abort request-abort-callback
                             resp-chan instance-request-properties reservation-status-promise
                             request-state-chan metric-group waiter-debug-enabled?
                             (metrics/stream-metric-map service-id)))
     (-> response
+        (inspect-for-202-async-request-response
+          post-process-async-request-response-fn instance-request-properties service-id metric-group
+          instance endpoint request reason-map reservation-status-promise)
         (assoc :body resp-chan)
         (update-in [:headers] (fn update-response-headers [headers]
-                                (-> (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)
-                                    (merge @response-headers-atom)))))))
+                                (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers))))))
 
 (defn missing-run-as-user?
   "Returns true if the exception is due to a missing run-as-user validation on the service description."
@@ -485,12 +470,10 @@
 
 (defn handle-process-exception
   "Handles an error during process."
-  [exception {:keys [descriptor] :as request} response-headers]
+  [exception {:keys [descriptor] :as request}]
   (log/error exception "error during process")
   (track-process-error-metrics descriptor)
-  (-> (utils/exception->response exception request)
-      (update :headers (fn [headers]
-                         (merge response-headers headers)))))
+  (utils/exception->response exception request))
 
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
@@ -505,11 +488,10 @@
           confirm-live-connection-factory #(confirm-live-connection-factory control-mult reservation-status-promise %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
-          ; update response headers eagerly to enable reporting these in case of failure
-          response-headers (atom {})
-          add-debug-header-into-response! (fn [name value]
-                                            (when waiter-debug-enabled?
-                                              (swap! response-headers assoc (str name) (str value))))]
+          assoc-debug-header (fn [response header value]
+                               (if waiter-debug-enabled?
+                                 (assoc-in response [:headers header] value)
+                                 response))]
       (async/go
         (if waiter-debug-enabled?
           (log/info "process request to" (get-in request [:headers "host"]) "at path" (:uri request))
@@ -544,40 +526,47 @@
                         ; request-state-chan should be explicitly closed after the request finishes processing
                         request-state-chan (async/tap control-mult (au/latest-chan) false)
                         queue-timeout-ms (:queue-timeout-ms instance-request-properties)
-                        instance (fa/<? (prepare-instance instance-rpc-chan service-id reason-map start-new-service-fn request-state-chan
-                                                          queue-timeout-ms reservation-status-promise metric-group
-                                                          add-debug-header-into-response!))]
+                        timed-instance (metrics/with-timer
+                                         (metrics/service-timer service-id "get-available-instance")
+                                         (fa/<? (prepare-instance instance-rpc-chan service-id reason-map
+                                                                  start-new-service-fn request-state-chan queue-timeout-ms
+                                                                  reservation-status-promise metric-group)))
+                        instance (:out timed-instance)
+                        instance-elapsed (:elapsed timed-instance)]
+                    (statsd/histo! metric-group "get_instance" instance-elapsed)
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
                           (confirm-live-connection-without-abort)
                           (let [endpoint (request->endpoint request waiter-headers)
-                                {:keys [error] :as response}
-                                (metrics/with-timer!
-                                  (metrics/service-timer service-id "backend-response")
-                                  (fn [nanos]
-                                    (add-debug-header-into-response! "X-Waiter-Backend-Response-ns" nanos)
-                                    (statsd/histo! metric-group "backend_response" nanos))
-                                  (async/<!
-                                    (make-request-fn instance request instance-request-properties
-                                                     passthrough-headers endpoint metric-group)))
+                                timed-response (metrics/with-timer
+                                                 (metrics/service-timer service-id "backend-response")
+                                                 (async/<!
+                                                   (make-request-fn instance request instance-request-properties
+                                                                    passthrough-headers endpoint metric-group)))
+                                response-elapsed (:elapsed timed-response)
+                                {:keys [error] :as response} (:out timed-response)
                                 request-abort-callback (request-abort-callback-factory response)
                                 confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
-                            (when error
-                              (throw-response-error error reservation-status-promise instance response-headers))
-                            (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
-                                                         reason-map response-headers reservation-status-promise
-                                                         confirm-live-connection-with-abort request-state-chan response))
+                            (statsd/histo! metric-group "backend_response" response-elapsed)
+                            (-> (if error
+                                  (do
+                                    (async/close! request-state-chan)
+                                    (handle-response-error error reservation-status-promise service-id request))
+                                  (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
+                                                               reason-map reservation-status-promise confirm-live-connection-with-abort
+                                                               request-state-chan response))
+                                (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
                           (catch Exception e
-                            ; A :client-error or :instance-error may already be in the channel in which case our :generic-error will be ignored.
                             (deliver reservation-status-promise :generic-error)
                             ; close request-state-chan to mark the request as finished
                             (async/close! request-state-chan)
-                            (handle-process-exception e request @response-headers)))
-                        (assoc :instance instance)))))
+                            (handle-process-exception e request)))
+                        (assoc :instance instance)
+                        (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                 (statsd/gauge-delta! metric-group "request_outstanding" -1)
-                (handle-process-exception e request @response-headers)))))))))
+                (handle-process-exception e request)))))))))
 
 (defn wrap-suspended-service
   "Check if a service has been suspended and immediately return a 503 response"
