@@ -553,3 +553,24 @@
   (if (instance? ExceptionInfo e)
     (ex-info (.getMessage e) (update-fn (ex-data e)) (.getCause e))
     (ex-info (.getMessage e) (update-fn {}) e)))
+
+(defn int-ceiling
+  "Gets the integer ceiling for a number."
+  [value]
+  (-> value
+      Math/ceil
+      int))
+
+(let [byte-array-type (Class/forName "[B")]
+  (defn byte-array?
+  "Tests if a value is a byte-array."
+  [val]
+    (when val
+      (instance? byte-array-type val))))
+
+(defn nanos->millis
+  "Converts nanoseconds to milliseconds."
+  [nanos]
+  (-> nanos
+      (/ 1e6)
+      int-ceiling))
