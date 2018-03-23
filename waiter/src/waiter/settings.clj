@@ -106,7 +106,7 @@
                                                    (s/required-key "health-check-max-consecutive-failures") schema/positive-int
                                                    (s/required-key "health-check-url") schema/non-empty-string
                                                    (s/required-key "idle-timeout-mins") schema/positive-int
-                                                   (s/required-key "instance-expiry-mins") schema/positive-int
+                                                   (s/required-key "instance-expiry-mins") schema/non-negative-int
                                                    (s/required-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
                                                    (s/required-key "max-instances") schema/positive-int
                                                    (s/required-key "max-queue-length") schema/positive-int
