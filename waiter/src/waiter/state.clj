@@ -1117,15 +1117,14 @@
                                (case message-type
                                  :update-available-apps
                                  (let [{:keys [available-apps scheduler-sync-time]} message-data
-                                       available-apps-set (into #{} available-apps)
-                                       filter-fn (fn [[service-id _]] (contains? available-apps-set service-id))
-                                       service-id->healthy-instances' (utils/filterm filter-fn service-id->healthy-instances)
-                                       service-id->unhealthy-instances' (utils/filterm filter-fn service-id->unhealthy-instances)
-                                       services-without-instances (apply disj available-apps-set (keys service-id->my-instance->slots))
-                                       service-id->expired-instances' (utils/filterm filter-fn service-id->expired-instances)
-                                       service-id->starting-instances' (utils/filterm filter-fn service-id->starting-instances)
-                                       service-id->failed-instances' (utils/filterm filter-fn service-id->failed-instances)
-                                       service-id->deployment-error' (utils/filterm filter-fn service-id->deployment-error)]
+                                       available-service-ids (into #{} available-apps)
+                                       services-without-instances (remove #(contains? service-id->my-instance->slots %) available-service-ids )
+                                       service-id->healthy-instances' (select-keys service-id->healthy-instances available-service-ids)
+                                       service-id->unhealthy-instances' (select-keys service-id->unhealthy-instances available-service-ids)
+                                       service-id->expired-instances' (select-keys service-id->expired-instances available-service-ids)
+                                       service-id->starting-instances' (select-keys service-id->starting-instances available-service-ids)
+                                       service-id->failed-instances' (select-keys service-id->failed-instances available-service-ids)
+                                       service-id->deployment-error' (select-keys service-id->deployment-error available-service-ids)]
                                    (when (or (not= service-id->healthy-instances service-id->healthy-instances')
                                              (not= service-id->unhealthy-instances service-id->unhealthy-instances')
                                              (seq services-without-instances))
