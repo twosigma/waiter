@@ -401,6 +401,11 @@
     (log/debug endpoint "body:" state-body)
     (try-parse-json state-body)))
 
+(defn interstitial-state
+  "Fetches and returns the interstitial state."
+  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  (retrieve-state-helper waiter-url "/state/interstitial" :cookies cookies))
+
 (defn kv-store-state
   "Fetches and returns the kv-store state."
   [waiter-url & {:keys [cookies] :or {cookies {}}}]
