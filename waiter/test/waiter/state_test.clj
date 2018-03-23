@@ -20,7 +20,6 @@
             [plumbing.core :as pc]
             [waiter.async-utils :as au]
             [waiter.discovery :as discovery]
-            [waiter.service :as service]
             [waiter.state :refer :all]
             [waiter.utils :as utils]))
 
@@ -1007,36 +1006,36 @@
               (let [expected-services (services-fn n)
                     expected-state (let [index-fn #(Integer/parseInt (subs % (inc (.lastIndexOf ^String % "-"))))]
                                      {:service-id->healthy-instances
-                                      (zipmap expected-services
-                                              (map #(healthy-instances-fn % (index-fn %) n) expected-services))
+                                      (pc/map-from-keys #(healthy-instances-fn % (index-fn %) n) expected-services)
                                       :service-id->unhealthy-instances
-                                      (zipmap expected-services
-                                              (map #(unhealthy-instances-fn % (index-fn %)) expected-services))
+                                      (pc/map-from-keys #(unhealthy-instances-fn % (index-fn %)) expected-services)
                                       :service-id->failed-instances
-                                      (zipmap expected-services
-                                              (map #(failed-instances-fn % (index-fn %)) expected-services))
+                                      (pc/map-from-keys #(failed-instances-fn % (index-fn %)) expected-services)
                                       :service-id->deployment-error {} ; should be no deployment errors
                                       :service-id->expired-instances
-                                      (zipmap expected-services
-                                              (map (fn [service]
-                                                     (let [healthy-instances (healthy-instances-fn service (index-fn service) n)
-                                                           expiry-mins (t/minutes (Integer/parseInt (str/replace service "service-" "")))]
-                                                       (filter #(utils/older-than? current-time expiry-mins %1) healthy-instances)))
-                                                   expected-services))
+                                      (pc/map-from-keys
+                                        (fn [service]
+                                          (let [healthy-instances (healthy-instances-fn service (index-fn service) n)
+                                                expiry-mins-int (Integer/parseInt (str/replace service "service-" ""))
+                                                expiry-mins (t/minutes expiry-mins-int)]
+                                            (filter #(and (pos? expiry-mins-int)
+                                                          (utils/older-than? current-time expiry-mins %1))
+                                                    healthy-instances)))
+                                        expected-services)
                                       :service-id->starting-instances
-                                      (zipmap expected-services
-                                              (map (fn [service]
-                                                     (let [unhealthy-instances (unhealthy-instances-fn service (index-fn service))
-                                                           grace-period-mins (t/minutes (Integer/parseInt (str/replace service "service-" "")))]
-                                                       (filter #(not (utils/older-than? current-time grace-period-mins %)) unhealthy-instances)))
-                                                   expected-services))
+                                      (pc/map-from-keys
+                                        (fn [service]
+                                          (let [unhealthy-instances (unhealthy-instances-fn service (index-fn service))
+                                                grace-period-mins (t/minutes (Integer/parseInt (str/replace service "service-" "")))]
+                                            (filter #(not (utils/older-than? current-time grace-period-mins %)) unhealthy-instances)))
+                                        expected-services)
                                       :service-id->my-instance->slots
-                                      (zipmap expected-services
-                                              (map (fn [service]
-                                                     (let [healthy-instances (healthy-instances-fn service (index-fn service) n)
-                                                           my-instances (second (first (slot-partition-fn routers healthy-instances)))]
-                                                       my-instances))
-                                                   expected-services))
+                                      (pc/map-from-keys
+                                        (fn [service]
+                                          (let [healthy-instances (healthy-instances-fn service (index-fn service) n)
+                                                my-instances (second (first (slot-partition-fn routers healthy-instances)))]
+                                            my-instances))
+                                        expected-services)
                                       :routers routers
                                       :time current-time})
                     state (async/<!! router-state-push-chan)

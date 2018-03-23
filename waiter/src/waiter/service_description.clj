@@ -80,7 +80,7 @@
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "concurrency-level") (s/both s/Int (s/pred #(<= 1 % 10000) 'between-one-and-10000))
-   (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 1 %))
+   (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
    ; per-request related
    (s/optional-key "blacklist-on-503") s/Bool

@@ -1022,7 +1022,14 @@
               "metric-group" "token-mg"}
              (service-description {:defaults {"health-check-url" "/health"}
                                    :tokens {"cmd" "some-cmd", "metric-group" "token-mg"}}
-                                  :assoc-run-as-user-approved? (constantly true)))))))
+                                  :assoc-run-as-user-approved? (constantly true)))))
+
+    (testing "disable instance-expiry"
+      (is (= {"cmd" "some-cmd"
+              "health-check-url" "/health"
+              "instance-expiry-mins" 0}
+             (service-description {:defaults {"health-check-url" "/health"}
+                                   :tokens {"cmd" "some-cmd", "instance-expiry-mins" 0}}))))))
 
 (deftest test-compute-service-description-error-scenarios
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1065,7 +1072,23 @@
                                                         "version" "a1b2c3"}}
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
-                                              (constantly false))))))
+                                              (constantly false))))
+
+    (testing "instance-expiry-mins"
+      (let [core-service-description {"cmd" "cmd for missing run-as-user"
+                   "cpus" 1
+                   "mem" 200
+                   "run-as-user" test-user
+                   "version" "a1b2c3"}
+            run-compute-service-description (fn [service-description]
+                                              (compute-service-description {:defaults {"health-check-url" "/health"}
+                                                                            :tokens service-description}
+                                                                           {} {} kv-store service-id-prefix test-user []
+                                                                           (create-default-service-description-builder {})
+                                                                           (constantly false)))]
+        (is (thrown? Exception (run-compute-service-description (assoc core-service-description "instance-expiry-mins" -1))))
+        (is (run-compute-service-description (assoc core-service-description "instance-expiry-mins" 0)))
+        (is (run-compute-service-description (assoc core-service-description "instance-expiry-mins" 1)))))))
 
 (deftest test-compute-service-description-service-preauthorized-and-authentication-disabled
   (letfn [(execute-test [token-description header-parameters]
