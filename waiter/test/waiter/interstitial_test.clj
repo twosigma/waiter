@@ -18,14 +18,14 @@
             [waiter.client-tools :as ct]
             [waiter.interstitial :refer :all]))
 
-(deftest test-start-service-interstitial!
+(deftest test-ensure-service-interstitial!
   (testing "new-entry"
     (let [interstitial-state-atom (atom {:initialized? false
                                          :service-id->interstitial-promise {"service-id-1" (promise)}})
           service-id "test-service-id"
           process-interstitial-counter (atom 0)
           process-interstitial-promise (fn [& _] (swap! process-interstitial-counter inc))
-          interstitial-promise (start-service-interstitial! interstitial-state-atom service-id process-interstitial-promise)]
+          interstitial-promise (ensure-service-interstitial! interstitial-state-atom service-id process-interstitial-promise)]
       (is (= 1 @process-interstitial-counter))
       (is (not (get @interstitial-state-atom :initialized?)))
       (is (not (realized? interstitial-promise)))
@@ -41,7 +41,7 @@
                                                                             service-id initial-interstitial-promise}})
           process-interstitial-counter (atom 0)
           process-interstitial-promise (fn [& _] (reset! process-interstitial-counter inc))
-          interstitial-promise (start-service-interstitial! interstitial-state-atom service-id process-interstitial-promise)]
+          interstitial-promise (ensure-service-interstitial! interstitial-state-atom service-id process-interstitial-promise)]
       (is (zero? @process-interstitial-counter))
       (is (not (get @interstitial-state-atom :initialized?)))
       (is (not (realized? interstitial-promise)))
@@ -56,7 +56,7 @@
           service-id "test-service-id"
           process-interstitial-counter (atom 0)
           process-interstitial-promise (fn [& _] (swap! process-interstitial-counter inc))
-          interstitial-promises (->> (start-service-interstitial! interstitial-state-atom service-id process-interstitial-promise)
+          interstitial-promises (->> (ensure-service-interstitial! interstitial-state-atom service-id process-interstitial-promise)
                                      (fn [])
                                      (ct/parallelize-requests 20 10))]
       (let [interstitial-promise (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id])]
@@ -84,14 +84,12 @@
     (is (not-any? #(contains? (get-in @interstitial-state-atom [:service-id->interstitial-promise]) %) resolved-service-ids))
     (is (every? #(contains? (get-in @interstitial-state-atom [:service-id->interstitial-promise]) %) unresolved-service-ids))))
 
-(deftest test-process-interstitial-secs
+(deftest test-install-interstitial-timeout!
   (testing "zero interstitial-secs"
     (let [service-id "test-service-id"
           interstitial-secs 0
-          interstitial-promise (promise)
-          r (process-interstitial-secs service-id interstitial-secs interstitial-promise)]
-      (is (not (au/chan? r)))
-      (is (= :interstitial-opt-out (deref interstitial-promise 0 :not-initialized)))))
+          interstitial-promise (promise)]
+      (is (nil? (install-interstitial-timeout! service-id interstitial-secs interstitial-promise)))))
 
   (testing "non-zero interstitial-secs"
     (let [service-id "test-service-id"
@@ -101,12 +99,12 @@
       (with-redefs [async/timeout (fn [^long timeout-ms]
                                     (is (= (* interstitial-secs 1000) timeout-ms))
                                     timeout-chan)]
-        (let [r (process-interstitial-secs service-id interstitial-secs interstitial-promise)]
+        (let [r (install-interstitial-timeout! service-id interstitial-secs interstitial-promise)]
           (is (au/chan? r))
           (is (= :not-initialized (deref interstitial-promise 0 :not-initialized)))
           (async/>!! timeout-chan :timeout)
           (async/<!! r)
-          (is (= :interstitial-time-out (deref interstitial-promise 0 :not-initialized))))))))
+          (is (= :interstitial-timeout (deref interstitial-promise 0 :not-initialized))))))))
 
 (deftest test-interstitial-maintainer
   (let [resolved-service-ids #{"service-1" "service-3" "service-5" "service-7"}
@@ -120,23 +118,21 @@
                                                            p)))
                                      (assoc {:initialized? false} :service-id->interstitial-promise)
                                      atom)
-        available-service-ids' ["service-7" "service-8" "service-9" "service-10x"]
+        available-service-ids' ["service-0" "service-7" "service-8" "service-9"]
         scheduler-messages [[:update-available-apps {:available-apps available-service-ids'}]
+                            [:update-app-instances {:healthy-instances [{:id "service-0.1"}]
+                                                    :service-id "service-0"}]
                             [:update-app-instances {:healthy-instances [{:id "service-6.1"}]
                                                     :service-id "service-6"}]
                             [:update-app-instances {:healthy-instances [{:id "service-8.1"}]
                                                     :service-id "service-8"}]
                             [:update-app-instances {:service-id "service-9"
-                                                    :unhealthy-instances [{:id "service-9.1"}]}]
-                            [:update-app-instances {:service-id "service-10x"
-                                                    :unhealthy-instances [{:id "service-10x.1"}]}]]
+                                                    :unhealthy-instances [{:id "service-9.1"}]}]]
         service-id->service-description (fn [service-id]
-                                          (if (str/ends-with? service-id "x")
-                                            {"interstitial-secs" "x"}
-                                            {"interstitial-secs" (->> (str/last-index-of service-id "-")
-                                                                      inc
-                                                                      (subs service-id)
-                                                                      Integer/parseInt)}))
+                                          {"interstitial-secs" (->> (str/last-index-of service-id "-")
+                                                                    inc
+                                                                    (subs service-id)
+                                                                    Integer/parseInt)})
         scheduler-state-chan (au/latest-chan)
         initial-state {:available-service-ids all-service-ids}
         {:keys [exit-chan query-chan]}
@@ -146,7 +142,7 @@
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan})
           state (async/<!! response-chan)]
-      (is (= (conj (set available-service-ids') "service-6")
+      (is (= (set/union (set available-service-ids') unresolved-service-ids)
              (set (get-in state [:maintainer :available-service-ids]))))
       (is (get-in state [:interstitial :initialized?]))
       (is (= {"service-2" :not-realized
@@ -154,8 +150,7 @@
               "service-6" :healthy-instance-found
               "service-7" :resolved-from-test
               "service-8" :healthy-instance-found
-              "service-9" :not-realized
-              "service-10x" :processing-error}
+              "service-9" :not-realized}
              (get-in state [:interstitial :service-id->interstitial-promise]))))
     (async/>!! exit-chan :exit)))
 

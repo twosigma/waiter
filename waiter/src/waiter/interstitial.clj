@@ -22,51 +22,41 @@
             [waiter.metrics :as metrics]
             [waiter.utils :as utils]))
 
-(defn- interstitial-state-initialized?
-  "Returns true if the interstitial-state-atom has been updated by a scheduler state update."
-  [interstitial-state-atom]
-  (:initialized? @interstitial-state-atom))
-
 (defn- service-id->interstitial-promise
   "Returns the promise mapped against a service-id.
    It will return nil if the service is not currently mapped to a promise."
-  [interstitial-state-atom service-id]
-  (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id]))
+  [interstitial-state service-id]
+  (get-in interstitial-state [:service-id->interstitial-promise service-id]))
 
 (defn- resolve-promise!
   "Resolves a promise to the specified value.
    It must be called inside a critical section to avoid data races."
-  [interstitial-promise interstitial-resolution]
-  (deliver interstitial-promise interstitial-resolution)
-  (when (= interstitial-resolution (deref interstitial-promise))
-    (counters/inc! (metrics/waiter-counter "interstitial" "promise" "resolved"))
-    (counters/inc! (metrics/waiter-counter "interstitial" "resolution" (name interstitial-resolution)))))
+  [service-id interstitial-promise interstitial-resolution]
+  (when-not (realized? interstitial-promise)
+    (deliver interstitial-promise interstitial-resolution)
+    (when (= interstitial-resolution @interstitial-promise)
+      (log/info "interstitial for" service-id "resolved to" (name interstitial-resolution))
+      (counters/inc! (metrics/waiter-counter "interstitial" "promise" "resolved"))
+      (counters/inc! (metrics/waiter-counter "interstitial" "resolution" (name interstitial-resolution))))))
 
-(defn start-service-interstitial!
+(defn ensure-service-interstitial!
   "Ensures a promise is mapped against the provided service id and returns the promise.
-   If this call is responsible for creating the promise that got mapped, it also triggers the call to process-interstitial-promise."
+   If this call is responsible for creating the promise that got mapped, it also invokes process-interstitial-promise."
   [interstitial-state-atom service-id process-interstitial-promise]
-  (or (service-id->interstitial-promise interstitial-state-atom service-id)
+  (or (service-id->interstitial-promise @interstitial-state-atom service-id)
       (loop [iteration 0
              new-interstitial-promise (promise)]
         (->> (fn [{:keys [service-id->interstitial-promise] :as interstitial-state}]
-               (if-not (contains? service-id->interstitial-promise service-id)
-                 (do
-                   (log/info "creating interstitial promise for" service-id)
-                   (-> interstitial-state
+               (cond-> interstitial-state
+                       (not (contains? service-id->interstitial-promise service-id))
                        (assoc-in [:service-id->interstitial-promise service-id] new-interstitial-promise)))
-                 interstitial-state))
              (swap! interstitial-state-atom))
-        (if-let [interstitial-promise (service-id->interstitial-promise interstitial-state-atom service-id)]
+        (if-let [interstitial-promise (service-id->interstitial-promise @interstitial-state-atom service-id)]
           (do
             (when (identical? new-interstitial-promise interstitial-promise)
+              (log/info "created interstitial promise for" service-id)
               (counters/inc! (metrics/waiter-counter "interstitial" "promise" "total"))
-              (log/error "processing interstitial promise for" service-id)
-              (try
-                (process-interstitial-promise interstitial-promise)
-                (catch Exception e
-                  (log/error e "error in processing interstitial promise")
-                  (resolve-promise! interstitial-promise :processing-error))))
+              (process-interstitial-promise interstitial-promise))
             interstitial-promise)
           (do
             (log/info "looping as interstitial promise was removed" {:iteration iteration :service-id service-id})
@@ -86,55 +76,46 @@
        :service-id->interstitial-promise
        keys
        set
-       set/difference service-ids))
+       (set/difference service-ids)))
 
-(defn process-interstitial-secs
+(defn install-interstitial-timeout!
   "Resolves the interstitial-promise after a delay on interstitial-secs seconds."
   [service-id interstitial-secs interstitial-promise]
   (if (pos? interstitial-secs)
     (async/go
       (-> interstitial-secs t/seconds t/in-millis async/timeout async/<!)
-      (log/info "interstitial timed out for" service-id)
-      (resolve-promise! interstitial-promise :interstitial-time-out))
-    (do
-      (log/info service-id "opted out of interstitial")
-      (resolve-promise! interstitial-promise :interstitial-opt-out))))
+      (resolve-promise! service-id interstitial-promise :interstitial-timeout))
+    (log/error service-id "has opted out of interstitial, not installing timeout")))
 
 (defn- process-scheduler-messages
   "Processes messages from the scheduler.
    In particular, it resolves all promises for services which have healthy instances.
    It also removes from the interstitial state any resolved promises for services which are no longer available."
   [interstitial-state-atom service-id->service-description current-available-service-ids scheduler-messages]
-  (loop [[[message-type message-data] & remaining-scheduler-messages] scheduler-messages
-         scheduler-available-service-ids #{}]
-    (if message-type
-      (condp = message-type
-        :update-available-apps
-        (let [{:keys [available-apps]} message-data
-              available-service-ids (set available-apps)]
-          (let [service-ids-to-remove (set/difference current-available-service-ids available-service-ids)
-                removed-service-ids (remove-resolved-interstitial-promises! interstitial-state-atom service-ids-to-remove)]
-            (doseq [service-id available-service-ids]
-              (->> (get (service-id->service-description service-id) "interstitial-secs")
-                   (partial process-interstitial-secs service-id)
-                   (start-service-interstitial! interstitial-state-atom service-id)))
-            (recur remaining-scheduler-messages
-                   (-> scheduler-available-service-ids
-                       (set/difference removed-service-ids)
-                       (set/union available-service-ids)))))
-
-        :update-app-instances
-        (let [{:keys [service-id healthy-instances]} message-data]
-          (when (seq healthy-instances)
-            (when-let [interstitial-promise (service-id->interstitial-promise interstitial-state-atom service-id)]
-              (when-not (deref interstitial-promise 0 nil)
-                (resolve-promise! interstitial-promise :healthy-instance-found))))
-          (recur remaining-scheduler-messages
-                 (conj scheduler-available-service-ids service-id)))
-
-        (recur remaining-scheduler-messages
-               scheduler-available-service-ids))
-      scheduler-available-service-ids)))
+  (let [available-service-ids (->> scheduler-messages
+                                   (some (fn [[message-type message-data]]
+                                           (when (= :update-available-apps message-type)
+                                             (:available-apps message-data)))))
+        healthy-instance-service-ids (->> scheduler-messages
+                                          (map (fn [[message-type message-data]]
+                                                 (when (and (= :update-app-instances message-type)
+                                                            (seq (:healthy-instances message-data)))
+                                                   (:service-id message-data))))
+                                          (remove nil?))
+        service-ids-to-remove (set/difference current-available-service-ids available-service-ids)
+        removed-service-ids (remove-resolved-interstitial-promises! interstitial-state-atom service-ids-to-remove)]
+    (doseq [service-id available-service-ids]
+      (let [{:strs [interstitial-secs]} (service-id->service-description service-id)]
+        (when (pos? interstitial-secs)
+          (->> (partial install-interstitial-timeout! service-id interstitial-secs)
+               (ensure-service-interstitial! interstitial-state-atom service-id)))))
+    (doseq [service-id healthy-instance-service-ids]
+      (when-let [interstitial-promise (service-id->interstitial-promise @interstitial-state-atom service-id)]
+        (resolve-promise! service-id interstitial-promise :healthy-instance-found)))
+    (-> current-available-service-ids
+        (set/difference removed-service-ids)
+        (set/union available-service-ids)
+        (set/union healthy-instance-service-ids))))
 
 (defn interstitial-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
@@ -163,12 +144,12 @@
                     (let [{:keys [response-chan service-id]} message]
                       (->> (if service-id
                              {:available (contains? available-service-ids service-id)
-                              :interstitial (some-> (service-id->interstitial-promise interstitial-state-atom service-id)
+                              :interstitial (some-> (service-id->interstitial-promise @interstitial-state-atom service-id)
                                                     (deref 0 :not-realized))}
                              {:interstitial (update @interstitial-state-atom :service-id->interstitial-promise
                                                     (fn [service-id->interstitial-promise]
                                                       (pc/map-vals #(deref % 0 :not-realized) service-id->interstitial-promise)))
-                              :maintainer (pc/map-vals sort current-state)})
+                              :maintainer current-state})
                            (async/>! response-chan))
                       current-state)
 
@@ -177,7 +158,7 @@
                           available-service-ids' (process-scheduler-messages
                                                    interstitial-state-atom service-id->service-description
                                                    available-service-ids scheduler-messages)]
-                      (when-not (interstitial-state-initialized? interstitial-state-atom)
+                      (when-not (:initialized? @interstitial-state-atom)
                         (log/info "interstitial state has been initialized with services from the scheduler")
                         (swap! interstitial-state-atom assoc :initialized? true))
                       (assoc current-state :available-service-ids available-service-ids'))))
@@ -212,11 +193,10 @@
         (if (or bypass-interstitial? ;; bypass query parameter provided
                 (zero? interstitial-secs) ;; interstitial support has been disabled
                 (not (str/includes? (str accept) text-html)) ;; expecting html response
-                (not (interstitial-state-initialized? interstitial-state-atom))
-                (let [interstitial-promise (->> (partial process-interstitial-secs service-id interstitial-secs)
-                                                (start-service-interstitial! interstitial-state-atom service-id))]
-                  (or (nil? interstitial-promise)
-                      (realized? interstitial-promise))))
+                (not (:initialized? @interstitial-state-atom))
+                (->> (partial install-interstitial-timeout! service-id interstitial-secs)
+                     (ensure-service-interstitial! interstitial-state-atom service-id)
+                     realized?))
           (->> (cond-> query-string
                        bypass-interstitial? (subs 0
                                                   (max 0

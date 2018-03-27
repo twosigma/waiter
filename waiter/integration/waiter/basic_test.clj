@@ -675,7 +675,7 @@
       (doseq [[_ router-url] (routers waiter-url)]
         (wait-for #(-> (interstitial-state router-url :cookies cookies)
                        (get-in ["state" "interstitial" "initialized?"] false)))))
-    (let [interstitial-secs 15
+    (let [interstitial-secs 5
           request-headers (-> (pc/map-keys (fn [k] (str "x-waiter-" (name k)))
                                            (assoc (kitchen-params)
                                              :interstitial-secs interstitial-secs
@@ -718,7 +718,8 @@
           (async/<!! c2))
         (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
           (is (some (fn [[_ router-url]]
-                      (-> (interstitial-state router-url :cookies cookies)
-                          (get-in ["state" "interstitial" "service-id->interstitial-promise"] {})
-                          (contains? service-id)))
+                      (some-> (interstitial-state router-url :cookies cookies)
+                              (get-in ["state" "interstitial" "service-id->interstitial-promise"] {})
+                              (get service-id)
+                              #{"healthy-instance-found" "interstitial-timeout"}))
                     (routers waiter-url))))))))
