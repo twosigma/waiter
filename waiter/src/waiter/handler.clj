@@ -26,6 +26,7 @@
             [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
+            [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.ring-utils :as ru]
@@ -749,8 +750,9 @@
                   :consent-expiry-days consent-expiry-days
                   :service-description-template service-description-template
                   :service-id service-id
-                  :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
-                                   (when (not (str/blank? query-string)) (str "?" query-string)))
+                  :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path "?"
+                                   (when (not (str/blank? query-string)) (str query-string "&"))
+                                   interstitial/bypass-interstitial-param-name-value)
                   :token token})
          :headers {"content-type" "text/html"}
          :status 200}))

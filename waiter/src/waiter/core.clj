@@ -114,6 +114,7 @@
                      "waiter-auth" :waiter-auth-handler-fn
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
+                     "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
                      "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
                      "work-stealing" :work-stealing-handler-fn}]]
     (or (bidi/match-route routes uri)
@@ -441,7 +442,8 @@
       (let [{:strs [host]} headers]
         (or (#{"/app-name" "/service-id" "/token"} uri) ; special urls that are always for Waiter (FIXME)
             (some #(str/starts-with? (str uri) %)
-                  ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"])
+                  ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"
+                   "/waiter-interstitial"])
             (and (or (str/blank? host)
                      (valid-waiter-hostnames (-> host
                                                  (str/split #":")
@@ -1008,7 +1010,7 @@
                                    (handler/metrics-request-handler request)))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
-                                 request->descriptor-fn service-id->password-fn start-new-service-fn]
+                                 request->descriptor-fn service-id->password-fn start-new-service-fn store-service-description-fn]
                                 [:settings instance-request-properties]
                                 [:state http-client instance-rpc-chan local-usage-agent interstitial-state-atom]
                                 wrap-auth-bypass-fn wrap-secure-request-fn]
@@ -1024,7 +1026,7 @@
                                pr/wrap-too-many-requests
                                pr/wrap-suspended-service
                                pr/wrap-response-status-metrics
-                               (interstitial/wrap-interstitial interstitial-state-atom)
+                               (interstitial/wrap-interstitial interstitial-state-atom store-service-description-fn)
                                (pr/wrap-descriptor request->descriptor-fn)
                                wrap-secure-request-fn
                                wrap-auth-bypass-fn)))
@@ -1225,6 +1227,13 @@
                                             (handler/request-consent-handler
                                               token->service-description-template service-description->service-id
                                               consent-expiry-days request))))
+   :waiter-request-interstitial-handler-fn (pc/fnk [[:routines request->descriptor-fn]
+                                                    wrap-secure-request-fn]
+                                             (let [handler (-> interstitial/display-interstitial-handler
+                                                               (pr/wrap-descriptor request->descriptor-fn))]
+                                               (wrap-secure-request-fn
+                                                 (fn waiter-request-interstitial-handler-fn [request]
+                                                   (handler request)))))
    :welcome-handler-fn (pc/fnk [settings]
                          (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]

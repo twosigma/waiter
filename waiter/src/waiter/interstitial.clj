@@ -17,10 +17,12 @@
             [clojure.tools.logging :as log]
             [comb.template :as template]
             [metrics.counters :as counters]
+            [metrics.meters :as meters]
             [plumbing.core :as pc]
             [waiter.async-utils :as au]
+            [waiter.headers :as headers]
             [waiter.metrics :as metrics]
-            [waiter.utils :as utils]))
+            [waiter.service-description :as sd]))
 
 (defn- service-id->interstitial-promise
   "Returns the promise mapped against a service-id.
@@ -95,7 +97,8 @@
   (let [available-service-ids (->> scheduler-messages
                                    (some (fn [[message-type message-data]]
                                            (when (= :update-available-apps message-type)
-                                             (:available-apps message-data)))))
+                                             (:available-apps message-data))))
+                                   set)
         healthy-instance-service-ids (->> scheduler-messages
                                           (map (fn [[message-type message-data]]
                                                  (when (and (= :update-app-instances message-type)
@@ -178,41 +181,57 @@
     [context]
     (interstitial-template-fn context)))
 
+(def ^:const bypass-interstitial-param-name-value "x-waiter-bypass-interstitial=1")
+
 (defn wrap-interstitial
   "Redirects users to the interstitial page when interstitial has been enabled and the service has not been started.
    The interstitial page will retry the request as a GET with the same query parameters but bypass the interstitial page."
-  [handler interstitial-state-atom]
-  (let [bypass-interstitial-param-name-value "x-waiter-bypass-interstitial=1"
-        text-html "text/html"]
-    (fn wrap-interstitial-handler [{:keys [descriptor headers query-string uri] :as request}]
-      (let [{:strs [accept host]} headers
-            {:keys [service-description service-id]} descriptor
-            {:strs [interstitial-secs]} service-description
-            ;; the bypass interstitial should be the last query parameter
-            bypass-interstitial? (str/ends-with? (str query-string) bypass-interstitial-param-name-value)]
-        (if (or bypass-interstitial? ;; bypass query parameter provided
-                (zero? interstitial-secs) ;; interstitial support has been disabled
-                (not (str/includes? (str accept) text-html)) ;; expecting html response
-                (not (:initialized? @interstitial-state-atom))
-                (->> (partial install-interstitial-timeout! service-id interstitial-secs)
-                     (ensure-service-interstitial! interstitial-state-atom service-id)
-                     realized?))
-          (->> (cond-> query-string
-                       bypass-interstitial? (subs 0
-                                                  (max 0
-                                                       (- (count query-string)
-                                                          (inc (count bypass-interstitial-param-name-value))))))
-               (assoc request :query-string)
-               handler)
-          (let [target-url (str (name (utils/request->scheme request)) "://" host uri "?"
-                                (when (not (str/blank? query-string))
-                                  (str query-string "&"))
-                                ;; the bypass interstitial should be the last query parameter
-                                bypass-interstitial-param-name-value)]
-            (counters/inc! (metrics/service-counter service-id "request-counts" "interstitial"))
-            {:body (-> descriptor
-                       (assoc :target-url target-url)
-                       render-interstitial-template)
-             :headers {"content-type" text-html
-                       "x-waiter-interstitial" "true"}
-             :status 200}))))))
+  [handler interstitial-state-atom store-service-description]
+  (fn wrap-interstitial-handler [{:keys [descriptor headers query-string uri] :as request}]
+    (let [{:keys [service-description service-id]} descriptor
+          {:strs [interstitial-secs]} service-description
+          ;; the bypass interstitial should be the last query parameter
+          bypass-interstitial? (str/ends-with? (str query-string) bypass-interstitial-param-name-value)]
+      (if (or bypass-interstitial? ;; bypass query parameter provided
+              (zero? interstitial-secs) ;; interstitial support has been disabled
+              (not (str/includes? (str (get headers "accept")) "text/html")) ;; expecting html response
+              (headers/contains-waiter-header headers sd/service-description-keys) ;; on-the-fly request
+              (not (:initialized? @interstitial-state-atom))
+              (->> (fn [interstitial-promise]
+                     (store-service-description service-id service-description)
+                     (install-interstitial-timeout! service-id interstitial-secs interstitial-promise))
+                   (ensure-service-interstitial! interstitial-state-atom service-id)
+                   realized?))
+        ;; continue processing down the handler chain
+        (->> (if bypass-interstitial?
+               (->> (count bypass-interstitial-param-name-value)
+                    inc
+                    (- (count query-string))
+                    (max 0)
+                    (subs query-string 0))
+               query-string)
+             (assoc request :query-string)
+             handler)
+        ;; redirect to interstitial page
+        (let [location (str "/waiter-interstitial" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
+          (counters/inc! (metrics/service-counter service-id "request-counts" "interstitial"))
+          (meters/mark! (metrics/waiter-meter "interstitial" "redirect"))
+          {:headers {"location" location
+                     "x-waiter-interstitial" "true"}
+           :status 303})))))
+
+(defn display-interstitial-handler
+  [{:keys [descriptor query-string route-params]}]
+  (let [{:keys [service-description service-id]} descriptor
+        {:keys [path]} route-params
+        target-url (str "/" path "?"
+                        (when (not (str/blank? query-string))
+                          (str query-string "&"))
+                        ;; the bypass interstitial should be the last query parameter
+                        bypass-interstitial-param-name-value)]
+    {:body (render-interstitial-template
+             {:service-description service-description
+              :service-id service-id
+              :target-url target-url})
+     :headers {}
+     :status 200}))
