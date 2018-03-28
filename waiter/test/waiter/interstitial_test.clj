@@ -24,14 +24,19 @@
                                          :service-id->interstitial-promise {"service-id-1" (promise)}})
           service-id "test-service-id"
           process-interstitial-counter (atom 0)
-          process-interstitial-promise (fn [& _] (swap! process-interstitial-counter inc))
-          interstitial-promise (ensure-service-interstitial! interstitial-state-atom service-id process-interstitial-promise)]
-      (is (= 1 @process-interstitial-counter))
-      (is (not (get @interstitial-state-atom :initialized?)))
-      (is (not (realized? interstitial-promise)))
-      (is (contains? (get @interstitial-state-atom :service-id->interstitial-promise) service-id))
-      (is (->> (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id])
-               (identical? interstitial-promise)))))
+          interstitial-secs 10]
+      (with-redefs [install-interstitial-timeout! (fn [in-service-id in-interstitial-secs in-interstitial-promise]
+                                                    (is (= service-id in-service-id))
+                                                    (is (= interstitial-secs in-interstitial-secs))
+                                                    (is in-interstitial-promise)
+                                                    (swap! process-interstitial-counter inc))]
+        (let [interstitial-promise (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs)]
+          (is (= 1 @process-interstitial-counter))
+          (is (not (get @interstitial-state-atom :initialized?)))
+          (is (not (realized? interstitial-promise)))
+          (is (contains? (get @interstitial-state-atom :service-id->interstitial-promise) service-id))
+          (is (->> (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id])
+                   (identical? interstitial-promise)))))))
 
   (testing "existing-entry"
     (let [initial-interstitial-promise (promise)
@@ -40,30 +45,40 @@
                                          :service-id->interstitial-promise {"service-id-1" (promise)
                                                                             service-id initial-interstitial-promise}})
           process-interstitial-counter (atom 0)
-          process-interstitial-promise (fn [& _] (reset! process-interstitial-counter inc))
-          interstitial-promise (ensure-service-interstitial! interstitial-state-atom service-id process-interstitial-promise)]
-      (is (zero? @process-interstitial-counter))
-      (is (not (get @interstitial-state-atom :initialized?)))
-      (is (not (realized? interstitial-promise)))
-      (is (contains? (get @interstitial-state-atom :service-id->interstitial-promise) service-id))
-      (is (identical? initial-interstitial-promise interstitial-promise))
-      (is (->> (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id])
-               (identical? interstitial-promise)))))
+          interstitial-secs 10]
+      (with-redefs [install-interstitial-timeout! (fn [in-service-id in-interstitial-secs in-interstitial-promise]
+                                                    (is (= service-id in-service-id))
+                                                    (is (= interstitial-secs in-interstitial-secs))
+                                                    (is in-interstitial-promise)
+                                                    (swap! process-interstitial-counter inc))]
+        (let [interstitial-promise (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs)]
+          (is (zero? @process-interstitial-counter))
+          (is (not (get @interstitial-state-atom :initialized?)))
+          (is (not (realized? interstitial-promise)))
+          (is (contains? (get @interstitial-state-atom :service-id->interstitial-promise) service-id))
+          (is (identical? initial-interstitial-promise interstitial-promise))
+          (is (->> (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id])
+                   (identical? interstitial-promise)))))))
 
   (testing "new-entry with concurrency"
     (let [interstitial-state-atom (atom {:initialized? false
                                          :service-id->interstitial-promise {"service-id-1" (promise)}})
           service-id "test-service-id"
           process-interstitial-counter (atom 0)
-          process-interstitial-promise (fn [& _] (swap! process-interstitial-counter inc))
-          interstitial-promises (->> (ensure-service-interstitial! interstitial-state-atom service-id process-interstitial-promise)
-                                     (fn [])
-                                     (ct/parallelize-requests 20 10))]
-      (let [interstitial-promise (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id])]
-        (is (= 1 @process-interstitial-counter))
-        (is (not (get @interstitial-state-atom :initialized?)))
-        (is (not (realized? interstitial-promise)))
-        (is (every? #(= interstitial-promise %) interstitial-promises))))))
+          interstitial-secs 10]
+      (with-redefs [install-interstitial-timeout! (fn [in-service-id in-interstitial-secs in-interstitial-promise]
+                                                    (is (= service-id in-service-id))
+                                                    (is (= interstitial-secs in-interstitial-secs))
+                                                    (is in-interstitial-promise)
+                                                    (swap! process-interstitial-counter inc))]
+        (let [interstitial-promises (->> (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs)
+                                         (fn [])
+                                         (ct/parallelize-requests 20 10))]
+          (let [interstitial-promise (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id])]
+            (is (= 1 @process-interstitial-counter))
+            (is (not (get @interstitial-state-atom :initialized?)))
+            (is (not (realized? interstitial-promise)))
+            (is (every? #(= interstitial-promise %) interstitial-promises))))))))
 
 (deftest test-remove-resolved-interstitial-promises!
   (let [resolved-service-ids #{"service-1" "service-3" "service-5" "service-7"}
@@ -157,16 +172,14 @@
 (deftest test-wrap-interstitial
   (let [handler (fn [request] (-> (select-keys request [:query-string :request-id])
                                   (assoc :status 201)))
-        service-id (str "test-service-id-" (rand-int 100000))
-        store-service-description (fn [& _]
-                                    (throw (Exception. "unexpected call in test")))]
+        service-id (str "test-service-id-" (rand-int 100000))]
 
     (testing "zero interstitial secs"
       (let [interstitial-state-atom (atom {:initialized? false})
             request {:descriptor {:service-description {"interstitial-secs" 0}
                                   :service-id service-id}
                      :request-id :interstitial-disabled}
-            response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+            response ((wrap-interstitial handler interstitial-state-atom) request)]
         (is (= {:query-string nil :request-id :interstitial-disabled :status 201} response))))
 
     (testing "non-html accept"
@@ -175,7 +188,7 @@
                                   :service-id service-id}
                      :headers {"accept" "text/css"}
                      :request-id :non-html-accept}
-            response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+            response ((wrap-interstitial handler interstitial-state-atom) request)]
         (is (= {:query-string nil :request-id :non-html-accept :status 201} response))))
 
     (testing "interstitial state not initialized"
@@ -184,7 +197,7 @@
                                   :service-id service-id}
                      :headers {"accept" "text/html"}
                      :request-id :interstitial-not-initialized}
-            response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+            response ((wrap-interstitial handler interstitial-state-atom) request)]
         (is (= {:query-string nil :request-id :interstitial-not-initialized :status 201} response))))
 
     (testing "interstitial promise resolved"
@@ -196,7 +209,7 @@
                                   :service-id service-id}
                      :headers {"accept" "text/html", "host" "www.example.com"}
                      :request-id :interstitial-promise-resolved}
-            response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+            response ((wrap-interstitial handler interstitial-state-atom) request)]
         (is (= {:query-string nil :request-id :interstitial-promise-resolved :status 201} response))))
 
     (testing "on-the-fly request"
@@ -207,7 +220,7 @@
                                   :service-id service-id}
                      :headers {"accept" "text/html", "host" "www.example.com", "x-waiter-cpus" "1"}
                      :request-id :interstitial-promise-resolved}
-            response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+            response ((wrap-interstitial handler interstitial-state-atom) request)]
         (is (= {:query-string nil :request-id :interstitial-promise-resolved :status 201} response))))
 
     (testing "interstitial promise absent"
@@ -220,17 +233,11 @@
                      :request-id :interstitial-bypass
                      :scheme :https
                      :uri "/test"}
-            store-call-counter (atom 0)
-            store-service-description (fn [in-service-id in-service-description]
-                                        (swap! store-call-counter inc)
-                                        (is (= service-id in-service-id))
-                                        (is (= service-description in-service-description)))
-            response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+            response ((wrap-interstitial handler interstitial-state-atom) request)]
         (is (= {:headers {"location" (str "/waiter-interstitial/test")
                           "x-waiter-interstitial" "true"}
                 :status 303}
                response))
-        (is (= 1 @store-call-counter))
         (is (some-> @interstitial-state-atom
                     :service-id->interstitial-promise
                     (get service-id)
@@ -248,7 +255,7 @@
                            :headers {"accept" "text/html", "host" "www.example.com"}
                            :query-string "x-waiter-bypass-interstitial=1"
                            :request-id :interstitial-bypass}
-                  response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+                  response ((wrap-interstitial handler interstitial-state-atom) request)]
               (is (= {:query-string "" :request-id :interstitial-bypass :status 201} response))))
 
           (testing "some-custom-params"
@@ -257,7 +264,7 @@
                            :headers {"accept" "text/html", "host" "www.example.com"}
                            :query-string "a=b&c=d&x-waiter-bypass-interstitial=1"
                            :request-id :interstitial-bypass}
-                  response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+                  response ((wrap-interstitial handler interstitial-state-atom) request)]
               (is (= {:query-string "a=b&c=d" :request-id :interstitial-bypass :status 201} response)))))
 
         (testing "trigger interstitial"
@@ -267,7 +274,7 @@
                          :query-string "a=b"
                          :request-id :interstitial-bypass
                          :scheme :http}
-                response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+                response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial?a=b")
                               "x-waiter-interstitial" "true"}
                     :status 303}
@@ -279,7 +286,7 @@
                          :query-string "c=d&x-waiter-bypass-interstitial=1&a=b" ;; incorrectly bypass param not at end
                          :request-id :interstitial-bypass
                          :scheme :http}
-                response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+                response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial?c=d&x-waiter-bypass-interstitial=1&a=b")
                               "x-waiter-interstitial" "true"}
                     :status 303}
@@ -291,7 +298,7 @@
                          :request-id :interstitial-bypass
                          :scheme :https
                          :uri "/test"}
-                response ((wrap-interstitial handler interstitial-state-atom store-service-description) request)]
+                response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial/test")
                               "x-waiter-interstitial" "true"}
                     :status 303}
@@ -300,7 +307,8 @@
 (deftest test-display-interstitial-handler
   (with-redefs [render-interstitial-template identity]
     (let [service-id "test-service-id"
-          service-description {"interstitial-secs" 10}
+          service-description {"cmd" "lorem ipsum dolor sit amet"
+                               "interstitial-secs" 10}
           descriptor {:service-description service-description
                       :service-id service-id}]
       (let [request {:descriptor descriptor
@@ -310,7 +318,6 @@
         (is (= {:body {:service-description service-description
                        :service-id service-id
                        :target-url (str "/test?x-waiter-bypass-interstitial=1")}
-                :headers {}
                 :status 200}
                response)))
       (let [request {:descriptor descriptor
@@ -321,6 +328,5 @@
         (is (= {:body {:service-description service-description
                        :service-id service-id
                        :target-url (str "/test?a=b&c=d&x-waiter-bypass-interstitial=1")}
-                :headers {}
                 :status 200}
                response))))))

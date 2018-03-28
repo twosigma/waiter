@@ -561,7 +561,9 @@
 (deftest test-post-failure-in-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
     (let [entitlement-manager (authz/->SimpleEntitlementManager nil)
-          make-peer-requests-fn (fn [endpoint _ _] (and (str/starts-with? endpoint "token/") (str/ends-with? endpoint "/refresh")) {})
+          make-peer-requests-fn (fn [endpoint & _]
+                                  (and (str/starts-with? endpoint "token/")
+                                       (str/ends-with? endpoint "/refresh")) {})
           validate-service-description-fn (fn validate-service-description-fn [service-description]
                                             (sd/validate-schema service-description {s/Str s/Any} nil))
           token "test-token"
@@ -876,7 +878,22 @@
                  :body (StringBufferInputStream. (json/write-str service-description))})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? message "Tokens with authentication disabled must specify all required parameters") body))))))
+          (is (str/includes? message "Tokens with authentication disabled must specify all required parameters") body)))
+
+      (testing "post:new-service-description:partial-description-with-interstitial"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :interstitial-secs 10, :permitted-user "*"
+                                     :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:headers {"accept" "application/json"}
+                 :request-method :post, :authorization/user "tu1",
+                 :body (StringBufferInputStream. (json/write-str service-description))})
+              {{:strs [message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (str/includes? message "Tokens with missing required parameters cannot use interstitial support") body))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))

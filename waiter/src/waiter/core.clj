@@ -1010,7 +1010,7 @@
                                    (handler/metrics-request-handler request)))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
-                                 request->descriptor-fn service-id->password-fn start-new-service-fn store-service-description-fn]
+                                 request->descriptor-fn service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
                                 [:state http-client instance-rpc-chan local-usage-agent interstitial-state-atom]
                                 wrap-auth-bypass-fn wrap-secure-request-fn]
@@ -1026,7 +1026,7 @@
                                pr/wrap-too-many-requests
                                pr/wrap-suspended-service
                                pr/wrap-response-status-metrics
-                               (interstitial/wrap-interstitial interstitial-state-atom store-service-description-fn)
+                               (interstitial/wrap-interstitial interstitial-state-atom)
                                (pr/wrap-descriptor request->descriptor-fn)
                                wrap-secure-request-fn
                                wrap-auth-bypass-fn)))

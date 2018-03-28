@@ -22,7 +22,8 @@
             [waiter.async-utils :as au]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
-            [waiter.service-description :as sd]))
+            [waiter.service-description :as sd]
+            [waiter.utils :as utils]))
 
 (defn- service-id->interstitial-promise
   "Returns the promise mapped against a service-id.
@@ -41,10 +42,19 @@
       (counters/inc! (metrics/waiter-counter "interstitial" "promise" "resolved"))
       (counters/inc! (metrics/waiter-counter "interstitial" "resolution" (name interstitial-resolution))))))
 
+(defn install-interstitial-timeout!
+  "Resolves the interstitial-promise after a delay on interstitial-secs seconds."
+  [service-id interstitial-secs interstitial-promise]
+  (if (pos? interstitial-secs)
+    (async/go
+      (-> interstitial-secs t/seconds t/in-millis async/timeout async/<!)
+      (resolve-promise! service-id interstitial-promise :interstitial-timeout))
+    (log/error service-id "has opted out of interstitial, not installing timeout")))
+
 (defn ensure-service-interstitial!
   "Ensures a promise is mapped against the provided service id and returns the promise.
    If this call is responsible for creating the promise that got mapped, it also invokes process-interstitial-promise."
-  [interstitial-state-atom service-id process-interstitial-promise]
+  [interstitial-state-atom service-id interstitial-secs]
   (or (service-id->interstitial-promise @interstitial-state-atom service-id)
       (loop [iteration 0
              new-interstitial-promise (promise)]
@@ -58,7 +68,7 @@
             (when (identical? new-interstitial-promise interstitial-promise)
               (log/info "created interstitial promise for" service-id)
               (counters/inc! (metrics/waiter-counter "interstitial" "promise" "total"))
-              (process-interstitial-promise interstitial-promise))
+              (install-interstitial-timeout! service-id interstitial-secs interstitial-promise))
             interstitial-promise)
           (do
             (log/info "looping as interstitial promise was removed" {:iteration iteration :service-id service-id})
@@ -70,7 +80,7 @@
   [interstitial-state-atom service-ids]
   (->> (fn [{:keys [service-id->interstitial-promise] :as interstitial-state}]
          (->> service-ids
-              (filter #(realized? (service-id->interstitial-promise %)))
+              (filter #(some-> % service-id->interstitial-promise realized?))
               (apply dissoc service-id->interstitial-promise)
               (assoc interstitial-state :service-id->interstitial-promise)))
        (swap! interstitial-state-atom))
@@ -79,15 +89,6 @@
        keys
        set
        (set/difference service-ids)))
-
-(defn install-interstitial-timeout!
-  "Resolves the interstitial-promise after a delay on interstitial-secs seconds."
-  [service-id interstitial-secs interstitial-promise]
-  (if (pos? interstitial-secs)
-    (async/go
-      (-> interstitial-secs t/seconds t/in-millis async/timeout async/<!)
-      (resolve-promise! service-id interstitial-promise :interstitial-timeout))
-    (log/error service-id "has opted out of interstitial, not installing timeout")))
 
 (defn- process-scheduler-messages
   "Processes messages from the scheduler.
@@ -100,18 +101,16 @@
                                              (:available-apps message-data))))
                                    set)
         healthy-instance-service-ids (->> scheduler-messages
-                                          (map (fn [[message-type message-data]]
-                                                 (when (and (= :update-app-instances message-type)
-                                                            (seq (:healthy-instances message-data)))
-                                                   (:service-id message-data))))
-                                          (remove nil?))
+                                          (keep (fn [[message-type message-data]]
+                                                  (when (and (= :update-app-instances message-type)
+                                                             (seq (:healthy-instances message-data)))
+                                                    (:service-id message-data)))))
         service-ids-to-remove (set/difference current-available-service-ids available-service-ids)
         removed-service-ids (remove-resolved-interstitial-promises! interstitial-state-atom service-ids-to-remove)]
     (doseq [service-id available-service-ids]
       (let [{:strs [interstitial-secs]} (service-id->service-description service-id)]
         (when (pos? interstitial-secs)
-          (->> (partial install-interstitial-timeout! service-id interstitial-secs)
-               (ensure-service-interstitial! interstitial-state-atom service-id)))))
+          (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs))))
     (doseq [service-id healthy-instance-service-ids]
       (when-let [interstitial-promise (service-id->interstitial-promise @interstitial-state-atom service-id)]
         (resolve-promise! service-id interstitial-promise :healthy-instance-found)))
@@ -183,10 +182,20 @@
 
 (def ^:const bypass-interstitial-param-name-value "x-waiter-bypass-interstitial=1")
 
+(defn- strip-interstitial-param
+  "Removes the interstitial param at the end from the query string.
+   It assumes the query string already ends with the interstitial param."
+  [query-string]
+  (->> (count bypass-interstitial-param-name-value)
+       inc
+       (- (count query-string))
+       (max 0)
+       (subs query-string 0)))
+
 (defn wrap-interstitial
   "Redirects users to the interstitial page when interstitial has been enabled and the service has not been started.
    The interstitial page will retry the request as a GET with the same query parameters but bypass the interstitial page."
-  [handler interstitial-state-atom store-service-description]
+  [handler interstitial-state-atom]
   (fn wrap-interstitial-handler [{:keys [descriptor headers query-string uri] :as request}]
     (let [{:keys [service-description service-id]} descriptor
           {:strs [interstitial-secs]} service-description
@@ -195,25 +204,16 @@
       (if (or bypass-interstitial? ;; bypass query parameter provided
               (zero? interstitial-secs) ;; interstitial support has been disabled
               (not (str/includes? (str (get headers "accept")) "text/html")) ;; expecting html response
-              (headers/contains-waiter-header headers sd/service-description-keys) ;; on-the-fly request
+              (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys) ;; on-the-fly request
               (not (:initialized? @interstitial-state-atom))
-              (->> (fn [interstitial-promise]
-                     (store-service-description service-id service-description)
-                     (install-interstitial-timeout! service-id interstitial-secs interstitial-promise))
-                   (ensure-service-interstitial! interstitial-state-atom service-id)
-                   realized?))
+              (realized? (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs)))
         ;; continue processing down the handler chain
-        (->> (if bypass-interstitial?
-               (->> (count bypass-interstitial-param-name-value)
-                    inc
-                    (- (count query-string))
-                    (max 0)
-                    (subs query-string 0))
-               query-string)
+        (->> (cond-> query-string
+                     bypass-interstitial? (strip-interstitial-param))
              (assoc request :query-string)
              handler)
         ;; redirect to interstitial page
-        (let [location (str "/waiter-interstitial" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
+        (let [location (str "/waiter-interstitial" uri (when-not (str/blank? query-string) (str "?" query-string)))]
           (counters/inc! (metrics/service-counter service-id "request-counts" "interstitial"))
           (meters/mark! (metrics/waiter-meter "interstitial" "redirect"))
           {:headers {"location" location
@@ -230,8 +230,7 @@
                         ;; the bypass interstitial should be the last query parameter
                         bypass-interstitial-param-name-value)]
     {:body (render-interstitial-template
-             {:service-description service-description
+             {:service-description (update service-description "cmd" utils/truncate 100)
               :service-id service-id
               :target-url target-url})
-     :headers {}
      :status 200}))

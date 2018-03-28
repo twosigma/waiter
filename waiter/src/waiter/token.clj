@@ -292,7 +292,7 @@
         authenticated-user (get request :authorization/user)
         {:strs [token] :as new-token-description} (-> request ru/json-request :body)
         new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
-        {:strs [authentication permitted-user run-as-user] :as new-service-description-template}
+        {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-description-template}
         (select-keys new-token-description sd/service-description-keys)
         {existing-token-metadata :token-metadata} (sd/token->token-description kv-store token)
         owner (or (get new-token-metadata "owner")
@@ -327,6 +327,9 @@
                                                   (remove #(contains? new-service-description-template %1)) seq)
                          :service-description new-service-description-template
                          :status 400}))))
+    (when (and interstitial-secs (not (sd/required-keys-present? new-service-description-template)))
+      (throw (ex-info (str "Tokens with missing required parameters cannot use interstitial support")
+                      {:status 400 :token token})))
     (case (get request-params "update-mode")
       "admin"
       (do
