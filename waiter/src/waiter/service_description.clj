@@ -635,6 +635,7 @@
             (validate service-description-builder core-service-description {:allow-missing-required-fields? false})
             (validate service-description-builder service-description {:allow-missing-required-fields? false}))
           {:core-service-description core-service-description
+           :on-the-fly? contains-waiter-header?
            :service-authentication-disabled service-authentication-disabled
            :service-description service-description
            :service-id service-id

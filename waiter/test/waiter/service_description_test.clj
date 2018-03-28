@@ -644,12 +644,25 @@
 
 (defn- service-description
   ([sources & {:keys [assoc-run-as-user-approved? kv-store waiter-headers]}]
-   (let [{:keys [service-description]} (compute-service-description-helper
-                                         sources
-                                         :assoc-run-as-user-approved? assoc-run-as-user-approved?
-                                         :kv-store kv-store
-                                         :waiter-headers waiter-headers)]
+   (let [{:keys [service-description]}
+         (compute-service-description-helper
+           sources
+           :assoc-run-as-user-approved? assoc-run-as-user-approved?
+           :kv-store kv-store
+           :waiter-headers waiter-headers)]
      service-description)))
+
+(deftest test-compute-service-description-on-the-fly?
+  (let [defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+        sources {:defaults defaults :tokens {"cmd" "token-cmd"}}
+        compute-on-the-fly (fn compute-on-the-fly [waiter-headers]
+                             (-> (compute-service-description-helper sources :waiter-headers waiter-headers)
+                                 :on-the-fly?))]
+    (is (nil? (compute-on-the-fly {})))
+    (is (nil? (compute-on-the-fly {"x-waiter-dummy" "value-does-not-matter"})))
+    (is (nil? (compute-on-the-fly {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"})))
+    (is (compute-on-the-fly {"x-waiter-cmd" "on-the-fly-cmd", "x-waiter-run-as-user" "on-the-fly-ru"}))
+    (is (compute-on-the-fly {"x-waiter-token" "value-does-not-matter"}))))
 
 (deftest test-compute-service-description
   (testing "Service description computation"
@@ -1076,10 +1089,10 @@
 
     (testing "instance-expiry-mins"
       (let [core-service-description {"cmd" "cmd for missing run-as-user"
-                   "cpus" 1
-                   "mem" 200
-                   "run-as-user" test-user
-                   "version" "a1b2c3"}
+                                      "cpus" 1
+                                      "mem" 200
+                                      "run-as-user" test-user
+                                      "version" "a1b2c3"}
             run-compute-service-description (fn [service-description]
                                               (compute-service-description {:defaults {"health-check-url" "/health"}
                                                                             :tokens service-description}
@@ -1124,10 +1137,10 @@
              (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "permitted-user" "*", "run-as-user" "tu1", "version" "a1b2c3"}
                            {}))))
 
-  (testing "authentication-disabled-service"
-    (is (= {:service-authentication-disabled true, :service-preauthorized true}
-           (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "*", "run-as-user" "tu1", "version" "a1b2c3"}
-                         {}))))
+    (testing "authentication-disabled-service"
+      (is (= {:service-authentication-disabled true, :service-preauthorized true}
+             (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "*", "run-as-user" "tu1", "version" "a1b2c3"}
+                           {}))))
 
     (testing "not-authentication-disabled-service-due-to-headers"
       (is (= {:service-authentication-disabled false, :service-preauthorized false}
@@ -1410,7 +1423,7 @@
   (is (not (required-keys-present? {"cpus" 1, "cmd" "default-cmd", "version" "default-version", "run-as-user" "default-run-as-user"})))
   (is (not (required-keys-present? {"cpus" 1, "mem" 1, "version" "default-version", "run-as-user" "default-run-as-user"})))
   (is (not (required-keys-present? {"cpus" 1, "mem" 1, "cmd" "default-cmd", "run-as-user" "default-run-as-user"})))
-  (is (not (required-keys-present? {"cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", })))
+  (is (not (required-keys-present? {"cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version"})))
   (is (required-keys-present? {"cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "run-as-user" "default-run-as-user"})))
 
 (deftest test-token-preauthorized?
