@@ -216,7 +216,8 @@
       (let [interstitial-promise (promise)
             interstitial-state-atom (atom {:initialized? true
                                            :service-id->interstitial-promise {service-id interstitial-promise}})
-            request {:descriptor {:service-description {"interstitial-secs" 10}
+            request {:descriptor {:on-the-fly? true
+                                  :service-description {"interstitial-secs" 10}
                                   :service-id service-id}
                      :headers {"accept" "text/html", "host" "www.example.com", "x-waiter-cpus" "1"}
                      :request-id :interstitial-promise-resolved}

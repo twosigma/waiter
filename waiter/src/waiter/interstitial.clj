@@ -197,14 +197,14 @@
    The interstitial page will retry the request as a GET with the same query parameters but bypass the interstitial page."
   [handler interstitial-state-atom]
   (fn wrap-interstitial-handler [{:keys [descriptor headers query-string uri] :as request}]
-    (let [{:keys [service-description service-id]} descriptor
+    (let [{:keys [on-the-fly? service-description service-id]} descriptor
           {:strs [interstitial-secs]} service-description
           ;; the bypass interstitial should be the last query parameter
           bypass-interstitial? (str/ends-with? (str query-string) bypass-interstitial-param-name-value)]
       (if (or bypass-interstitial? ;; bypass query parameter provided
+              on-the-fly? ;; on-the-fly request
               (zero? interstitial-secs) ;; interstitial support has been disabled
               (not (str/includes? (str (get headers "accept")) "text/html")) ;; expecting html response
-              (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys) ;; on-the-fly request
               (not (:initialized? @interstitial-state-atom))
               (realized? (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs)))
         ;; continue processing down the handler chain
