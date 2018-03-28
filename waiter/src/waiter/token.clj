@@ -70,18 +70,10 @@
                                (log/info "storing" new-owner-key "for" owner "in the token-owners-key")
                                (kv/store kv-store token-owners-key (assoc owner->owner-key owner new-owner-key))
                                new-owner-key)))
-      token-index-sanitizer (fn token-index-sanitizer [index-entries]
-                              (if (set? index-entries) ;; backwards compatibility of data store
-                                (pc/map-from-keys (fn [_] {}) index-entries)
-                                index-entries))
       delete-token-from-index (fn delete-token-from-index [index-entries token-to-remove]
-                                (-> index-entries
-                                    token-index-sanitizer
-                                    (dissoc token-to-remove)))
+                                (dissoc index-entries token-to-remove))
       insert-token-into-index (fn insert-token-into-index [index-entries token-to-insert token-etag deleted]
-                                (-> index-entries
-                                    token-index-sanitizer
-                                    (assoc token-to-insert {:deleted (true? deleted) :etag token-etag})))]
+                                (assoc index-entries token-to-insert {:deleted (true? deleted) :etag token-etag}))]
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
@@ -167,8 +159,7 @@
     [kv-store owner]
     (let [owner->owner-key (kv/fetch kv-store token-owners-key)]
       (if-let [owner-key (owner->owner-key owner)]
-        (-> (kv/fetch kv-store owner-key)
-            token-index-sanitizer)
+        (kv/fetch kv-store owner-key)
         (throw (ex-info "no owner-key found" {:owner owner :status 500})))))
 
   (defn list-token-owners
@@ -466,7 +457,7 @@
 
 (defn handle-refresh-token-request
   "Handle a request to refresh token data directly from the KV store, skipping the cache."
-  [kv-store {:keys [body] {:keys [src-router-id]} :basic-authentication :as req}]
+  [kv-store {{:keys [src-router-id]} :basic-authentication :as req}]
   (try
     (let [{:strs [token owner index] :as json-data} (-> req ru/json-request :body)]
       (log/info "received token refresh request" json-data)
