@@ -17,6 +17,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
             [waiter.service-description :as sd]
@@ -667,3 +668,94 @@
       (let [{:keys [body status]} (make-request waiter-url "/" :http-method-fn http/post)]
         (is (= 405 status))
         (is (str/includes? body "Only GET supported"))))))
+
+(deftest ^:parallel ^:integration-fast test-interstitial-page
+  (testing-using-waiter-url
+    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
+      (doseq [[_ router-url] (routers waiter-url)]
+        (wait-for #(-> (interstitial-state router-url :cookies cookies)
+                       (get-in ["state" "interstitial" "initialized?"] false)))))
+    (let [interstitial-secs 5
+          request-headers {"accept" "text/html"}
+          token (str (rand-name) ".localtest.me")
+          _ (post-token waiter-url (-> (kitchen-params)
+                                       (assoc
+                                         :concurrency-level 20
+                                         :interstitial-secs interstitial-secs
+                                         :metric-group "waiter_kitchen"
+                                         :name token
+                                         :permitted-user (retrieve-username)
+                                         :run-as-user (retrieve-username)
+                                         :token token)
+                                       (update :cmd (fn [cmd] (str "sleep 10 && " cmd)))))
+          service-id (retrieve-service-id waiter-url {"x-waiter-token" token})]
+      (with-service-cleanup
+        service-id
+        (try
+          (->> [(async/thread ;; check interstitial rendering
+                  (let [request-headers (assoc request-headers "host" token)
+                        {:keys [body] :as response}
+                        (make-request waiter-url "/waiter-interstitial/some-endpoint" :headers request-headers :query-params {"a" "b"})]
+                    (assert-response-status response 200)
+                    (is (str/includes? body (str "<title>Waiter - Interstitial for " service-id "</title>")))
+                    (is (str/includes? body (str "/some-endpoint?a=b&x-waiter-bypass-interstitial=1")))))
+                (async/thread ;; GET request inside the interstitial period, using DNS token
+                  (let [start-time (t/now)
+                        endpoint "/hello"
+                        request-headers (assoc request-headers "host" token)
+                        {:keys [headers] :as response}
+                        (make-request waiter-url endpoint :headers request-headers :http-method-fn http/get)
+                        end-time (t/now)]
+                    (assert-response-status response 303)
+                    (is (= (str "/waiter-interstitial" endpoint) (get headers "location")))
+                    (is (= "true" (get headers "x-waiter-interstitial")))
+                    (is (< (t/in-millis (t/interval start-time end-time))
+                           (t/in-millis (t/seconds interstitial-secs))))))
+                (async/thread ;; POST request inside the interstitial period, using DNS token
+                  (let [start-time (t/now)
+                        endpoint "/hello"
+                        request-headers (assoc request-headers "host" token)
+                        {:keys [headers] :as response}
+                        (make-request waiter-url endpoint :headers request-headers :http-method-fn http/post)
+                        end-time (t/now)]
+                    (assert-response-status response 303)
+                    (is (= (str "/waiter-interstitial" endpoint) (get headers "location")))
+                    (is (= "true" (get headers "x-waiter-interstitial")))
+                    (is (< (t/in-millis (t/interval start-time end-time))
+                           (t/in-millis (t/seconds interstitial-secs))))))
+                (async/thread ;; request inside the interstitial period, but on-the-fly
+                  (let [endpoint "/hello"
+                        request-headers (assoc request-headers "x-waiter-token" token)
+                        {:keys [body headers] :as response}
+                        (make-request waiter-url endpoint :headers request-headers)]
+                    (assert-response-status response 200)
+                    (is (str/includes? (str body) "Hello World"))
+                    (is (not (contains? headers "x-waiter-interstitial")))))
+                (async/thread ;; request inside the interstitial period but with bypass query param
+                  (let [endpoint "/hello"
+                        request-headers (assoc request-headers "host" token)
+                        {:keys [body headers] :as response}
+                        (make-request waiter-url endpoint :headers request-headers :query-params {"x-waiter-bypass-interstitial" "1"})]
+                    (assert-response-status response 200)
+                    (is (str/includes? (str body) "Hello World"))
+                    (is (not (contains? headers "x-waiter-interstitial")))))
+                (async/thread ;; request outside the interstitial period
+                  (Thread/sleep (* 1000 (inc interstitial-secs)))
+                  (let [endpoint "/hello"
+                        request-headers (assoc request-headers "host" token)
+                        {:keys [body headers] :as response}
+                        (make-request waiter-url endpoint :headers request-headers)]
+                    (assert-response-status response 200)
+                    (is (str/includes? (str body) "Hello World"))
+                    (is (not (contains? headers "x-waiter-interstitial")))))]
+               (map async/<!!)
+               doall)
+          (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
+            (is (some (fn [[_ router-url]]
+                        (some-> (interstitial-state router-url :cookies cookies)
+                                (get-in ["state" "interstitial" "service-id->interstitial-promise"] {})
+                                (get service-id)
+                                #{"healthy-instance-found" "interstitial-timeout"}))
+                      (routers waiter-url))))
+          (finally
+            (delete-token-and-assert waiter-url token)))))))

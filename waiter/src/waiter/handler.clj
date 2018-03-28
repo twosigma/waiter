@@ -26,6 +26,7 @@
             [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
+            [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.ring-utils :as ru]
@@ -529,6 +530,23 @@
       (catch Exception ex
         (utils/exception->response ex request)))))
 
+(defn get-interstitial-state
+  "Outputs the interstitial-store state."
+  [router-id interstitial-query-chan request]
+  (async/go
+    (try
+      (let [timeout-ms 30000
+            state (let [response-chan (async/promise-chan)]
+                    (async/>! interstitial-query-chan {:cid (cid/get-correlation-id) :response-chan response-chan})
+                    (log/info (str "Waiting for response from interstitial query channel"))
+                    (async/alt!
+                      response-chan ([state] state)
+                      (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
+        (-> {:router-id router-id :state state}
+            (utils/map->streaming-json-response)))
+      (catch Exception ex
+        (utils/exception->response ex request)))))
+
 (defn get-kv-store-state
   "Outputs the kv-store state."
   [router-id kv-store request]
@@ -732,8 +750,9 @@
                   :consent-expiry-days consent-expiry-days
                   :service-description-template service-description-template
                   :service-id service-id
-                  :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
-                                   (when (not (str/blank? query-string)) (str "?" query-string)))
+                  :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path "?"
+                                   (when (not (str/blank? query-string)) (str query-string "&"))
+                                   interstitial/bypass-interstitial-param-name-value)
                   :token token})
          :headers {"content-type" "text/html"}
          :status 200}))

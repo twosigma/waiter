@@ -350,6 +350,7 @@
                                 "health-check-url" "/status"
                                 "idle-timeout-mins" 30
                                 "instance-expiry-mins" 7200
+                                "interstitial-secs" 0
                                 "jitter-threshold" 0.5
                                 "max-instances" 500
                                 "max-queue-length" 1000000

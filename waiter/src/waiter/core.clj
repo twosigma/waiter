@@ -38,6 +38,7 @@
             [waiter.discovery :as discovery]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
+            [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.metrics-sync :as metrics-sync]
@@ -90,6 +91,7 @@
                      "settings" :display-settings-handler-fn
                      "sim" :sim-request-handler
                      "state" [["" :state-all-handler-fn]
+                              ["/interstitial" :state-interstitial-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
                               ["/leader" :state-leader-handler-fn]
                               ["/local-usage" :state-local-usage-handler-fn]
@@ -112,6 +114,7 @@
                      "waiter-auth" :waiter-auth-handler-fn
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
+                     "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
                      "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
                      "work-stealing" :work-stealing-handler-fn}]]
     (or (bidi/match-route routes uri)
@@ -439,7 +442,8 @@
       (let [{:strs [host]} headers]
         (or (#{"/app-name" "/service-id" "/token"} uri) ; special urls that are always for Waiter (FIXME)
             (some #(str/starts-with? (str uri) %)
-                  ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"])
+                  ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"
+                   "/waiter-interstitial"])
             (and (or (str/blank? host)
                      (valid-waiter-hostnames (-> host
                                                  (str/split #":")
@@ -481,6 +485,8 @@
    :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
                   (http-client-factory connection-timeout-ms))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
+   :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
+                                              :service-id->interstitial-promise {}}))
    :local-usage-agent (pc/fnk [] (agent {}))
    :passwords (pc/fnk [[:settings password-store-config]]
                 (let [password-provider (utils/create-component password-store-config)
@@ -820,6 +826,14 @@
                                      (metrics/transient-metrics-gc scheduler-state-chan local-usage-agent service-gc-go-routine metrics-config)]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
                                  metrics-gc-chans))
+   :interstitial-maintainer (pc/fnk [[:routines service-id->service-description-fn]
+                                     [:state interstitial-state-atom]
+                                     scheduler-maintainer]
+                              (let [scheduler-state-mult-chan (:scheduler-state-mult-chan scheduler-maintainer)
+                                    scheduler-state-chan (async/tap scheduler-state-mult-chan (au/latest-chan))
+                                    initial-state {}]
+                                (interstitial/interstitial-maintainer
+                                  service-id->service-description-fn scheduler-state-chan interstitial-state-atom initial-state)))
    :messages (pc/fnk [[:settings {messages nil}]]
                (when messages
                  (utils/load-messages messages)))
@@ -913,10 +927,12 @@
                                 (state/start-service-chan-maintainer
                                   {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
    :state-query-chans (pc/fnk [[:state query-app-maintainer-chan]
-                               autoscaler autoscaling-multiplexer gc-for-transient-metrics scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
+                               autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
+                               scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
                         {:app-maintainer-state query-app-maintainer-chan
                          :autoscaler-state (:query autoscaler)
                          :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
+                         :interstitial-maintainer-state (:query-chan interstitial-maintainer)
                          :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
                          :scheduler-services-gc-state (:query scheduler-services-gc)
                          :scheduler-state (:query-chan scheduler-maintainer)
@@ -956,7 +972,7 @@
    :blacklisted-instances-list-handler-fn (pc/fnk [[:state instance-rpc-chan]]
                                             (fn blacklisted-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                               (handler/get-blacklisted-instances instance-rpc-chan service-id request)))
-   :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
+   :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn request->descriptor-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
                                           [:state instance-rpc-chan local-usage-agent passwords websocket-client]]
                                    (fn default-websocket-handler-fn [request]
@@ -994,9 +1010,9 @@
                                    (handler/metrics-request-handler request)))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
-                                 prepend-waiter-url request->descriptor-fn service-id->password-fn start-new-service-fn]
+                                 request->descriptor-fn service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
-                                [:state http-client instance-rpc-chan local-usage-agent router-id]
+                                [:state http-client instance-rpc-chan local-usage-agent interstitial-state-atom]
                                 wrap-auth-bypass-fn wrap-secure-request-fn]
                          (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
                                                  (pr/make-request http-client make-basic-auth-fn service-id->password-fn
@@ -1010,6 +1026,7 @@
                                pr/wrap-too-many-requests
                                pr/wrap-suspended-service
                                pr/wrap-response-status-metrics
+                               (interstitial/wrap-interstitial interstitial-state-atom)
                                (pr/wrap-descriptor request->descriptor-fn)
                                wrap-secure-request-fn
                                wrap-auth-bypass-fn)))
@@ -1094,6 +1111,13 @@
                                (fn state-all-handler-fn [request]
                                  (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn
                                                            kv-store leader?-fn local-usage-agent request)))))
+   :state-interstitial-handler-fn (pc/fnk [[:daemons interstitial-maintainer]
+                                           [:state router-id]
+                                           wrap-secure-request-fn]
+                                    (let [interstitial-query-chan (:query-chan interstitial-maintainer)]
+                                      (wrap-secure-request-fn
+                                        (fn state-interstitial-handler-fn [request]
+                                          (handler/get-interstitial-state router-id interstitial-query-chan request)))))
    :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
                                        [:state router-id]
                                        wrap-secure-request-fn]
@@ -1107,7 +1131,7 @@
                                 (fn leader-state-handler-fn [request]
                                   (handler/get-leader-state router-id leader?-fn leader-id-fn request))))
    :state-local-usage-handler-fn (pc/fnk [[:state local-usage-agent router-id]
-                                            wrap-secure-request-fn]
+                                          wrap-secure-request-fn]
                                    (wrap-secure-request-fn
                                      (fn local-usage-state-handler-fn [request]
                                        (handler/get-local-usage-state router-id local-usage-agent request))))
@@ -1203,6 +1227,13 @@
                                             (handler/request-consent-handler
                                               token->service-description-template service-description->service-id
                                               consent-expiry-days request))))
+   :waiter-request-interstitial-handler-fn (pc/fnk [[:routines request->descriptor-fn]
+                                                    wrap-secure-request-fn]
+                                             (let [handler (-> interstitial/display-interstitial-handler
+                                                               (pr/wrap-descriptor request->descriptor-fn))]
+                                               (wrap-secure-request-fn
+                                                 (fn waiter-request-interstitial-handler-fn [request]
+                                                   (handler request)))))
    :welcome-handler-fn (pc/fnk [settings]
                          (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]

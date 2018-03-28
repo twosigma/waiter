@@ -15,13 +15,13 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
-            [comb.template :as template]
             [full.async :as fa]
             [plumbing.core :as pc]
             [waiter.async-utils :as au]
             [waiter.authorization :as authz]
             [waiter.core :as core]
             [waiter.handler :refer :all]
+            [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
@@ -1058,7 +1058,8 @@
                                           :consent-expiry-days 1
                                           :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
                                           :service-id "service-5.97"
-                                          :target-url (str scheme "://www.example.com:6789/some-path")
+                                          :target-url (str scheme "://www.example.com:6789/some-path?"
+                                                           interstitial/bypass-interstitial-param-name-value)
                                           :token "www.example.com"}
                                          data))
                                   "template:some-content"))]
