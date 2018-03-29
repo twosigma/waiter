@@ -100,7 +100,7 @@
    Instances needs to be approved for killing by peers before an actual kill attempt is made.
    When an instance receives a veto or is not killed, we will iteratively search for another instance to successfully kill.
    The function stops and returns true when a successful kill is made.
-   Else, it termiantes after we have exhausted all candidate instances to kill or when a kill attempt returns a non-truthy value."
+   Else, it terminates after we have exhausted all candidate instances to kill or when a kill attempt returns a non-truthy value."
   [scheduler instance-rpc-chan get-instance-timeout-ms {:keys [blacklist-backoff-base-time-ms max-blacklist-time-ms]}
    peers-acknowledged-blacklist-requests-fn service-id correlation-id num-instances-to-kill response-chan]
   (async/go
@@ -158,10 +158,10 @@
     (cid/cinfo correlation-id "received request to kill instance of" service-id "from" src-router-id)
     (async/go
       (let [response-chan (async/promise-chan)
-            instance-killed? (async/<!
-                               (execute-scale-down-request
-                                 scheduler instance-rpc-chan get-instance-timeout-ms blacklist-config peers-acknowledged-blacklist-requests-fn
-                                 service-id correlation-id 1 response-chan))
+            instance-killed? (-> (execute-scale-down-request
+                                   scheduler instance-rpc-chan get-instance-timeout-ms blacklist-config
+                                   peers-acknowledged-blacklist-requests-fn service-id correlation-id 1 response-chan)
+                                 async/<!)
             {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
                                                                {:message :no-instance-killed, :status 404})]
         (if instance-killed?
@@ -230,10 +230,11 @@
                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "total"))
                           (if (or (nil? last-scale-down-time)
                                   (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
-                            (if (or (async/<!
-                                      (execute-scale-down-request scheduler instance-rpc-chan inter-kill-request-wait-time-ms
-                                                                  blacklist-config peers-acknowledged-blacklist-requests-fn
-                                                                  service-id correlation-id num-instances-to-kill response-chan))
+                            (if (or (-> (execute-scale-down-request
+                                          scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config
+                                          peers-acknowledged-blacklist-requests-fn service-id correlation-id
+                                          num-instances-to-kill response-chan)
+                                        async/<!)
                                     (delegate-instance-kill-request-fn service-id))
                               (assoc executor-state :last-scale-down-time (t/now))
                               executor-state)
