@@ -48,7 +48,7 @@
   "Gets the task-stats for the first service in the given scheduler"
   [scheduler]
   (-> scheduler
-      (scheduler/get-apps->instances {})
+      scheduler/get-apps->instances
       keys
       first
       :task-stats))
@@ -259,7 +259,7 @@
              (scheduler/scale-app scheduler "foo" 1)))
       (ensure-agent-finished scheduler)
       ;; Successfully kill one instance, instances: 1
-      (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo" {})))]
+      (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
         (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance))))
       (force-update-service-health scheduler scheduler-config)
@@ -284,7 +284,7 @@
            (create-test-service scheduler "foo")))
     (ensure-agent-finished scheduler)
     (with-redefs [perform-health-check (constantly true)]
-      (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo" {})))]
+      (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
         (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance)))
         (is (= {:success true, :result :deleted, :message "Deleted foo"}
@@ -332,7 +332,7 @@
                              (let [c (async/chan)]
                                (async/go (async/>! c {:status 200}))
                                c))]
-      (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo" {})))]
+      (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
         ;; We force a health check to occur
         (force-update-service-health scheduler scheduler-config)
         (is (= 1 @health-check-count-atom))
@@ -551,12 +551,12 @@
            (create-test-service scheduler "foo" {"cmd" "sleep 10000" "mem" 0.1})))
     ;; Instance should get marked as failed
     (force-update-service-health scheduler scheduler-config)
-    (let [instances (scheduler/get-instances scheduler "foo" {})]
+    (let [instances (scheduler/get-instances scheduler "foo")]
       (is (= 1 (count (:failed-instances instances)))))
     ;; Loop should continue to launch additional instances after initial failure
     (force-maintain-instance-scale scheduler)
     (force-update-service-health scheduler scheduler-config)
-    (let [instances (scheduler/get-instances scheduler "foo" {})]
+    (let [instances (scheduler/get-instances scheduler "foo")]
       (is (= 2 (count (:failed-instances instances)))))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
            (scheduler/delete-app scheduler "foo")))))
@@ -574,7 +574,7 @@
     ;; Instance should be marked as unhealthy and failed
     (with-redefs [perform-health-check (constantly false)]
       (force-update-service-health scheduler scheduler-config))
-    (let [instances (scheduler/get-instances scheduler "foo" {})]
+    (let [instances (scheduler/get-instances scheduler "foo")]
       (is (= 0 (count (:active-instances instances))))
       (is (= 1 (count (:failed-instances instances)))))))
 

@@ -305,7 +305,7 @@
                                       (fn assoc-log-url-to-instances [instances]
                                         (when (not-empty instances)
                                           (map #(assoc-log-url generate-log-url-fn %) instances)))]
-                                  (-> (scheduler/get-instances scheduler service-id core-service-description)
+                                  (-> (scheduler/get-instances scheduler service-id)
                                       (update-in [:active-instances] assoc-log-url-to-instances)
                                       (update-in [:failed-instances] assoc-log-url-to-instances)
                                       (update-in [:killed-instances] assoc-log-url-to-instances)))

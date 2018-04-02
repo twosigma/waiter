@@ -587,8 +587,8 @@
   (let [current-time (t/now)
         service-id "service-1"
         instance-id "service-1.A"
-        make-marathon-scheduler #(->MarathonScheduler {} {} (fn [] nil) "/home/path/"
-                                                      (atom {}) %1 %2 (constantly true))
+        make-marathon-scheduler #(->MarathonScheduler {} {} (constantly nil) "/home/path/"
+                                                      (atom {}) %1 (constantly nil) %2 (constantly true))
         successful-kill-result {:instance-id instance-id :killed? true :service-id service-id}
         failed-kill-result {:instance-id instance-id :killed? false :service-id service-id}]
     (with-redefs [t/now (fn [] current-time)]
@@ -639,10 +639,10 @@
 
 (deftest test-service-id->state
   (let [service-id "service-id"
-        marathon-scheduler (->MarathonScheduler {} {} (fn [] nil) "/home/path/"
+        marathon-scheduler (->MarathonScheduler {} {} (constantly nil) "/home/path/"
                                                 (atom {service-id [:failed-instances]})
                                                 (atom {service-id :kill-call-info})
-                                                100 (constantly true))
+                                                (constantly nil) 100 (constantly true))
         state (scheduler/service-id->state marathon-scheduler service-id)]
     (is (= {:failed-instances [:failed-instances], :killed-instances [], :kill-info :kill-call-info} state))))
 
@@ -650,8 +650,8 @@
   (let [current-time (t/now)
         current-time-str (utils/date-to-str current-time)
         marathon-api (Object.)
-        marathon-scheduler (->MarathonScheduler marathon-api {} (fn [] nil) "/home/path/"
-                                                (atom {}) (atom {}) 60000 (constantly true))
+        marathon-scheduler (->MarathonScheduler marathon-api {} (constantly nil) "/home/path/"
+                                                (atom {}) (atom {}) (constantly nil) 60000 (constantly true))
         make-instance (fn [service-id instance-id]
                         {:id instance-id
                          :service-id service-id})]
@@ -840,7 +840,7 @@
                (process-kill-instance-request marathon-api service-id instance-id {})))))))
 
 (deftest test-delete-app
-  (let [scheduler (->MarathonScheduler {} {} nil nil (atom {}) (atom {}) nil nil)]
+  (let [scheduler (->MarathonScheduler {} {} nil nil (atom {}) (atom {}) (constantly nil) nil nil)]
 
     (with-redefs [marathon/delete-app (constantly {:deploymentId 12345})]
       (is (= {:result :deleted

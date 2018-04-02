@@ -232,7 +232,7 @@
         instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
         scheduler (reify ServiceScheduler
-                    (get-apps->instances [_ _]
+                    (get-apps->instances [_]
                       {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
                                                   :failed-instances []}})
                     (service-id->state [_ _]

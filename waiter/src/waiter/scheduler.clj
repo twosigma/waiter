@@ -60,13 +60,13 @@
 
 (defprotocol ServiceScheduler
 
-  (get-apps->instances [this service-id->service-description]
+  (get-apps->instances [this]
     "Returns a map of scheduler/Service records -> scheduler/ServiceInstance records.")
 
   (get-apps [this]
     "Returns a list of scheduler/Service records")
 
-  (get-instances [this ^String service-id service-description]
+  (get-instances [this ^String service-id]
     "Retrieve a {:active-instances [...]. :failed-instances [...]} map of scheduler/ServiceInstance records for the given service-id.
      The active-instances should not be assumed to be healthy (or live).
      The failed-instances are guaranteed to be dead.")
@@ -359,7 +359,7 @@
                                           (metrics/waiter-timer "core" "scheduler" "get-apps")
                                           (retry-on-transient-server-exceptions
                                             "request-available-waiter-apps"
-                                            (get-apps->instances scheduler service-id->service-description-fn)))]
+                                            (get-apps->instances scheduler)))]
     (log/trace "request-available-waiter-apps:apps" (keys service->service-instances))
     service->service-instances))
 
