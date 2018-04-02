@@ -500,6 +500,12 @@
                 (cond->> (utils/unique-identifier)
                          (not (str/blank? router-id-prefix))
                          (str (str/replace router-id-prefix #"[@.]" "-") "-")))
+   :scaling-timeout-config (pc/fnk [[:settings
+                                     [:blacklist-config blacklist-backoff-base-time-ms max-blacklist-time-ms]
+                                     [:scaling inter-kill-request-wait-time-ms]]]
+                             {:blacklist-backoff-base-time-ms blacklist-backoff-base-time-ms
+                              :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
+                              :max-blacklist-time-ms max-blacklist-time-ms})
    :scheduler (pc/fnk [[:settings scheduler-config]
                        service-id-prefix]
                 (let [is-waiter-app?-fn
@@ -803,13 +809,12 @@
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
                      scaling/scale-app service-id->service-description-fn router-state-push-mult)))
    :autoscaling-multiplexer (pc/fnk [[:routines delegate-instance-kill-request-fn peers-acknowledged-blacklist-requests-fn]
-                                     [:settings [:scaling inter-kill-request-wait-time-ms] blacklist-config]
-                                     [:state instance-rpc-chan scheduler]]
+                                     [:state instance-rpc-chan scaling-timeout-config scheduler]]
                               (scaling/service-scaling-multiplexer
                                 (fn scaling-executor-factory [service-id]
                                   (scaling/service-scaling-executor
                                     service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                                    delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config))
+                                    delegate-instance-kill-request-fn scaling-timeout-config))
                                 {}))
    :gc-for-transient-metrics (pc/fnk [[:routines router-metrics-helpers]
                                       [:settings metrics-config]
@@ -896,12 +901,13 @@
                               (scheduler/scheduler-services-gc
                                 scheduler scheduler-state-chan service-id->metrics-fn scheduler-gc-config service-gc-go-routine service-id->service-description-fn)))
    :service-chan-maintainer (pc/fnk [[:routines start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
+                                     [:settings blacklist-config instance-request-properties]
                                      [:state instance-rpc-chan query-app-maintainer-chan]
-                                     [:settings blacklist-config [:instance-request-properties queue-timeout-ms]]
                                      router-state-maintainer]
                               (let [start-service
                                     (fn start-service [service-id]
-                                      (let [maintainer-chan-map (state/prepare-and-start-service-chan-responder service-id queue-timeout-ms blacklist-config)
+                                      (let [maintainer-chan-map (state/prepare-and-start-service-chan-responder
+                                                                  service-id instance-request-properties blacklist-config)
                                             workstealing-chan-map (start-work-stealing-balancer-fn service-id)]
                                         {:maintainer-chan-map maintainer-chan-map
                                          :work-stealing-chan-map workstealing-chan-map}))
@@ -998,12 +1004,11 @@
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
                             :content-type "image/png"}))
    :kill-instance-handler-fn (pc/fnk [[:routines peers-acknowledged-blacklist-requests-fn]
-                                      [:settings [:scaling inter-kill-request-wait-time-ms] blacklist-config]
-                                      [:state instance-rpc-chan scheduler]
+                                      [:state instance-rpc-chan scaling-timeout-config scheduler]
                                       wrap-router-auth-fn]
                                (wrap-router-auth-fn
                                  (fn kill-instance-handler-fn [request]
-                                   (scaling/kill-instance-handler scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config
+                                   (scaling/kill-instance-handler scheduler instance-rpc-chan scaling-timeout-config
                                                                   peers-acknowledged-blacklist-requests-fn request))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
