@@ -69,14 +69,14 @@
 (defn find-oldest-acceptable-expired-instance
   "Retrieves the _oldest_ acceptable expired instance. An expired instance is acceptable if:
    1. it passes the acceptable-instance-id? predicate, and
-   2. it is idle or all its requests are older than expired-instance-timeout-ms ms.
+   2. it is idle or all its requests are older than lingering-request-threshold-ms ms.
    We do not explicitly check whether instances are idle as `find-killable-instance` should handle that scenario."
-  [instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state acceptable-instance-id?]
+  [instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state acceptable-instance-id?]
   (some->> instance-id->state
            (filter (fn [[_ {:keys [status-tags]}]] (expired? status-tags)))
            seq ;; trigger short-circuit if there are no expired instances
            (filter (fn [[instance-id _]] (acceptable-instance-id? instance-id)))
-           (filter (let [earliest-request-threshold-time (t/minus (t/now) (t/millis expired-instance-timeout-ms))]
+           (filter (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))]
                      (fn [[instance-id _]]
                        (-> (instance-id->request-id->use-reason-map instance-id)
                            (only-lingering-requests?  earliest-request-threshold-time)))))
@@ -376,12 +376,12 @@
 (defn handle-kill-instance-request
   "Handles a kill request."
   [{:keys [id->instance instance-id->request-id->use-reason-map instance-id->state] :as current-state}
-   update-status-tag-fn expired-instance-timeout-ms [{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _]]
+   update-status-tag-fn lingering-request-threshold-ms [{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (let [acceptable-instance-id? #(not (contains? exclude-ids-set %))
         ;; look for idle killable instance first before force killing an expired instance
         instance (or (find-killable-instance id->instance instance-id->state acceptable-instance-id?)
                      (find-oldest-acceptable-expired-instance
-                       instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                       instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
                        acceptable-instance-id?))]
     (if instance
       (let [instance-id (:id instance)]
@@ -447,7 +447,7 @@
 (defn handle-blacklist-request
   "Handle a request to blacklist an instance."
   [{:keys [instance-id->request-id->use-reason-map instance-id->state] :as current-state}
-   update-status-tag-fn update-state-by-blacklisting-instance-fn expired-instance-timeout-ms
+   update-status-tag-fn update-state-by-blacklisting-instance-fn lingering-request-threshold-ms
    [{:keys [instance-id blacklist-period-ms cid]} response-chan]]
   (cid/with-correlation-id cid
     (log/info "attempt to blacklist" instance-id "which has"
@@ -455,7 +455,7 @@
               (get instance-id->state instance-id))
     ;; cannot blacklist if the instance is currently servicing a request
     (let [instance-not-allowed? (if (-> (instance-id->state instance-id) :status-tags expired?)
-                                  (let [earliest-request-threshold-time (t/minus (t/now) (t/millis expired-instance-timeout-ms))]
+                                  (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))]
                                     (-> (instance-id->request-id->use-reason-map instance-id)
                                         (only-lingering-requests? earliest-request-threshold-time)
                                         not))
@@ -539,7 +539,7 @@
   updated state is passed into the block through the update-state-chan,
   state queries are passed into the block through the query-state-chan."
   [service-id trigger-unblacklist-process-fn
-   {:keys [blacklist-backoff-base-time-ms expired-instance-timeout-ms max-blacklist-time-ms]}
+   {:keys [blacklist-backoff-base-time-ms lingering-request-threshold-ms max-blacklist-time-ms]}
    {:keys [blacklist-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
            reserve-instance-chan unblacklist-instance-chan update-state-chan work-stealing-chan]}
    initial-state]
@@ -644,7 +644,7 @@
 
                          kill-instance-chan
                          (let [{:keys [current-state' response-chan response]}
-                               (handle-kill-instance-request current-state update-status-tag-fn expired-instance-timeout-ms data)]
+                               (handle-kill-instance-request current-state update-status-tag-fn lingering-request-threshold-ms data)]
                            (async/>! response-chan response)
                            current-state')
 
@@ -675,7 +675,7 @@
                          (let [{:keys [current-state' response-chan response]}
                                (handle-blacklist-request
                                  current-state update-status-tag-fn update-state-by-blacklisting-instance-fn
-                                 expired-instance-timeout-ms data)]
+                                 lingering-request-threshold-ms data)]
                            (async/put! response-chan response)
                            current-state')
 
@@ -712,7 +712,7 @@
   "Starts the service channel responder."
   [service-id instance-request-properties blacklist-config]
   (log/debug "[prepare-and-start-service-chan-responder] starting" service-id)
-  (let [{:keys [expired-instance-timeout-ms queue-timeout-ms]} instance-request-properties
+  (let [{:keys [lingering-request-threshold-ms queue-timeout-ms]} instance-request-properties
         timeout-request-fn (fn [service-id c [reason-map resp-chan _ request-queue-timeout-ms]]
                              (async/go
                                (let [timeout-amount-ms (or request-queue-timeout-ms queue-timeout-ms)
@@ -748,7 +748,7 @@
                      :work-stealing-chan (async/chan 1024)
                      :exit-chan (async/chan 1)}]
     (let [timeout-config (-> (select-keys blacklist-config [:blacklist-backoff-base-time-ms :max-blacklist-time-ms])
-                             (assoc :expired-instance-timeout-ms expired-instance-timeout-ms))]
+                             (assoc :lingering-request-threshold-ms lingering-request-threshold-ms))]
       (start-service-chan-responder service-id trigger-unblacklist-process timeout-config channel-map {}))
     channel-map))
 

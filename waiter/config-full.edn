@@ -394,12 +394,12 @@
                                ;; The HTTP connect timeout (milliseconds) for instance requests:
                                :connection-timeout-ms 5000
 
-                               ;; The timeout for in-flight requests to an expired instance after which
-                               ;; expired instances will be eligible for killing:
-                               :expired-instance-timeout-ms 60000
-
                                ;; The HTTP idle timeout (milliseconds) for instance requests:
                                :initial-socket-timeout-ms 900000
+
+                               ;; The timeout for in-flight requests to an expired instance after which
+                               ;; expired instances will be eligible for killing:
+                               :lingering-request-threshold-ms 60000
 
                                ;; Size in bytes of the output buffer used to aggregate HTTP responses from a backend.
                                ;; The value must be a positive integer.

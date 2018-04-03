@@ -20,8 +20,8 @@
   (:import clojure.lang.PersistentQueue))
 
 (let [service-id "testabcd"
-      {:keys [blacklist-backoff-base-time-ms expired-instance-timeout-ms max-blacklist-time-ms] :as timeout-config}
-      {:blacklist-backoff-base-time-ms 10000.0 :expired-instance-timeout-ms 60000 :max-blacklist-time-ms 100000}
+      {:keys [blacklist-backoff-base-time-ms lingering-request-threshold-ms max-blacklist-time-ms] :as timeout-config}
+      {:blacklist-backoff-base-time-ms 10000.0 :lingering-request-threshold-ms 60000 :max-blacklist-time-ms 100000}
       id-counter (atom 0)]
 
   (defn- make-queue [items]
@@ -2168,10 +2168,10 @@
 
     (deftest test-start-service-chan-responder-kill-expired-instance-busy-with-all-outdated-requests
       (let [current-time (t/now)
-            time-0 (->> (- expired-instance-timeout-ms 1000) (t/millis) (t/minus current-time))
-            time-1 (->> (+ expired-instance-timeout-ms 1000) (t/millis) (t/minus current-time))
-            time-2 (->> (+ expired-instance-timeout-ms 2000) (t/millis) (t/minus current-time))
-            time-3 (->> (+ expired-instance-timeout-ms 3000) (t/millis) (t/minus current-time))
+            time-0 (->> (- lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
+            time-1 (->> (+ lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
+            time-2 (->> (+ lingering-request-threshold-ms 2000) (t/millis) (t/minus current-time))
+            time-3 (->> (+ lingering-request-threshold-ms 3000) (t/millis) (t/minus current-time))
             instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-1}}
                                                      "testabcd.h2" {"req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request :time time-2}
                                                                     "req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request :time time-3}}
@@ -2206,10 +2206,10 @@
 
     (deftest test-start-service-chan-responder-kill-expired-instance-busy-with-some-outdated-requests
       (let [current-time (t/now)
-            time-0 (->> (- expired-instance-timeout-ms 1000) (t/millis) (t/minus current-time))
-            time-1 (->> (- expired-instance-timeout-ms 1000) (t/millis) (t/minus current-time))
-            time-2 (->> (+ expired-instance-timeout-ms 2000) (t/millis) (t/minus current-time))
-            time-3 (->> (+ expired-instance-timeout-ms 3000) (t/millis) (t/minus current-time))
+            time-0 (->> (- lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
+            time-1 (->> (- lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
+            time-2 (->> (+ lingering-request-threshold-ms 2000) (t/millis) (t/minus current-time))
+            time-3 (->> (+ lingering-request-threshold-ms 3000) (t/millis) (t/minus current-time))
             instance-id->request-id->use-reason-map {"testabcd.h0" {}
                                                      "testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-0}}
                                                      "testabcd.h2" {"req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request :time time-0}
@@ -2246,10 +2246,10 @@
 
     (deftest test-start-service-chan-responder-blacklist-expired-instance
       (let [current-time (t/now)
-            time-0 (->> (+ expired-instance-timeout-ms 20000) (t/millis) (t/minus current-time))
-            time-1 (->> (+ expired-instance-timeout-ms 10000) (t/millis) (t/minus current-time))
-            time-2 (->> (- expired-instance-timeout-ms 10000) (t/millis) (t/minus current-time))
-            time-3 (->> (- expired-instance-timeout-ms 20000) (t/millis) (t/minus current-time))
+            time-0 (->> (+ lingering-request-threshold-ms 20000) (t/millis) (t/minus current-time))
+            time-1 (->> (+ lingering-request-threshold-ms 10000) (t/millis) (t/minus current-time))
+            time-2 (->> (- lingering-request-threshold-ms 10000) (t/millis) (t/minus current-time))
+            time-3 (->> (- lingering-request-threshold-ms 20000) (t/millis) (t/minus current-time))
             instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-0}
                                                                     "req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request :time time-1}}
                                                      "testabcd.h2" {"req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request :time time-2}

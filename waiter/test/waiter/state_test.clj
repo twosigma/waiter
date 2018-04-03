@@ -35,9 +35,9 @@
         all-instance-combo [instance-1 instance-2 instance-3 instance-4 instance-5 instance-6]
         id->instance (pc/map-from-vals :id all-instance-combo)
         current-time (t/now)
-        expired-instance-timeout-ms 10000
-        active-req-1-time (->> (+ expired-instance-timeout-ms 1000) (t/millis) (t/minus current-time))
-        active-req-2-time (->> (- expired-instance-timeout-ms 1000) (t/millis) (t/minus current-time))]
+        lingering-request-threshold-ms 10000
+        active-req-1-time (->> (+ lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
+        active-req-2-time (->> (- lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))]
     (with-redefs [t/now (constantly current-time)]
       (testing "oldest-expired-instance:busy-or-idle"
         (let [instance-id->request-id->use-reason-map {}
@@ -48,7 +48,7 @@
                                   "inst-4" {:slots-assigned 1, :slots-used 1, :status-tags #{:expired :healthy}}}]
           (is (= instance-2
                  (find-oldest-acceptable-expired-instance
-                   instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                   instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
                    acceptable-instance-id?)))))
 
       (testing "oldest-acceptable expired-instance:all-idle"
@@ -62,7 +62,7 @@
                                   "inst-6" {:slots-assigned 1, :slots-used 1, :status-tags #{:expired :healthy}}}]
           (is (= instance-4
                  (find-oldest-acceptable-expired-instance
-                   instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                   instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
                    acceptable-instance-id?)))))
 
       (testing "oldest-acceptable expired-instance:oldest-is-busy"
@@ -76,7 +76,7 @@
                                   "inst-6" {:slots-assigned 1, :slots-used 1, :status-tags #{:expired :healthy}}}]
           (is (= instance-4
                  (find-oldest-acceptable-expired-instance
-                   instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                   instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
                    acceptable-instance-id?)))))
 
       (testing "oldest-acceptable expired-instance:oldest-is-idle"
@@ -90,7 +90,7 @@
                                   "inst-6" {:slots-assigned 1, :slots-used 1, :status-tags #{:expired :healthy}}}]
           (is (= instance-5
                  (find-oldest-acceptable-expired-instance
-                   instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                   instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
                    acceptable-instance-id?)))))
 
       (testing "oldest-acceptable expired-instance:acceptable-busy"
@@ -108,7 +108,7 @@
                                   "inst-6" {:slots-assigned 1, :slots-used 1, :status-tags #{:expired :healthy}}}]
           (is (= instance-6
                  (find-oldest-acceptable-expired-instance
-                   instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                   instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
                    acceptable-instance-id?)))))
 
       (testing "oldest-acceptable expired-instance:no-acceptable-busy"
@@ -125,7 +125,7 @@
                                   "inst-6" {:slots-assigned 1, :slots-used 1, :status-tags #{:expired :healthy}}}]
           (is (nil?
                 (find-oldest-acceptable-expired-instance
-                  instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                  instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
                   acceptable-instance-id?)))))
 
       (testing "no acceptable expired instance"
@@ -138,7 +138,7 @@
                                   "inst-5" {:slots-assigned 1, :slots-used 0, :status-tags #{:healthy}}}]
           (is (nil?
                 (find-oldest-acceptable-expired-instance
-                  instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                  instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
                   acceptable-instance-id?)))))
 
       (testing "no expired instance"
@@ -150,7 +150,7 @@
                                   "inst-4" {:slots-assigned 1, :slots-used 1, :status-tags #{:healthy}}}]
           (is (nil?
                 (find-oldest-acceptable-expired-instance
-                  instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                  instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
                   acceptable-instance-id?))))))))
 
 (deftest test-find-instance-to-offer-with-concurrency-level-1
