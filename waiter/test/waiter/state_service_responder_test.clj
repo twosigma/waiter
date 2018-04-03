@@ -114,8 +114,8 @@
             (is (= {:id expected-result} reserved-result) (str "Error in requesting instance for cid-" @id-counter)))))))
 
   (defn- check-kill-request-instance-fn [request-instance-chan expected-result &
-                                         {:keys [mode exclude-ids-set expect-deadlock]
-                                          :or {mode :kill.mode/democratic, exclude-ids-set #{}, expect-deadlock false}}]
+                                         {:keys [exclude-ids-set expect-deadlock]
+                                          :or {exclude-ids-set #{}, expect-deadlock false}}]
     (swap! id-counter inc)
     (let [kill-instance-response-chan (async/promise-chan)]
       (async/>!! request-instance-chan [{:cid (str "cid-" @id-counter)
@@ -129,8 +129,7 @@
                               (async/<!! kill-instance-response-chan))]
         (if (keyword? expected-result)
           (is (= expected-result reserved-result))
-          (let [expected-result {:instance {:id expected-result}
-                                 :mode mode}]
+          (let [expected-result {:id expected-result}]
             (when (not (= expected-result reserved-result))
               (print (first *testing-contexts*) "check-request-instance-fn")
               (print ": expected: " expected-result)
@@ -159,6 +158,8 @@
                                            :cid "cid"}
                                           blacklist-instance-response-chan])
       (let [response (async/<!! blacklist-instance-response-chan)]
+        (when (not= expected-result response)
+          (println "Expected:" expected-result ", actual:" response))
         (is (= expected-result response))
         response)))
 
@@ -2186,11 +2187,10 @@
                                                    (update-slot-state-fn "testabcd.h3" 8 1 #{:expired :healthy})
                                                    (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                            :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]}
-            {:keys [exit-chan kill-instance-chan query-state-chan]}
-            (launch-service-chan-responder 13 initial-state)]
+            {:keys [exit-chan kill-instance-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
         ; kill a healthy instance and clear the blacklist buffer
         (with-redefs [t/now (fn [] current-time)]
-          (check-kill-request-instance-fn kill-instance-chan "testabcd.h1" :mode :kill.mode/autocratic))
+          (check-kill-request-instance-fn kill-instance-chan "testabcd.h1"))
         (->> (-> initial-state
                  (update-in
                    [:instance-id->request-id->use-reason-map "testabcd.h1"]
@@ -2207,7 +2207,7 @@
     (deftest test-start-service-chan-responder-kill-expired-instance-busy-with-some-outdated-requests
       (let [current-time (t/now)
             time-0 (->> (- expired-instance-timeout-ms 1000) (t/millis) (t/minus current-time))
-            time-1 (->> (+ expired-instance-timeout-ms 1000) (t/millis) (t/minus current-time))
+            time-1 (->> (- expired-instance-timeout-ms 1000) (t/millis) (t/minus current-time))
             time-2 (->> (+ expired-instance-timeout-ms 2000) (t/millis) (t/minus current-time))
             time-3 (->> (+ expired-instance-timeout-ms 3000) (t/millis) (t/minus current-time))
             instance-id->request-id->use-reason-map {"testabcd.h0" {}
@@ -2227,11 +2227,10 @@
                                                    (update-slot-state-fn "testabcd.h3" 8 1 #{:expired :healthy})
                                                    (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                            :sorted-instance-ids ["testabcd.h0" "testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]}
-            {:keys [exit-chan kill-instance-chan query-state-chan]}
-            (launch-service-chan-responder 13 initial-state)]
+            {:keys [exit-chan kill-instance-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
         ; kill a healthy instance and clear the blacklist buffer
         (with-redefs [t/now (fn [] current-time)]
-          (check-kill-request-instance-fn kill-instance-chan "testabcd.h3" :mode :kill.mode/autocratic))
+          (check-kill-request-instance-fn kill-instance-chan "testabcd.h3"))
         (->> (-> initial-state
                  (update-in
                    [:instance-id->request-id->use-reason-map "testabcd.h3"]
@@ -2243,4 +2242,43 @@
                            (-> instance-id->state
                                (update-slot-state-fn "testabcd.h3" 8 1 #{:expired :healthy :locked})))))
              (check-state-fn query-state-chan))
-        (async/>!! exit-chan :exit)))))
+        (async/>!! exit-chan :exit)))
+
+    (deftest test-start-service-chan-responder-blacklist-expired-instance
+      (let [current-time (t/now)
+            time-0 (->> (+ expired-instance-timeout-ms 20000) (t/millis) (t/minus current-time))
+            time-1 (->> (+ expired-instance-timeout-ms 10000) (t/millis) (t/minus current-time))
+            time-2 (->> (- expired-instance-timeout-ms 10000) (t/millis) (t/minus current-time))
+            time-3 (->> (- expired-instance-timeout-ms 20000) (t/millis) (t/minus current-time))
+            instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-0}
+                                                                    "req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request :time time-1}}
+                                                     "testabcd.h2" {"req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request :time time-2}
+                                                                    "req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request :time time-3}}
+                                                     "testabcd.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request :time time-2}}}
+            initial-state {:id->instance id->instance-data
+                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->request-id->use-reason-map instance-id->request-id->use-reason-map
+                           :instance-id->consecutive-failures {}
+                           :instance-id->state (-> {}
+                                                   (update-slot-state-fn "testabcd.h1" 4 2 #{:expired :healthy})
+                                                   (update-slot-state-fn "testabcd.h2" 4 2 #{:expired :healthy})
+                                                   (update-slot-state-fn "testabcd.h3" 8 1 #{:expired :healthy}))
+                           :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3"]}
+            {:keys [blacklist-instance-chan exit-chan query-state-chan]} (launch-service-chan-responder 13 initial-state)]
+        ; try blacklisting an instance
+        (with-redefs [t/now (fn [] current-time)]
+          (testing "blacklist with lingering and active requests"
+            (check-blacklist-instance-fn blacklist-instance-chan "testabcd.h2" :in-use)
+            (check-state-fn query-state-chan initial-state)
+
+            (check-blacklist-instance-fn blacklist-instance-chan "testabcd.h3" :in-use)
+            (check-state-fn query-state-chan initial-state))
+
+          (testing "blacklist with only lingering requests"
+            (check-blacklist-instance-fn blacklist-instance-chan "testabcd.h1" :blacklisted)
+            (->> (-> initial-state
+                     (update :instance-id->blacklist-expiry-time assoc "testabcd.h1" (t/plus current-time (t/millis blacklist-backoff-base-time-ms)))
+                     (update :instance-id->state update-slot-state-fn "testabcd.h1" 4 2  #{:blacklisted :expired :healthy}))
+                 (check-state-fn query-state-chan)))
+
+          (async/>!! exit-chan :exit))))))

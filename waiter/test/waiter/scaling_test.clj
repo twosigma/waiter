@@ -143,7 +143,7 @@
                 instance-rpc-chan
                 [(fn [[{:keys [reason]} response-chan]]
                    (is (= :kill-instance reason))
-                   (async/>!! response-chan {:instance instance-1 :mode :kill.mode/democratic}))
+                   (async/>!! response-chan instance-1))
                  (fn [[instance result]]
                    (is (= instance-1 instance))
                    (is (= :killed (:status result))))])
@@ -195,7 +195,7 @@
                 instance-rpc-chan
                 [(fn [[{:keys [reason]} response-chan]]
                    (is (= :kill-instance reason))
-                   (async/>!! response-chan {:instance instance-1 :mode :kill.mode/democratic}))
+                   (async/>!! response-chan instance-1))
                  (fn [[instance result]]
                    (is (= instance-1 instance))
                    (is (= :not-killed (:status result))))]))
@@ -353,41 +353,7 @@
             (is (empty? @scheduler-operation-tracker-atom))
             (async/>!! exit-chan :exit)))
 
-        (testing "scale-down:one-instance:autocratic"
-          (let [instance-rpc-chan (async/chan 1)
-                scheduler-operation-tracker-atom (atom [])
-                scheduler (make-scheduler scheduler-operation-tracker-atom)
-                response-chan (async/promise-chan)
-                peers-acknowledged-blacklist-requests-fn
-                (fn [{:keys [id]} short-circuit? blacklist-period-ms reason]
-                  (is (= "instance-1" id))
-                  (is (not short-circuit?))
-                  (is (= (:max-blacklist-time-ms timeout-config) blacklist-period-ms))
-                  (is (= :killed reason))
-                  true)
-                {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
-            (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
-              (mock-reservation-system
-                instance-rpc-chan
-                [(fn [[{:keys [reason]} response-chan]]
-                   (is (= :kill-instance reason))
-                   (async/>!! response-chan {:instance instance-1 :mode :kill.mode/autocratic}))
-                 (fn [[instance result]]
-                   (is (= instance-1 instance))
-                   (is (= :killed (:status result))))])
-              (async/>!! executor-chan (make-scaling-message test-service-id -1 30 31 31 response-chan))
-              (is (= {:instance-id (:id instance-1), :killed? true, :service-id test-service-id}
-                     (async/<!! response-chan)))
-              (is (= (assoc equilibrium-state :last-scale-down-time current-time)
-                     (retrieve-state-fn query-chan)))
-              (is (= [[:kill-instance "instance-1" "test-service-id" true]]
-                     @scheduler-operation-tracker-atom))
-              (async/>!! exit-chan :exit))))
-
-        (testing "scale-down:one-instance:democratic"
+        (testing "scale-down:one-instance"
           (let [instance-rpc-chan (async/chan 1)
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
@@ -401,7 +367,7 @@
                 instance-rpc-chan
                 [(fn [[{:keys [reason]} response-chan]]
                    (is (= :kill-instance reason))
-                   (async/>!! response-chan {:instance instance-1 :mode :kill.mode/democratic}))
+                   (async/>!! response-chan instance-1))
                  (fn [[instance result]]
                    (is (= instance-1 instance))
                    (is (= :killed (:status result))))])
@@ -436,7 +402,7 @@
                 instance-rpc-chan
                 [(fn [[{:keys [reason]} response-chan]]
                    (is (= :kill-instance reason))
-                   (async/>!! response-chan {:instance instance-1 :mode :kill.mode/democratic}))
+                   (async/>!! response-chan instance-1))
                  (fn [[instance result]]
                    (is (= instance-1 instance))
                    (is (= :not-killed (:status result))))
@@ -470,13 +436,13 @@
                 instance-rpc-chan
                 [(fn [[{:keys [reason]} response-chan]]
                    (is (= :kill-instance reason))
-                   (async/>!! response-chan {:instance instance-1 :mode :kill.mode/democratic}))
+                   (async/>!! response-chan instance-1))
                  (fn [[instance result]]
                    (is (= instance-1 instance))
                    (is (= :not-killed (:status result))))
                  (fn [[{:keys [reason]} response-chan]]
                    (is (= :kill-instance reason))
-                   (async/>!! response-chan {:instance instance-2 :mode :kill.mode/democratic}))
+                   (async/>!! response-chan instance-2))
                  (fn [[instance result]]
                    (is (= instance-2 instance))
                    (is (= :killed (:status result)))
@@ -509,14 +475,14 @@
                 [(fn [[{:keys [reason]} response-chan exclude-ids-set]]
                    (is (= :kill-instance reason))
                    (is (= #{} exclude-ids-set))
-                   (async/>!! response-chan {:instance instance-1 :mode :kill.mode/democratic}))
+                   (async/>!! response-chan instance-1))
                  (fn [[instance result]]
                    (is (= instance-1 instance))
                    (is (= :not-killed (:status result))))
                  (fn [[{:keys [reason]} response-chan exclude-ids-set]]
                    (is (= :kill-instance reason))
                    (is (= #{"instance-1"} exclude-ids-set))
-                   (async/>!! response-chan {:instance instance-2 :mode :kill.mode/democratic}))
+                   (async/>!! response-chan instance-2))
                  (fn [[instance result]]
                    (is (= instance-2 instance))
                    (is (= :not-killed (:status result)))
@@ -545,7 +511,7 @@
                 [(fn [[{:keys [reason]} response-chan exclude-ids-set]]
                    (is (= :kill-instance reason))
                    (is (= #{} exclude-ids-set))
-                   (async/>!! response-chan {:instance instance-1 :mode :kill.mode/democratic}))
+                   (async/>!! response-chan instance-1))
                  (fn [[instance result]] (is (= instance-1 instance))
                    (is (= :killed (:status result))))])
               (async/>!! executor-chan (make-scaling-message test-service-id -2 30 32 32 response-chan))

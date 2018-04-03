@@ -115,11 +115,9 @@
             (timers/start-stop-time!
               (metrics/service-timer service-id "kill-instance")
               (loop [exclude-ids-set #{}]
-                (let [{:keys [instance mode]}
-                      (service/get-rand-inst instance-rpc-chan service-id (reason-map-fn) exclude-ids-set inter-kill-request-wait-time-ms)]
+                (let [instance (service/get-rand-inst instance-rpc-chan service-id (reason-map-fn) exclude-ids-set inter-kill-request-wait-time-ms)]
                   (if-let [instance-id (:id instance)]
-                    (if (or (= :kill.mode/autocratic mode)
-                            (peers-acknowledged-blacklist-requests-fn instance true blacklist-backoff-base-time-ms :prepare-to-kill))
+                    (if (peers-acknowledged-blacklist-requests-fn instance true blacklist-backoff-base-time-ms :prepare-to-kill)
                       (do
                         (log/info "scaling down instance candidate" instance)
                         (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))

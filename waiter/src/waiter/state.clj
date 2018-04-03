@@ -58,6 +58,14 @@
   [comparison-fn collection]
   (reduce #(if (pos? (comparison-fn %1 %2)) %1 %2) (first collection) (rest collection)))
 
+(defn- only-lingering-requests?
+  "Retrurns truthy value if the instance is idle or processing expired requests based on the earliest-request-threshold-time"
+  [request-id->use-reason-map earliest-request-threshold-time]
+  (every? #(t/before? % earliest-request-threshold-time)
+          (->> request-id->use-reason-map
+               vals
+               (map :time))))
+
 (defn find-oldest-acceptable-expired-instance
   "Retrieves the _oldest_ acceptable expired instance. An expired instance is acceptable if:
    1. it passes the acceptable-instance-id? predicate, and
@@ -68,13 +76,10 @@
            (filter (fn [[_ {:keys [status-tags]}]] (expired? status-tags)))
            seq ;; trigger short-circuit if there are no expired instances
            (filter (fn [[instance-id _]] (acceptable-instance-id? instance-id)))
-           (filter (let [earliest-request-time (t/minus (t/now) (t/millis expired-instance-timeout-ms))]
+           (filter (let [earliest-request-threshold-time (t/minus (t/now) (t/millis expired-instance-timeout-ms))]
                      (fn [[instance-id _]]
-                       (let [request-id->use-reason-map (instance-id->request-id->use-reason-map instance-id)]
-                         (every? #(t/before? % earliest-request-time)
-                                 (->> request-id->use-reason-map
-                                      vals
-                                      (map :time)))))))
+                       (-> (instance-id->request-id->use-reason-map instance-id)
+                           (only-lingering-requests?  earliest-request-threshold-time)))))
            (find-max #(scheduler/instance-comparator (id->instance (first %2)) (id->instance (first %1))))
            first ; extract the instance-id
            id->instance))
@@ -313,7 +318,7 @@
   "Handles a work-stealing offer.
    It returns a map with the following keys: current-state', response-chan, response.
    The entry for response may be nil if there's no immediate response."
-  [{:keys [work-stealing-queue] :as current-state} service-id slots-in-use-counter slots-available-counter 
+  [{:keys [work-stealing-queue] :as current-state} service-id slots-in-use-counter slots-available-counter
    work-stealing-received-in-flight-counter requests-outstanding-counter {:keys [cid instance response-chan router-id] :as data}]
   (cid/cdebug cid "received work-stealing instance" (:id instance) "from" router-id)
   (counters/inc! (metrics/service-counter service-id "work-stealing" "received-from" router-id "offers"))
@@ -373,30 +378,26 @@
   [{:keys [id->instance instance-id->request-id->use-reason-map instance-id->state] :as current-state}
    update-status-tag-fn expired-instance-timeout-ms [{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (let [acceptable-instance-id? #(not (contains? exclude-ids-set %))
-        {:keys [instance] :as result}
         ;; look for idle killable instance first before force killing an expired instance
-        (or (some->> (find-killable-instance id->instance instance-id->state acceptable-instance-id?)
-                     (assoc {:mode :kill.mode/democratic} :instance))
-            (some->> (find-oldest-acceptable-expired-instance
-                       instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance
-                       instance-id->state acceptable-instance-id?)
-                     (assoc {:mode :kill.mode/autocratic} :instance)))]
+        instance (or (find-killable-instance id->instance instance-id->state acceptable-instance-id?)
+                     (find-oldest-acceptable-expired-instance
+                       instance-id->request-id->use-reason-map expired-instance-timeout-ms id->instance instance-id->state
+                       acceptable-instance-id?))]
     (if instance
       (let [instance-id (:id instance)]
-        (log/info "selected" instance-id "for kill in" (:mode result) "mode")
         {:current-state' (-> current-state
                              (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id] reason-map)
                              ; mark instance as locked if it is going to be killed.
                              (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :locked)))
          :response-chan resp-chan
-         :response result})
+         :response instance})
       {:current-state' current-state
        :response-chan resp-chan
        :response :no-matching-instance-found})))
 
 (defn handle-release-instance-request
   "Handles a release instance request."
-  [{:keys [instance-id->consecutive-failures instance-id->request-id->use-reason-map request-id->work-stealer] :as current-state} service-id 
+  [{:keys [instance-id->consecutive-failures instance-id->request-id->use-reason-map request-id->work-stealer] :as current-state} service-id
    update-slot-state-fn update-status-tag-fn update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
    work-stealing-received-in-flight-counter max-blacklist-time-ms blacklist-backoff-base-time-ms max-backoff-exponent
    [{instance-id :id :as instance-to-release} {:keys [cid request-id status] :as reservation-result}]]
@@ -446,16 +447,23 @@
 (defn handle-blacklist-request
   "Handle a request to blacklist an instance."
   [{:keys [instance-id->request-id->use-reason-map instance-id->state] :as current-state}
-   update-status-tag-fn update-state-by-blacklisting-instance-fn [{:keys [instance-id blacklist-period-ms cid]} response-chan]]
+   update-status-tag-fn update-state-by-blacklisting-instance-fn expired-instance-timeout-ms
+   [{:keys [instance-id blacklist-period-ms cid]} response-chan]]
   (cid/with-correlation-id cid
     (log/info "attempt to blacklist" instance-id "which has"
               (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
               (get instance-id->state instance-id))
     ;; cannot blacklist if the instance is currently servicing a request
-    (let [response-code (if (and (contains? instance-id->request-id->use-reason-map instance-id)
-                                 (some #(= :serve-request (:reason %)) (vals (get instance-id->request-id->use-reason-map instance-id))))
-                          :in-use
-                          :blacklisted)]
+    (let [instance-not-allowed? (if (-> (instance-id->state instance-id) :status-tags expired?)
+                                  (let [earliest-request-threshold-time (t/minus (t/now) (t/millis expired-instance-timeout-ms))]
+                                    (-> (instance-id->request-id->use-reason-map instance-id)
+                                        (only-lingering-requests? earliest-request-threshold-time)
+                                        not))
+                                  (and
+                                    (contains? instance-id->request-id->use-reason-map instance-id)
+                                    (some #(= :serve-request (:reason %))
+                                          (-> instance-id instance-id->request-id->use-reason-map vals))))
+          response-code (if instance-not-allowed? :in-use :blacklisted)]
       {:current-state' (if (= :blacklisted response-code)
                          (-> current-state
                              ; mark instance as blacklisted and set the expiry time
@@ -665,7 +673,9 @@
 
                          blacklist-instance-chan
                          (let [{:keys [current-state' response-chan response]}
-                               (handle-blacklist-request current-state update-status-tag-fn update-state-by-blacklisting-instance-fn data)]
+                               (handle-blacklist-request
+                                 current-state update-status-tag-fn update-state-by-blacklisting-instance-fn
+                                 expired-instance-timeout-ms data)]
                            (async/put! response-chan response)
                            current-state')
 
@@ -1114,7 +1124,7 @@
     (let [failed-instance-hosts (set (map :host failed-instances))
           has-failed-instances? (and (>= (count failed-instances) min-failed-instances)
                                      (>= (count failed-instance-hosts) min-hosts))
-          has-unhealthy-instances? (not-empty unhealthy-instances) 
+          has-unhealthy-instances? (not-empty unhealthy-instances)
           first-unhealthy-status (-> unhealthy-instances first :health-check-status)
           first-exit-code (-> failed-instances first :exit-code)
           failed-instance-flags (map :flags failed-instances)
