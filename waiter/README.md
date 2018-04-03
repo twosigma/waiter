@@ -7,7 +7,7 @@ Waiter uses [Marathon](https://mesosphere.github.io/marathon/) to schedule servi
 Prerequisites:
 
 * Java 8
-* [Leiningen](http://leiningen.org/)
+* [Leiningen](http://leiningen.org/) v2.8.1
 
 Waiter uses [voom](https://github.com/LonoCloud/lein-voom) to pull in dependencies that are not available in clojars:
 
@@ -46,7 +46,7 @@ You can customize this path by setting the `WAITER_TEST_KITCHEN_CMD` environment
 Once Waiter has started:
 
 ```bash
-# Assuming you're using the provided minimesos support: 
+# Assuming you're using the provided minimesos support:
 $ export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh
 
 # Run a very basic integration test:
