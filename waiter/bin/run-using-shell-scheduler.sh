@@ -22,3 +22,8 @@ if [ "${RECOMPILE}" != "0" ]; then
 fi
 
 WAITER_AUTH_RUN_AS_USER=$(id -un) lein run config-shell.edn
+
+EXIT_CODE=$?
+
+echo "Waiter quit with code $EXIT_CODE"
+exit $EXIT_CODE

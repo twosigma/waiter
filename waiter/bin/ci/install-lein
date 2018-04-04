@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -ex
+
+lein_bin=$HOME/.lein/bin
+
+if ! [ -f $lein_bin/lein ]; then
+    mkdir -p $lein_bin
+    cd $lein_bin
+    wget 'https://raw.githubusercontent.com/technomancy/leiningen/2.8.1/bin/lein'
+    chmod a+x ./lein
+fi

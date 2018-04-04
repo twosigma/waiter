@@ -1,33 +1,62 @@
-sudo: required
 dist: trusty
 group: deprecated-2017Q4
 language: java
-jdk:
-- oraclejdk8
-services:
-  - docker
+jdk: oraclejdk8
+
+addons:
+  artifacts: true
+
 branches:
-  only:
-  - master
-env:
-  global:
-    - DEPS_CMD='lein with-profiles +test voom build-deps'
-    - LEIN_GET='wget https://raw.githubusercontent.com/technomancy/leiningen/2.8.1/bin/lein'
-    - LEIN_CHMOD='chmod +x ./lein'
-    - _JAVA_OPTIONS='' # Avoid unwanted _JAVA_OPTIONS set by Travis CI
-  matrix:
-    - TEST_DIR=kitchen TEST_CMD='lein test'
-    - TEST_DIR=token-syncer TEST_CMD='./bin/ci/run-all-tests.sh'
-    - TEST_DIR=waiter TEST_CMD=./bin/ci/run-unit-tests.sh
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-fast'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests.sh parallel-test integration-slow'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-fast'
-    - TEST_DIR=waiter TEST_CMD='./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-slow'
+  only: master
+
 cache:
   directories:
+    - $HOME/.lein
     - $HOME/.m2
     - $HOME/.voom-repos
-before_script: ($LEIN_GET && $LEIN_CHMOD && export PATH=$(pwd):$PATH && cd $TEST_DIR && $DEPS_CMD)
-script: cd $TEST_DIR && $TEST_CMD
-addons:
-    artifacts: true
+
+env:
+  global:
+    - LEIN_DEPS_CMD='lein with-profiles +test voom build-deps'
+    - PATH="$HOME/.lein/bin:$PATH"
+
+before_install:
+  - unset _JAVA_OPTIONS  # Avoid unwanted _JAVA_OPTIONS set by Travis CI
+  - echo "Sudo-enabled build? ${TRAVIS_SUDO}"
+
+install:
+  - ./waiter/bin/ci/install-lein
+
+matrix:
+  include:
+    - env: NAME='Kitchen tests'
+      before_script: cd kitchen && $LEIN_DEPS_CMD
+      script: lein test
+
+    - env: NAME='Token syncer tests'
+      before_script: cd token-syncer && $LEIN_DEPS_CMD
+      script: ./bin/ci/run-all-tests.sh
+
+    - env: NAME='Waiter unit tests'
+      before_script: cd waiter && $LEIN_DEPS_CMD
+      script: ./bin/ci/run-unit-tests.sh
+
+    - env: "NAME='Waiter integration tests: marathon-fast'"
+      services: docker
+      before_script: cd waiter && $LEIN_DEPS_CMD
+      script: ./bin/ci/run-integration-tests.sh parallel-test integration-fast
+
+    - env: "NAME='Waiter integration tests: marathon-slow'"
+      services: docker
+      before_script: cd waiter && $LEIN_DEPS_CMD
+      script: ./bin/ci/run-integration-tests.sh parallel-test integration-slow
+
+    - env: "NAME='Waiter integration tests: shell-fast'"
+      services: docker
+      before_script: cd waiter && $LEIN_DEPS_CMD
+      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-fast
+
+    - env: "NAME='Waiter integration tests: shell-slow'"
+      services: docker
+      before_script: cd waiter && $LEIN_DEPS_CMD
+      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-slow
