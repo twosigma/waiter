@@ -54,9 +54,9 @@ matrix:
     - env: "NAME='Waiter integration tests: shell-fast'"
       services: docker
       before_script: cd waiter && $LEIN_DEPS_CMD
-      script: ./bin/ci/run-integration-tests.sh parallel-test integration-fast
+      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-fast
 
     - env: "NAME='Waiter integration tests: shell-slow'"
       services: docker
       before_script: cd waiter && $LEIN_DEPS_CMD
-      script: ./bin/ci/run-integration-tests.sh parallel-test integration-slow
+      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-slow
