@@ -9,7 +9,7 @@
 #
 # Waits for waiter servers to be listening and then runs the token-syncer tests using the provided test selector.
 
-set -v
+set -x
 
 function timeout() {
     perl -e 'alarm shift; exec @ARGV' "$@";
