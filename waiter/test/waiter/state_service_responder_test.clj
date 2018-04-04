@@ -1,9 +1,9 @@
 ;;
-;;       Copyright (c) 2017 Two Sigma Investments, LP.
+;;       Copyright (c) 2017 Two Sigma Investments LP.
 ;;       All Rights Reserved
 ;;
 ;;       THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
-;;       Two Sigma Investments, LP.
+;;       Two Sigma Investments LP.
 ;;
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
@@ -17,7 +17,8 @@
             [waiter.metrics :as metrics]
             [waiter.state :refer :all]
             [waiter.utils :as utils])
-  (:import clojure.lang.PersistentQueue))
+  (:import (clojure.lang PersistentQueue)
+           (org.joda.time DateTime)))
 
 (let [service-id "testabcd"
       {:keys [blacklist-backoff-base-time-ms lingering-request-threshold-ms max-blacklist-time-ms] :as timeout-config}
@@ -44,12 +45,12 @@
         (when (not= expected-counter-value actual-counter-value)
           (println (first *testing-vars*) ":" counter-name "expected:" expected-counter-value "actual:" actual-counter-value))
         (is (= expected-counter-value actual-counter-value)
-            (str "Mismatch in" counter-name "counter value, expected: " expected-counter-value ", actual: " actual-counter-value)))))
+            (str "Mismatch in" counter-name "counter value. Expected: " expected-counter-value " Actual: " actual-counter-value)))))
 
   (defn- check-state-fn [query-state-chan expected-state]
     (Thread/sleep 1) ; allow previous chaneel messages to get processed
     (let [query-state-response-chan (async/promise-chan)]
-      (async/>!! query-state-chan {:cid "cid", :response-chan query-state-response-chan, :service-id service-id})
+      (async/>!! query-state-chan {:cid "cid" :response-chan query-state-response-chan :service-id service-id})
       (let [actual-state (async/<!! query-state-response-chan)
             check-fn (fn [item-key]
                        (let [expected (item-key expected-state)
@@ -78,7 +79,7 @@
                                            (assoc "blacklisted" (count (:instance-id->blacklist-expiry-time expected-state)))
                                            (:instance-id->state expected-state)
                                            (merge (let [[slots-assigned slots-used slots-available] (compute-slots-values (:instance-id->state expected-state))]
-                                                    {"slots-assigned" slots-assigned, "slots-available" slots-available, "slots-in-use" slots-used})))]
+                                                    {"slots-assigned" slots-assigned "slots-available" slots-available "slots-in-use" slots-used})))]
           (assert-instance-counters expected-counter-map))
         actual-state)))
 
@@ -92,7 +93,7 @@
 
   (defn- check-reserve-request-instance-fn [request-instance-chan expected-result &
                                             {:keys [exclude-ids-set expect-deadlock]
-                                             :or {exclude-ids-set #{}, expect-deadlock false}}]
+                                             :or {exclude-ids-set #{} expect-deadlock false}}]
     (swap! id-counter inc)
     (let [reserve-instance-response-chan (async/promise-chan)]
       (async/>!! request-instance-chan [{:cid (str "cid-" @id-counter)
@@ -106,16 +107,15 @@
                               (async/<!! reserve-instance-response-chan))]
         (if (keyword? expected-result)
           (is (= expected-result reserved-result))
-          (do
-            (when (not (= {:id expected-result} reserved-result))
-              (print (first *testing-contexts*) "check-request-instance-fn")
-              (print ": expected: " {:id expected-result})
-              (println ", actual:   " reserved-result))
-            (is (= {:id expected-result} reserved-result) (str "Error in requesting instance for cid-" @id-counter)))))))
+          (let [actual-result (select-keys reserved-result [:id])]
+            (when (not (= {:id expected-result} actual-result))
+              (println (first *testing-contexts*) "check-request-instance-fn:"
+                       "Expected: " {:id expected-result} "Actual:   " actual-result))
+            (is (= {:id expected-result} actual-result) (str "Error in requesting instance for cid-" @id-counter)))))))
 
   (defn- check-kill-request-instance-fn [request-instance-chan expected-result &
                                          {:keys [exclude-ids-set expect-deadlock]
-                                          :or {exclude-ids-set #{}, expect-deadlock false}}]
+                                          :or {exclude-ids-set #{} expect-deadlock false}}]
     (swap! id-counter inc)
     (let [kill-instance-response-chan (async/promise-chan)]
       (async/>!! request-instance-chan [{:cid (str "cid-" @id-counter)
@@ -129,12 +129,12 @@
                               (async/<!! kill-instance-response-chan))]
         (if (keyword? expected-result)
           (is (= expected-result reserved-result))
-          (let [expected-result {:id expected-result}]
-            (when (not (= expected-result reserved-result))
-              (print (first *testing-contexts*) "check-request-instance-fn")
-              (print ": expected: " expected-result)
-              (println ", actual:   " reserved-result))
-            (is (= expected-result reserved-result) (str "Error in requesting instance for cid-" @id-counter)))))))
+          (let [expected-result {:id expected-result}
+                actual-result (select-keys reserved-result [:id])]
+            (when (not (= expected-result actual-result))
+              (println (first *testing-contexts*) "check-request-instance-fn:"
+                       "Expected: " expected-result "Actual:   " actual-result))
+            (is (= expected-result actual-result) (str "Error in requesting instance for cid-" @id-counter)))))))
 
   (defn- make-work-stealing-offer [work-stealing-chan router-id instance-id]
     (let [response-chan (async/promise-chan)]
@@ -146,10 +146,10 @@
       response-chan))
 
   (defn- make-work-stealing-data [cid instance-id response-chan router-id]
-    {:cid cid, :instance {:id instance-id}, :response-chan response-chan, :router-id router-id})
+    {:cid cid :instance {:id instance-id} :response-chan response-chan :router-id router-id})
 
   (defn- release-instance-fn [release-instance-chan instance-id id status]
-    (async/>!! release-instance-chan [{:id instance-id} {:cid (str "cid-" id), :request-id (str "req-" id), :status status}]))
+    (async/>!! release-instance-chan [{:id instance-id} {:cid (str "cid-" id) :request-id (str "req-" id) :status status}]))
 
   (defn- check-blacklist-instance-fn [blacklist-instance-chan instance-id expected-result]
     (let [blacklist-instance-response-chan (async/promise-chan)]
@@ -159,7 +159,7 @@
                                           blacklist-instance-response-chan])
       (let [response (async/<!! blacklist-instance-response-chan)]
         (when (not= expected-result response)
-          (println "Expected:" expected-result ", actual:" response))
+          (println "Expected:" expected-result " actual:" response))
         (is (= expected-result response))
         response)))
 
@@ -183,23 +183,33 @@
       ;; start the service-chan-responder
       (start-service-chan-responder service-id trigger-unblacklist-process-fn timeout-config channel-config initial-state)
       (assoc channel-config :trigger-unblacklist-process-atom trigger-unblacklist-process-atom)))
-  (let [id->instance-data {"testabcd.h1" {:id "testabcd.h1"},
-                           "testabcd.h2" {:id "testabcd.h2"},
-                           "testabcd.h3" {:id "testabcd.h3"},
-                           "testabcd.h4" {:id "testabcd.h4"},
-                           "testabcd.h5" {:id "testabcd.h5"},
-                           "testabcd.u1" {:id "testabcd.u1"},
-                           "testabcd.u2" {:id "testabcd.u2"},
-                           "testabcd.u3" {:id "testabcd.u3"}}]
+  (let [instance-h1 {:id "testabcd.h1" :started-at (utils/date-to-str (DateTime. 10000))}
+        instance-h2 {:id "testabcd.h2" :started-at (utils/date-to-str (DateTime. 20000))}
+        instance-h3 {:id "testabcd.h3" :started-at (utils/date-to-str (DateTime. 30000))}
+        instance-h4 {:id "testabcd.h4" :started-at (utils/date-to-str (DateTime. 40000))}
+        instance-h5 {:id "testabcd.h5" :started-at (utils/date-to-str (DateTime. 50000))}
+        instance-h6 {:id "testabcd.h6" :started-at (utils/date-to-str (DateTime. 60000))}
+        instance-u1 {:id "testabcd.u1" :started-at (utils/date-to-str (DateTime. 11000))}
+        instance-u2 {:id "testabcd.u2" :started-at (utils/date-to-str (DateTime. 21000))}
+        instance-u3 {:id "testabcd.u3" :started-at (utils/date-to-str (DateTime. 31000))}
+        id->instance-data {"testabcd.h1" instance-h1
+                           "testabcd.h2" instance-h2
+                           "testabcd.h3" instance-h3
+                           "testabcd.h4" instance-h4
+                           "testabcd.h5" instance-h5
+                           "testabcd.h6" instance-h6
+                           "testabcd.u1" instance-u1
+                           "testabcd.u2" instance-u2
+                           "testabcd.u3" instance-u3}]
     (deftest test-start-service-chan-responder-simple-state-updates
       (let [{:keys [exit-chan query-state-chan update-state-chan]}
             (launch-service-chan-responder 0 {})]
         ; update state and verify whether state changes are reflected correctly
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}]
-                            :unhealthy-instances [{:id "testabcd.u1"}, {:id "testabcd.u2"}, {:id "testabcd.u3"}]
-                            :starting-instances [{:id "testabcd.u3"}]
-                            :expired-instances [{:id "testabcd.h1"}, {:id "testabcd.h3"}]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 1, {:id "testabcd.h3"} 1}}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3]
+                            :unhealthy-instances [instance-u1 instance-u2 instance-u3]
+                            :starting-instances [instance-u3]
+                            :expired-instances [instance-h1 instance-h3]
+                            :my-instance->slots {instance-h1 1 instance-h2 1 instance-h3 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
@@ -211,15 +221,13 @@
                                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
                                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
                                                                   (update-slot-state-fn "testabcd.u3" 0 0 #{:starting :unhealthy}))
-                                          :sorted-instance-ids ["testabcd.h2" ; healthy
-                                                                "testabcd.u1" "testabcd.u2" "testabcd.u3" ; unhealthy
-                                                                "testabcd.h1" "testabcd.h3" ; expired
-                                                                ]})
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}, {:id "testabcd.h4"}, {:id "testabcd.h5"}]
-                            :unhealthy-instances [{:id "testabcd.u1"}, {:id "testabcd.u3"}] ; drop testabcd.u2 from update
+                                          :sorted-instance-ids ["testabcd.u1" "testabcd.h2" "testabcd.u2" "testabcd.u3"
+                                                                "testabcd.h1" "testabcd.h3"]})
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3 instance-h4 instance-h5]
+                            :unhealthy-instances [instance-u1 instance-u3] ; drop testabcd.u2 from update
                             :starting-instances [] ; remove testabcd.u3 from starting
                             :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.h5" "testabcd.u1"]
-                            :my-instance->slots {{:id "testabcd.h1"} 2, {:id "testabcd.h2"} 1, {:id "testabcd.h3"} 2, {:id "testabcd.h4"} 2}}]
+                            :my-instance->slots {instance-h1 2 instance-h2 1 instance-h3 2 instance-h4 2}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
@@ -232,9 +240,8 @@
                                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
                                                                   (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy}))
                                           :request-id->work-stealer {}
-                                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.h5" ; healthy
-                                                                "testabcd.u1" "testabcd.u3" ; unhealthy
-                                                                ]
+                                          :sorted-instance-ids ["testabcd.h1" "testabcd.u1" "testabcd.h2" "testabcd.h3"
+                                                                "testabcd.u3" "testabcd.h4" "testabcd.h5"]
                                           :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -245,7 +252,7 @@
           ; update state and verify whether state changes are reflected correctly
           (let [update-state {:deployment-error deployment-error
                               :healthy-instances []
-                              :unhealthy-instances [{:id "testabcd.u1"}, {:id "testabcd.u2"}, {:id "testabcd.u3"}]
+                              :unhealthy-instances [instance-u1 instance-u2 instance-u3]
                               :starting-instances []
                               :expired-instances []
                               :my-instance->slots {}}]
@@ -281,10 +288,10 @@
       (let [{:keys [exit-chan query-state-chan update-state-chan]}
             (launch-service-chan-responder 0 {})]
         ; update state and verify whether state changes are reflected correctly
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}]
-                            :unhealthy-instances [{:id "testabcd.u1"}, {:id "testabcd.u2"}]
-                            :expired-instances [{:id "testabcd.h1"}, {:id "testabcd.h3"}]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 1, {:id "testabcd.h3"} 1}}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3]
+                            :unhealthy-instances [instance-u1 instance-u2]
+                            :expired-instances [instance-h1 instance-h3]
+                            :my-instance->slots {instance-h1 1 instance-h2 1 instance-h3 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
@@ -296,15 +303,12 @@
                                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
                                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy}))
                                           :request-id->work-stealer {}
-                                          :sorted-instance-ids ["testabcd.h2" ; healthy
-                                                                "testabcd.u1" "testabcd.u2" ; unhealthy
-                                                                "testabcd.h1" "testabcd.h3" ; expired
-                                                                ]
+                                          :sorted-instance-ids ["testabcd.u1" "testabcd.h2" "testabcd.u2" "testabcd.h1" "testabcd.h3"]
                                           :work-stealing-queue (make-queue [])})
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h4"}, {:id "testabcd.h5"}]
-                            :unhealthy-instances [{:id "testabcd.u1"}] ; drop testabcd.u2 from update
-                            :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h4" "testabcd.h5" "testabcd.u1"]
-                            :my-instance->slots {{:id "testabcd.h1"} 2, {:id "testabcd.h2"} 1, {:id "testabcd.h4"} 2}}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h4 instance-h5]
+                            :unhealthy-instances [instance-u1] ; drop testabcd.u2 from update
+                            :sorted-instance-ids ["testabcd.h1" "testabcd.u1"  "testabcd.h2" "testabcd.h4" "testabcd.h5"]
+                            :my-instance->slots {instance-h1 2 instance-h2 1 instance-h4 2}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
@@ -315,9 +319,7 @@
                                                                   (update-slot-state-fn "testabcd.h4" 2 0)
                                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy}))
                                           :request-id->work-stealer {}
-                                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h4" "testabcd.h5" ; healthy
-                                                                "testabcd.u1" ; unhealthy
-                                                                ]
+                                          :sorted-instance-ids ["testabcd.h1" "testabcd.u1"  "testabcd.h2" "testabcd.h4" "testabcd.h5"]
                                           :work-stealing-queue (make-queue [])})
         (async/>!! exit-chan :exit)))
 
@@ -325,10 +327,10 @@
       (let [{:keys [exit-chan query-state-chan update-state-chan blacklist-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
             (launch-service-chan-responder 0 {})]
         ; update state and verify whether state changes are reflected correctly
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}]
-                            :unhealthy-instances [{:id "testabcd.u1"}]
-                            :expired-instances [{:id "testabcd.h1"}, {:id "testabcd.h3"}]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 1, {:id "testabcd.h3"} 1}}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3]
+                            :unhealthy-instances [instance-u1]
+                            :expired-instances [instance-h1 instance-h3]
+                            :my-instance->slots {instance-h1 1 instance-h2 1 instance-h3 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
@@ -360,10 +362,10 @@
                                                      (update-slot-state-fn "testabcd.h3" 1 0 #{:blacklisted :expired :healthy})
                                                      (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy}))})
             (check-blacklist-instance-fn blacklist-instance-chan "testabcd.h4" :blacklisted)
-            (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}]
-                                :unhealthy-instances [{:id "testabcd.u1"}]
-                                :expired-instances [{:id "testabcd.h1"}, {:id "testabcd.h4"}]
-                                :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 1}}]
+            (let [update-state {:healthy-instances [instance-h1 instance-h2]
+                                :unhealthy-instances [instance-u1]
+                                :expired-instances [instance-h1 instance-h4]
+                                :my-instance->slots {instance-h1 1 instance-h2 1}}]
               (async/>!! update-state-chan [update-state (t/now)]))
             (let [expiry-time (t/plus start-time (t/millis blacklist-backoff-base-time-ms))]
               (check-state-fn query-state-chan
@@ -399,10 +401,10 @@
                                                      (update-slot-state-fn "testabcd.h4" 0 0 #{:expired})
                                                      (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy}))
                              :work-stealing-queue (make-queue [])}))
-          (let [update-state {:healthy-instances [{:id "testabcd.h2"}]
+          (let [update-state {:healthy-instances [instance-h2]
                               :unhealthy-instances []
                               :expired-instances []
-                              :my-instance->slots {{:id "testabcd.h2"} 1}}]
+                              :my-instance->slots {instance-h2 1}}]
             (async/>!! update-state-chan [update-state (t/now)]))
           (check-state-fn query-state-chan
                           {:instance-id->blacklist-expiry-time {}
@@ -416,11 +418,11 @@
       (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan update-state-chan]}
             (launch-service-chan-responder 0 {})]
         ; update state and verify whether state changes are reflected correctly
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3]
                             :unhealthy-instances []
                             :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3"]
-                            :expired-instances [{:id "testabcd.h2"}]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 2, {:id "testabcd.h3"} 1}}]
+                            :expired-instances [instance-h2]
+                            :my-instance->slots {instance-h1 1 instance-h2 2 instance-h3 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
                                           :instance-id->request-id->use-reason-map {}
@@ -431,21 +433,21 @@
                                                                   (update-slot-state-fn "testabcd.h3" 1 0))})
         (check-kill-request-instance-fn kill-instance-chan "testabcd.h2")
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
-                                          :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :kill-instance}}}
+                                          :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :kill-instance}}}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 1 0)
                                                                   (update-slot-state-fn "testabcd.h2" 2 0 #{:expired :healthy :locked})
                                                                   (update-slot-state-fn "testabcd.h3" 1 0))
                                           :work-stealing-queue (make-queue [])})
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}, {:id "testabcd.h4"}, {:id "testabcd.h5"}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3 instance-h4 instance-h5]
                             :unhealthy-instances []
                             :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.h5"]
-                            :expired-instances [{:id "testabcd.h2"}]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 4, {:id "testabcd.h3"} 4}}]
+                            :expired-instances [instance-h2]
+                            :my-instance->slots {instance-h1 1 instance-h2 4 instance-h3 4}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
-                                          :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :kill-instance}}}
+                                          :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :kill-instance}}}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 1 0)
@@ -453,14 +455,14 @@
                                                                   (update-slot-state-fn "testabcd.h3" 4 0))
                                           :request-id->work-stealer {}
                                           :work-stealing-queue (make-queue [])})
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}, {:id "testabcd.h4"}, {:id "testabcd.h5"}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3 instance-h4 instance-h5]
                             :unhealthy-instances []
                             :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.h5"]
-                            :expired-instances [{:id "testabcd.h2"}]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 4, {:id "testabcd.h3"} 2}}]
+                            :expired-instances [instance-h2]
+                            :my-instance->slots {instance-h1 1 instance-h2 4 instance-h3 2}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
-                                          :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :kill-instance}}}
+                                          :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :kill-instance}}}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 1 0)
@@ -496,12 +498,12 @@
         (doseq [instance-id ["testabcd.h1" "testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h3" "testabcd.h4"]]
           (check-reserve-request-instance-fn reserve-instance-chan instance-id))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
-                                          :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}
-                                                                                                   "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}}
-                                                                                    "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}}
-                                                                                    "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                                   "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}
-                                                                                    "testabcd.h4" {"req-6" {:cid "cid-6", :request-id "req-6", :reason :serve-request}}}
+                                          :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                                   "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                                    "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                                    "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                                   "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
+                                                                                    "testabcd.h4" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request}}}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 2 2)
@@ -521,18 +523,18 @@
                                               :instance-id->state (-> {}
                                                                       (update-slot-state-fn "testabcd.h1" 2 0)
                                                                       (update-slot-state-fn "testabcd.h2" 1 0))})]
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2]
                             :unhealthy-instances []
-                            :expired-instances [{:id "testabcd.h2"}]
-                            :my-instance->slots {{:id "testabcd.h1"} 2, {:id "testabcd.h2"} 1}}]
+                            :expired-instances [instance-h2]
+                            :my-instance->slots {instance-h1 2 instance-h2 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         ; reserve expired instance
         (doseq [instance-id ["testabcd.h1" "testabcd.h1" "testabcd.h2"]]
           (check-reserve-request-instance-fn reserve-instance-chan instance-id))
         (check-state-fn query-state-chan {:instance-id->blacklist-expiry-time {}
-                                          :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}
-                                                                                                   "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}}
-                                                                                    "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}}}
+                                          :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                                   "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                                    "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}}
                                           :instance-id->consecutive-failures {}
                                           :instance-id->state (-> {}
                                                                   (update-slot-state-fn "testabcd.h1" 2 2)
@@ -545,12 +547,12 @@
       (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan reserve-instance-chan update-state-chan]}
             (launch-service-chan-responder 6 {:id->instance id->instance-data
                                               :instance-id->blacklist-expiry-time {}
-                                              :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}
-                                                                                                       "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}}
-                                                                                        "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}}
-                                                                                        "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                                       "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}
-                                                                                        "testabcd.h4" {"req-6" {:cid "cid-6", :request-id "req-6", :reason :serve-request}}}
+                                              :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                                       "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                                        "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                                        "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                                       "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
+                                                                                        "testabcd.h4" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request}}}
                                               :instance-id->consecutive-failures {}
                                               :instance-id->state (-> {}
                                                                       (update-slot-state-fn "testabcd.h1" 2 2)
@@ -561,14 +563,14 @@
                                               :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4"]
                                               :work-stealing-queue (make-queue [])})]
         ; give fewer slots to some instances and verify the slot state does not change
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}]
-                            :unhealthy-instances [{:id "testabcd.u1"}, {:id "testabcd.u2"}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3]
+                            :unhealthy-instances [instance-u1 instance-u2]
                             :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u1" "testabcd.u2"]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 1, {:id "testabcd.h3"} 8}}]
+                            :my-instance->slots {instance-h1 1 instance-h2 1 instance-h3 8}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (doseq [instance-id ["testabcd.h3" "testabcd.h3"]]
           (check-reserve-request-instance-fn reserve-instance-chan instance-id))
-        ; trying to kill an instance will always give the same unhealthy instance, we rely on state updates to lose the unhealthy instance
+        ; trying to kill an instance will always give the same unhealthy instance we rely on state updates to lose the unhealthy instance
         (check-kill-request-instance-fn kill-instance-chan "testabcd.u2")
         (release-instance-fn release-instance-chan "testabcd.u2" 9 :not-killed)
         (check-state-fn query-state-chan {}) ;; ensure the release is executed
@@ -577,16 +579,16 @@
         ; check that state is still as expected
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}
-                                                                                  "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}}
-                                                                   "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}}
-                                                                   "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                  "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                  "req-7" {:cid "cid-7", :request-id "req-7", :reason :serve-request}
-                                                                                  "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}
-                                                                   "testabcd.h4" {"req-6" {:cid "cid-6", :request-id "req-6", :reason :serve-request}}
-                                                                   "testabcd.u1" {"req-11" {:cid "cid-11", :request-id "req-11", :reason :kill-instance}}
-                                                                   "testabcd.u2" {"req-10" {:cid "cid-10", :request-id "req-10", :reason :kill-instance}}}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                  "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                   "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                   "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                  "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                  "req-7" {:cid "cid-7" :request-id "req-7" :reason :serve-request}
+                                                                                  "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}
+                                                                   "testabcd.h4" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request}}
+                                                                   "testabcd.u1" {"req-11" {:cid "cid-11" :request-id "req-11" :reason :kill-instance}}
+                                                                   "testabcd.u2" {"req-10" {:cid "cid-10" :request-id "req-10" :reason :kill-instance}}}
                          :instance-id->consecutive-failures {}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 2)
@@ -603,16 +605,16 @@
       (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
             (launch-service-chan-responder 11 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}
-                                                                                                        "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}}
-                                                                                         "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}}
-                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                                        "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                                        "req-7" {:cid "cid-7", :request-id "req-7", :reason :serve-request}
-                                                                                                        "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}
-                                                                                         "testabcd.h4" {"req-6" {:cid "cid-6", :request-id "req-6", :reason :serve-request}}
-                                                                                         "testabcd.u2" {"req-10" {:cid "cid-10", :request-id "req-10", :reason :kill-instance}}
-                                                                                         "testabcd.u1" {"req-11" {:cid "cid-11", :request-id "req-11", :reason :kill-instance}}}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                                        "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                                         "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                                        "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                                        "req-7" {:cid "cid-7" :request-id "req-7" :reason :serve-request}
+                                                                                                        "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}
+                                                                                         "testabcd.h4" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request}}
+                                                                                         "testabcd.u2" {"req-10" {:cid "cid-10" :request-id "req-10" :reason :kill-instance}}
+                                                                                         "testabcd.u1" {"req-11" {:cid "cid-11" :request-id "req-11" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 2)
@@ -630,15 +632,15 @@
             (release-instance-fn release-instance-chan "testabcd.u2" 10 :killed)
             (check-state-fn query-state-chan
                             {:instance-id->blacklist-expiry-time {"testabcd.u2" (t/plus start-time (t/millis max-blacklist-time-ms))}
-                             :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}
-                                                                                      "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}}
-                                                                       "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}}
-                                                                       "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                      "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                      "req-7" {:cid "cid-7", :request-id "req-7", :reason :serve-request}
-                                                                                      "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}
-                                                                       "testabcd.h4" {"req-6" {:cid "cid-6", :request-id "req-6", :reason :serve-request}}
-                                                                       "testabcd.u1" {"req-11" {:cid "cid-11", :request-id "req-11", :reason :kill-instance}}}
+                             :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                      "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                       "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                       "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                      "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                      "req-7" {:cid "cid-7" :request-id "req-7" :reason :serve-request}
+                                                                                      "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}
+                                                                       "testabcd.h4" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request}}
+                                                                       "testabcd.u1" {"req-11" {:cid "cid-11" :request-id "req-11" :reason :kill-instance}}}
                              :instance-id->consecutive-failures {"testabcd.u2" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 1 2)
@@ -655,15 +657,15 @@
             (check-state-fn query-state-chan
                             {:instance-id->blacklist-expiry-time {"testabcd.u1" (t/plus start-time (t/millis max-blacklist-time-ms))
                                                                   "testabcd.u2" (t/plus start-time (t/millis max-blacklist-time-ms))}
-                             :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}
-                                                                                      "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}}
-                                                                       "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}}
-                                                                       "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                      "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                      "req-7" {:cid "cid-7", :request-id "req-7", :reason :serve-request}
-                                                                                      "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}
-                                                                       "testabcd.h4" {"req-6" {:cid "cid-6", :request-id "req-6", :reason :serve-request}}}
-                             :instance-id->consecutive-failures {"testabcd.u1" 1, "testabcd.u2" 1}
+                             :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                      "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                       "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                       "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                      "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                      "req-7" {:cid "cid-7" :request-id "req-7" :reason :serve-request}
+                                                                                      "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}
+                                                                       "testabcd.h4" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request}}}
+                             :instance-id->consecutive-failures {"testabcd.u1" 1 "testabcd.u2" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 1 2)
                                                      (update-slot-state-fn "testabcd.h2" 1 1)
@@ -678,22 +680,22 @@
                    @trigger-unblacklist-process-atom))
             (do
               (reset! current-time-atom (t/plus start-time (t/millis (+ 1000000 max-blacklist-time-ms))))
-              ; no more unhealthy instances to kill, all healthy instances are busy
+              ; no more unhealthy instances to kill all healthy instances are busy
               (check-kill-request-instance-fn kill-instance-chan :no-matching-instance-found :expect-deadlock true)
               (async/>!! unblacklist-instance-chan {:instance-id "testabcd.u1"})
               (async/>!! unblacklist-instance-chan {:instance-id "testabcd.u2"}))
             ; ensure blacklist was cleared due to expiry of period
             (check-state-fn query-state-chan
                             {:instance-id->blacklist-expiry-time {}
-                             :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}
-                                                                                      "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}}
-                                                                       "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}}
-                                                                       "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                      "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                      "req-7" {:cid "cid-7", :request-id "req-7", :reason :serve-request}
-                                                                                      "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}
-                                                                       "testabcd.h4" {"req-6" {:cid "cid-6", :request-id "req-6", :reason :serve-request}}}
-                             :instance-id->consecutive-failures {"testabcd.u1" 1, "testabcd.u2" 1}
+                             :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                      "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                       "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                       "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                      "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                      "req-7" {:cid "cid-7" :request-id "req-7" :reason :serve-request}
+                                                                                      "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}
+                                                                       "testabcd.h4" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request}}}
+                             :instance-id->consecutive-failures {"testabcd.u1" 1 "testabcd.u2" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 1 2)
                                                      (update-slot-state-fn "testabcd.h2" 1 1)
@@ -709,15 +711,15 @@
       (let [{:keys [blacklist-instance-chan exit-chan]}
             (launch-service-chan-responder 12 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}
-                                                                                                        "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}}
-                                                                                         "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}}
-                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                                        "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                                        "req-7" {:cid "cid-7", :request-id "req-7", :reason :serve-request}
-                                                                                                        "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}
-                                                                                         "testabcd.h4" {"req-6" {:cid "cid-6", :request-id "req-6", :reason :serve-request}}}
-                                               :instance-id->consecutive-failures {"testabcd.u2" 1, "testabcd.u1" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                                        "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                                         "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                                        "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                                        "req-7" {:cid "cid-7" :request-id "req-7" :reason :serve-request}
+                                                                                                        "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}
+                                                                                         "testabcd.h4" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request}}}
+                                               :instance-id->consecutive-failures {"testabcd.u2" 1 "testabcd.u1" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 2)
                                                                        (update-slot-state-fn "testabcd.h2" 1 1)
@@ -732,17 +734,17 @@
 
     (deftest test-start-service-chan-responder-release-success-instances
       (let [{:keys [exit-chan query-state-chan release-instance-chan update-state-chan]}
-            (launch-service-chan-responder 12 {:id->instance id->instance-data,
-                                               :instance-id->blacklist-expiry-time {},
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request},
-                                                                                                        "req-2" {:cid "cid-2", :request-id "req-2", :reason :serve-request}},
-                                                                                         "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}},
-                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request},
-                                                                                                        "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request},
-                                                                                                        "req-7" {:cid "cid-7", :request-id "req-7", :reason :serve-request},
-                                                                                                        "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}},
-                                                                                         "testabcd.h4" {"req-6" {:cid "cid-6", :request-id "req-6", :reason :serve-request}}},
-                                               :instance-id->consecutive-failures {"testabcd.u2" 1, "testabcd.u1" 1},
+            (launch-service-chan-responder 12 {:id->instance id->instance-data
+                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}
+                                                                                                        "req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request}}
+                                                                                         "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                                        "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                                        "req-7" {:cid "cid-7" :request-id "req-7" :reason :serve-request}
+                                                                                                        "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}
+                                                                                         "testabcd.h4" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request}}}
+                                               :instance-id->consecutive-failures {"testabcd.u2" 1 "testabcd.u1" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 2)
                                                                        (update-slot-state-fn "testabcd.h2" 1 1)
@@ -752,10 +754,10 @@
                                                                        (update-slot-state-fn "testabcd.u2" 0 0 #{:killed :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.u1" "testabcd.u2"]})]
         ; update state with newer unhealthy-instance
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h3"}, {:id "testabcd.h4"}, {:id "testabcd.h5"}]
-                            :unhealthy-instances [{:id "testabcd.u3"}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3 instance-h4 instance-h5]
+                            :unhealthy-instances [instance-u3]
                             :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.h5" "testabcd.u3"]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 1, {:id "testabcd.h3"} 8}}]
+                            :my-instance->slots {instance-h1 1 instance-h2 1 instance-h3 8}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         ; release a few slots and check state
         (release-instance-fn release-instance-chan "testabcd.h1" 2 :success)
@@ -767,11 +769,11 @@
         (release-instance-fn release-instance-chan "testabcd.h4" 106 :success)
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}}
-                                                                   "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                  "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                  "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}}
-                         :instance-id->consecutive-failures {"testabcd.u1" 1, "testabcd.u2" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
+                                                                   "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                  "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                  "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}}
+                         :instance-id->consecutive-failures {"testabcd.u1" 1 "testabcd.u2" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -785,11 +787,11 @@
       (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan update-state-chan]}
             (launch-service-chan-responder 12 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}}
-                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                                        "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                                        "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}}
-                                               :instance-id->consecutive-failures {"testabcd.u2" 1, "testabcd.u1" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
+                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                                        "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                                        "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}}
+                                               :instance-id->consecutive-failures {"testabcd.u2" 1 "testabcd.u1" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 1)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
@@ -798,17 +800,17 @@
                                                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.u1" "testabcd.u2" "testabcd.u3"]})]
         ; testabcd.h3 now becomes unhealthy
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h4"}, {:id "testabcd.h5"}]
-                            :unhealthy-instances [{:id "testabcd.h3"}, {:id "testabcd.u3"}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h4 instance-h5]
+                            :unhealthy-instances [instance-h3 instance-u3]
                             :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.h5" "testabcd.u3"]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 1}}]
+                            :my-instance->slots {instance-h1 1 instance-h2 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}}
-                                                                   "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                  "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                  "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
+                                                                   "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                  "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                  "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}}
                          :instance-id->consecutive-failures {}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
@@ -822,8 +824,8 @@
         (release-instance-fn release-instance-chan "testabcd.h3" 8 :success)
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}}
-                                                                   "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}}}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
+                                                                   "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}}}
                          :instance-id->consecutive-failures {}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
@@ -839,11 +841,11 @@
         (check-kill-request-instance-fn kill-instance-chan "testabcd.h2")
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}}
-                                                                   "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :kill-instance}}
-                                                                   "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}}
-                                                                   "testabcd.h4" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :kill-instance}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
+                                                                   "testabcd.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :kill-instance}}
+                                                                   "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}}
+                                                                   "testabcd.h4" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                          :instance-id->consecutive-failures {}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
@@ -859,11 +861,11 @@
       (let [{:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
             (launch-service-chan-responder 12 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}}
-                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}
-                                                                                                        "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}
-                                                                                                        "req-8" {:cid "cid-8", :request-id "req-8", :reason :serve-request}}}
-                                               :instance-id->consecutive-failures {"testabcd.u2" 1, "testabcd.u1" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
+                                                                                         "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                                        "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}
+                                                                                                        "req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request}}}
+                                               :instance-id->consecutive-failures {"testabcd.u2" 1 "testabcd.u1" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 1)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
@@ -881,8 +883,8 @@
             (check-state-fn query-state-chan
                             {:instance-id->blacklist-expiry-time {"testabcd.h1" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))
                                                                   "testabcd.h3" (t/plus start-time (t/millis (* (Math/pow 2 (dec 2)) blacklist-backoff-base-time-ms)))}
-                             :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}}
-                             :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.h3" 2, "testabcd.u1" 1, "testabcd.u2" 1}
+                             :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}}
+                             :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.h3" 2 "testabcd.u1" 1 "testabcd.u2" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 1 0 #{:blacklisted :healthy})
                                                      (update-slot-state-fn "testabcd.h2" 1 0)
@@ -900,9 +902,9 @@
               (async/>!! unblacklist-instance-chan {:instance-id "testabcd.h3"})
               (check-state-fn query-state-chan
                               {:instance-id->blacklist-expiry-time {}
-                               :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}
-                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.h3" 2, "testabcd.u1" 1, "testabcd.u2" 1}
+                               :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
+                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.h3" 2 "testabcd.u1" 1 "testabcd.u2" 1}
                                :instance-id->state (-> {}
                                                        (update-slot-state-fn "testabcd.h1" 1 0)
                                                        (update-slot-state-fn "testabcd.h2" 1 0)
@@ -918,8 +920,8 @@
       (let [{:keys [exit-chan kill-instance-chan query-state-chan]}
             (launch-service-chan-responder 13 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"testabcd.u2" 1
                                                                                    "testabcd.u1" 1
                                                                                    "testabcd.h1" 1
@@ -938,10 +940,10 @@
             (check-kill-request-instance-fn kill-instance-chan "testabcd.h4")))
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}
-                                                                   "testabcd.h4" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :kill-instance}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.h3" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
+                                                                   "testabcd.h4" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.h3" 2 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 0)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -956,8 +958,8 @@
       (let [{:keys [exit-chan kill-instance-chan query-state-chan]}
             (launch-service-chan-responder 13 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"testabcd.u2" 1
                                                                                    "testabcd.u1" 1
                                                                                    "testabcd.h1" 1
@@ -975,10 +977,10 @@
             (check-kill-request-instance-fn kill-instance-chan "testabcd.h2")))
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :kill-instance}}
-                                                                   "testabcd.h3" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.h3" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
+                                                                   "testabcd.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.h3" 2 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 0)
                                                  (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy :locked})
@@ -990,29 +992,30 @@
 
     (deftest test-start-service-chan-responder-kill-expired-instance-from-other-router
       (let [{:keys [exit-chan kill-instance-chan query-state-chan update-state-chan]}
-            (launch-service-chan-responder 13 {:id->instance id->instance-data
-                                               :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}}
-                                               :instance-id->consecutive-failures {"testabcd.u2" 1
-                                                                                   "testabcd.u1" 1
-                                                                                   "testabcd.h1" 1
-                                                                                   "testabcd.u3" 1}
-                                               :instance-id->state (-> {}
-                                                                       (update-slot-state-fn "testabcd.h1" 1 1)
-                                                                       (update-slot-state-fn "testabcd.h2" 1 0)
-                                                                       (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
-                                                                       (update-slot-state-fn "testabcd.u3" 0 0 #{:starting :unhealthy}))})]
+            (->> {:id->instance id->instance-data
+                  :instance-id->blacklist-expiry-time {}
+                  :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}}
+                  :instance-id->consecutive-failures {"testabcd.u2" 1
+                                                      "testabcd.u1" 1
+                                                      "testabcd.h1" 1
+                                                      "testabcd.u3" 1}
+                  :instance-id->state (-> {}
+                                          (update-slot-state-fn "testabcd.h1" 1 1)
+                                          (update-slot-state-fn "testabcd.h2" 1 0)
+                                          (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
+                                          (update-slot-state-fn "testabcd.u3" 0 0 #{:starting :unhealthy}))}
+                 (launch-service-chan-responder 13))]
         ; testabcd.h3 now becomes expired
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}]
-                            :unhealthy-instances [{:id "testabcd.u2"} {:id "testabcd.u3"}]
-                            :starting-instances [{:id "testabcd.u3"}]
-                            :expired-instances [{:id "testabcd.h3"}, {:id "testabcd.h4"}]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 1}}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2]
+                            :unhealthy-instances [instance-u2 instance-u3]
+                            :starting-instances [instance-u3]
+                            :expired-instances [instance-h3 instance-h4]
+                            :my-instance->slots {instance-h1 1 instance-h2 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan
-                        {:id->instance (select-keys id->instance-data #{"testabcd.h1", "testabcd.h2", "testabcd.h3", "testabcd.h4", "testabcd.u2", "testabcd.u3"})
+                        {:id->instance (select-keys id->instance-data #{"testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.u2" "testabcd.u3"})
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}}
                          :instance-id->consecutive-failures {"testabcd.u2" 1
                                                              "testabcd.h1" 1
                                                              "testabcd.u3" 1}
@@ -1031,9 +1034,9 @@
           (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 4 max-blacklist-time-ms))))]
             (check-kill-request-instance-fn kill-instance-chan "testabcd.u2")))
         ; testabcd.u3 becomes healthy
-        (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.u3"}]
-                            :expired-instances [{:id "testabcd.h3"}]
-                            :my-instance->slots {{:id "testabcd.h1"} 1, {:id "testabcd.h2"} 1}}]
+        (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-u3]
+                            :expired-instances [instance-h3]
+                            :my-instance->slots {instance-h1 1 instance-h2 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         ; expired instance should be killed
         (let [current-time (t/now)]
@@ -1041,11 +1044,11 @@
             (check-kill-request-instance-fn kill-instance-chan "testabcd.h3")))
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.u2" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :kill-instance}}
-                                                                   "testabcd.h3" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :kill-instance}}
-                                                                   "testabcd.h1" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}
+                         :instance-id->request-id->use-reason-map {"testabcd.u2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
+                                                                   "testabcd.h3" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :kill-instance}}
+                                                                   "testabcd.h1" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
                                                                    }
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1056,11 +1059,11 @@
 
     (deftest test-start-service-chan-responder-clear-failures
       (let [{:keys [exit-chan query-state-chan release-instance-chan]}
-            (launch-service-chan-responder 14 {:id->instance id->instance-data,
-                                               :instance-id->blacklist-expiry-time {},
-                                               :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}},
-                                                                                         "testabcd.h2" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :kill-instance}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}},
+            (launch-service-chan-responder 14 {:id->instance id->instance-data
+                                               :instance-id->blacklist-expiry-time {}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h3" {"req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}
+                                                                                         "testabcd.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"testabcd.u2" 1
                                                                                    "testabcd.u1" 1
                                                                                    "testabcd.h1" 1
@@ -1075,9 +1078,9 @@
         (release-instance-fn release-instance-chan "testabcd.h3" 5 :success)
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :kill-instance}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 0)
                                                  (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy :locked})
@@ -1089,11 +1092,11 @@
 
     (deftest test-start-service-chan-responder-release-without-killing
       (let [{:keys [exit-chan query-state-chan release-instance-chan]}
-            (launch-service-chan-responder 14 {:id->instance id->instance-data,
+            (launch-service-chan-responder 14 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :kill-instance}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :kill-instance}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy :locked})
@@ -1104,8 +1107,8 @@
         (release-instance-fn release-instance-chan "testabcd.h2" 14 :not-killed)
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 0)
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1117,8 +1120,8 @@
       (let [{:keys [blacklist-instance-chan exit-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1134,8 +1137,8 @@
             (check-blacklist-instance-fn blacklist-instance-chan "testabcd.h2" :blacklisted)
             (check-state-fn query-state-chan
                             {:instance-id->blacklist-expiry-time {"testabcd.h2" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))}
-                             :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                             :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                             :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                             :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 1 0)
                                                      (update-slot-state-fn "testabcd.h2" 1 0 #{:blacklisted :healthy})
@@ -1151,8 +1154,8 @@
             (release-instance-fn release-instance-chan "testabcd.hUnknown" 114 :success)
             (check-state-fn query-state-chan
                             {:instance-id->blacklist-expiry-time {}
-                             :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                             :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                             :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                             :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 1 0)
                                                      (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1164,8 +1167,8 @@
       (let [{:keys [blacklist-instance-chan exit-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1182,8 +1185,8 @@
             (check-state-fn query-state-chan
                             {:instance-id->blacklist-expiry-time {"testabcd.h8" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))
                                                                   "testabcd.h9" (t/plus start-time (t/millis blacklist-backoff-base-time-ms))}
-                             :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                             :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                             :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                             :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 1 0)
                                                      (update-slot-state-fn "testabcd.h2" 1 0 #{:healthy})
@@ -1203,8 +1206,8 @@
             (release-instance-fn release-instance-chan "testabcd.hUnknown" 114 :success)
             (check-state-fn query-state-chan
                             {:instance-id->blacklist-expiry-time {}
-                             :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                             :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                             :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                             :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 1 0)
                                                      (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1219,23 +1222,23 @@
       (let [{:keys [exit-chan query-state-chan reserve-instance-chan update-state-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 1 0)
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
                                                                        (update-slot-state-fn "testabcd.h3" 8 0)
                                                                        (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]})]
-        ; blacklist an instance which gets remove from state, it should not introduce any errors
+        ; blacklist an instance which gets remove from state it should not introduce any errors
         (check-reserve-request-instance-fn reserve-instance-chan "testabcd.h1")
         (check-reserve-request-instance-fn reserve-instance-chan "testabcd.h2")
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                   "testabcd.h2" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                   "testabcd.h2" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 1 1)
                                                  (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1243,17 +1246,17 @@
                                                  (update-slot-state-fn "testabcd.u3" 0 0 #{:locked :unhealthy}))
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
-        (let [update-state {:healthy-instances [{:id "testabcd.h2"}, {:id "testabcd.h3"}]
+        (let [update-state {:healthy-instances [instance-h2 instance-h3]
                             :unhealthy-instances []
                             :sorted-instance-ids ["testabcd.h2" "testabcd.h3"]
-                            :my-instance->slots {{:id "testabcd.h2"} 1, {:id "testabcd.h3"} 8}}]
+                            :my-instance->slots {instance-h2 1 instance-h3 8}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                   "testabcd.h2" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                   "testabcd.h2" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 0 1 #{})
                                                  (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1266,10 +1269,10 @@
     (deftest test-start-service-chan-responder-cause-instance-blacklist
       (let [{:keys [exit-chan query-state-chan release-instance-chan trigger-unblacklist-process-atom unblacklist-instance-chan]}
             (launch-service-chan-responder 16 {:instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                                         "testabcd.h2" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                                         "testabcd.h2" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 0 1 #{})
                                                                        (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1282,9 +1285,9 @@
             (release-instance-fn release-instance-chan "testabcd.h1" 15 :instance-error)
             (check-state-fn query-state-chan
                             {:instance-id->blacklist-expiry-time {"testabcd.h1" (t/plus start-time (t/millis (* (Math/pow 2 (dec 2)) blacklist-backoff-base-time-ms)))}
-                             :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                       "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                             :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                             :instance-id->request-id->use-reason-map {"testabcd.h2" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                       "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                             :instance-id->consecutive-failures {"testabcd.h1" 2 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                              :instance-id->state (-> {}
                                                      (update-slot-state-fn "testabcd.h1" 0 0 #{:blacklisted})
                                                      (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1299,8 +1302,8 @@
               (release-instance-fn release-instance-chan "testabcd.h2" 16 :success)
               (check-state-fn query-state-chan
                               {:instance-id->blacklist-expiry-time {}
-                               :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                               :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                               :instance-id->request-id->use-reason-map {"testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                               :instance-id->consecutive-failures {"testabcd.h1" 2 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                :instance-id->state (-> {}
                                                        (update-slot-state-fn "testabcd.h1" 0 0 #{})
                                                        (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1314,9 +1317,9 @@
       (let [{:keys [exit-chan query-state-chan reserve-instance-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1329,12 +1332,12 @@
         (check-reserve-request-instance-fn reserve-instance-chan "testabcd.h3")
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                   "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                   "testabcd.h3" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}
-                                                                                  "req-17" {:cid "cid-17", :request-id "req-17", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                   "testabcd.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                   "testabcd.h3" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}
+                                                                                  "req-17" {:cid "cid-17" :request-id "req-17" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1347,11 +1350,11 @@
     (deftest test-start-service-chan-responder-instance-cleanup-during-state-update
       (let [{:keys [exit-chan query-state-chan update-state-chan]}
             (launch-service-chan-responder 14 {:instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                                         "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                                         "testabcd.h3" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}
-                                                                                                        "req-17" {:cid "cid-17", :request-id "req-17", :reason :serve-request}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                                         "testabcd.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                                         "testabcd.h3" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}
+                                                                                                        "req-17" {:cid "cid-17" :request-id "req-17" :reason :serve-request}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                                                :instance-id->consecutive-failures {"testabcd.h1" 1
                                                                                    "testabcd.u1" 1
                                                                                    "testabcd.u2" 1
@@ -1372,17 +1375,17 @@
                                                                        (update-slot-state-fn "testabcd.u5" 0 0 #{:unhealthy}))
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.h4" "testabcd.h5" "testabcd.h6" "testabcd.h7"
                                                                      "testabcd.u1" "testabcd.u2" "testabcd.u3" "testabcd.u4" "testabcd.u5"]})]
-        (let [update-state {:healthy-instances [{:id "testabcd.h2"}, {:id "testabcd.h3"}, {:id "testabcd.h5"}, {:id "testabcd.h6"}]
-                            :unhealthy-instances [{:id "testabcd.u1"}, {:id "testabcd.u2"}]
-                            :my-instance->slots {{:id "testabcd.h2"} 1, {:id "testabcd.h3"} 8, {:id "testabcd.h5"} 9, {:id "testabcd.h6"} 1}}]
+        (let [update-state {:healthy-instances [instance-h2 instance-h3 instance-h5 instance-h6]
+                            :unhealthy-instances [instance-u1 instance-u2]
+                            :my-instance->slots {instance-h2 1 instance-h3 8 instance-h5 9 instance-h6 1}}]
           (async/>!! update-state-chan [update-state (t/now)]))
         (check-state-fn query-state-chan
                         {:instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                   "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                   "testabcd.h3" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}
-                                                                                  "req-17" {:cid "cid-17", :request-id "req-17", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                   "testabcd.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                   "testabcd.h3" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}
+                                                                                  "req-17" {:cid "cid-17" :request-id "req-17" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                          :instance-id->consecutive-failures {"testabcd.h1" 1
                                                              "testabcd.u1" 1
                                                              "testabcd.u2" 1
@@ -1405,9 +1408,9 @@
       (let [{:keys [exit-chan query-state-chan work-stealing-chan]}
             (launch-service-chan-responder 14 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1423,9 +1426,9 @@
           (check-state-fn query-state-chan
                           {:id->instance id->instance-data
                            :instance-id->blacklist-expiry-time {}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                     "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                           :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                     "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                           :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                    (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1442,10 +1445,10 @@
     (deftest test-start-service-chan-responder-offer-workstealing-instance-accepted
       (let [initial-state {:id->instance id->instance-data
                            :instance-id->blacklist-expiry-time {}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-11" {:cid "cid-11", :request-id "req-11", :reason :kill-instance}}
-                                                                     "testabcd.h2" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :serve-request}}
-                                                                     "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                           :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-11" {:cid "cid-11" :request-id "req-11" :reason :kill-instance}}
+                                                                     "testabcd.h2" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :serve-request}}
+                                                                     "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                           :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 1 0 #{:healthy :locked})
                                                    (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1472,9 +1475,9 @@
     (deftest test-start-service-chan-responder-offer-workstealing-instance-rejected
       (let [initial-state {:id->instance id->instance-data
                            :instance-id->blacklist-expiry-time {}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                     "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                           :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                     "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                           :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                    (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1504,9 +1507,9 @@
             {:keys [exit-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state test-instance-id->state
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                                                :request-id->work-stealer {}
@@ -1527,9 +1530,9 @@
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state (-> {}
                                                                        (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                                        (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1546,9 +1549,9 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1564,9 +1567,9 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1581,9 +1584,9 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state (-> {}
                                                  (update-slot-state-fn "testabcd.h1" 4 0 #{:healthy :locked})
                                                  (update-slot-state-fn "testabcd.h2" 1 0)
@@ -1610,9 +1613,9 @@
             {:keys [exit-chan query-state-chan release-instance-chan reserve-instance-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state test-instance-id->state
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                                                :request-id->work-stealer {}
@@ -1624,10 +1627,10 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                  "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                  "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")}
@@ -1637,11 +1640,11 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                  "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                   "testabcd.h2" {"req-19" {:cid "cid-19", :request-id "req-19", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                  "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                   "testabcd.h2" {"req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")
@@ -1654,11 +1657,11 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                  "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                   "testabcd.h2" {"req-19" {:cid "cid-19", :request-id "req-19", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                  "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                   "testabcd.h2" {"req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")
@@ -1682,12 +1685,12 @@
             {:keys [exit-chan query-state-chan release-instance-chan reserve-instance-chan]}
             (launch-service-chan-responder 17 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                                         "testabcd.h2" {"req-08" {:cid "cid-08", :request-id "req-08", :reason :serve-request}}
-                                                                                         "testabcd.h3" {"req-09" {:cid "cid-09", :request-id "req-09", :reason :serve-request}
-                                                                                                        "req-10" {:cid "cid-10", :request-id "req-10", :reason :serve-request}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                                         "testabcd.h2" {"req-08" {:cid "cid-08" :request-id "req-08" :reason :serve-request}}
+                                                                                         "testabcd.h3" {"req-09" {:cid "cid-09" :request-id "req-09" :reason :serve-request}
+                                                                                                        "req-10" {:cid "cid-10" :request-id "req-10" :reason :serve-request}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state test-instance-id->state
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                                                :request-id->work-stealer {}
@@ -1699,13 +1702,13 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                  "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                   "testabcd.h2" {"req-08" {:cid "cid-08", :request-id "req-08", :reason :serve-request}}
-                                                                   "testabcd.h3" {"req-09" {:cid "cid-09", :request-id "req-09", :reason :serve-request}
-                                                                                  "req-10" {:cid "cid-10", :request-id "req-10", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                  "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                   "testabcd.h2" {"req-08" {:cid "cid-08" :request-id "req-08" :reason :serve-request}}
+                                                                   "testabcd.h3" {"req-09" {:cid "cid-09" :request-id "req-09" :reason :serve-request}
+                                                                                  "req-10" {:cid "cid-10" :request-id "req-10" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")}
@@ -1715,14 +1718,14 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                  "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                   "testabcd.h2" {"req-08" {:cid "cid-08", :request-id "req-08", :reason :serve-request}
-                                                                                  "req-19" {:cid "cid-19", :request-id "req-19", :reason :serve-request}}
-                                                                   "testabcd.h3" {"req-09" {:cid "cid-09", :request-id "req-09", :reason :serve-request}
-                                                                                  "req-10" {:cid "cid-10", :request-id "req-10", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                  "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                   "testabcd.h2" {"req-08" {:cid "cid-08" :request-id "req-08" :reason :serve-request}
+                                                                                  "req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
+                                                                   "testabcd.h3" {"req-09" {:cid "cid-09" :request-id "req-09" :reason :serve-request}
+                                                                                  "req-10" {:cid "cid-10" :request-id "req-10" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")
@@ -1735,14 +1738,14 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                  "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                   "testabcd.h2" {"req-08" {:cid "cid-08", :request-id "req-08", :reason :serve-request}
-                                                                                  "req-19" {:cid "cid-19", :request-id "req-19", :reason :serve-request}}
-                                                                   "testabcd.h3" {"req-09" {:cid "cid-09", :request-id "req-09", :reason :serve-request}
-                                                                                  "req-10" {:cid "cid-10", :request-id "req-10", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                  "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                   "testabcd.h2" {"req-08" {:cid "cid-08" :request-id "req-08" :reason :serve-request}
+                                                                                  "req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
+                                                                   "testabcd.h3" {"req-09" {:cid "cid-09" :request-id "req-09" :reason :serve-request}
+                                                                                  "req-10" {:cid "cid-10" :request-id "req-10" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")
@@ -1765,27 +1768,27 @@
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 19 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                                        "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                                         "testabcd.h2" {"req-19" {:cid "cid-19", :request-id "req-19", :reason :serve-request}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                                        "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                                         "testabcd.h2" {"req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state test-instance-id->state
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
-                                               :request-id->work-stealer {"req-18" {:cid "cid-18", :instance {:id "testabcd.h1"}, :response-chan response-chan-1, :router-id "test-router-1"}
-                                                                          "req-19" {:cid "cid-19", :instance {:id "testabcd.h2"}, :response-chan response-chan-2, :router-id "test-router-2"}}
+                                               :request-id->work-stealer {"req-18" {:cid "cid-18" :instance instance-h1 :response-chan response-chan-1 :router-id "test-router-1"}
+                                                                          "req-19" {:cid "cid-19" :instance instance-h2 :response-chan response-chan-2 :router-id "test-router-2"}}
                                                :work-stealing-queue (make-queue [])})]
         (release-instance-fn release-instance-chan "testabcd.h2" 19 :success)
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                  "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                  "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
-                         :request-id->work-stealer {"req-18" {:cid "cid-18", :instance {:id "testabcd.h1"}, :response-chan response-chan-1, :router-id "test-router-1"}}
+                         :request-id->work-stealer {"req-18" {:cid "cid-18" :instance instance-h1 :response-chan response-chan-1 :router-id "test-router-1"}}
                          :work-stealing-queue (make-queue [])})
         (is (= 1 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
         (is (= :success (async/<!! response-chan-2)))
@@ -1793,9 +1796,9 @@
         (check-state-fn query-state-chan
                         {:id->instance id->instance-data
                          :instance-id->blacklist-expiry-time {}
-                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}}
-                                                                   "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                         :instance-id->consecutive-failures {"testabcd.u2" 1, "testabcd.u1" 1, "testabcd.u3" 1} ;; h1 loses its failure entry
+                         :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}}
+                                                                   "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                         :instance-id->consecutive-failures {"testabcd.u2" 1 "testabcd.u1" 1 "testabcd.u3" 1} ;; h1 loses its failure entry
                          :instance-id->state test-instance-id->state
                          :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                          :request-id->work-stealer {}
@@ -1817,11 +1820,11 @@
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 19 {:id->instance id->instance-data
                                                :instance-id->blacklist-expiry-time {}
-                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                                        "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                                         "testabcd.h2" {"req-19" {:cid "cid-19", :request-id "req-19", :reason :serve-request}}
-                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                                               :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                                               :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                                        "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                                         "testabcd.h2" {"req-19" {:cid "cid-19" :request-id "req-19" :reason :serve-request}}
+                                                                                         "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                                               :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                                                :instance-id->state test-instance-id->state
                                                :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
                                                :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "testabcd.h1" response-chan-1 "test-router-1")
@@ -1833,10 +1836,10 @@
             (check-state-fn query-state-chan
                             {:id->instance id->instance-data
                              :instance-id->blacklist-expiry-time {"testabcd.h2" (t/plus current-time (t/millis blacklist-backoff-base-time-ms))}
-                             :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12", :request-id "req-12", :reason :kill-instance}
-                                                                                      "req-18" {:cid "cid-18", :request-id "req-18", :reason :serve-request}}
-                                                                       "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                             :instance-id->consecutive-failures {"testabcd.h1" 1, "testabcd.h2" 1, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                             :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-12" {:cid "cid-12" :request-id "req-12" :reason :kill-instance}
+                                                                                      "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
+                                                                       "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                             :instance-id->consecutive-failures {"testabcd.h1" 1 "testabcd.h2" 1 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                              :instance-id->state (-> test-instance-id->state
                                                      (update-slot-state-fn "testabcd.h2" 1 0 #{:blacklisted :healthy}))
                              :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.h3" "testabcd.u3"]
@@ -1848,13 +1851,13 @@
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-release-async-request-assigned-instance
-      (let [initial-state {:id->instance id->instance-data,
-                           :instance-id->blacklist-expiry-time {},
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}},
-                                                                     "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}},
-                                                                     "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request},
-                                                                                    "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}},
-                           :instance-id->consecutive-failures {"testabcd.h3" 2, "testabcd.u2" 1, "testabcd.u1" 1},
+      (let [initial-state {:id->instance id->instance-data
+                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                     "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                    "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}}
+                           :instance-id->consecutive-failures {"testabcd.h3" 2 "testabcd.u2" 1 "testabcd.u1" 1}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 1 1)
                                                    (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1882,13 +1885,13 @@
     (deftest test-start-service-chan-responder-release-async-request-work-stealing-instance
       (let [response-chan-1 (async/chan 4)
             response-chan-2 (async/chan 1)
-            initial-state {:id->instance id->instance-data,
-                           :instance-id->blacklist-expiry-time {},
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1", :request-id "req-1", :reason :serve-request}},
-                                                                     "testabcd.h2" {"req-3" {:cid "cid-3", :request-id "req-3", :reason :serve-request}},
-                                                                     "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request},
-                                                                                    "req-5" {:cid "cid-5", :request-id "req-5", :reason :serve-request}}},
-                           :instance-id->consecutive-failures {"testabcd.h3" 2, "testabcd.u2" 1, "testabcd.u1" 1},
+            initial-state {:id->instance id->instance-data
+                           :instance-id->blacklist-expiry-time {}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-3" {:cid "cid-3" :request-id "req-3" :reason :serve-request}}
+                                                                     "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}
+                                                                                    "req-5" {:cid "cid-5" :request-id "req-5" :reason :serve-request}}}
+                           :instance-id->consecutive-failures {"testabcd.h3" 2 "testabcd.u2" 1 "testabcd.u1" 1}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 1 1)
                                                    (update-slot-state-fn "testabcd.h2" 1 1)
@@ -1900,7 +1903,7 @@
                            :work-stealing-queue (make-queue [(make-work-stealing-data "cid-7" "testabcd.h4" response-chan-2 "test-router-1")])}
             {:keys [exit-chan query-state-chan release-instance-chan]}
             (launch-service-chan-responder 10 initial-state)]
-        ; release a success async, it also triggers release of the work-stealing head
+        ; release a success async it also triggers release of the work-stealing head
         (release-instance-fn release-instance-chan "testabcd.h3" 4 :success-async)
         (check-state-fn query-state-chan
                         (-> initial-state
@@ -1923,10 +1926,10 @@
 
     (deftest test-start-service-chan-responder-successfully-release-blacklisted-instance
       (let [initial-state {:instance-id->blacklist-expiry-time {"testabcd.h1" (t/plus (t/now) (t/millis 100000))}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                     "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                     "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                           :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                     "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                           :instance-id->consecutive-failures {"testabcd.h1" 2 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 2 1 #{:blacklisted :healthy})
                                                    (update-slot-state-fn "testabcd.h2" 2 1 #{:healthy})
@@ -1947,10 +1950,10 @@
 
     (deftest test-start-service-chan-responder-successfully-release-borrowed-blacklisted-instance
       (let [initial-state {:instance-id->blacklist-expiry-time {"testabcd.h1" (t/plus (t/now) (t/millis 100000))}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                     "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                     "testabcd.u3" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}}
-                           :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                     "testabcd.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
+                           :instance-id->consecutive-failures {"testabcd.h1" 2 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 0 1 #{:blacklisted :healthy})
                                                    (update-slot-state-fn "testabcd.h2" 2 1 #{:healthy})
@@ -1971,12 +1974,12 @@
 
     (deftest test-start-service-chan-responder-slot-counts-for-locked-and-blacklisted-instance
       (let [initial-state {:instance-id->blacklist-expiry-time {"testabcd.h1" (t/plus (t/now) (t/millis 100000))}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                     "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                     "testabcd.h4" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}
-                                                                     "testabcd.h5" {"req-10" {:cid "cid-10", :request-id "req-10", :reason :serve-request}
-                                                                                    "req-11" {:cid "cid-11", :request-id "req-11", :reason :serve-request}}}
-                           :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                     "testabcd.h4" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}
+                                                                     "testabcd.h5" {"req-10" {:cid "cid-10" :request-id "req-10" :reason :serve-request}
+                                                                                    "req-11" {:cid "cid-11" :request-id "req-11" :reason :serve-request}}}
+                           :instance-id->consecutive-failures {"testabcd.h1" 2 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 2 1 #{:blacklisted :healthy})
                                                    (update-slot-state-fn "testabcd.h2" 3 1 #{:healthy})
@@ -1987,15 +1990,15 @@
             (launch-service-chan-responder 16 initial-state)]
 
         (check-state-fn query-state-chan initial-state)
-        (assert-instance-counters {"slots-assigned" 23, "slots-available" 9, "slots-in-use" 4})
+        (assert-instance-counters {"slots-assigned" 23 "slots-available" 9 "slots-in-use" 4})
         (async/>!! exit-chan :exit)))
 
     (deftest test-start-service-chan-responder-successfully-release-work-stealing-instance-success-async
       (let [response-chan-1 (async/chan 4)
             initial-state {:instance-id->blacklist-expiry-time {}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                     "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                     "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}}}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                     "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}}}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 0 1 #{:blacklisted :healthy})
@@ -2063,10 +2066,10 @@
     (deftest test-start-service-chan-responder-no-idle-instance-available-for-kill
       (let [response-chan-1 (async/chan 4)
             initial-state {:instance-id->blacklist-expiry-time {}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                     "testabcd.h2" {"req-14" {:cid "cid-14", :request-id "req-14", :reason :serve-request}
-                                                                                    "req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                     "testabcd.h3" {"req-4" {:cid "cid-4", :request-id "req-4", :reason :serve-request}}}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-14" {:cid "cid-14" :request-id "req-14" :reason :serve-request}
+                                                                                    "req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                     "testabcd.h3" {"req-4" {:cid "cid-4" :request-id "req-4" :reason :serve-request}}}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 0 1 #{:blacklisted :healthy})
@@ -2089,12 +2092,12 @@
                                                                 "testabcd.h2" (t/minus current-time (t/millis 2000))
                                                                 "testabcd.h3" (t/minus current-time (t/millis 3000))
                                                                 "testabcd.h4" (t/plus current-time (t/millis 10000))}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}
-                                                                     "testabcd.h2" {"req-15" {:cid "cid-15", :request-id "req-15", :reason :serve-request}}
-                                                                     "testabcd.h4" {"req-13" {:cid "cid-13", :request-id "req-13", :reason :kill-instance}}
-                                                                     "testabcd.h5" {"req-10" {:cid "cid-10", :request-id "req-10", :reason :serve-request}
-                                                                                    "req-11" {:cid "cid-11", :request-id "req-11", :reason :serve-request}}}
-                           :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1, "testabcd.u3" 1}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
+                                                                     "testabcd.h2" {"req-15" {:cid "cid-15" :request-id "req-15" :reason :serve-request}}
+                                                                     "testabcd.h4" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}
+                                                                     "testabcd.h5" {"req-10" {:cid "cid-10" :request-id "req-10" :reason :serve-request}
+                                                                                    "req-11" {:cid "cid-11" :request-id "req-11" :reason :serve-request}}}
+                           :instance-id->consecutive-failures {"testabcd.h1" 2 "testabcd.u1" 1 "testabcd.u2" 1 "testabcd.u3" 1}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 2 1 #{:blacklisted :healthy})
                                                    (update-slot-state-fn "testabcd.h2" 3 1 #{:blacklisted :healthy})
@@ -2107,16 +2110,16 @@
         (check-state-fn query-state-chan initial-state)
 
         (testing "check unblacklist cleanup during state update"
-          (let [update-state {:healthy-instances [{:id "testabcd.h1"}, {:id "testabcd.h2"}, {:id "testabcd.h5"}, {:id "testabcd.h6"}]
-                              :unhealthy-instances [{:id "testabcd.u1"}, {:id "testabcd.u2"}]
-                              :my-instance->slots {{:id "testabcd.h1"} 5, {:id "testabcd.h2"} 2, {:id "testabcd.h3"} 8,
-                                                   {:id "testabcd.h4"} 2, {:id "testabcd.h5"} 1}}]
+          (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h5 instance-h6]
+                              :unhealthy-instances [instance-u1 instance-u2]
+                              :my-instance->slots {instance-h1 5 instance-h2 2 instance-h3 8
+                                                   instance-h4 2 instance-h5 1}}]
             (async/>!! update-state-chan [update-state current-time]))
 
           (check-state-fn query-state-chan
                           (-> initial-state
                               (assoc :instance-id->blacklist-expiry-time {"testabcd.h4" (t/plus current-time (t/millis 10000))}
-                                     :instance-id->consecutive-failures {"testabcd.h1" 2, "testabcd.u1" 1, "testabcd.u2" 1}
+                                     :instance-id->consecutive-failures {"testabcd.h1" 2 "testabcd.u1" 1 "testabcd.u2" 1}
                                      :instance-id->state (-> {}
                                                              (update-slot-state-fn "testabcd.h1" 5 1 #{:healthy})
                                                              (update-slot-state-fn "testabcd.h2" 2 1 #{:healthy})
@@ -2133,7 +2136,7 @@
       (let [response-chan-1 (async/promise-chan)
             response-chan-2 (async/promise-chan)
             initial-state {:instance-id->blacklist-expiry-time {}
-                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16", :request-id "req-16", :reason :serve-request}}}
+                           :instance-id->request-id->use-reason-map {"testabcd.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}}
                            :instance-id->consecutive-failures {}
                            :instance-id->state (-> {}
                                                    (update-slot-state-fn "testabcd.h1" 1 1 #{:healthy}))
