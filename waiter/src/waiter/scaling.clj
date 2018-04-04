@@ -158,10 +158,10 @@
     (cid/cinfo correlation-id "received request to kill instance of" service-id "from" src-router-id)
     (async/go
       (let [response-chan (async/promise-chan)
-            instance-killed? (-> (execute-scale-down-request
-                                   scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
-                                   service-id correlation-id 1 response-chan)
-                                 async/<!)
+            instance-killed? (async/<!
+                               (execute-scale-down-request
+                                 scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
+                                 service-id correlation-id 1 response-chan))
             {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
                                                                {:message :no-instance-killed, :status 404})]
         (if instance-killed?
@@ -230,10 +230,10 @@
                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "total"))
                           (if (or (nil? last-scale-down-time)
                                   (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
-                            (if (or (-> (execute-scale-down-request
-                                          scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
-                                          service-id correlation-id num-instances-to-kill response-chan)
-                                        async/<!)
+                            (if (or (async/<!
+                                      (execute-scale-down-request
+                                        scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
+                                        service-id correlation-id num-instances-to-kill response-chan))
                                     (delegate-instance-kill-request-fn service-id))
                               (assoc executor-state :last-scale-down-time (t/now))
                               executor-state)

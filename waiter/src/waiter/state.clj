@@ -32,20 +32,20 @@
 ;; Router state maintainers
 
 (defn- healthy?
-  "Predicate on instances containing only the :healthy and the :expired status tags."
-  [status-tags]
+  "Predicate on instances containing the :healthy status tag and optionally the :expired status tag."
+  [{:keys [status-tags]}]
   (or (= #{:healthy} status-tags)
       (= #{:healthy :expired} status-tags)))
 
 (defn- expired?
   "Predicate on instances containing the :expired status tag."
-  [status-tags]
+  [{:keys [status-tags]}]
   (contains? status-tags :expired))
 
 (defn- slots-available?
   "Predicate on healthy instances with available slots greater than used slots."
-  [{:keys [slots-assigned slots-used status-tags]}]
-  (and (healthy? status-tags) (> slots-assigned slots-used)))
+  [{:keys [slots-assigned slots-used] :as state}]
+  (and (healthy? state) (> slots-assigned slots-used)))
 
 (defn- killable?
   "Only instances without slots used and not killed|locked can be killed."
@@ -59,7 +59,7 @@
   (reduce #(if (pos? (comparison-fn %1 %2)) %1 %2) (first collection) (rest collection)))
 
 (defn- only-lingering-requests?
-  "Retrurns truthy value if the instance is idle or processing expired requests based on the earliest-request-threshold-time"
+  "Returns truthy value if the instance is idle or processing expired requests based on the earliest-request-threshold-time"
   [request-id->use-reason-map earliest-request-threshold-time]
   (every? #(t/before? % earliest-request-threshold-time)
           (->> request-id->use-reason-map
@@ -69,17 +69,16 @@
 (defn find-oldest-acceptable-expired-instance
   "Retrieves the _oldest_ acceptable expired instance. An expired instance is acceptable if:
    1. it passes the acceptable-instance-id? predicate, and
-   2. it is idle or all its requests are older than lingering-request-threshold-ms ms.
-   We do not explicitly check whether instances are idle as `find-killable-instance` should handle that scenario."
+   2. it is idle or all its requests are older than lingering-request-threshold-ms ms."
   [instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state acceptable-instance-id?]
   (some->> instance-id->state
-           (filter (fn [[_ {:keys [status-tags]}]] (expired? status-tags)))
+           (filter (fn [[_ state]] (expired? state)))
            seq ;; trigger short-circuit if there are no expired instances
            (filter (fn [[instance-id _]] (acceptable-instance-id? instance-id)))
            (filter (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))]
                      (fn [[instance-id _]]
                        (-> (instance-id->request-id->use-reason-map instance-id)
-                           (only-lingering-requests?  earliest-request-threshold-time)))))
+                           (only-lingering-requests? earliest-request-threshold-time)))))
            (find-max #(scheduler/instance-comparator (id->instance (first %2)) (id->instance (first %1))))
            first ; extract the instance-id
            id->instance))
@@ -134,7 +133,7 @@
   "For servicing requests, choose the _oldest_ live healthy instance with available slots.
    If such an instance does not exist, choose the _youngest_ expired healthy instance with available slots."
   [sorted-instance-ids id->instance instance-id->state acceptable-instance-id?]
-  (let [expired-instance? (fn [instance-id] (-> (instance-id->state instance-id) :status-tags expired?))
+  (let [expired-instance? (fn [instance-id] (-> (instance-id->state instance-id) expired?))
         order-instance-ids-based-on-expired-state (fn [instance-ids]
                                                     (or (->> instance-ids
                                                              (remove expired-instance?)
@@ -146,10 +145,10 @@
     (->> sorted-instance-ids
          (filter acceptable-instance-id?)
          (filter (fn [instance-id]
-                   (let [{:keys [status-tags] :as state} (instance-id->state instance-id)]
+                   (let [state (instance-id->state instance-id)]
                      (and (not (nil? state))
                           (slots-available? state)
-                          (healthy? status-tags)))))
+                          (healthy? state)))))
          order-instance-ids-based-on-expired-state
          first
          id->instance)))
@@ -378,7 +377,7 @@
   [{:keys [id->instance instance-id->request-id->use-reason-map instance-id->state] :as current-state}
    update-status-tag-fn lingering-request-threshold-ms [{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (let [acceptable-instance-id? #(not (contains? exclude-ids-set %))
-        ;; look for idle killable instance first before force killing an expired instance
+        ;; look for idle killable instance first before choosing an expired instance with lingering requests
         instance (or (find-killable-instance id->instance instance-id->state acceptable-instance-id?)
                      (find-oldest-acceptable-expired-instance
                        instance-id->request-id->use-reason-map lingering-request-threshold-ms id->instance instance-id->state
@@ -454,7 +453,7 @@
               (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
               (get instance-id->state instance-id))
     ;; cannot blacklist if the instance is currently servicing a request
-    (let [instance-not-allowed? (if (-> (instance-id->state instance-id) :status-tags expired?)
+    (let [instance-not-allowed? (if (-> (instance-id->state instance-id) expired?)
                                   (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))]
                                     (-> (instance-id->request-id->use-reason-map instance-id)
                                         (only-lingering-requests? earliest-request-threshold-time)
