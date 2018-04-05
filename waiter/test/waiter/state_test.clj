@@ -404,7 +404,15 @@
         (with-redefs [t/now (constantly current-time)]
           (let [exclude-ids-set (or exclude-ids-set #{})
                 id->instance (or id->instance all-id->instance)
-                sorted-instance-ids (or sorted-instance-ids all-sorted-instance-ids)
+                sorted-instance-ids (or sorted-instance-ids
+                                        (let [expired-instance-ids (->> instance-id->state
+                                                                        (filter (fn [[_ state]] (expired? state)))
+                                                                        (map first)
+                                                                        set)]
+                                          (->> (keys instance-id->state)
+                                               (map id->instance)
+                                               (sort-instances-for-processing expired-instance-ids)
+                                               (map :id))))
                 acceptable-instance-id? (fn [instance-id] (not (contains? exclude-ids-set instance-id)))
                 instance-id->request-id->use-reason-map (or instance-id->request-id->use-reason-map {})
                 actual (if (= :kill-instance reason)

@@ -201,6 +201,7 @@
                            "testabcd.u1" instance-u1
                            "testabcd.u2" instance-u2
                            "testabcd.u3" instance-u3}]
+
     (deftest test-start-service-chan-responder-simple-state-updates
       (let [{:keys [exit-chan query-state-chan update-state-chan]}
             (launch-service-chan-responder 0 {})]
@@ -222,7 +223,7 @@
                                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
                                                                   (update-slot-state-fn "testabcd.u3" 0 0 #{:starting :unhealthy}))
                                           :sorted-instance-ids ["testabcd.u1" "testabcd.h2" "testabcd.u2" "testabcd.u3"
-                                                                "testabcd.h1" "testabcd.h3"]})
+                                                                "testabcd.h3" "testabcd.h1"]})
         (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h3 instance-h4 instance-h5]
                             :unhealthy-instances [instance-u1 instance-u3] ; drop testabcd.u2 from update
                             :starting-instances [] ; remove testabcd.u3 from starting
@@ -303,7 +304,7 @@
                                                                   (update-slot-state-fn "testabcd.u1" 0 0 #{:unhealthy})
                                                                   (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy}))
                                           :request-id->work-stealer {}
-                                          :sorted-instance-ids ["testabcd.u1" "testabcd.h2" "testabcd.u2" "testabcd.h1" "testabcd.h3"]
+                                          :sorted-instance-ids ["testabcd.u1" "testabcd.h2" "testabcd.u2" "testabcd.h3" "testabcd.h1"]
                                           :work-stealing-queue (make-queue [])})
         (let [update-state {:healthy-instances [instance-h1 instance-h2 instance-h4 instance-h5]
                             :unhealthy-instances [instance-u1] ; drop testabcd.u2 from update
@@ -1027,7 +1028,7 @@
                                                  (update-slot-state-fn "testabcd.u2" 0 0 #{:unhealthy})
                                                  (update-slot-state-fn "testabcd.u3" 0 0 #{:starting :unhealthy}))
                          :request-id->work-stealer {}
-                         :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.u2" "testabcd.u3" "testabcd.h3" "testabcd.h4"]
+                         :sorted-instance-ids ["testabcd.h1" "testabcd.h2" "testabcd.u2" "testabcd.u3" "testabcd.h4" "testabcd.h3"]
                          :work-stealing-queue (make-queue [])})
         ; testabcd.u2 should be killed because it is not starting
         (let [current-time (t/now)]
