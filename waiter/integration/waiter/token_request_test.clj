@@ -111,7 +111,7 @@
                                               :owner (retrieve-username)
                                               :root ~token-root)
                      (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
-             (dissoc token-description# :last-update-time))))))
+             (dissoc token-description# :last-update-time :previous))))))
 
 (deftest ^:parallel ^:integration-fast test-token-create-delete
   (testing-using-waiter-url
@@ -159,6 +159,11 @@
                                                             :request-headers {})
                   actual-etag (get headers "etag")]
               (assert-response-status response 200)
+              (let [token-description (-> response :body json/read-str)]
+                (is (= {"health-check-url" "/check", "name" service-id-prefix}
+                       (-> token-description (get-in (repeat 2 "previous")) (select-keys sd/service-description-keys))))
+                (is (= {"health-check-url" "/health", "name" service-id-prefix}
+                       (-> token-description (get-in (repeat 1 "previous")) (select-keys sd/service-description-keys)))))
               (is actual-etag)))
           (testing "via x-waiter-token header"
             (let [{:keys [body headers] :as response} (get-token waiter-url token :cookies cookies)
@@ -171,7 +176,12 @@
                                                          last-update-time
                                                          (assoc "last-update-time"
                                                                 (-> last-update-time utils/str-to-date .getMillis))))
-                      expected-etag (->> body json/read-str convert-last-update-time utils/parameters->id (str "E-"))]
+                      expected-etag (str "E-"
+                                         (-> body
+                                             json/read-str
+                                             convert-last-update-time
+                                             (dissoc "previous")
+                                             utils/parameters->id))]
                   (is (= expected-etag actual-etag))))))))
 
       (log/info "ensuring tokens can be retrieved and listed on each router")
@@ -276,6 +286,7 @@
                         "last-update-user" (retrieve-username)
                         "name" service-id-prefix
                         "owner" (retrieve-username)
+                        "previous" {}
                         "root" token-root}
                        (dissoc response-body "last-update-time"))))
               (log/info "asserted retrieval of configuration for token" token))
@@ -400,7 +411,7 @@
                           "owner" (retrieve-username)
                           "root" token-root
                           "run-as-user" "i-do-not-exist-but-will-not-be-checked"}
-                         response-body))
+                         (dissoc response-body "previous")))
                   (log/info "asserted retrieval of configuration for token" token)))
 
               (testing "update with invalid etag"
@@ -476,7 +487,7 @@
                         "owner" (retrieve-username)
                         "root" token-root
                         "run-as-user" "foo-bar"}
-                       response-body)))
+                       (dissoc response-body "previous"))))
               (log/info "asserted retrieval of configuration for token" token)
               (finally
                 (delete-token-and-assert waiter-url token)))))))))
@@ -727,36 +738,37 @@
             (is (= 400 status))
             (is (str/includes? body "Some params cannot be configured"))))
         (let [service-ids (->> [(async/thread
-                            (run-token-param-support
-                              waiter-url kitchen-request
-                              {:x-waiter-token token}
-                              {:BINARY binary :FEE "FIE" :FOO "BAR"}))
-                          (async/thread
-                            (run-token-param-support
-                              waiter-url kitchen-request
-                              {:x-waiter-param-fee "value-1p" :x-waiter-token token}
-                              {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
-                          (async/thread
-                            (run-token-param-support
-                              waiter-url kitchen-request
-                              {:x-waiter-allowed-params ["FEE" "FII" "FOO"] :x-waiter-param-fee "value-1p" :x-waiter-token token}
-                              {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
-                          (async/thread
-                            (run-token-param-support
-                              waiter-url kitchen-request
-                              {:x-waiter-allowed-params "FEE,FOO" :x-waiter-param-fee "value-1p" :x-waiter-token token}
-                              {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
-                          (async/thread
-                            (run-token-param-support
-                              waiter-url kitchen-request
-                              {:x-waiter-param-fee "value-1p" :x-waiter-param-foo "value-2p" :x-waiter-token token}
-                              {:BINARY binary :FEE "value-1p" :FOO "value-2p"}))]
-                         (map async/<!!)
-                         doall
-                         (into #{}))]
+                                  (run-token-param-support
+                                    waiter-url kitchen-request
+                                    {:x-waiter-token token}
+                                    {:BINARY binary :FEE "FIE" :FOO "BAR"}))
+                                (async/thread
+                                  (run-token-param-support
+                                    waiter-url kitchen-request
+                                    {:x-waiter-param-fee "value-1p" :x-waiter-token token}
+                                    {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
+                                (async/thread
+                                  (run-token-param-support
+                                    waiter-url kitchen-request
+                                    {:x-waiter-allowed-params ["FEE" "FII" "FOO"] :x-waiter-param-fee "value-1p" :x-waiter-token token}
+                                    {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
+                                (async/thread
+                                  (run-token-param-support
+                                    waiter-url kitchen-request
+                                    {:x-waiter-allowed-params "FEE,FOO" :x-waiter-param-fee "value-1p" :x-waiter-token token}
+                                    {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
+                                (async/thread
+                                  (run-token-param-support
+                                    waiter-url kitchen-request
+                                    {:x-waiter-param-fee "value-1p" :x-waiter-param-foo "value-2p" :x-waiter-token token}
+                                    {:BINARY binary :FEE "value-1p" :FOO "value-2p"}))]
+                               (map async/<!!)
+                               doall
+                               (into #{}))]
           (is (= 5 (count service-ids)) "Unique service-ids were not created!"))
         (finally
-          (delete-token-and-assert waiter-url token))))))
+          (delete-token-and-assert waiter-url token)
+          (delete-token-and-assert waiter-url (str token ".1")))))))
 
 (deftest ^:parallel ^:integration-fast test-token-invalid-environment-variables
   (testing-using-waiter-url
@@ -806,6 +818,7 @@
             (is (= (assoc service-description
                      :last-update-user (retrieve-username)
                      :owner (retrieve-username)
+                     :previous {}
                      :root token-root)
                    (dissoc response-body :last-update-time)))))
 
@@ -940,6 +953,7 @@
                      :authentication "disabled"
                      :last-update-user current-user
                      :owner current-user
+                     :previous {}
                      :root token-root)
                    (dissoc response-body :last-update-time)))))
 

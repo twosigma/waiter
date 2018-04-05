@@ -113,7 +113,7 @@
 (def ^:const on-the-fly-service-description-keys (set/union service-description-keys #{"token"}))
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
-(def ^:const token-metadata-keys #{"deleted" "last-update-time" "last-update-user" "owner" "root"})
+(def ^:const token-metadata-keys #{"deleted" "last-update-time" "last-update-user" "owner" "previous" "root"})
 
 ; keys allowed in the token data
 (def ^:const token-data-keys (set/union service-description-keys token-metadata-keys))
@@ -443,7 +443,9 @@
   [kv-store ^String token error-on-missing include-deleted]
   (let [{:strs [deleted run-as-user] :as token-data} (when token (kv/fetch kv-store token))
         token-data (when token-data ; populate token owner for backwards compatibility
-                     (update-in token-data ["owner"] (fn [current-owner] (or current-owner run-as-user))))]
+                     (cond-> token-data
+                             (not (contains? token-data "owner")) (assoc "owner" run-as-user)
+                             (not (contains? token-data "previous")) (assoc "previous" {})))]
     (when (and error-on-missing (not token-data))
       (throw (ex-info (str "Token not found: " token) {:status 400})))
     (log/debug "Extracted data for" token "is" token-data)

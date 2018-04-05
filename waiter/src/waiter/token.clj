@@ -21,8 +21,21 @@
             [waiter.utils :as utils])
   (:import (org.joda.time DateTime)))
 
+(def ^:const history-length 5) ;; TODO (shams) make this a config
 (def ^:const ANY-USER "*")
 (def ^:const valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+")
+
+(defn sanitize-history
+  "Limits the history length stored in the token-data."
+  [history-length token-data]
+  (utils/dissoc-in token-data (repeat history-length "previous")))
+
+(defn ensure-history
+  "Ensures a non-nil previous entry exists in `token-data`.
+   If one already was present when this function was called, returns `token-data` unmodified.
+   Else if assocs `(or previous {})` into `token-data`."
+  [previous token-data]
+  (update token-data "previous" (fn [current-previous] (or current-previous previous {}))))
 
 (let [etag-prefix "E-"]
   (defn token-data->etag
@@ -31,6 +44,7 @@
     (when (seq token-data)
       (str etag-prefix (-> token-data
                            (select-keys sd/token-data-keys)
+                           (dissoc "previous")
                            utils/parameters->id)))))
 
 (defn- token-description->etag
@@ -85,13 +99,17 @@
         (let [token-description (merge service-description-template (select-keys token-metadata sd/token-metadata-keys))
               {:strs [deleted owner] :as new-token-data} (sd/sanitize-service-description token-description sd/token-data-keys)
               existing-token-data (kv/fetch kv-store token :refresh true)
+              existing-token-data (if-not (get existing-token-data "deleted") existing-token-data {})
               existing-token-description (sd/token-data->token-description existing-token-data)
               existing-owner (get existing-token-data "owner")
               owner->owner-key (kv/fetch kv-store token-owners-key)]
           ; Validate the token modification for concurrency races
           (validate-token-modification-based-on-etag existing-token-description version-etag)
           ; Store the service description
-          (kv/store kv-store token new-token-data)
+          (->> new-token-data
+               (ensure-history existing-token-data)
+               (sanitize-history history-length)
+               (kv/store kv-store token))
           ; Remove token from previous owner
           (when (and existing-owner (not= owner existing-owner))
             (let [previous-owner-key (ensure-owner-key kv-store owner->owner-key existing-owner)]
@@ -124,7 +142,10 @@
                                      "deleted" true
                                      "last-update-time" (.getMillis ^DateTime (clock))
                                      "last-update-user" authenticated-user)]
-                (kv/store kv-store token new-token-data)))))
+                (->> new-token-data
+                     (ensure-history existing-token-data)
+                     (sanitize-history history-length)
+                     (kv/store kv-store token))))))
         ; Remove token from owner (hard-delete) or set the deleted flag (soft-delete)
         (when owner
           (let [owner->owner-key (kv/fetch kv-store token-owners-key)
@@ -377,10 +398,20 @@
         (when (contains? new-token-metadata "root")
           (throw (ex-info "Cannot modify root token metadata"
                           {:status 400
+                           :token-metadata new-token-metadata})))
+        (when (contains? new-token-metadata "previous")
+          (throw (ex-info "Cannot modify previous token metadata"
+                          {:status 400
                            :token-metadata new-token-metadata}))))
+
       (throw (ex-info "Invalid update-mode"
                       {:mode (get request-params "update-mode")
                        :status 400})))
+
+    (when-let [previous (get new-token-metadata "previous")]
+      (when-not (map? previous)
+        (throw (ex-info (str "Token previous must be a map")
+                        {:previous previous :status 400 :token token}))))
 
     ; Store the token
     (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))

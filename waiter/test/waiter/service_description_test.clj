@@ -1540,7 +1540,10 @@
               service-description-template-2 (token->service-description-template kv-store token)]
           (is (= service-description-template service-description-template-2))
           (is (= (select-keys in-service-description service-description-keys) service-description-template))
-          (is (= (select-keys in-service-description token-metadata-keys) token-metadata))))
+          (is (= (-> in-service-description
+                     (assoc "previous" {})
+                     (select-keys token-metadata-keys))
+                 token-metadata))))
 
       (testing "test:deleted:token->service-description-2"
         (kv/store kv-store token (assoc in-service-description "deleted" true))
@@ -1553,7 +1556,7 @@
               service-description-template-2 (token->service-description-template kv-store token)]
           (is (empty? service-description-template-2))
           (is (= (select-keys in-service-description service-description-keys) service-description-template))
-          (is (= {"deleted" true, "owner" "tu3"} token-metadata)))))))
+          (is (= {"deleted" true, "owner" "tu3", "previous" {}} token-metadata)))))))
 
 (deftest test-service-suspend-resume
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
