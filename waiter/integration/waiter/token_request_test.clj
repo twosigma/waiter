@@ -101,11 +101,14 @@
       (assert-response-status ~response 200)
       (when ~include-metadata
         (is (contains? token-description# :last-update-time))
+        (is (contains? token-description# :last-update-user))
         (is (contains? token-description# :owner))
         (is (contains? token-description# :root)))
       (is (= (cond-> {:health-check-url "/probe"
                       :name ~service-id-prefix}
-                     ~include-metadata (assoc :owner (retrieve-username) :root ~token-root)
+                     ~include-metadata (assoc :last-update-user (retrieve-username)
+                                              :owner (retrieve-username)
+                                              :root ~token-root)
                      (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
              (dissoc token-description# :last-update-time))))))
 
@@ -269,6 +272,7 @@
                     response-body (json/read-str (:body token-response))]
                 (is (contains? response-body "last-update-time"))
                 (is (= {"health-check-url" "/probe"
+                        "last-update-user" (retrieve-username)
                         "name" service-id-prefix
                         "owner" (retrieve-username)
                         "root" token-root}
@@ -390,6 +394,7 @@
                       response-body (json/read-str (:body token-response))]
                   (is (= {"health-check-url" "/probe-2"
                           "last-update-time" (-> last-update-time DateTime. utils/date-to-str)
+                          "last-update-user" (retrieve-username)
                           "name" service-id-prefix,
                           "owner" (retrieve-username)
                           "root" token-root
@@ -465,6 +470,7 @@
                 (is (= {"deleted" true
                         "health-check-url" "/probe"
                         "last-update-time" (-> last-update-time DateTime. utils/date-to-str)
+                        "last-update-user" (retrieve-username)
                         "name" service-id-prefix
                         "owner" (retrieve-username)
                         "root" token-root
@@ -718,7 +724,10 @@
                 response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
             (is (nil? (get response-body :run-as-user)))
             (is (contains? response-body :last-update-time))
-            (is (= (assoc service-description :owner (retrieve-username) :root token-root)
+            (is (= (assoc service-description
+                     :last-update-user (retrieve-username)
+                     :owner (retrieve-username)
+                     :root token-root)
                    (dissoc response-body :last-update-time)))))
 
         (testing "expecting redirect"
@@ -848,7 +857,11 @@
           (let [token-response (get-token waiter-url token)
                 response-body (-> token-response :body json/read-str pc/keywordize-map)]
             (is (contains? response-body :last-update-time))
-            (is (= (assoc service-description :authentication "disabled" :owner current-user :root token-root)
+            (is (= (assoc service-description
+                     :authentication "disabled"
+                     :last-update-user current-user
+                     :owner current-user
+                     :root token-root)
                    (dissoc response-body :last-update-time)))))
 
         (testing "successful request"

@@ -107,7 +107,7 @@
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
-    [clock synchronize-fn kv-store token owner &
+    [clock synchronize-fn kv-store token owner authenticated-user &
      {:keys [hard-delete version-etag] :or {hard-delete false}}]
     (synchronize-fn
       token-lock
@@ -122,7 +122,8 @@
             (when existing-token-data
               (let [new-token-data (assoc existing-token-data
                                      "deleted" true
-                                     "last-update-time" (.getMillis ^DateTime (clock)))]
+                                     "last-update-time" (.getMillis ^DateTime (clock))
+                                     "last-update-user" authenticated-user)]
                 (kv/store kv-store token new-token-data)))))
         ; Remove token from owner (hard-delete) or set the deleted flag (soft-delete)
         (when owner
@@ -240,9 +241,9 @@
                                 {:owner token-owner
                                  :status 403
                                  :user authenticated-user}))))
-            (delete-service-description-for-token clock synchronize-fn kv-store token token-owner
-                                                  :hard-delete hard-delete
-                                                  :version-etag version-etag)
+            (delete-service-description-for-token
+              clock synchronize-fn kv-store token token-owner authenticated-user
+              :hard-delete hard-delete :version-etag version-etag)
             ; notify peers of token delete and ask them to refresh their caches
             (make-peer-requests-fn "tokens/refresh"
                                    :body (json/write-str {:owner token-owner, :token token})
@@ -366,6 +367,10 @@
           (throw (ex-info "Cannot modify last-update-time token metadata"
                           {:status 400
                            :token-metadata new-token-metadata})))
+        (when (contains? new-token-metadata "last-update-user")
+          (throw (ex-info "Cannot modify last-update-user token metadata"
+                          {:status 400
+                           :token-metadata new-token-metadata})))
         (when (contains? new-token-metadata "root")
           (throw (ex-info "Cannot modify root token metadata"
                           {:status 400
@@ -376,6 +381,7 @@
 
     ; Store the token
     (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))
+                                     "last-update-user" authenticated-user
                                      "owner" owner
                                      "root" (or (get existing-token-metadata "root") token-root)}
                                     new-token-metadata)]
