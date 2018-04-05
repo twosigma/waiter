@@ -882,4 +882,4 @@
             (delete-service waiter-url service-id)))
 
         (finally
-          (delete-token-and-assert waiter-url token))))))
+          #_(delete-token-and-assert waiter-url token))))))
