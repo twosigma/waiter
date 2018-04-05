@@ -104,9 +104,9 @@
                                                   ; most important goes first
                                                   (vector
                                                     (zero? slots-used)
+                                                    (contains? status-tags :expired)
                                                     (contains? status-tags :unhealthy)
                                                     (every? #(contains? status-tags %) [:healthy :blacklisted])
-                                                    (contains? status-tags :expired)
                                                     (contains? status-tags :healthy)
                                                     (cond-> (some-> instance-id
                                                                     id->instance
@@ -460,16 +460,11 @@
     (log/info "attempt to blacklist" instance-id "which has"
               (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
               (get instance-id->state instance-id))
-    ;; cannot blacklist if the instance is currently servicing a request
-    (let [instance-not-allowed? (if (-> (instance-id->state instance-id) expired?)
-                                  (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))]
-                                    (-> (instance-id->request-id->use-reason-map instance-id)
-                                        (only-lingering-requests? earliest-request-threshold-time)
-                                        not))
-                                  (and
-                                    (contains? instance-id->request-id->use-reason-map instance-id)
-                                    (some #(= :serve-request (:reason %))
-                                          (-> instance-id instance-id->request-id->use-reason-map vals))))
+    ;; cannot blacklist if the instance is not killable
+    (let [instance-not-allowed? (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))]
+                                  (->> (instance-id->state instance-id)
+                                       (killable? (instance-id->request-id->use-reason-map instance-id) earliest-request-threshold-time)
+                                       not))
           response-code (if instance-not-allowed? :in-use :blacklisted)]
       {:current-state' (if (= :blacklisted response-code)
                          (-> current-state

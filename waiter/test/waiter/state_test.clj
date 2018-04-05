@@ -317,11 +317,12 @@
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
                                               (update-in ["inst-3" :status-tags] conj :killed)
                                               (update-in ["inst-8" :status-tags] conj :locked))}
-                     {:expected [instance-7]
-                      :name "find-instance-to-offer:get-youngest-unhealthy-in-presence-of-expired-instance"
+                     {:expected [instance-2]
+                      :name "find-instance-to-offer:get-youngest-unhealthy-in-presence-of-expired-and-unhealthy-instances"
                       :reason :kill-instance
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
-                                              (update-in ["inst-2" :status-tags] conj :expired))}
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-5" :status-tags] conj :expired))}
                      {:expected [instance-2]
                       :name "find-instance-to-offer:select-idle-expired-instance"
                       :reason :kill-instance
