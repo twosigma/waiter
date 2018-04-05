@@ -452,8 +452,8 @@
 
 (defn- prepare-service-description-template-from-tokens
   "Prepares the service description using the token(s)."
-  [waiter-headers request-headers kv-store waiter-hostname]
-  (let [{:keys [token source]} (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostname)]
+  [waiter-headers request-headers kv-store waiter-hostnames]
+  (let [{:keys [token source]} (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostnames)]
     (cond
       (= source :host-header)
       (let [service-description-template (sanitize-service-description
@@ -549,7 +549,7 @@
         (assoc sanitized-service-description "metadata" renamed-metadata-map)))))
 
 (defn prepare-service-description-sources
-  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostname service-description-defaults]
+  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames service-description-defaults]
   "Prepare the service description sources from the current request.
    Populates the service description for on-the-fly waiter-specific headers.
    Also populates for the service description for a token (first looked in headers and then using the host name).
@@ -560,7 +560,7 @@
                                           parse-env-headers
                                           parse-metadata-headers))
         {:keys [service-description-template token-authentication-disabled token-preauthorized]}
-        (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostname)]
+        (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostnames)]
     {:defaults service-description-defaults
      :headers service-description-template-from-headers
      :token-authentication-disabled token-authentication-disabled
