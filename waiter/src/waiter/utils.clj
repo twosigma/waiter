@@ -130,9 +130,13 @@
   (^DateTime [date-str]
    (str-to-date date-str formatter-iso8601))
   (^DateTime [date-str formatter]
-   (f/parse
-     (f/with-zone formatter (t/default-time-zone))
-     date-str)))
+   (try
+     (f/parse
+       (f/with-zone formatter (t/default-time-zone))
+       date-str)
+     (catch Exception ex
+       (log/error "unable to parse" date-str "with formatter" formatter)
+       (throw ex)))))
 
 (defn non-neg? [x]
   (or (zero? x) (pos? x)))
@@ -371,10 +375,8 @@
     (str (Long/toString (System/nanoTime) 16) "-" (Long/toString (.nextLong thread-local-random Long/MAX_VALUE) 16))))
 
 (defn older-than? [current-time duration {:keys [started-at]}]
-  (if (and duration (not (empty? started-at)))
-    (t/after? current-time
-              (t/plus (f/parse (f/formatters :date-time) started-at)
-                      duration))
+  (if (and duration started-at)
+    (t/after? current-time (t/plus started-at duration))
     false))
 
 (defn deep-sort-map

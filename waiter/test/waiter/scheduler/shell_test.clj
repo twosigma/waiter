@@ -479,7 +479,7 @@
                                        (scheduler/make-ServiceInstance
                                          {:id "foo.bar"
                                           :service-id "foo"
-                                          :started-at (utils/date-to-str started-at (f/formatters :date-time))
+                                          :started-at started-at
                                           :port port
                                           :protocol "http"
                                           :log-directory instance-dir
