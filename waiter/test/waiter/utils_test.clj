@@ -362,11 +362,10 @@
   (let [now (t/now)]
     (testing "nil duration returns false"
       (is (not (older-than? now nil {:started-at now}))))
-    (testing "nil/missing started-at"
-      (is (not (older-than? now (t/seconds 1) {})))
-      (is (not (older-than? now (t/seconds 1) {:started-at ""}))))
-    (is (older-than? now (t/minutes 5) {:started-at (f/unparse (f/formatters :date-time) (t/minus now (t/minutes 6)))}))
-    (is (not (older-than? now (t/minutes 5) {:started-at (f/unparse (f/formatters :date-time) (t/minus now (t/minutes 5)))})))))
+    (testing "nil started-at"
+      (is (not (older-than? now (t/seconds 1) {}))))
+    (is (older-than? now (t/minutes 5) {:started-at (t/minus now (t/minutes 6))}))
+    (is (not (older-than? now (t/minutes 5) {:started-at (t/minus now (t/minutes 5))})))))
 
 (deftest test-stringify-elements
   (testing "Converting all leaf elements in a collection to string"

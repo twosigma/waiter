@@ -22,10 +22,10 @@
             [waiter.async-utils :as au]
             [waiter.metrics :as metrics]
             [waiter.utils :as utils])
-  (:import [clojure.lang PersistentQueue]
-           [java.net ConnectException SocketTimeoutException]
-           [java.util.concurrent TimeoutException]
-           [org.joda.time DateTime]))
+  (:import (clojure.lang PersistentQueue)
+           (java.net ConnectException SocketTimeoutException)
+           (java.util.concurrent TimeoutException)
+           (org.joda.time DateTime)))
 
 (defrecord Service
   [^String id
@@ -43,7 +43,7 @@
 (defrecord ServiceInstance
   [^String id
    ^String service-id
-   ^String started-at ; must be formatted to allow string comparisons
+   ^DateTime started-at
    healthy?
    health-check-status
    flags

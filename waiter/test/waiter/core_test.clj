@@ -467,7 +467,8 @@
                                :scheduler (Object.)}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
-        ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))]
+        ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))
+        started-time (t/now)]
     (testing "service-handler:get-missing-service-description"
       (with-redefs [sd/fetch-core (constantly nil)]
         (let [request {:headers {"accept" "application/json"}
@@ -488,7 +489,7 @@
                                                                    :healthy? true,
                                                                    :host "10.141.141.11"
                                                                    :port 31045,
-                                                                   :started-at "2014-09-13T002446.959Z"}]
+                                                                   :started-at started-time}]
                                                :failed-instances []})]
         (let [request {:headers {"accept" "application/json"}
                        :request-method :get
@@ -504,7 +505,7 @@
                                          "host" "10.141.141.11"
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.A&host=10.141.141.11"
                                          "port" 31045,
-                                         "started-at" "2014-09-13T002446.959Z"}]}))
+                                         "started-at" (utils/date-to-str started-time utils/formatter-iso8601)}]}))
             (is (= (get body-json "metrics")
                    {"aggregate" {"routers-sent-requests-to" 0}}))
             (is (= (get body-json "num-active-instances") 1))

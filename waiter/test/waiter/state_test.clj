@@ -21,17 +21,19 @@
             [waiter.async-utils :as au]
             [waiter.discovery :as discovery]
             [waiter.state :refer :all]
-            [waiter.utils :as utils]))
+            [waiter.utils :as utils])
+  (:import [org.joda.time DateTime]))
 
 (deftest test-find-instance-to-offer-with-concurrency-level-1
-  (let [instance-1 {:id "inst-1", :started-at "123456-1"}
-        instance-2 {:id "inst-2", :started-at "123456-2"}
-        instance-3 {:id "inst-3", :started-at "123456-3"}
-        instance-4 {:id "inst-4", :started-at "123456-4"}
-        instance-5 {:id "inst-5", :started-at "123456-5"}
-        instance-6 {:id "inst-6", :started-at "123456-6"}
-        instance-7 {:id "inst-7", :started-at "123456-7"}
-        instance-8 {:id "inst-8", :started-at "123456-8"}
+  (let [make-instance (fn [id] {:id (str "inst-" id), :started-at (DateTime. (* id 1000000))})
+        instance-1 (make-instance 1)
+        instance-2 (make-instance 2)
+        instance-3 (make-instance 3)
+        instance-4 (make-instance 4)
+        instance-5 (make-instance 5)
+        instance-6 (make-instance 6)
+        instance-7 (make-instance 7)
+        instance-8 (make-instance 8)
         healthy-instance-combo [instance-2 instance-3 instance-5 instance-6 instance-8]
         unhealthy-instance-combo [instance-1 instance-4 instance-7]
         all-instance-combo (concat healthy-instance-combo unhealthy-instance-combo)
@@ -846,7 +848,7 @@
                 :min-failed-instances 2
                 :min-hosts 1
                 :using-marathon true}
-        alive-started-at (.toString (t/now))
+        alive-started-at (t/now)
         test-cases (list {:name "no-instances", :healthy-instances [], :unhealthy-instances [], :failed-instances [], :expected nil}
                          {:name "no-deployment-errors", :healthy-instances [:instance-one], :unhealthy-instances [], :failed-instances [], :expected nil}
                          {:name "healthy-and-unhealthy-instances", :healthy-instances [:instance-one],
@@ -909,8 +911,7 @@
                                                           "instance-expiry-mins" 1})
           service-id "service-1"
           instance {:id (str service-id ".1")
-                    :started-at (f/unparse (f/formatters :date-time)
-                                           (t/minus (t/now) (t/minutes 2)))}
+                    :started-at (t/minus (t/now) (t/minutes 2))}
           deployment-error-config {:min-failed-instances 2
                                    :min-hosts 2}]
       (let [{:keys [router-state-push-mult]} (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
@@ -973,16 +974,16 @@
         (let [start-time (t/now)
               healthy-instances-fn (fn [service-id index n]
                                      (vec (map #(assoc
-                                                  {:started-at (f/unparse (f/formatters :date-time) start-time)}
+                                                  {:started-at start-time}
                                                   :id (str service-id "." % "1"))
                                                (range (if (zero? (mod index 2)) 1 (max 1 n))))))
               unhealthy-instances-fn (fn [service-id index]
                                        (vec (map (fn [x] {:id (str service-id "." x "1")
-                                                          :started-at (f/unparse (f/formatters :date-time) start-time)})
+                                                          :started-at start-time})
                                                  (range (if (zero? (mod index 2)) 1 0)))))
               failed-instances-fn (fn [service-id index]
                                     (vec (map (fn [x] {:id (str service-id "." x "1")
-                                                       :started-at (f/unparse (f/formatters :date-time) start-time)})
+                                                       :started-at start-time})
                                               (range (if (zero? (mod index 2)) 1 0)))))]
           (dotimes [n num-message-iterations]
             (let [current-time (t/plus start-time (t/minutes n))]
@@ -1084,7 +1085,7 @@
               unhealthy-instances-fn (fn [service-id index]
                                        (vec (map (fn [x] {:id (str service-id "." x "1")
                                                           :health-check-status (get unhealthy-health-check-statuses (mod index (count unhealthy-health-check-statuses)))
-                                                          :started-at (f/unparse (f/formatters :date-time) start-time)})
+                                                          :started-at start-time})
                                                  (range (if (zero? (mod index 2)) 1 0)))))
               failed-messages [{:message nil} {:message nil} {:message nil} {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
                                {:message nil :flags #{:never-passed-health-checks}} {:message "Command exited with status" :exit-code 1}
@@ -1092,7 +1093,7 @@
               failed-instances-fn (fn [service-id index]
                                     (vec (map (fn [x] (merge (get failed-messages (mod index (count failed-messages)))
                                                         {:id (str service-id "." x "1")
-                                                         :started-at (f/unparse (f/formatters :date-time) start-time)}))
+                                                         :started-at start-time}))
                                               (range (if (zero? (mod index 2)) 1 0)))))
               deployment-error-fn (fn [service-id index]
                                     (get-deployment-error [] (unhealthy-instances-fn service-id index) (failed-instances-fn service-id index) deployment-error-config))]

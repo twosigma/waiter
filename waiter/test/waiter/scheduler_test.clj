@@ -39,10 +39,11 @@
       (is (= test-instance-1 test-instance-3)))))
 
 (deftest test-record-ServiceInstance
-  (let [test-instance (->ServiceInstance
+  (let [start-time (utils/str-to-date "2014-09-13T00:24:46.959Z" utils/formatter-iso8601)
+        test-instance (->ServiceInstance
                         "instance-id"
                         "service-id"
-                        "2014-09-13T00:24:46.959Z"
+                        start-time
                         true
                         200
                         #{}
@@ -56,7 +57,7 @@
     (testing (str "Test record ServiceInstance")
       (is (= "instance-id" (:id test-instance)))
       (is (= "service-id" (:service-id test-instance)))
-      (is (= "2014-09-13T00:24:46.959Z" (:started-at test-instance)))
+      (is (= start-time (:started-at test-instance)))
       (is (= true (:healthy? test-instance)))
       (is (= 200 (:health-check-status test-instance)))
       (is (= "www.scheduler-test.example.com" (:host test-instance)))
@@ -226,7 +227,7 @@
         scheduler-state-chan (async/chan 1)
         timeout-chan (async/chan 1)
         service-id->service-description-fn (fn [id] {"health-check-url" (str "/" id)})
-        started-at "2014-09-14T002446.965Z"
+        started-at (t/minus (clock) (t/hours 1))
         instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")

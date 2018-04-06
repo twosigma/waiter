@@ -47,189 +47,193 @@
                           :service-id->service-description {}},
                          {
                           :name "response-data->service-instances valid response with task failure"
-                          :marathon-response {
-                                              :app {
-                                                    :id "test-app-1234",
-                                                    :instances 3,
-                                                    :healthChecks [{:path "/health", :portIndex 0, :protocol "N/A", :timeoutSeconds 10}],
-                                                    :lastTaskFailure {
-                                                                      :appId "test-app-1234",
-                                                                      :host "10.141.141.10",
-                                                                      :message "Abnormal executor termination",
-                                                                      :state "TASK_FAILED",
-                                                                      :taskId "test-app-1234.D",
-                                                                      :timestamp "2014-09-12T232341.711Z",
-                                                                      :version "2014-09-12T232821.737Z"},
-                                                    :tasks [
-                                                            {
-                                                             :appId "test-app-1234",
-                                                             :healthCheckResults [{:alive true, :consecutiveFailures 0,
-                                                                                   :firstSuccess "2014-09-13T002028.101Z",
-                                                                                   :lastFailure nil, :lastSuccess "2014-09-13T002507.506Z",
-                                                                                   :taskId "test-app-1234.A"}],
-                                                             :host "10.141.141.11",
-                                                             :id "/test-app-1234.A",
-                                                             :ports [31045],
-                                                             :stagedAt "2014-09-12T232828.594Z",
-                                                             :startedAt "2014-09-13T002446.959Z",
-                                                             :version "2014-09-12T232821.737Z"},
-                                                            {
-                                                             :appId "/test-app-1234",
-                                                             :healthCheckResults [{:alive true, :consecutiveFailures 0,
-                                                                                   :firstSuccess "2014-09-13T002028.101Z",
-                                                                                   :lastFailure nil, :lastSuccess "2014-09-13T002507.508Z",
-                                                                                   :taskId "test-app-1234.B"}],
-                                                             :host "10.141.141.12",
-                                                             :id "/test-app-1234.B",
-                                                             :ports [31234],
-                                                             :stagedAt "2014-09-12T232822.587Z",
-                                                             :startedAt "2014-09-13T002456.965Z",
-                                                             :version "2014-09-12T232821.737Z"},
-                                                            {
-                                                             :appId "/test-app-1234",
-                                                             :healthCheckResults [{:alive false, :consecutiveFailures 10,
-                                                                                   :firstSuccess "2014-09-13T002028.101Z",
-                                                                                   :lastFailure "2014-09-13T002507.508Z", :lastSuccess nil,
-                                                                                   :taskId "test-app-1234.C"}],
-                                                             :host "10.141.141.13",
-                                                             :id "test-app-1234.C",
-                                                             :ports [41234 12321 90384 56463],
-                                                             :stagedAt "2014-09-12T232822.587Z",
-                                                             :startedAt "2014-09-14T002446.965Z",
-                                                             :version "2014-09-12T232821.737Z"}],}}
+                          :marathon-response
+                          {
+                           :app {
+                                 :id "test-app-1234",
+                                 :instances 3,
+                                 :healthChecks [{:path "/health", :portIndex 0, :protocol "N/A", :timeoutSeconds 10}],
+                                 :lastTaskFailure {
+                                                   :appId "test-app-1234",
+                                                   :host "10.141.141.10",
+                                                   :message "Abnormal executor termination",
+                                                   :state "TASK_FAILED",
+                                                   :taskId "test-app-1234.D",
+                                                   :timestamp "2014-09-12T23:23:41.711Z",
+                                                   :version "2014-09-12T23:28:21.737Z"},
+                                 :tasks [
+                                         {
+                                          :appId "test-app-1234",
+                                          :healthCheckResults [{:alive true, :consecutiveFailures 0,
+                                                                :firstSuccess "2014-09-13T00:20:28.101Z",
+                                                                :lastFailure nil, :lastSuccess "2014-09-13T002507.506Z",
+                                                                :taskId "test-app-1234.A"}],
+                                          :host "10.141.141.11",
+                                          :id "/test-app-1234.A",
+                                          :ports [31045],
+                                          :stagedAt "2014-09-12T23:28:28.594Z",
+                                          :startedAt "2014-09-13T00:24:46.959Z",
+                                          :version "2014-09-12T23:28:21.737Z"},
+                                         {
+                                          :appId "/test-app-1234",
+                                          :healthCheckResults [{:alive true, :consecutiveFailures 0,
+                                                                :firstSuccess "2014-09-13T00:20:28.101Z",
+                                                                :lastFailure nil, :lastSuccess "2014-09-13T002507.508Z",
+                                                                :taskId "test-app-1234.B"}],
+                                          :host "10.141.141.12",
+                                          :id "/test-app-1234.B",
+                                          :ports [31234],
+                                          :stagedAt "2014-09-12T23:28:22.587Z",
+                                          :startedAt "2014-09-13T00:24:56.965Z",
+                                          :version "2014-09-12T23:28:21.737Z"},
+                                         {
+                                          :appId "/test-app-1234",
+                                          :healthCheckResults [{:alive false, :consecutiveFailures 10,
+                                                                :firstSuccess "2014-09-13T00:20:28.101Z",
+                                                                :lastFailure "2014-09-13T002507.508Z", :lastSuccess nil,
+                                                                :taskId "test-app-1234.C"}],
+                                          :host "10.141.141.13",
+                                          :id "test-app-1234.C",
+                                          :ports [41234 12321 90384 56463],
+                                          :stagedAt "2014-09-12T23:28:22.587Z",
+                                          :startedAt "2014-09-14T00:24:46.965Z",
+                                          :version "2014-09-12T23:28:21.737Z"}],}}
 
-                          :expected-response {:active-instances (list
-                                                                  (scheduler/make-ServiceInstance
-                                                                    {:extra-ports [],
-                                                                     :healthy? true,
-                                                                     :host "10.141.141.11",
-                                                                     :id "test-app-1234.A",
-                                                                     :log-directory nil,
-                                                                     :message nil,
-                                                                     :port 31045,
-                                                                     :protocol "https",
-                                                                     :service-id "test-app-1234",
-                                                                     :started-at "2014-09-13T002446.959Z"}),
-                                                                  (scheduler/make-ServiceInstance
-                                                                    {:extra-ports [],
-                                                                     :healthy? true,
-                                                                     :host "10.141.141.12",
-                                                                     :id "test-app-1234.B",
-                                                                     :log-directory nil,
-                                                                     :message nil,
-                                                                     :port 31234,
-                                                                     :protocol "https",
-                                                                     :service-id "test-app-1234",
-                                                                     :started-at "2014-09-13T002456.965Z"}),
-                                                                  (scheduler/make-ServiceInstance
-                                                                    {:extra-ports [12321 90384 56463],
-                                                                     :healthy? false,
-                                                                     :host "10.141.141.13",
-                                                                     :id "test-app-1234.C",
-                                                                     :log-directory nil,
-                                                                     :message nil,
-                                                                     :port 41234,
-                                                                     :protocol "https",
-                                                                     :service-id "test-app-1234",
-                                                                     :started-at "2014-09-14T002446.965Z"}))
-                                              :failed-instances (list
-                                                                  (scheduler/make-ServiceInstance
-                                                                    {:extra-ports [],
-                                                                     :healthy? false,
-                                                                     :host "10.141.141.10",
-                                                                     :id "test-app-1234.D",
-                                                                     :log-directory nil,
-                                                                     :message "Abnormal executor termination",
-                                                                     :port 0,
-                                                                     :protocol "https",
-                                                                     :service-id "test-app-1234",
-                                                                     :started-at "2014-09-12T232341.711Z"}))
-                                              :killed-instances []}
+                          :expected-response
+                          {:active-instances (list
+                                               (scheduler/make-ServiceInstance
+                                                 {:extra-ports [],
+                                                  :healthy? true,
+                                                  :host "10.141.141.11",
+                                                  :id "test-app-1234.A",
+                                                  :log-directory nil,
+                                                  :message nil,
+                                                  :port 31045,
+                                                  :protocol "https",
+                                                  :service-id "test-app-1234",
+                                                  :started-at (utils/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
+                                               (scheduler/make-ServiceInstance
+                                                 {:extra-ports [],
+                                                  :healthy? true,
+                                                  :host "10.141.141.12",
+                                                  :id "test-app-1234.B",
+                                                  :log-directory nil,
+                                                  :message nil,
+                                                  :port 31234,
+                                                  :protocol "https",
+                                                  :service-id "test-app-1234",
+                                                  :started-at (utils/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)}),
+                                               (scheduler/make-ServiceInstance
+                                                 {:extra-ports [12321 90384 56463],
+                                                  :healthy? false,
+                                                  :host "10.141.141.13",
+                                                  :id "test-app-1234.C",
+                                                  :log-directory nil,
+                                                  :message nil,
+                                                  :port 41234,
+                                                  :protocol "https",
+                                                  :service-id "test-app-1234",
+                                                  :started-at (utils/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
+                           :failed-instances (list
+                                               (scheduler/make-ServiceInstance
+                                                 {:extra-ports [],
+                                                  :healthy? false,
+                                                  :host "10.141.141.10",
+                                                  :id "test-app-1234.D",
+                                                  :log-directory nil,
+                                                  :message "Abnormal executor termination",
+                                                  :port 0,
+                                                  :protocol "https",
+                                                  :service-id "test-app-1234",
+                                                  :started-at (utils/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))
+                           :killed-instances []}
                           :service-id->service-description {"test-app-1234" {"backend-proto" "https"}}},
                          {
                           :name "response-data->service-instances valid response without task failure"
-                          :marathon-response {
-                                              :framework-id "F123445"
-                                              :app {
-                                                    :id "test-app-1234",
-                                                    :instances 3,
-                                                    :healthChecks [{:path "/health", :portIndex 0, :protocol "HTTP", :timeoutSeconds 10}],
-                                                    :tasks [
-                                                            {
-                                                             :appId "/test-app-1234",
-                                                             :healthCheckResults [{:alive true, :consecutiveFailures 0,
-                                                                                   :firstSuccess "2014-09-13T002028.101Z",
-                                                                                   :lastFailure nil, :lastSuccess "2014-09-13T002507.506Z",
-                                                                                   :taskId "test-app-1234.A"}],
-                                                             :host "10.141.141.11",
-                                                             :id "test-app-1234.A",
-                                                             :ports [31045],
-                                                             :stagedAt "2014-09-12T232828.594Z",
-                                                             :startedAt "2014-09-13T002446.959Z",
-                                                             :version "2014-09-12T232821.737Z",
-                                                             :slaveId "S234842"},
-                                                            {
-                                                             :appId "test-app-1234",
-                                                             :healthCheckResults [{:alive true, :consecutiveFailures 0,
-                                                                                   :firstSuccess "2014-09-13T002028.101Z",
-                                                                                   :lastFailure nil, :lastSuccess "2014-09-13T002507.508Z",
-                                                                                   :taskId "test-app-1234.B"}],
-                                                             :host "10.141.141.12",
-                                                             :id "test-app-1234.B",
-                                                             :ports [31234],
-                                                             :stagedAt "2014-09-12T232822.587Z",
-                                                             :startedAt "2014-09-13T002446.965Z",
-                                                             :version "2014-09-12T232821.737Z"},
-                                                            {
-                                                             :appId "/test-app-1234",
-                                                             :healthCheckResults [{:alive false, :consecutiveFailures 10,
-                                                                                   :firstSuccess "2014-09-13T002028.101Z",
-                                                                                   :lastFailure "2014-09-13T002507.508Z", :lastSuccess nil,
-                                                                                   :taskId "/test-app-1234.C"}],
-                                                             :host "10.141.141.13",
-                                                             :id "test-app-1234.C",
-                                                             :ports [41234],
-                                                             :stagedAt "2014-09-12T232822.587Z",
-                                                             :startedAt "2014-09-13T002446.965Z",
-                                                             :version "2014-09-12T232821.737Z",
-                                                             :slaveId "S651616"}],}}
+                          :marathon-response
+                          {
+                           :framework-id "F123445"
+                           :app {
+                                 :id "test-app-1234",
+                                 :instances 3,
+                                 :healthChecks [{:path "/health", :portIndex 0, :protocol "HTTP", :timeoutSeconds 10}],
+                                 :tasks [
+                                         {
+                                          :appId "/test-app-1234",
+                                          :healthCheckResults [{:alive true, :consecutiveFailures 0,
+                                                                :firstSuccess "2014-09-13T00:20:28.101Z",
+                                                                :lastFailure nil, :lastSuccess "2014-09-13T002507.506Z",
+                                                                :taskId "test-app-1234.A"}],
+                                          :host "10.141.141.11",
+                                          :id "test-app-1234.A",
+                                          :ports [31045],
+                                          :stagedAt "2014-09-12T23:28:28.594Z",
+                                          :startedAt "2014-09-13T00:24:46.959Z",
+                                          :version "2014-09-12T23:28:21.737Z",
+                                          :slaveId "S234842"},
+                                         {
+                                          :appId "test-app-1234",
+                                          :healthCheckResults [{:alive true, :consecutiveFailures 0,
+                                                                :firstSuccess "2014-09-13T00:20:28.101Z",
+                                                                :lastFailure nil, :lastSuccess "2014-09-13T002507.508Z",
+                                                                :taskId "test-app-1234.B"}],
+                                          :host "10.141.141.12",
+                                          :id "test-app-1234.B",
+                                          :ports [31234],
+                                          :stagedAt "2014-09-12T23:28:22.587Z",
+                                          :startedAt "2014-09-13T00:24:46.965Z",
+                                          :version "2014-09-12T23:28:21.737Z"},
+                                         {
+                                          :appId "/test-app-1234",
+                                          :healthCheckResults [{:alive false, :consecutiveFailures 10,
+                                                                :firstSuccess "2014-09-13T00:20:28.101Z",
+                                                                :lastFailure "2014-09-13T002507.508Z", :lastSuccess nil,
+                                                                :taskId "/test-app-1234.C"}],
+                                          :host "10.141.141.13",
+                                          :id "test-app-1234.C",
+                                          :ports [41234],
+                                          :stagedAt "2014-09-12T23:28:22.587Z",
+                                          :startedAt "2014-09-13T00:24:46.965Z",
+                                          :version "2014-09-12T23:28:21.737Z",
+                                          :slaveId "S651616"}],}}
 
-                          :expected-response {:active-instances (list
-                                                                  (scheduler/make-ServiceInstance
-                                                                    {:extra-ports [],
-                                                                     :healthy? true,
-                                                                     :host "10.141.141.11",
-                                                                     :id "test-app-1234.A",
-                                                                     :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest",
-                                                                     :message nil,
-                                                                     :port 31045,
-                                                                     :protocol "http",
-                                                                     :service-id "test-app-1234",
-                                                                     :started-at "2014-09-13T002446.959Z"}),
-                                                                  (scheduler/make-ServiceInstance
-                                                                    {:extra-ports [],
-                                                                     :healthy? true,
-                                                                     :host "10.141.141.12",
-                                                                     :id "test-app-1234.B",
-                                                                     :log-directory nil,
-                                                                     :message nil,
-                                                                     :port 31234,
-                                                                     :protocol "http",
-                                                                     :service-id "test-app-1234",
-                                                                     :started-at "2014-09-13T002446.965Z"}),
-                                                                  (scheduler/make-ServiceInstance
-                                                                    {:extra-ports [],
-                                                                     :healthy? false,
-                                                                     :host "10.141.141.13",
-                                                                     :id "test-app-1234.C",
-                                                                     :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest",
-                                                                     :message nil,
-                                                                     :port 41234,
-                                                                     :protocol "http",
-                                                                     :service-id "test-app-1234",
-                                                                     :started-at "2014-09-13T002446.965Z"}))
-                                              :failed-instances []
-                                              :killed-instances []}
+                          :expected-response
+                          {:active-instances (list
+                                               (scheduler/make-ServiceInstance
+                                                 {:extra-ports [],
+                                                  :healthy? true,
+                                                  :host "10.141.141.11",
+                                                  :id "test-app-1234.A",
+                                                  :log-directory "/slave-dir/S234842/frameworks/F123445/executors/test-app-1234.A/runs/latest",
+                                                  :message nil,
+                                                  :port 31045,
+                                                  :protocol "http",
+                                                  :service-id "test-app-1234",
+                                                  :started-at (utils/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
+                                               (scheduler/make-ServiceInstance
+                                                 {:extra-ports [],
+                                                  :healthy? true,
+                                                  :host "10.141.141.12",
+                                                  :id "test-app-1234.B",
+                                                  :log-directory nil,
+                                                  :message nil,
+                                                  :port 31234,
+                                                  :protocol "http",
+                                                  :service-id "test-app-1234",
+                                                  :started-at (utils/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}),
+                                               (scheduler/make-ServiceInstance
+                                                 {:extra-ports [],
+                                                  :healthy? false,
+                                                  :host "10.141.141.13",
+                                                  :id "test-app-1234.C",
+                                                  :log-directory "/slave-dir/S651616/frameworks/F123445/executors/test-app-1234.C/runs/latest",
+                                                  :message nil,
+                                                  :port 41234,
+                                                  :protocol "http",
+                                                  :service-id "test-app-1234",
+                                                  :started-at (utils/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
+                           :failed-instances []
+                           :killed-instances []}
                           :service-id->service-description {"test-app-1234" {"backend-proto" "http"}}})]
     (doseq [{:keys [expected-response marathon-response name service-id->service-description]} test-cases]
       (testing (str "Test " name)
@@ -253,29 +257,29 @@
                 :tasks [{:appId "/test-app-1234"
                          :healthCheckResults [{:alive true
                                                :consecutiveFailures 0
-                                               :firstSuccess "2014-09-13T002028.101Z"
+                                               :firstSuccess "2014-09-13T00:20:28.101Z"
                                                :lastFailure nil
                                                :lastSuccess "2014-09-13T002507.506Z"
                                                :taskId "test-app-1234.A"}]
                          :host "10.141.141.11"
                          :id "test-app-1234.A"
                          :ports [31045]
-                         :stagedAt "2014-09-12T232828.594Z"
-                         :startedAt "2014-09-13T002446.959Z"
-                         :version "2014-09-12T232821.737Z"}
+                         :stagedAt "2014-09-12T23:28:28.594Z"
+                         :startedAt "2014-09-13T00:24:46.959Z"
+                         :version "2014-09-12T23:28:21.737Z"}
                         {:appId "test-app-1234"
                          :healthCheckResults [{:alive true
                                                :consecutiveFailures 0
-                                               :firstSuccess "2014-09-13T002028.101Z"
+                                               :firstSuccess "2014-09-13T00:20:28.101Z"
                                                :lastFailure nil
                                                :lastSuccess "2014-09-13T002507.508Z"
                                                :taskId "test-app-1234.B"}]
                          :host "10.141.141.12"
                          :id "test-app-1234.B"
                          :ports [31234]
-                         :stagedAt "2014-09-12T232822.587Z"
-                         :startedAt "2014-09-13T002446.965Z"
-                         :version "2014-09-12T232821.737Z"}]
+                         :stagedAt "2014-09-12T23:28:22.587Z"
+                         :startedAt "2014-09-13T00:24:46.965Z"
+                         :version "2014-09-12T23:28:21.737Z"}]
                 :tasksRunning 2
                 :tasksHealthy 2
                 :tasksUnhealthy 0
@@ -287,42 +291,42 @@
                                   :message "Abnormal executor termination"
                                   :state "TASK_FAILED"
                                   :taskId "test-app-6789.D"
-                                  :timestamp "2014-09-12T232341.711Z"
-                                  :version "2014-09-12T232821.737Z"}
+                                  :timestamp "2014-09-12T23:23:41.711Z"
+                                  :version "2014-09-12T23:28:21.737Z"}
                 :healthChecks [{:path "/health", :portIndex 0, :protocol "HTTP", :timeoutSeconds 10}]
                 :tasks [{:appId "test-app-6789"
                          :healthCheckResults [{:alive true
                                                :consecutiveFailures 0
-                                               :firstSuccess "2014-09-13T002028.101Z"
+                                               :firstSuccess "2014-09-13T00:20:28.101Z"
                                                :lastFailure nil
                                                :lastSuccess "2014-09-13T002507.506Z"
                                                :taskId "test-app-6789.A"}]
                          :host "10.141.141.11"
                          :id "/test-app-6789.A"
                          :ports [31045]
-                         :stagedAt "2014-09-12T232828.594Z"
-                         :startedAt "2014-09-13T002446.959Z"
-                         :version "2014-09-12T232821.737Z"}
+                         :stagedAt "2014-09-12T23:28:28.594Z"
+                         :startedAt "2014-09-13T00:24:46.959Z"
+                         :version "2014-09-12T23:28:21.737Z"}
                         {:appId "/test-app-6789"
                          :host "10.141.141.12"
                          :id "/test-app-6789.B"
                          :ports [36789]
-                         :stagedAt "2014-09-12T232822.587Z"
-                         :startedAt "2014-09-13T002456.965Z"
-                         :version "2014-09-12T232821.737Z"}
+                         :stagedAt "2014-09-12T23:28:22.587Z"
+                         :startedAt "2014-09-13T00:24:56.965Z"
+                         :version "2014-09-12T23:28:21.737Z"}
                         {:appId "/test-app-6789"
                          :healthCheckResults [{:alive false
                                                :consecutiveFailures 10
-                                               :firstSuccess "2014-09-13T002028.101Z"
+                                               :firstSuccess "2014-09-13T00:20:28.101Z"
                                                :lastFailure "2014-09-13T002507.508Z"
                                                :lastSuccess nil
                                                :taskId "test-app-6789.C"}]
                          :host "10.141.141.13"
                          :id "test-app-6789.C"
                          :ports [46789]
-                         :stagedAt "2014-09-12T232822.587Z"
-                         :startedAt "2014-09-14T002446.965Z"
-                         :version "2014-09-12T232821.737Z"}]}]
+                         :stagedAt "2014-09-12T23:28:22.587Z"
+                         :startedAt "2014-09-14T00:24:46.965Z"
+                         :version "2014-09-12T23:28:21.737Z"}]}]
         expected (assoc {}
                    (scheduler/make-Service {:id "test-app-1234"
                                             :instances 2
@@ -337,7 +341,7 @@
                          :host "10.141.141.11"
                          :port 31045
                          :protocol "https"
-                         :started-at "2014-09-13T002446.959Z"})
+                         :started-at (utils/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-1234.B"
                          :service-id "test-app-1234"
@@ -345,7 +349,7 @@
                          :host "10.141.141.12"
                          :port 31234
                          :protocol "https"
-                         :started-at "2014-09-13T002446.965Z"}))
+                         :started-at (utils/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
                     :failed-instances []
                     :killed-instances []}
                    (scheduler/make-Service {:id "test-app-6789", :instances 3, :task-count 3})
@@ -358,7 +362,7 @@
                          :host "10.141.141.11"
                          :port 31045
                          :protocol "http"
-                         :started-at "2014-09-13T002446.959Z"})
+                         :started-at (utils/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.B"
                          :service-id "test-app-6789"
@@ -366,7 +370,7 @@
                          :host "10.141.141.12"
                          :port 36789
                          :protocol "http"
-                         :started-at "2014-09-13T002456.965Z"})
+                         :started-at (utils/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.C"
                          :service-id "test-app-6789"
@@ -374,7 +378,7 @@
                          :host "10.141.141.13"
                          :port 46789
                          :protocol "http"
-                         :started-at "2014-09-14T002446.965Z"}))
+                         :started-at (utils/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
                     :failed-instances
                     (list
                       (scheduler/make-ServiceInstance
@@ -384,7 +388,7 @@
                          :host "10.141.141.10"
                          :port 0
                          :protocol "http"
-                         :started-at "2014-09-12T232341.711Z"
+                         :started-at (utils/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)
                          :message "Abnormal executor termination"}))
                     :killed-instances []})
         service-id->failed-instances-transient-store (atom {})
@@ -403,8 +407,8 @@
                                       :message "Abnormal executor termination",
                                       :state (str instance-id "failed"),
                                       :taskId (str service-id "." instance-id),
-                                      :timestamp "2014-09-12T232341.711Z",
-                                      :version "2014-09-12T232821.737Z"})
+                                      :timestamp "2014-09-12T23:23:41.711Z",
+                                      :version "2014-09-12T23:28:21.737Z"})
         framework-id "framework-id"
         health-check-url "/status"
         slave-directory "/slave"
@@ -701,7 +705,7 @@
 
 (deftest test-max-failed-instances-cache
   (let [current-time (t/now)
-        current-time-str (utils/date-to-str current-time)
+        current-time-str (utils/date-to-str current-time formatter-marathon)
         service-id->failed-instances-transient-store (atom {})
         common-extractor-fn (constantly {:service-id "service-1"})]
     (testing "test-max-failed-instances-cache"
@@ -720,7 +724,7 @@
                          (scheduler/make-ServiceInstance
                            {:id (str "service-1." n)
                             :service-id "service-1"
-                            :started-at current-time-str
+                            :started-at (utils/str-to-date current-time-str formatter-marathon)
                             :healthy? false
                             :port 0}))
               (str "Failed instances does not contain instance service-1." n)))))))

@@ -24,7 +24,10 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils]))
+            [waiter.utils :as utils])
+  (:import (org.joda.time.format DateTimeFormat)))
+
+(def formatter-marathon (DateTimeFormat/forPattern "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"))
 
 (defn- remove-slash-prefix
   "Returns the input string after stripping out any preceding slashes."
@@ -55,7 +58,7 @@
                               (merge
                                 (common-extractor-fn instance-id failed-marathon-task)
                                 {:id instance-id
-                                 :started-at (str (:timestamp failed-marathon-task))
+                                 :started-at (-> failed-marathon-task :timestamp (utils/str-to-date formatter-marathon))
                                  :healthy? false
                                  :port 0})))
           max-instances-to-keep 10]
@@ -158,7 +161,7 @@
                                 (merge
                                   (common-extractor-fn instance-id %)
                                   {:id instance-id
-                                   :started-at (str (:startedAt %))
+                                   :started-at (-> % :startedAt (utils/str-to-date formatter-marathon))
                                    :healthy? (healthy?-fn %)
                                    ;; first port must be used for the web server, extra ports can be used freely.
                                    :port (-> % :ports first)
