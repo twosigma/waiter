@@ -74,22 +74,12 @@
   "Extracts the alphanumeric characters from the started-at field and converts it into a comparable numeric value.
    There is an assumption that started-at will have at most 20 alphanumeric chracters that can be used for comparison."
   [started-at]
-  (let [extract-alphanumeric (fn [s] (str/replace (str s) #"[^A-Za-z0-9]" ""))
-        right-pad-zero (fn [s l] (str s (apply str (repeat (- l (count s)) "0"))))
-        expected-max-started-at-length 20
-        string->numeric-value (fn [s]
-                                (when-not (str/blank? s)
-                                  (-> (str/lower-case s)
-                                      extract-alphanumeric
-                                      (right-pad-zero expected-max-started-at-length)
-                                      (BigInteger. 36))))]
-    (some-> started-at
-            string->numeric-value)))
+  (if started-at (.getMillis started-at) 0))
 
 (defn- nil-safe-unchecked-negate
   "nil-friendly negation of BigIntegers"
   [x]
-  (when x (.negate ^BigInteger x)))
+  (when x (unchecked-negate x)))
 
 (defn find-killable-instance
   "While killing instances choose using the following logic:

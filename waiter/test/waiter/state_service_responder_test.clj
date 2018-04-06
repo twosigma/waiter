@@ -183,15 +183,15 @@
       ;; start the service-chan-responder
       (start-service-chan-responder service-id trigger-unblacklist-process-fn timeout-config channel-config initial-state)
       (assoc channel-config :trigger-unblacklist-process-atom trigger-unblacklist-process-atom)))
-  (let [instance-h1 {:id "testabcd.h1" :started-at (utils/date-to-str (DateTime. 10000))}
-        instance-h2 {:id "testabcd.h2" :started-at (utils/date-to-str (DateTime. 20000))}
-        instance-h3 {:id "testabcd.h3" :started-at (utils/date-to-str (DateTime. 30000))}
-        instance-h4 {:id "testabcd.h4" :started-at (utils/date-to-str (DateTime. 40000))}
-        instance-h5 {:id "testabcd.h5" :started-at (utils/date-to-str (DateTime. 50000))}
-        instance-h6 {:id "testabcd.h6" :started-at (utils/date-to-str (DateTime. 60000))}
-        instance-u1 {:id "testabcd.u1" :started-at (utils/date-to-str (DateTime. 11000))}
-        instance-u2 {:id "testabcd.u2" :started-at (utils/date-to-str (DateTime. 21000))}
-        instance-u3 {:id "testabcd.u3" :started-at (utils/date-to-str (DateTime. 31000))}
+  (let [instance-h1 {:id "testabcd.h1" :started-at (DateTime. 10000)}
+        instance-h2 {:id "testabcd.h2" :started-at (DateTime. 20000)}
+        instance-h3 {:id "testabcd.h3" :started-at (DateTime. 30000)}
+        instance-h4 {:id "testabcd.h4" :started-at (DateTime. 40000)}
+        instance-h5 {:id "testabcd.h5" :started-at (DateTime. 50000)}
+        instance-h6 {:id "testabcd.h6" :started-at (DateTime. 60000)}
+        instance-u1 {:id "testabcd.u1" :started-at (DateTime. 11000)}
+        instance-u2 {:id "testabcd.u2" :started-at (DateTime. 21000)}
+        instance-u3 {:id "testabcd.u3" :started-at (DateTime. 31000)}
         id->instance-data {"testabcd.h1" instance-h1
                            "testabcd.h2" instance-h2
                            "testabcd.h3" instance-h3
