@@ -58,28 +58,35 @@
 (defn- killable?
   "Only the following instances can be killed:
    - without slots used and not killed|locked, or
-   - expired and idle or processing lingering requests"
-  [request-id->use-reason-map earliest-request-threshold-time {:keys [slots-used status-tags] :as state}]
-  (or (and (zero? slots-used)
-           (not-any? #(contains? status-tags %) [:killed :locked]))
-      (and (expired? state)
-           (only-lingering-requests? request-id->use-reason-map earliest-request-threshold-time))))
+   - expired and idle or processing lingering requests.
+   If there are expired instances, only choose healthy instances that are blacklisted or expired.
+   If there are expired and starting instances, only kill unhealthy instances that are not starting."
+  [request-id->use-reason-map earliest-request-threshold-time expired-instances? starting-instances?
+   {:keys [slots-used status-tags] :as state}]
+  (and (or (and (zero? slots-used)
+                (not-any? #(contains? status-tags %) [:killed :locked]))
+           (and (expired? state)
+                (only-lingering-requests? request-id->use-reason-map earliest-request-threshold-time)))
+       (or (not (and expired-instances? (contains? status-tags :healthy)))
+           (some #(contains? status-tags %) [:blacklisted :expired]))
+       (or (not (and expired-instances? starting-instances?))
+           (and (contains? status-tags :unhealthy)
+                (not (contains? status-tags :starting))))))
 
 (defn- find-max
   "Uses the provided comparison function to find the max element in collection."
   [comparison-fn collection]
   (reduce #(if (pos? (comparison-fn %1 %2)) %1 %2) (first collection) (rest collection)))
 
-(defn- started-at->numeric
-  "Extracts the alphanumeric characters from the started-at field and converts it into a comparable numeric value.
-   There is an assumption that started-at will have at most 20 alphanumeric chracters that can be used for comparison."
-  [started-at]
-  (if started-at (.getMillis started-at) 0))
+(defn- expired-instances?
+  "Returns truthy value if there is some instance in an expired state."
+  [instance-id->state]
+  (some (fn [[_ {:keys [status-tags]}]] (contains? status-tags :expired)) instance-id->state))
 
-(defn- nil-safe-unchecked-negate
-  "nil-friendly negation of BigIntegers"
-  [x]
-  (when x (unchecked-negate x)))
+(defn- starting-instances?
+  "Returns truthy value if there is some instance in an starting state."
+  [instance-id->state]
+  (some (fn [[_ {:keys [status-tags]}]] (contains? status-tags :starting)) instance-id->state))
 
 (defn find-killable-instance
   "While killing instances choose using the following logic:
@@ -101,12 +108,9 @@
                                                     (contains? status-tags :unhealthy)
                                                     (every? #(contains? status-tags %) [:healthy :blacklisted])
                                                     (contains? status-tags :healthy)
-                                                    (cond-> (some-> instance-id
-                                                                    id->instance
-                                                                    :started-at
-                                                                    started-at->numeric)
+                                                    (cond-> (or (some-> instance-id id->instance :started-at .getMillis) 0)
                                                             ; invert sorting for expired instances
-                                                            (expired? state) (nil-safe-unchecked-negate))))
+                                                            (expired? state) (unchecked-negate))))
         instance-id-comparator #(let [category-comparison (compare
                                                             (instance-id-state-pair->categorizer-vec %1)
                                                             (instance-id-state-pair->categorizer-vec %2))]
@@ -115,25 +119,13 @@
                                       (get id->instance (first %1))
                                       (get id->instance (first %2)))
                                     category-comparison))
-        expired-instances? (some (fn [[_ {:keys [status-tags]}]] (contains? status-tags :expired)) instance-id->state)
-        starting-instances? (some (fn [[_ {:keys [status-tags]}]] (contains? status-tags :starting)) instance-id->state)]
+        has-expired-instances (expired-instances? instance-id->state)
+        has-starting-instances (starting-instances? instance-id->state)]
     (some->> instance-id->state
+             (filter (fn [[instance-id _]] (acceptable-instance-id? instance-id)))
              (filter (fn [[instance-id state]]
                        (-> (instance-id->request-id->use-reason-map instance-id)
-                           (killable? earliest-request-threshold-time state))))
-             (filter (fn [[instance-id _]] (acceptable-instance-id? instance-id)))
-             seq ;; trigger short-circuit if there are no expired instances
-             ; if there are expired instances, only choose healthy instances that are blacklisted or expired
-             (filter (fn [[_ {:keys [status-tags]}]]
-                       (if (and expired-instances? (contains? status-tags :healthy))
-                         (some #(contains? status-tags %) [:blacklisted :expired])
-                         true)))
-             ; if there are expired and starting instances, only kill unhealthy instances that are not starting
-             (filter (fn [[_ {:keys [status-tags]}]]
-                       (if (and expired-instances? starting-instances?)
-                         (and (contains? status-tags :unhealthy)
-                              (not (contains? status-tags :starting)))
-                         true)))
+                           (killable? earliest-request-threshold-time has-expired-instances has-starting-instances state))))
              (find-max instance-id-comparator)
              first ; extract the instance-id
              id->instance)))
@@ -159,10 +151,10 @@
   (let [instance->feature-vector (memoize
                                    (fn [{:keys [id started-at]}]
                                      [(contains? expired-instance-ids id)
-                                      (cond-> (some-> started-at started-at->numeric)
+                                      (cond-> (or (some-> started-at .getMillis) 0)
                                               ; invert sorting for expired instances
                                               (contains? expired-instance-ids id)
-                                              (nil-safe-unchecked-negate))
+                                              (unchecked-negate))
                                       id]))
         instance-comparator (fn [i1 i2]
                               (compare (instance->feature-vector i1) (instance->feature-vector i2)))]
@@ -345,7 +337,7 @@
    this is expected to be the common case."
   [{:keys [deployment-error id->instance instance-id->state request-id->work-stealer sorted-instance-ids work-stealing-queue] :as current-state}
    service-id update-slot-state-fn [{:keys [cid request-id] :as reason-map} resp-chan exclude-ids-set _]]
-  (if deployment-error  ; if a deployment error is associated with the state, return the error immediately instead of an instance
+  (if deployment-error ; if a deployment error is associated with the state, return the error immediately instead of an instance
     {:current-state' current-state
      :response-chan resp-chan
      :response deployment-error}
@@ -407,12 +399,12 @@
               (cond-> (-> current-state
                           (update-in [:instance-id->request-id->use-reason-map] #(utils/dissoc-in % [instance-id request-id]))
                           (update-in [:instance-id->state instance-id] sanitize-instance-state))
-                ; instance received from work-stealing, do not change slot state
-                (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
-                ; mark instance as no longer locked.
-                (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
-                ; clear work-stealing entry
-                work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id))
+                      ; instance received from work-stealing, do not change slot state
+                      (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
+                      ; mark instance as no longer locked.
+                      (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
+                      ; clear work-stealing entry
+                      work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id))
               (-> current-state
                   (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id :variant] :async-request)
                   (update-in [:instance-id->state instance-id] sanitize-instance-state)))]
@@ -447,25 +439,29 @@
    update-status-tag-fn update-state-by-blacklisting-instance-fn lingering-request-threshold-ms
    [{:keys [instance-id blacklist-period-ms cid]} response-chan]]
   (cid/with-correlation-id cid
-    (log/info "attempt to blacklist" instance-id "which has"
-              (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
-              (get instance-id->state instance-id))
-    ;; cannot blacklist if the instance is not killable
-    (let [instance-not-allowed? (and (contains? instance-id->state instance-id)
-                                     (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))]
-                                       (->> (instance-id->state instance-id)
-                                            (killable? (instance-id->request-id->use-reason-map instance-id) earliest-request-threshold-time)
-                                            not)))
-          response-code (if instance-not-allowed? :in-use :blacklisted)]
-      {:current-state' (if (= :blacklisted response-code)
-                         (-> current-state
-                             ; mark instance as blacklisted and set the expiry time
-                             (update-in [:instance-id->state instance-id] sanitize-instance-state)
-                             (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
-                             (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
-                         current-state)
-       :response-chan response-chan
-       :response response-code})))
+                           (log/info "attempt to blacklist" instance-id "which has"
+                                     (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
+                                     (get instance-id->state instance-id))
+                           ;; cannot blacklist if the instance is not killable
+                           (let [instance-not-allowed? (and (contains? instance-id->state instance-id)
+                                                            (let [request-id->use-reason-map (instance-id->request-id->use-reason-map instance-id)
+                                                                  earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
+                                                                  has-expired-instances (expired-instances? instance-id->state)
+                                                                  has-starting-instances (starting-instances? instance-id->state)
+                                                                  state (instance-id->state instance-id)]
+                                                              (not
+                                                                (killable? request-id->use-reason-map earliest-request-threshold-time
+                                                                           has-expired-instances has-starting-instances state))))
+                                 response-code (if instance-not-allowed? :in-use :blacklisted)]
+                             {:current-state' (if (= :blacklisted response-code)
+                                                (-> current-state
+                                                    ; mark instance as blacklisted and set the expiry time
+                                                    (update-in [:instance-id->state instance-id] sanitize-instance-state)
+                                                    (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
+                                                    (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
+                                                current-state)
+                              :response-chan response-chan
+                              :response response-code})))
 
 (defn- unblacklist-instance
   [{:keys [instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
@@ -610,7 +606,7 @@
                          ; to be used preferentially. `exit-chan` and `query-state-chan` must be lowest priority
                          ; to facilitate unit testing.
                          chans (concat (cond-> [update-state-chan]
-                                         (or slots-available? (seq work-stealing-queue) deployment-error) (conj reserve-instance-chan))
+                                               (or slots-available? (seq work-stealing-queue) deployment-error) (conj reserve-instance-chan))
                                        [release-instance-chan blacklist-instance-chan unblacklist-instance-chan kill-instance-chan
                                         work-stealing-chan query-state-chan exit-chan])
                          [data chan-selected] (async/alts! chans :priority true)]
@@ -685,9 +681,9 @@
               (timers/stop timer-context)
               (recur (assoc new-state :timer-context (timers/start responder-timer))))
             (log/info "service-chan-responder shutting down for" service-id)))
-      (catch Exception e
-        (log/error e "Fatal error in service-chan-responder for" service-id)
-        (System/exit 1))))))
+        (catch Exception e
+          (log/error e "Fatal error in service-chan-responder for" service-id)
+          (System/exit 1))))))
 
 (defn trigger-unblacklist-process
   "Launches a go-block that sends a message to unblacklist-instance-chan to unblacklist instance-id after blacklist-period-ms have elapsed."
@@ -1178,7 +1174,7 @@
                                  :update-available-apps
                                  (let [{:keys [available-apps scheduler-sync-time]} message-data
                                        available-service-ids (into #{} available-apps)
-                                       services-without-instances (remove #(contains? service-id->my-instance->slots %) available-service-ids )
+                                       services-without-instances (remove #(contains? service-id->my-instance->slots %) available-service-ids)
                                        service-id->healthy-instances' (select-keys service-id->healthy-instances available-service-ids)
                                        service-id->unhealthy-instances' (select-keys service-id->unhealthy-instances available-service-ids)
                                        service-id->expired-instances' (select-keys service-id->expired-instances available-service-ids)
