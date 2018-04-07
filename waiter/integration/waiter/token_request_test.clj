@@ -679,6 +679,60 @@
       (delete-token-and-assert waiter-url token)
       (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-token-param-support
+  (testing-using-waiter-url
+    (let [token (rand-name)
+          binary (kitchen-cmd)
+          token-response (post-token waiter-url {:cmd "$BINARY -p $PORT0"
+                                                 :cmd-type "shell"
+                                                 :env {"BINARY" binary
+                                                       "FOO" "BAR"
+                                                       "WAITER_PARAM_FEE" "FIE"}
+                                                 :name token
+                                                 :token token
+                                                 :version "does-not-matter"}
+                                     :query-params {"update-mode" "admin"})
+          kitchen-request #(make-kitchen-request waiter-url % :path "/environment")]
+      (is (= 200 (:status token-response)) (:body token-response))
+      (try
+        (let [request-headers {:x-waiter-token token}
+              {:keys [service-id status] :as response} (make-request-with-debug-info request-headers kitchen-request)
+              {:keys [env] :as service-description} (response->service-description waiter-url response)]
+          (is (= 200 status))
+          (is (= {:BINARY binary
+                  :FOO "BAR"
+                  :WAITER_PARAM_FEE "FIE"}
+                 env)
+              (str service-description))
+          (delete-service waiter-url service-id))
+
+        (let [request-headers {:x-waiter-param-my_variable "value-1"
+                               :x-waiter-token token}
+              {:keys [service-id status] :as response} (make-request-with-debug-info request-headers kitchen-request)
+              {:keys [env] :as service-description} (response->service-description waiter-url response)]
+          (is (= 200 status))
+          (is (= {:BINARY binary
+                  :FOO "BAR"
+                  :WAITER_PARAM_FEE "FIE"
+                  :WAITER_PARAM_MY_VARIABLE "value-1"}
+                 env)
+              (str service-description))
+          (delete-service waiter-url service-id))
+
+        (let [request-headers {:x-waiter-param-fee "value-1"
+                               :x-waiter-token token}
+              {:keys [service-id status] :as response} (make-request-with-debug-info request-headers kitchen-request)
+              {:keys [env] :as service-description} (response->service-description waiter-url response)]
+          (is (= 200 status))
+          (is (= {:BINARY binary
+                  :FOO "BAR"
+                  :WAITER_PARAM_FEE "value-1"}
+                 env)
+              (str service-description))
+          (delete-service waiter-url service-id))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
+
 (deftest ^:parallel ^:integration-fast test-token-invalid-environment-variables
   (testing-using-waiter-url
     (let [{:keys [body status]} (post-token waiter-url {:env {"HOME" "/my/home"}
