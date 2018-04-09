@@ -10,7 +10,6 @@
 ;;
 (ns waiter.state-test
   (:require [clj-time.core :as t]
-            [clj-time.format :as f]
             [clojure.core.async :as async]
             [clojure.data :as data]
             [clojure.string :as str]
@@ -267,6 +266,22 @@
                       :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-active}}}
                       :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
                                               (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-2"] assoc :slots-used 1))}
+                     {:expected [instance-4]
+                      :name "find-instance-to-offer:youngest-unhealthy-unlocked-instance-in-presence-of-busy-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-active}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-7" :status-tags] conj :locked)
+                                              (update-in ["inst-2"] assoc :slots-used 1))}
+                     {:expected [instance-4]
+                      :name "find-instance-to-offer:youngest-unhealthy-live-instance-in-presence-of-busy-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-active}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-7" :status-tags] conj :killed)
                                               (update-in ["inst-2"] assoc :slots-used 1))}
                      )]
     (doseq [{:keys [exclude-ids-set expected id->instance instance-id->request-id->use-reason-map

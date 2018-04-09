@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.state
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -63,8 +64,8 @@
    If there are expired and starting instances, only kill unhealthy instances that are not starting."
   [request-id->use-reason-map earliest-request-threshold-time expired-instances? starting-instances?
    {:keys [slots-used status-tags] :as state}]
-  (and (or (and (zero? slots-used)
-                (not-any? #(contains? status-tags %) [:killed :locked]))
+  (and (not-any? #(contains? status-tags %) [:killed :locked])
+       (or (zero? slots-used)
            (and (expired? state)
                 (only-lingering-requests? request-id->use-reason-map earliest-request-threshold-time)))
        (or (not (and expired-instances? (contains? status-tags :healthy)))
@@ -92,12 +93,11 @@
   "While killing instances choose using the following logic:
    if there are expired and starting instances, only kill unhealthy instances that are not starting;
    choose instances in following order:
-   - choose amongst idle instances
-   - choose youngest healthy instance or oldest expired instance to break ties
-   - choose idle unhealthy ones with highest priority
-   - next, choose healthy, but blacklisted instances
-   - next, choose expired instances (idle or processing only lingering requests)
-   - finally, choose healthy instances."
+   - choose amongst the oldest idle expired instances
+   - choose among expired instances with lingering requests
+   - choose amongst the idle unhealthy instances
+   - choose amongst the idle blacklisted instances
+   - choose amongst the idle youngest healthy instances."
   [id->instance instance-id->state acceptable-instance-id? instance-id->request-id->use-reason-map lingering-request-threshold-ms]
   (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
         instance-id-state-pair->categorizer-vec (fn [[instance-id {:keys [slots-used status-tags] :as state}]]
@@ -106,9 +106,12 @@
                                                     (zero? slots-used)
                                                     (contains? status-tags :expired)
                                                     (contains? status-tags :unhealthy)
-                                                    (every? #(contains? status-tags %) [:healthy :blacklisted])
-                                                    (contains? status-tags :healthy)
-                                                    (cond-> (or (some-> instance-id id->instance :started-at .getMillis) 0)
+                                                    (contains? status-tags :blacklisted)
+                                                    (cond-> (or (some-> instance-id
+                                                                        id->instance
+                                                                        :started-at
+                                                                        tc/to-long)
+                                                                0)
                                                             ; invert sorting for expired instances
                                                             (expired? state) (unchecked-negate))))
         instance-id-comparator #(let [category-comparison (compare
