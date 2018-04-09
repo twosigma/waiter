@@ -28,8 +28,7 @@
             [waiter.middleware :as middleware]
             [waiter.ring-utils :as ru]
             [waiter.scheduler :as scheduler]
-            [waiter.statsd :as statsd]
-            [waiter.utils :as utils])
+            [waiter.statsd :as statsd])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder URLEncoder)
            (java.nio ByteBuffer)
            (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)
