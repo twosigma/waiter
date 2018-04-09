@@ -552,4 +552,4 @@
   [^Exception e update-fn]
   (if (instance? ExceptionInfo e)
     (ex-info (.getMessage e) (update-fn (ex-data e)) (.getCause e))
-    (ex-info (.getMessage e) (update-fn {}) (.getCause e))))
+    (ex-info (.getMessage e) (update-fn {}) e)))

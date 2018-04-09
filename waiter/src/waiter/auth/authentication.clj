@@ -36,7 +36,7 @@
   (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (System/currentTimeMillis)] 1))
 
 (defn auth-params-map
-  "Creates a map intendted to be merged into requests/responses."
+  "Creates a map intended to be merged into requests/responses."
   ([principal]
    (auth-params-map principal (first (str/split principal #"@" 2))))
   ([principal user]
