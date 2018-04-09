@@ -21,7 +21,7 @@
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import java.io.ByteArrayInputStream))
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality

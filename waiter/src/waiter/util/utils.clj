@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.utils
+(ns waiter.util.utils
   (:require [chime]
             [clj-time.core :as t]
             [clj-time.format :as f]

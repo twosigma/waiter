@@ -16,7 +16,6 @@
             [metrics.counters :as counters]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
-            [waiter.async-utils :as au]
             [waiter.core :refer :all]
             [waiter.headers :as headers]
             [waiter.kv :as kv]

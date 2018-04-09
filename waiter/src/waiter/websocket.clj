@@ -19,16 +19,16 @@
             [metrics.timers :as timers]
             [qbits.jet.client.websocket :as ws-client]
             [slingshot.slingshot :refer [try+]]
-            [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cookie-support]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.middleware :as middleware]
-            [waiter.ring-utils :as ru]
             [waiter.scheduler :as scheduler]
-            [waiter.statsd :as statsd])
+            [waiter.statsd :as statsd]
+            [waiter.util.async-utils :as au]
+            [waiter.util.ring-utils :as ru])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder URLEncoder)
            (java.nio ByteBuffer)
            (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)

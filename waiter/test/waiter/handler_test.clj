@@ -17,7 +17,6 @@
             [clojure.walk :as walk]
             [full.async :as fa]
             [plumbing.core :as pc]
-            [waiter.async-utils :as au]
             [waiter.authorization :as authz]
             [waiter.core :as core]
             [waiter.handler :refer :all]
@@ -25,7 +24,8 @@
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
-            [waiter.test-helpers :refer :all])
+            [waiter.test-helpers :refer :all]
+            [waiter.util.async-utils :as au])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
            (java.io StringBufferInputStream StringReader)))

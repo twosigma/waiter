@@ -20,7 +20,7 @@
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import waiter.scheduler.marathon.MarathonScheduler))
 
 (deftest test-response-data->service-instances

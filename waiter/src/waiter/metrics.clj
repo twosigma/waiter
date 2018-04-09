@@ -20,9 +20,9 @@
             [metrics.meters :as meters]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
-            [waiter.async-utils :as au]
             [waiter.correlation-id :as cid]
-            [waiter.utils :as utils])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils])
   (:import (com.codahale.metrics Counter Gauge Histogram Meter MetricFilter MetricRegistry Timer Timer$Context)
            (org.joda.time DateTime)))
 

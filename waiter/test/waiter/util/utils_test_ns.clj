@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.utils-test-ns)
+(ns waiter.util.utils-test-ns)
 
 (defn foo
   "This function (and namespace) exist solely to allow for testing the

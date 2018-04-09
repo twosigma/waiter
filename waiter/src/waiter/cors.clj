@@ -12,7 +12,7 @@
   (:require [clojure.core.async :as async]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import java.util.regex.Pattern))
 
 (defprotocol CorsValidator

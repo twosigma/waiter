@@ -19,7 +19,7 @@
             [waiter.core :as core]
             [waiter.curator :as curator]
             [waiter.scheduler :refer :all]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)))
 

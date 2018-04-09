@@ -15,7 +15,7 @@
             [clojure.test :refer :all]
             [waiter.auth.authentication :as auth]
             [waiter.auth.kerberos :refer :all]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)))
 
 (deftest test-get-opt-in-accounts

@@ -17,14 +17,14 @@
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
-            [waiter.async-utils :as au]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.mesos.utils :as mesos-utils]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils])
   (:import (org.joda.time.format DateTimeFormat)))
 
 (def formatter-marathon (DateTimeFormat/forPattern "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"))

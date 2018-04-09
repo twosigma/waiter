@@ -13,7 +13,7 @@
             [clojure.tools.logging :as log]
             [clojure.string :as str]
             [plumbing.core :as pc]
-            [waiter.utils :as utils]))
+            [waiter.util.utils :as utils]))
 
 (def ^:const waiter-header-prefix "x-waiter-")
 

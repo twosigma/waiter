@@ -14,7 +14,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.client-tools :refer :all]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (java.util.concurrent Semaphore)))
 
 ; Marked explicit due to:

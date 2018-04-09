@@ -11,7 +11,7 @@
 (ns waiter.authorization-test
   (:require [clojure.test :refer :all]
             [waiter.authorization :as authz]
-            [waiter.utils :as utils]))
+            [waiter.util.utils :as utils]))
 
 (defrecord TestEntitlementManager [entitlements]
   authz/EntitlementManager

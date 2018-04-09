@@ -17,7 +17,7 @@
             [clojure.tools.logging :as log]
             [waiter.auth.authentication :as auth]
             [waiter.auth.spnego :as spnego]
-            [waiter.utils :as utils]))
+            [waiter.util.utils :as utils]))
 
 (defn get-opt-in-accounts
   "Returns the list of users whose tickets are prestashed on host"

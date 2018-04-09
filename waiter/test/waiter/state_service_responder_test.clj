@@ -16,7 +16,7 @@
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
             [waiter.state :refer :all]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
            (org.joda.time DateTime)))
 

@@ -20,10 +20,10 @@
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [qbits.jet.client.websocket :as ws]
-            [waiter.async-utils :as au]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
-            [waiter.utils :as utils])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils])
   (:import (qbits.jet.websocket WebSocket)))
 
 (defmacro with-catch

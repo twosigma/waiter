@@ -19,7 +19,7 @@
             [waiter.metrics :as metrics]
             [waiter.metrics-sync :refer :all]
             [waiter.test-helpers :as test-helpers]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (org.eclipse.jetty.websocket.client WebSocketClient)
            (org.joda.time DateTime)
            (qbits.jet.websocket WebSocket)))

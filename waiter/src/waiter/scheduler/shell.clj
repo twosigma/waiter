@@ -10,25 +10,21 @@
 ;;
 (ns waiter.scheduler.shell
   (:require [clj-time.core :as t]
-            [clj-time.format :as f]
             [clojure.core.async :as async]
             [clojure.java.io :as io]
             [clojure.java.shell :as sh]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
+            [metrics.timers :as timers]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [schema.core :as s]
+            [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
-            [waiter.schema :as schema]
-            [waiter.service-description :as sd]
-            [waiter.utils :as utils]
-            [metrics.timers :as timers]
-            [waiter.metrics :as metrics])
+            [waiter.util.utils :as utils])
   (:import java.io.File
            java.lang.UNIXProcess
-           java.net.ServerSocket
            java.util.ArrayList))
 
 (defn pid

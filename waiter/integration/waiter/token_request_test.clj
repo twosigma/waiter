@@ -19,7 +19,7 @@
             [qbits.jet.client.http :as http]
             [waiter.client-tools :refer :all]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (java.net URL)
            (org.joda.time DateTime)))
 

@@ -17,10 +17,10 @@
             [clojure.tools.logging :as log]
             [digest]
             [plumbing.core :as pc]
-            [waiter.async-utils :as au]
             [waiter.discovery :as discovery]
             [waiter.state :refer :all]
-            [waiter.utils :as utils])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
 
 (deftest test-find-instance-to-offer-with-concurrency-level-1

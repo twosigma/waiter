@@ -25,7 +25,7 @@
             [waiter.correlation-id :as cid]
             [waiter.request-log :as rlog]
             [waiter.settings :as settings]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            java.io.IOException
            javax.servlet.ServletInputStream)

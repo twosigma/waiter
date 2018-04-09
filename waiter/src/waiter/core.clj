@@ -27,7 +27,6 @@
             [ring.middleware.basic-authentication :as basic-authentication]
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
-            [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
             [waiter.authorization :as authz]
             [waiter.cookie-support :as cookie-support]
@@ -43,7 +42,6 @@
             [waiter.metrics-sync :as metrics-sync]
             [waiter.password-store :as password-store]
             [waiter.process-request :as pr]
-            [waiter.ring-utils :as ru]
             [waiter.scaling :as scaling]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
@@ -53,7 +51,9 @@
             [waiter.state :as state]
             [waiter.statsd :as statsd]
             [waiter.token :as token]
-            [waiter.utils :as utils]
+            [waiter.util.async-utils :as au]
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
             [waiter.work-stealing :as work-stealing])
   (:import (java.net InetAddress URI)

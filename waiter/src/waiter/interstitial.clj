@@ -19,11 +19,9 @@
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [plumbing.core :as pc]
-            [waiter.async-utils :as au]
-            [waiter.headers :as headers]
             [waiter.metrics :as metrics]
-            [waiter.service-description :as sd]
-            [waiter.utils :as utils]))
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils]))
 
 (defn- service-id->interstitial-promise
   "Returns the promise mapped against a service-id.

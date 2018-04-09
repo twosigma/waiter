@@ -12,7 +12,7 @@
   (:require [clojure.test :refer :all]
             [schema.core :as s]
             [waiter.settings :refer :all]
-            [waiter.utils :as utils]))
+            [waiter.util.utils :as utils]))
 
 (deftest test-load-missing-edn-file
   (let [exit-called-atom (atom false)]

@@ -24,7 +24,7 @@
             [waiter.correlation-id :as cid]
             [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
            (org.eclipse.jetty.util HttpCookieStore$Empty)

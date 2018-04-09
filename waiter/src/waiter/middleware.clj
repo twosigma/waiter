@@ -11,8 +11,8 @@
 (ns waiter.middleware
   (:require [clojure.core.async :as async]
             [full.async :refer (<?? <? go-try)]
-            [waiter.async-utils :as au]
-            [waiter.utils :as utils]))
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils]))
 
 (defn wrap-update
   "Wraps a handler, calling update on the request and the response.

@@ -20,7 +20,7 @@
             [waiter.service-description :as sd]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (java.io StringBufferInputStream)
            (org.joda.time DateTime)))
