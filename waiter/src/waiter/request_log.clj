@@ -23,7 +23,7 @@
 (defn log
   "Log log-data as JSON"
   [log-data]
-  (log/info (json/write-str log-data :escape-slash false)))
+  (log/log "RequestLog" :info nil (json/write-str log-data :escape-slash false)))
 
 (defn request->context
   "Convert a request into a context suitable for logging."
