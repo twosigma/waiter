@@ -158,7 +158,12 @@
             (if successful?
               (do
                 (when (= "killed" reason)
-                  (scheduler/process-instance-killed! (walk/keywordize-keys instance)))
+                  (-> instance
+                      walk/keywordize-keys
+                      (update :started-at (fn [started-at]
+                                            (when started-at
+                                              (utils/str-to-date started-at))))
+                      scheduler/process-instance-killed!))
                 (utils/map->json-response {:instance-id instance-id
                                            :blacklist-period period-in-ms}))
               (let [response-status (if (= :in-use response-code) 423 503)]
