@@ -553,10 +553,3 @@
   (if (instance? ExceptionInfo e)
     (ex-info (.getMessage e) (update-fn (ex-data e)) (.getCause e))
     (ex-info (.getMessage e) (update-fn {}) e)))
-
-(let [byte-array-type (Class/forName "[B")]
-  (defn byte-array?
-  "Tests if a value is a byte-array."
-  [val]
-    (when val
-      (instance? byte-array-type val))))
