@@ -14,7 +14,9 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
+            [metrics.timers :as timers]
             [waiter.async-utils :as au]
+            [waiter.metrics :as metrics]
             [waiter.ring-utils :as ru]
             [waiter.utils :as utils]))
 
@@ -42,11 +44,11 @@
 
 (defn response->context
   "Convert a response into a context suitable for logging."
-  [{:keys [authorization/principal backend-response-latency-ms descriptor instance
-           get-instance-latency-ms response-body-size status total-latency-ms] :as response}]
+  [{:keys [authorization/principal backend-response-latency-ns descriptor handle-request-latency-ns
+           instance get-instance-latency-ns response-body-size status] :as response}]
   (let [{:keys [service-id service-description]} descriptor]
     (cond-> {:status (or status 200)}
-      backend-response-latency-ms (assoc :backend-response-latency-ms backend-response-latency-ms)
+      backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)
       descriptor (assoc :metric-group (get service-description "metric-group")
                         :service-id service-id
                         :service-name (get service-description "name")
@@ -55,52 +57,25 @@
                       :instance-id (:id instance)
                       :instance-port (:port instance)
                       :instance-proto (:protocol instance)
-                      :get-instance-latency-ms get-instance-latency-ms)
+                      :get-instance-latency-ns get-instance-latency-ns)
       principal (assoc :principal principal)
       response-body-size (assoc :response-body-size response-body-size)
-      total-latency-ms (assoc :total-latency-ms total-latency-ms))))
-
-(defn stream-countable-body!
-  "Stream a body from in to out, counting the size of values passing through."
-  [in out]
-  (async/go
-    (loop [response-body-size 0]
-      (let [val (async/<! in)]
-        (if-not val
-          (do
-            (async/close! out)
-            response-body-size)
-          (do
-            (async/>! out val)
-            (if (utils/byte-array? val)
-              (recur (+ response-body-size (alength val)))
-              (recur response-body-size))))))))
+      handle-request-latency-ns (assoc :handle-request-latency-ns handle-request-latency-ns))))
 
 (defn log-request!
   "Log a request"
-  [{:keys [request-time] :as request} response]
-  (let [elapsed-ms (t/in-millis (t/interval request-time (t/now)))]
-    (log (merge (request->context request) (response->context (-> response
-                                                                  (assoc :total-latency-ms elapsed-ms)))))))
+  [request response]
+  (log (merge (request->context request) (response->context response))))
 
 (defn wrap-log
   "Wraps a handler logging data from requests and responses."
   [handler]
-  (fn [{:keys [request-time] :as request}]
-    (let [response (handler request)]
-      (if (au/chan? response)
-        (async/go
-          (let [{:keys [body] :as response'} (async/<! response)]
-            (if (au/chan? body)
-              (let [body' (async/chan 5)]
-                (async/go
-                  (let [response-body-size (async/<! (stream-countable-body! body body'))]
-                    (log-request! request (assoc response'
-                                                 :response-body-size response-body-size))))
-                (assoc response' :body body'))
-              (do
-                (log-request! request response')
-                response'))))
-        (do
-          (log-request! request response)
+  (fn [request]
+    (let [timer (timers/start (metrics/waiter-timer "handle-request"))
+          response (handler request)]
+      (ru/update-response
+        response
+        (fn [response]
+          (let [elapsed-ns (timers/stop timer)]
+            (log-request! request (assoc response :handle-request-latency-ns elapsed-ns)))
           response)))))

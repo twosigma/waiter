@@ -555,7 +555,7 @@
                                   (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
                                                                reason-map reservation-status-promise confirm-live-connection-with-abort
                                                                request-state-chan response))
-                                (assoc :backend-response-latency-ms (utils/nanos->millis response-elapsed))
+                                (assoc :backend-response-latency-ns response-elapsed)
                                 (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
                           (catch Exception e
                             (deliver reservation-status-promise :generic-error)
@@ -563,7 +563,7 @@
                             (async/close! request-state-chan)
                             (handle-process-exception e request)))
                         (assoc :instance instance
-                               :get-instance-latency-ms (utils/nanos->millis instance-elapsed))
+                               :get-instance-latency-ns instance-elapsed)
                         (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
