@@ -125,7 +125,8 @@
         has-expired-instances (expired-instances? instance-id->state)
         has-starting-instances (starting-instances? instance-id->state)]
     (some->> instance-id->state
-             (filter (fn [[instance-id _]] (acceptable-instance-id? instance-id)))
+             (filter (fn [[instance-id _]] (and (acceptable-instance-id? instance-id)
+                                                (contains? id->instance instance-id))))
              (filter (fn [[instance-id state]]
                        (-> (instance-id->request-id->use-reason-map instance-id)
                            (killable? earliest-request-threshold-time has-expired-instances has-starting-instances state))))

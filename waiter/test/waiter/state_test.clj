@@ -283,6 +283,15 @@
                                               (update-in ["inst-2" :status-tags] conj :expired)
                                               (update-in ["inst-7" :status-tags] conj :killed)
                                               (update-in ["inst-2"] assoc :slots-used 1))}
+
+                     {:expected [instance-3]
+                      :name "find-instance-to-offer:only-healthy-and-unknown-blacklisted-instance"
+                      :reason :kill-instance
+                      :id->instance (pc/map-from-vals :id [instance-2 instance-3])
+                      :instance-id->request-id->use-reason-map {}
+                      :instance-id->state (-> (instance-id->state-fn (map :id [instance-2 instance-3 instance-5]) [])
+                                              (update-in ["inst-5" :status-tags] (constantly #{:blacklisted}))
+                                              (update-in ["inst-5"] assoc :slots-assigned 0))}
                      )]
     (doseq [{:keys [exclude-ids-set expected id->instance instance-id->request-id->use-reason-map
                     instance-id->state name reason sorted-instance-ids]} test-cases]
