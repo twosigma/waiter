@@ -48,6 +48,7 @@
    (s/required-key "version") schema/non-empty-string
    (s/required-key "run-as-user") schema/non-empty-string
    ;; Optional
+   (s/optional-key "allowed-params") #{schema/non-empty-string}
    (s/optional-key "authentication") schema/valid-authentication
    (s/optional-key "backend-proto") schema/valid-backend-proto
    (s/optional-key "cmd-type") schema/non-empty-string
@@ -103,8 +104,8 @@
 ; keys stored in the service description
 (def ^:const service-description-keys
   (set/union service-override-keys
-             #{"backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata" "metric-group" "name"
-               "permitted-user" "ports" "run-as-user" "version"}))
+             #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata"
+               "metric-group" "name" "permitted-user" "ports" "run-as-user" "version"}))
 
 (def ^:const service-description-from-header-keys (set/union service-description-keys #{"param"}))
 
@@ -116,6 +117,26 @@
 
 ; keys allowed in the token data
 (def ^:const token-data-keys (set/union service-description-keys token-metadata-keys))
+
+(defn transform-allowed-params
+  "Converts allowed-params in the service-description to a set."
+  [service-description]
+  (cond-> service-description
+          (contains? service-description "allowed-params")
+          (update "allowed-params"
+                  (fn [allowed-params]
+                    (cond
+                      (coll? allowed-params)
+                      (set allowed-params)
+
+                      (string? allowed-params)
+                      (if-not (str/blank? allowed-params)
+                        (set (str/split allowed-params #","))
+                        #{})
+
+                      :else
+                      (throw (ex-info "Provided allowed-params is not a vector or a string"
+                                      {:allowed-params allowed-params :status 400})))))))
 
 (defn map-validation-helper [issue key]
   (when-let [error (get issue key)]
@@ -179,6 +200,13 @@
         (when (contains? metadata-error :bad-type)
           "Metadata must be a map from string to string. ")
         (utils/message :metadata-error-info)))))
+
+(defn generate-friendly-allowed-params-error-message
+  "If the provided allowed-params was invalid, attempt to generate a friendly error message.
+   Return nil for unknown error."
+  [issue]
+  (when (get issue "allowed-params")
+    "allowed-params must be a vector with non-empty strings."))
 
 (defn name->metric-group
   "Given a collection of mappings, where each mapping is a
@@ -284,10 +312,11 @@
       (s/validate service-description-schema service-description-to-use)
       (catch Exception e
         (let [issue (s/check service-description-schema service-description-to-use)
-              friendly-error-message (->> {:env (generate-friendly-environment-variable-error-message issue)
+              friendly-error-message (->> {:allowed-params (generate-friendly-allowed-params-error-message issue)
+                                           :env (generate-friendly-environment-variable-error-message issue)
                                            :metadata (generate-friendly-metadata-error-message issue)}
                                           (utils/filterm val))]
-          (throw-error e issue friendly-error-message))))
+          (throw-error e (dissoc issue "allowed-params" "env" "metadata") friendly-error-message))))
 
     (try
       (s/validate max-constraints-schema service-description-to-use)
@@ -324,8 +353,7 @@
     (let [cmd-type (service-description-to-use "cmd-type")]
       (when (and (not (str/blank? cmd-type)) (not ((:valid-cmd-types args-map) cmd-type)))
         (sling/throw+ {:type :service-description-error
-                       :friendly-error-message (str "Command type " cmd-type
-                                                    " is not supported")
+                       :friendly-error-message (str "Command type " cmd-type " is not supported")
                        :status 400})))))
 
 (defprotocol ServiceDescriptionBuilder
@@ -526,30 +554,18 @@
       (cond-> descriptor
               suspended-state (assoc :suspended-state suspended-state)))))
 
-(defn- parse-env-headers
-  "Parses env headers into the environment map.
-   The keys in the environment map are formed by stripping the `env-` prefix and then upper casing the string."
-  [service-description]
-  (let [env-keys (filter (fn [key] (str/starts-with? key "env-")) (keys service-description))
+(defn- parse-env-map-headers
+  "Parses headers into an environment map.
+   The keys in the environment map are formed by stripping the `(str key-name \"-\")` prefix and then upper casing the string."
+  [service-description key-name]
+  (let [env-keys (filter (fn [key] (str/starts-with? key (str key-name "-"))) (keys service-description))
         env-map (select-keys service-description env-keys)]
     (if (empty? env-map)
       service-description
-      (let [renamed-env-map (pc/map-keys #(str/upper-case (str/replace % #"^env-" "")) env-map)
+      (let [key-regex (re-pattern (str "^" key-name "-"))
+            renamed-env-map (pc/map-keys #(str/upper-case (str/replace % key-regex "")) env-map)
             sanitized-service-description (apply dissoc service-description env-keys)]
-        (assoc sanitized-service-description "env" renamed-env-map)))))
-
-(defn- parse-param-headers
-  "Parses param headers into the environment map.
-   The keys in the environment map are formed by stripping the `param-` prefix,
-   then upper casing the string and finally adding the WAITER_PARAM_ prefix."
-  [service-description]
-  (let [param-keys (filter (fn [key] (str/starts-with? key "param-")) (keys service-description))
-        param-map (select-keys service-description param-keys)]
-    (if (empty? param-map)
-      service-description
-      (let [renamed-param-map (pc/map-keys #(str "WAITER_PARAM_" (str/upper-case (str/replace % #"^param-" ""))) param-map)
-            sanitized-service-description (apply dissoc service-description param-keys)]
-        (assoc sanitized-service-description "param" renamed-param-map)))))
+        (assoc sanitized-service-description key-name renamed-env-map)))))
 
 (defn- parse-metadata-headers
   "Parses metadata headers into the metadata map.
@@ -571,10 +587,10 @@
    Finally, it also includes the service configuration defaults."
   (let [service-description-template-from-headers (-> waiter-headers
                                                       headers/drop-waiter-header-prefix
-                                                      parse-env-headers
-                                                      ;; params must be appended after parsing env headers
-                                                      parse-param-headers
+                                                      (parse-env-map-headers "env")
+                                                      (parse-env-map-headers "param")
                                                       parse-metadata-headers
+                                                      transform-allowed-params
                                                       (sanitize-service-description service-description-from-header-keys))
         {:keys [service-description-template token-authentication-disabled token-preauthorized]}
         (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostnames)]
@@ -616,11 +632,19 @@
                                                         ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
                                                         (-> headers (dissoc "param") seq)
                                                         (merge {"run-as-user" username}))
+          merge-params (fn [{:strs [allowed-params] :as service-description}]
+                         (if-let [params (get headers "param")]
+                           (do
+                             (when-not (every? #(contains? allowed-params %) (keys params))
+                               (throw (ex-info "Some params cannot be configured"
+                                               {:allowed-params allowed-params :params params :status 400})))
+                             (-> service-description
+                                 (update "env" merge params)
+                                 (dissoc "param")))
+                           service-description))
           service-description-from-headers-and-token-sources (cond-> (merge tokens service-description-based-on-headers)
                                                                      ; param headers need to update the environment
-                                                                     (contains? headers "param")
-                                                                     (-> (update "env" merge (get headers "param"))
-                                                                         (dissoc "param")))
+                                                                     (contains? headers "param") (merge-params))
           sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
                                                              ;; * run-as-user is the same as a missing run-as-user
                                                              (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))

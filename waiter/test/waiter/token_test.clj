@@ -55,11 +55,11 @@
           make-peer-requests-fn (fn [endpoint & _] (and (str/starts-with? endpoint "token/") (str/ends-with? endpoint "/refresh")) {})
           token "test-token"
           service-description1 (walk/stringify-keys
-                                 {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1", :permitted-user "tu2", :token token,
-                                  :metadata {"a" "b", "c" "d"}, :env {"MY_VAR" "a", "MY_VAR_2" "b"}})
+                                 {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :permitted-user "tu2" :token token
+                                  :metadata {"a" "b" "c" "d"} :env {"MY_VAR" "a", "MY_VAR_2" "b"}})
           service-id1 (sd/service-description->service-id service-id-prefix service-description1)
           service-description2 (walk/stringify-keys
-                                 {:cmd "tc2", :cpus 2, :mem 400, :version "d1e2f3", :run-as-user "tu1", :permitted-user "tu3", :token token})
+                                 {:cmd "tc2" :cpus 2 :mem 400 :version "d1e2f3" :run-as-user "tu1" :permitted-user "tu3" :token token})
           service-id2 (sd/service-description->service-id service-id-prefix service-description2)
           token-root "test-token-root"
           auth-user "tu1"
@@ -71,7 +71,8 @@
         (let [{:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :put, :headers {}})]
+                {:headers {}
+                 :request-method :put})]
           (is (= 405 status))
           (is (str/includes? body "Invalid request method"))))
 
@@ -79,7 +80,8 @@
         (let [{:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :delete, :headers {}})]
+                {:headers {}
+                 :request-method :delete})]
           (is (= 400 status))
           (is (str/includes? body "Couldn't find token in request"))))
 
@@ -87,7 +89,8 @@
         (let [{:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :delete, :headers {"x-waiter-token" (str "invalid-" token)}})]
+                {:headers {"x-waiter-token" (str "invalid-" token)}
+                 :request-method :delete})]
           (is (= 404 status))
           (is (str/includes? body (str "Token invalid-" token " does not exist")))))
 
@@ -144,7 +147,7 @@
                    :headers {"x-waiter-token" token}
                    :request-method :delete})]
             (is (= 200 status))
-            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
+            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\"") "\"success\":true"]))
             (is (= (assoc service-description1
                      "deleted" true
                      "last-update-time" (clock-millis)
@@ -167,7 +170,7 @@
                    :query-params {"hard-delete" "false"}
                    :request-method :delete})]
             (is (= 200 status))
-            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
+            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\"") "\"success\":true"]))
             (is (= (assoc service-description1
                      "deleted" true
                      "last-update-time" (clock-millis)
@@ -205,7 +208,7 @@
                 (run-handle-token-request
                   kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                   {:authorization/user auth-user
-                   :headers {"if-match" (str (- (clock-millis) 5000)), "x-waiter-token" token}
+                   :headers {"if-match" (str (- (clock-millis) 5000)) "x-waiter-token" token}
                    :query-params {"hard-delete" "true"}
                    :request-method :delete})]
             (is (= 412 status))
@@ -268,7 +271,8 @@
         (let [{:keys [status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :get, :headers {"x-waiter-token" token}})]
+                {:headers {"x-waiter-token" token}
+                 :request-method :get})]
           (is (= 404 status))))
 
       (testing "post:new-service-description"
@@ -300,7 +304,7 @@
                  :query-string "include=metadata"
                  :request-method :get})]
           (is (= 200 status))
-          (is (= [{"deleted" false, "etag" (token-data->etag (kv/fetch kv-store token)), "owner" "tu1", "token" token}]
+          (is (= [{"deleted" false "etag" (token-data->etag (kv/fetch kv-store token)) "owner" "tu1" "token" token}]
                  (json/read-str body)))))
 
       (testing "post:new-service-description-different-owner"
@@ -329,7 +333,8 @@
         (let [{:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :get, :headers {"x-waiter-token" token}})
+                {:headers {"x-waiter-token" token}
+                 :request-method :get})
               json-keys ["metadata" "env"]]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
@@ -343,7 +348,9 @@
         (let [{:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :get, :headers {}, :query-params {"token" token}})
+                {:headers {}
+                 :query-params {"token" token}
+                 :request-method :get})
               json-keys ["metadata" "env"]]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
@@ -424,7 +431,9 @@
         (let [{:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :get, :headers {"x-waiter-token" token}, :query-params {"include" "metadata"}})]
+                {:headers {"x-waiter-token" token}
+                 :query-params {"include" "metadata"}
+                 :request-method :get})]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (-> body json/read-str (get "last-update-time") utils/str-to-date))
@@ -439,7 +448,9 @@
         (let [{:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :get, :headers {"x-waiter-token" token}, :query-params {"include" "foo"}})]
+                {:headers {"x-waiter-token" token}
+                 :query-params {"include" "foo"}
+                 :request-method :get})]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
@@ -453,7 +464,9 @@
         (let [{:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :get, :headers {"x-waiter-token" token}, :query-params {"include" ["foo" "metadata"]}})]
+                {:headers {"x-waiter-token" token}
+                 :query-params {"include" ["foo" "metadata"]}
+                 :request-method :get})]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (-> body json/read-str (get "last-update-time") utils/str-to-date))
@@ -468,7 +481,8 @@
         (let [{:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :get, :headers {"x-waiter-token" token}})]
+                {:headers {"x-waiter-token" token}
+                 :request-method :get})]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
@@ -482,7 +496,8 @@
         (let [{:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
-                {:request-method :get, :headers {"x-waiter-token" "###"}})]
+                {:headers {"x-waiter-token" "###"}
+                 :request-method :get})]
           (is (= 404 status))
           (is (str/includes? body "Couldn't find token ###"))))
 
@@ -490,7 +505,7 @@
         (let [token (str token (rand-int 100000))
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1", :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :token token})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
@@ -512,7 +527,7 @@
         (let [token (str token (rand-int 100000))
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "*", :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*" :token token})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
@@ -530,11 +545,63 @@
                             "root" token-root))
                  (kv/fetch kv-store token)))))
 
+      (testing "post:new-service-description:allowed-params-vector"
+        (let [token (str token (rand-int 100000))
+              kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:allowed-params ["VAR_1" "VAR_2" "VAR_3"]
+                                     :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*" :token token})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :headers {}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (str/includes? body (str "Successfully created " token)))
+          (is (= (-> service-description (dissoc "token") sd/transform-allowed-params)
+                 (-> body json/read-str (get "service-description") sd/transform-allowed-params)))
+          (is (= (-> service-description
+                     sd/transform-allowed-params
+                     (dissoc "token")
+                     (assoc "last-update-time" (clock-millis)
+                            "last-update-user" auth-user
+                            "owner" "tu1"
+                            "root" token-root))
+                 (kv/fetch kv-store token)))))
+
+      (testing "post:new-service-description:allowed-params-comma-separated-string"
+        (let [token (str token (rand-int 100000))
+              kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:allowed-params "VAR_1,VAR_2,VAR_3"
+                                     :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*" :token token})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :headers {}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (str/includes? body (str "Successfully created " token)))
+          (is (= (-> service-description (dissoc "token") sd/transform-allowed-params)
+                 (-> body json/read-str (get "service-description") sd/transform-allowed-params)))
+          (is (= (-> service-description
+                     sd/transform-allowed-params
+                     (dissoc "token")
+                     (assoc "last-update-time" (clock-millis)
+                            "last-update-user" auth-user
+                            "owner" "tu1"
+                            "root" token-root))
+                 (kv/fetch kv-store token)))))
+
       (testing "post:update-service-description:edit-star-run-as-user"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "*",
-                                     :permitted-user "tu2", :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
+                                     :permitted-user "tu2" :token token})
               _ (kv/store kv-store token (assoc service-description "cpus" 2 "owner" "tu1" "run-as-user" "tu0"))
               {:keys [body status]}
               (run-handle-token-request
@@ -556,8 +623,8 @@
       (testing "post:update-service-description:preserve-root"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "*",
-                                     :permitted-user "tu2", :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
+                                     :permitted-user "tu2" :token token})
               _ (kv/store kv-store token (assoc service-description "cpus" 100 "owner" "tu1" "root" "foo"))
               {:keys [body status]}
               (run-handle-token-request
@@ -584,8 +651,8 @@
                                     (authorized? [_ subject verb {:keys [user]}]
                                       (and (= subject test-user) (= :admin verb) (= "user2" user))))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :permitted-user "user1", :run-as-user "user1", :version "a1b2c3",
-                                     :owner "user2", :root "foo-bar", :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :permitted-user "user1" :run-as-user "user1" :version "a1b2c3"
+                                     :owner "user2" :root "foo-bar" :token token})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
@@ -647,7 +714,7 @@
       (testing "post:new-service-description:missing-token"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
                                      :permitted-user "tu2"})
               {:keys [body status]}
               (run-handle-token-request
@@ -662,8 +729,8 @@
       (testing "post:new-service-description:reserved-token"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :permitted-user "tu2", :token waiter-hostname})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token waiter-hostname})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
@@ -677,8 +744,8 @@
       (testing "post:new-service-description:schema-fail"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus "not-an-int", :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :permitted-user "tu2", :token token})
+                                    {:cmd "tc1" :cpus "not-an-int" :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token token})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
@@ -692,8 +759,8 @@
       (testing "post:new-service-description:edit-unauthorized-run-as-user"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu0",
-                                     :permitted-user "tu2", :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu0"
+                                     :permitted-user "tu2" :token token})
               _ (kv/store kv-store token (assoc service-description "run-as-user" "tu0" "owner" "tu1" "cpus" 2))
               {:keys [body status]}
               (run-handle-token-request
@@ -708,8 +775,8 @@
       (testing "post:new-service-description:edit-unauthorized-owner"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :permitted-user "tu2", :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token token})
               _ (kv/store kv-store token (assoc service-description "run-as-user" "tu0" "owner" "tu0" "cpus" 2))
               {:keys [body status]}
               (run-handle-token-request
@@ -724,8 +791,8 @@
       (testing "post:new-service-description:create-unauthorized-owner"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :permitted-user "tu2", :token token, :owner "tu0"})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token token :owner "tu0"})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
@@ -744,12 +811,12 @@
                                     (authorized? [_ subject verb {:keys [user]}]
                                       (and (= subject user) (= :admin verb))))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :permitted-user "user1", :run-as-user "user1", :version "a1b2c3",
-                                     :owner "user2", :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :permitted-user "user1" :run-as-user "user1" :version "a1b2c3"
+                                     :owner "user2" :token token})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
-                {:request-method :post, :authorization/user test-user, :headers {"x-waiter-token" token},
+                {:request-method :post :authorization/user test-user :headers {"x-waiter-token" token}
                  :body (StringBufferInputStream. (json/write-str service-description))
                  :query-params {"update-mode" "foobar"}})]
           (is (= 400 status))
@@ -788,15 +855,15 @@
                                     (authorized? [_ subject verb {:keys [user]}]
                                       (and (= subject user) (= :admin verb))))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :permitted-user "user1", :run-as-user "user1", :version "a1b2c3",
-                                     :owner "user2", :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :permitted-user "user1" :run-as-user "user1" :version "a1b2c3"
+                                     :owner "user2" :token token})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user test-user
                  :body (StringBufferInputStream. (json/write-str service-description))
                  :headers {"if-match" (str (clock-millis))
-                           "x-waiter-token" token},
+                           "x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
           (is (= 403 status))
@@ -806,9 +873,9 @@
       (testing "post:new-service-description:invalid-instance-counts"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :permitted-user "tu2", :token token,
-                                     :min-instances 2, :max-instances 1})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token token
+                                     :min-instances 2 :max-instances 1})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
@@ -822,9 +889,9 @@
       (testing "post:new-service-description:invalid-token"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :permitted-user "tu2", :token "###",
-                                     :min-instances 2, :max-instances 10})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token "###"
+                                     :min-instances 2 :max-instances 10})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
@@ -837,9 +904,9 @@
       (testing "post:new-service-description:invalid-token"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :permitted-user "tu2", :token "abcdefgh",
-                                     :min-instances 2, :max-instances 10, :invalid-key "invalid-value"})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token "abcdefgh"
+                                     :min-instances 2 :max-instances 10 :invalid-key "invalid-value"})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
@@ -852,9 +919,9 @@
       (testing "post:new-service-description:cannot-modify-last-update-time"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :permitted-user "tu2", :token "abcdefgh",
-                                     :min-instances 2, :max-instances 10, :last-update-time (clock-millis)})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token "abcdefgh"
+                                     :min-instances 2 :max-instances 10 :last-update-time (clock-millis)})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
@@ -867,9 +934,9 @@
       (testing "post:new-service-description:cannot-modify-root"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :permitted-user "tu2", :token "abcdefgh",
-                                     :min-instances 2, :max-instances 10, :root "foo-bar"})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token "abcdefgh"
+                                     :min-instances 2 :max-instances 10 :root "foo-bar"})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
@@ -882,8 +949,8 @@
       (testing "post:new-service-description:bad-token-metadata"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :token "abcdefgh", :metadata {"a" 12}})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :token "abcdefgh" :metadata {"a" 12}})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
@@ -900,8 +967,8 @@
       (testing "post:new-service-description:bad-token-environment-vars"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1",
-                                     :token "abcdefgh", :env {"HOME" "12"}})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :token "abcdefgh" :env {"HOME" "12"}})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
@@ -917,7 +984,7 @@
       (testing "post:new-service-description:invalid-authentication"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1", :authentication "unsupported"
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :authentication "unsupported"
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -933,7 +1000,7 @@
       (testing "post:new-service-description:missing-permitted-user-with-authentication-disabled"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1", :authentication "disabled"
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :authentication "disabled"
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -949,7 +1016,7 @@
       (testing "post:new-service-description:non-star-permitted-user-with-authentication-disabled"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :run-as-user "tu1", :authentication "disabled", :permitted-user "pu1"
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :authentication "disabled" :permitted-user "pu1"
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -965,7 +1032,7 @@
       (testing "post:new-service-description:partial-description-with-authentication-disabled"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :authentication "disabled", :permitted-user "*"
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :authentication "disabled" :permitted-user "*"
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -981,7 +1048,7 @@
       (testing "post:new-service-description:partial-description-with-interstitial"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd "tc1", :cpus 1, :mem 200, :version "a1b2c3", :interstitial-secs 10, :permitted-user "*"
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :interstitial-secs 10 :permitted-user "*"
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -992,7 +1059,39 @@
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? message "Tokens with missing required parameters cannot use interstitial support") body))))))
+          (is (str/includes? message "Tokens with missing required parameters cannot use interstitial support") body)))
+
+      (testing "post:new-service-description:invalid-allowed-params-int"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:allowed-params 1 ;; invalid int as input"
+                                     :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :permitted-user "*" :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (str/includes? message "Provided allowed-params is not a vector or a string") body)))
+
+      (testing "post:new-service-description:empty-allowed-params-string"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:allowed-params ["VAR_1" "" "VAR_3"]
+                                     :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :permitted-user "*" :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (str/includes? message "allowed-params must be a vector with non-empty strings") body))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))

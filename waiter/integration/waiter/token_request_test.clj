@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.token-request-test
-  (:require [clojure.data.json :as json]
+  (:require [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
@@ -679,15 +680,28 @@
       (delete-token-and-assert waiter-url token)
       (delete-service waiter-url service-id))))
 
+(defmacro run-token-param-support
+  [waiter-url created-service-ids request-fn in-headers expected-env]
+  `(let [request-headers# ~in-headers
+         response# (make-request-with-debug-info request-headers# ~request-fn)
+         service-description# (response->service-description ~waiter-url response#)
+         service-id# (:service-id response#)]
+     (is (= 200 (:status response#)))
+     (is (= ~expected-env (:env service-description#)) (str service-description#))
+     (swap! ~created-service-ids conj service-id#)
+     (delete-service ~waiter-url service-id#)))
+
 (deftest ^:parallel ^:integration-fast test-token-param-support
   (testing-using-waiter-url
     (let [token (rand-name)
           binary (kitchen-cmd)
-          token-response (post-token waiter-url {:cmd "$BINARY -p $PORT0"
+          created-service-ids (atom #{})
+          token-response (post-token waiter-url {:allowed-params ["FAA" "FEE" "FII" "FOO" "FUU"]
+                                                 :cmd "$BINARY -p $PORT0"
                                                  :cmd-type "shell"
                                                  :env {"BINARY" binary
-                                                       "FOO" "BAR"
-                                                       "WAITER_PARAM_FEE" "FIE"}
+                                                       "FEE" "FIE"
+                                                       "FOO" "BAR"}
                                                  :name token
                                                  :token token
                                                  :version "does-not-matter"}
@@ -695,41 +709,47 @@
           kitchen-request #(make-kitchen-request waiter-url % :path "/environment")]
       (is (= 200 (:status token-response)) (:body token-response))
       (try
-        (let [request-headers {:x-waiter-token token}
-              {:keys [service-id status] :as response} (make-request-with-debug-info request-headers kitchen-request)
-              {:keys [env] :as service-description} (response->service-description waiter-url response)]
-          (is (= 200 status))
-          (is (= {:BINARY binary
-                  :FOO "BAR"
-                  :WAITER_PARAM_FEE "FIE"}
-                 env)
-              (str service-description))
-          (delete-service waiter-url service-id))
-
-        (let [request-headers {:x-waiter-param-my_variable "value-1"
-                               :x-waiter-token token}
-              {:keys [service-id status] :as response} (make-request-with-debug-info request-headers kitchen-request)
-              {:keys [env] :as service-description} (response->service-description waiter-url response)]
-          (is (= 200 status))
-          (is (= {:BINARY binary
-                  :FOO "BAR"
-                  :WAITER_PARAM_FEE "FIE"
-                  :WAITER_PARAM_MY_VARIABLE "value-1"}
-                 env)
-              (str service-description))
-          (delete-service waiter-url service-id))
-
-        (let [request-headers {:x-waiter-param-fee "value-1"
-                               :x-waiter-token token}
-              {:keys [service-id status] :as response} (make-request-with-debug-info request-headers kitchen-request)
-              {:keys [env] :as service-description} (response->service-description waiter-url response)]
-          (is (= 200 status))
-          (is (= {:BINARY binary
-                  :FOO "BAR"
-                  :WAITER_PARAM_FEE "value-1"}
-                 env)
-              (str service-description))
-          (delete-service waiter-url service-id))
+        (->> [(async/thread
+                (run-token-param-support
+                  waiter-url created-service-ids kitchen-request
+                  {:x-waiter-token token}
+                  {:BINARY binary :FEE "FIE" :FOO "BAR"}))
+              (async/thread
+                (let [request-headers {:x-waiter-param-my_variable "value-1"
+                                       :x-waiter-token token}
+                      {:keys [body status]} (make-request-with-debug-info request-headers kitchen-request)]
+                  (is (= 400 status))
+                  (is (str/includes? body "Some params cannot be configured"))))
+              (async/thread
+                (let [request-headers {:x-waiter-allowed-params ""
+                                       :x-waiter-param-my_variable "value-1"
+                                       :x-waiter-token token}
+                      {:keys [body status]} (make-request-with-debug-info request-headers kitchen-request)]
+                  (is (= 400 status))
+                  (is (str/includes? body "Some params cannot be configured"))))
+              (async/thread
+                (run-token-param-support
+                  waiter-url created-service-ids kitchen-request
+                  {:x-waiter-param-fee "value-1p" :x-waiter-token token}
+                  {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
+              (async/thread
+                (run-token-param-support
+                  waiter-url created-service-ids kitchen-request
+                  {:x-waiter-allowed-params ["FEE" "FII" "FOO"] :x-waiter-param-fee "value-1p" :x-waiter-token token}
+                  {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
+              (async/thread
+                (run-token-param-support
+                  waiter-url created-service-ids kitchen-request
+                  {:x-waiter-allowed-params "FEE,FOO" :x-waiter-param-fee "value-1p" :x-waiter-token token}
+                  {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
+              (async/thread
+                (run-token-param-support
+                  waiter-url created-service-ids kitchen-request
+                  {:x-waiter-param-fee "value-1p" :x-waiter-param-foo "value-2p" :x-waiter-token token}
+                  {:BINARY binary :FEE "value-1p" :FOO "value-2p"}))]
+             (map async/<!!)
+             doall)
+        (is (= 5 (count @created-service-ids)) "Unique service-ids were not created!")
         (finally
           (delete-token-and-assert waiter-url token))))))
 

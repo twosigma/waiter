@@ -20,8 +20,8 @@
 ;; authentication is intentionally missing from this list as we do not support it as an on-the-fly header
 (def ^:const waiter-headers-with-str-value
   (set (map #(str waiter-header-prefix %)
-            #{"backend-proto" "cmd" "cmd-type" "distribution-scheme" "endpoint-path" "health-check-url" "metric-group"
-              "name" "permitted-user" "run-as-user" "token" "version"})))
+            #{"allowed-params" "backend-proto" "cmd" "cmd-type" "distribution-scheme" "endpoint-path" "health-check-url"
+              "metric-group" "name" "permitted-user" "run-as-user" "token" "version"})))
 
 (defn get-waiter-header
   "Retrieves the waiter header value."
@@ -33,7 +33,8 @@
   [^String header-name ^String header-value]
   (if (or (contains? waiter-headers-with-str-value header-name)
           (str/starts-with? header-name (str waiter-header-prefix "env-"))
-          (str/starts-with? header-name (str waiter-header-prefix "metadata-")))
+          (str/starts-with? header-name (str waiter-header-prefix "metadata-"))
+          (str/starts-with? header-name (str waiter-header-prefix "param-")))
     header-value
     (try
       (json/parse-string header-value)
@@ -88,7 +89,8 @@
           "transfer-encoding" "upgrade"))
 
 (defn assoc-auth-headers
-  "Assocs the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the username and prinicpal are non-nil, respectively."
+  "`assoc`s the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the
+   username and principal are non-nil, respectively."
   [headers username principal]
   (cond-> headers
           username (assoc "x-waiter-auth-principal" username)

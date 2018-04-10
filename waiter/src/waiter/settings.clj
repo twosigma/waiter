@@ -95,7 +95,8 @@
                                                           schema/contains-kind-sub-map?)
    (s/required-key :service-description-constraints) {s/Str {(s/required-key :max) schema/positive-num}}
    ; service-description-defaults should never contain default values for required fields, e.g. version, cmd, run-as-user, etc.
-   (s/required-key :service-description-defaults) {(s/required-key "authentication") schema/valid-authentication
+   (s/required-key :service-description-defaults) {(s/required-key "allowed-params") #{schema/non-empty-string}
+                                                   (s/required-key "authentication") schema/valid-authentication
                                                    (s/required-key "backend-proto") schema/valid-backend-proto
                                                    (s/required-key "blacklist-on-503") s/Bool
                                                    (s/required-key "concurrency-level") schema/positive-int
@@ -282,7 +283,8 @@
                                         :default {:factory-fn 'waiter.service-description/create-default-service-description-builder}}
    :service-description-constraints {"cpus" {:max 32}
                                      "mem" {:max (* 128 1024)}}
-   :service-description-defaults {"authentication" "standard"
+   :service-description-defaults {"allowed-params" #{}
+                                  "authentication" "standard"
                                   "backend-proto" "http"
                                   "blacklist-on-503" true
                                   "concurrency-level" 1

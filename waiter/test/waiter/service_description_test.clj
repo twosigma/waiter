@@ -638,8 +638,8 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {"cpus" "1"
-                                               "param" {"WAITER_PARAM_BAZ" "quux"
-                                                        "WAITER_PARAM_FOO_BAR" "bar"}}
+                                               "param" {"BAZ" "quux"
+                                                        "FOO_BAR" "bar"}}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :tokens {}}}
@@ -655,15 +655,15 @@
                                      :headers {"cpus" "1"
                                                "env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar"}
-                                               "param" {"WAITER_PARAM_BAZ" "quux"
-                                                        "WAITER_PARAM_FOO_BAR" "bar"}}
+                                               "param" {"BAZ" "quux"
+                                                        "FOO_BAR" "bar"}}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :tokens {}}}
                          {:name "prepare-service-description-sources:Parse overlap env and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
-                                           "x-waiter-env-waiter_param_foo_bar" "bar1"
+                                           "x-waiter-env-foo_bar" "bar1"
                                            "x-waiter-param-baz" "quux"
                                            "x-waiter-param-foo_bar" "bar2"}
                           :passthrough-headers {}
@@ -671,9 +671,9 @@
                                                 "health-check-url" "/ping"}
                                      :headers {"cpus" "1"
                                                "env" {"BAZ" "quux"
-                                                      "WAITER_PARAM_FOO_BAR" "bar1"}
-                                               "param" {"WAITER_PARAM_BAZ" "quux"
-                                                        "WAITER_PARAM_FOO_BAR" "bar2"}}
+                                                      "FOO_BAR" "bar1"}
+                                               "param" {"BAZ" "quux"
+                                                        "FOO_BAR" "bar2"}}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :tokens {}}}
@@ -887,120 +887,132 @@
                                    :headers {"version" "on-the-fly-version"}}))))
 
     (testing "token + param header - on-the-fly"
-      (is (= {"cmd" "token-cmd"
+      (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+              "cmd" "token-cmd"
               "concurrency-level" 5
-              "env" {"X_WAITER_VAR_1" "VALUE-1"
-                     "X_WAITER_VAR_2" "VALUE-2"}
+              "env" {"VAR_1" "VALUE-1"
+                     "VAR_2" "VALUE-2"}
               "health-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
+                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                            "cmd" "token-cmd"
                                             "concurrency-level" 5
                                             "run-as-user" "test-user"}
-                                   :headers {"param" {"X_WAITER_VAR_1" "VALUE-1"
-                                                      "X_WAITER_VAR_2" "VALUE-2"}
+                                   :headers {"param" {"VAR_1" "VALUE-1"
+                                                      "VAR_2" "VALUE-2"}
                                              "version" "on-the-fly-version"}}))))
 
     (testing "token + distinct param header - on-the-fly"
-      (is (= {"cmd" "token-cmd"
+      (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+              "cmd" "token-cmd"
               "concurrency-level" 5
-              "env" {"X_WAITER_VAR_1" "VALUE-1e"
-                     "X_WAITER_VAR_2" "VALUE-2e"
-                     "X_WAITER_VAR_3" "VALUE-3p"
-                     "X_WAITER_VAR_4" "VALUE-4p"}
+              "env" {"VAR_1" "VALUE-1e"
+                     "VAR_2" "VALUE-2e"
+                     "VAR_3" "VALUE-3p"
+                     "VAR_4" "VALUE-4p"}
               "health-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
+                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                            "cmd" "token-cmd"
                                             "concurrency-level" 5
-                                            "env" {"X_WAITER_VAR_1" "VALUE-1e"
-                                                   "X_WAITER_VAR_2" "VALUE-2e"}
+                                            "env" {"VAR_1" "VALUE-1e"
+                                                   "VAR_2" "VALUE-2e"}
                                             "run-as-user" "test-user"}
-                                   :headers {"param" {"X_WAITER_VAR_3" "VALUE-3p"
-                                                      "X_WAITER_VAR_4" "VALUE-4p"}
+                                   :headers {"param" {"VAR_3" "VALUE-3p"
+                                                      "VAR_4" "VALUE-4p"}
                                              "version" "on-the-fly-version"}}))))
 
     (testing "token + overlap param header - on-the-fly"
-      (is (= {"cmd" "token-cmd"
+      (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+              "cmd" "token-cmd"
               "concurrency-level" 5
-              "env" {"X_WAITER_VAR_1" "VALUE-1e"
-                     "X_WAITER_VAR_2" "VALUE-2p"
-                     "X_WAITER_VAR_3" "VALUE-3p"}
+              "env" {"VAR_1" "VALUE-1e"
+                     "VAR_2" "VALUE-2p"
+                     "VAR_3" "VALUE-3p"}
               "health-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
+                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                            "cmd" "token-cmd"
                                             "concurrency-level" 5
-                                            "env" {"X_WAITER_VAR_1" "VALUE-1e"
-                                                   "X_WAITER_VAR_2" "VALUE-2e"}
+                                            "env" {"VAR_1" "VALUE-1e"
+                                                   "VAR_2" "VALUE-2e"}
                                             "run-as-user" "test-user"}
-                                   :headers {"param" {"X_WAITER_VAR_2" "VALUE-2p"
-                                                      "X_WAITER_VAR_3" "VALUE-3p"}
+                                   :headers {"param" {"VAR_2" "VALUE-2p"
+                                                      "VAR_3" "VALUE-3p"}
                                              "version" "on-the-fly-version"}}))))
 
     (testing "token + param header - token due to param"
-      (is (= {"cmd" "token-cmd"
+      (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+              "cmd" "token-cmd"
               "concurrency-level" 5
-              "env" {"X_WAITER_VAR_1" "VALUE-1"
-                     "X_WAITER_VAR_2" "VALUE-2"}
+              "env" {"VAR_1" "VALUE-1"
+                     "VAR_2" "VALUE-2"}
               "health-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "test-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
+                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                            "cmd" "token-cmd"
                                             "concurrency-level" 5
                                             "run-as-user" "test-user"}
-                                   :headers {"param" {"X_WAITER_VAR_1" "VALUE-1"
-                                                      "X_WAITER_VAR_2" "VALUE-2"}}}))))
+                                   :headers {"param" {"VAR_1" "VALUE-1"
+                                                      "VAR_2" "VALUE-2"}}}))))
 
     (testing "token + distinct param header - token due to param"
-      (is (= {"cmd" "token-cmd"
+      (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+              "cmd" "token-cmd"
               "concurrency-level" 5
-              "env" {"X_WAITER_VAR_1" "VALUE-1e"
-                     "X_WAITER_VAR_2" "VALUE-2e"
-                     "X_WAITER_VAR_3" "VALUE-3p"
-                     "X_WAITER_VAR_4" "VALUE-4p"}
+              "env" {"VAR_1" "VALUE-1e"
+                     "VAR_2" "VALUE-2e"
+                     "VAR_3" "VALUE-3p"
+                     "VAR_4" "VALUE-4p"}
               "health-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "test-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
+                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                            "cmd" "token-cmd"
                                             "concurrency-level" 5
-                                            "env" {"X_WAITER_VAR_1" "VALUE-1e"
-                                                   "X_WAITER_VAR_2" "VALUE-2e"}
+                                            "env" {"VAR_1" "VALUE-1e"
+                                                   "VAR_2" "VALUE-2e"}
                                             "run-as-user" "test-user"}
-                                   :headers {"param" {"X_WAITER_VAR_3" "VALUE-3p"
-                                                      "X_WAITER_VAR_4" "VALUE-4p"}}}))))
+                                   :headers {"param" {"VAR_3" "VALUE-3p"
+                                                      "VAR_4" "VALUE-4p"}}}))))
 
     (testing "token + overlap param header - token due to param"
-      (is (= {"cmd" "token-cmd"
+      (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+              "cmd" "token-cmd"
               "concurrency-level" 5
-              "env" {"X_WAITER_VAR_1" "VALUE-1e"
-                     "X_WAITER_VAR_2" "VALUE-2p"
-                     "X_WAITER_VAR_3" "VALUE-3p"}
+              "env" {"VAR_1" "VALUE-1e"
+                     "VAR_2" "VALUE-2p"
+                     "VAR_3" "VALUE-3p"}
               "health-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "test-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
+                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                            "cmd" "token-cmd"
                                             "concurrency-level" 5
-                                            "env" {"X_WAITER_VAR_1" "VALUE-1e"
-                                                   "X_WAITER_VAR_2" "VALUE-2e"}
+                                            "env" {"VAR_1" "VALUE-1e"
+                                                   "VAR_2" "VALUE-2e"}
                                             "run-as-user" "test-user"}
-                                   :headers {"param" {"X_WAITER_VAR_2" "VALUE-2p"
-                                                      "X_WAITER_VAR_3" "VALUE-3p"}}}))))
+                                   :headers {"param" {"VAR_2" "VALUE-2p"
+                                                      "VAR_3" "VALUE-3p"}}}))))
 
     (testing "token host with intersecting values"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1363,6 +1375,36 @@
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
                                               (constantly false))))
+
+    (testing "token + disallowed param header - on-the-fly"
+      (is (thrown? Exception
+                   (compute-service-description {:defaults {"health-check-url" "/ping"
+                                                            "permitted-user" "bob"}
+                                                 :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                          "cmd" "token-cmd"
+                                                          "concurrency-level" 5
+                                                          "run-as-user" "test-user"}
+                                                 :headers {"param" {"VAR_1" "VALUE-1"
+                                                                    "ANOTHER_VAR_2" "VALUE-2"}
+                                                           "version" "on-the-fly-version"}}
+                                                {} {} kv-store service-id-prefix test-user []
+                                                (create-default-service-description-builder {})
+                                                (constantly false)))))
+
+    (testing "token + no allowed params - on-the-fly"
+      (is (thrown? Exception
+                   (compute-service-description {:defaults {"health-check-url" "/ping"
+                                                            "permitted-user" "bob"}
+                                                 :tokens {"allowed-params" #{}
+                                                          "cmd" "token-cmd"
+                                                          "concurrency-level" 5
+                                                          "run-as-user" "test-user"}
+                                                 :headers {"param" {"VAR_1" "VALUE-1"
+                                                                    "VAR_2" "VALUE-2"}
+                                                           "version" "on-the-fly-version"}}
+                                                {} {} kv-store service-id-prefix test-user []
+                                                (create-default-service-description-builder {})
+                                                (constantly false)))))
 
     (testing "instance-expiry-mins"
       (let [core-service-description {"cmd" "cmd for missing run-as-user"

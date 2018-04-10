@@ -291,7 +291,10 @@
    validate-service-description-fn {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         authenticated-user (get request :authorization/user)
-        {:strs [token] :as new-token-description} (-> request ru/json-request :body)
+        {:strs [token] :as new-token-description} (-> request
+                                                      ru/json-request
+                                                      :body
+                                                      sd/transform-allowed-params)
         new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
         {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-description-template}
         (select-keys new-token-description sd/service-description-keys)
