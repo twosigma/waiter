@@ -294,7 +294,7 @@
         {:strs [token] :as new-token-description} (-> request
                                                       ru/json-request
                                                       :body
-                                                      sd/transform-allowed-params)
+                                                      sd/transform-allowed-params-token-entry)
         new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
         {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-description-template}
         (select-keys new-token-description sd/service-description-keys)

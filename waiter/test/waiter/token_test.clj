@@ -560,36 +560,10 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (-> service-description (dissoc "token") sd/transform-allowed-params)
-                 (-> body json/read-str (get "service-description") sd/transform-allowed-params)))
+          (is (= (-> service-description (dissoc "token") sd/transform-allowed-params-token-entry)
+                 (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
           (is (= (-> service-description
-                     sd/transform-allowed-params
-                     (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
-                            "last-update-user" auth-user
-                            "owner" "tu1"
-                            "root" token-root))
-                 (kv/fetch kv-store token)))))
-
-      (testing "post:new-service-description:allowed-params-comma-separated-string"
-        (let [token (str token (rand-int 100000))
-              kv-store (kv/->LocalKeyValueStore (atom {}))
-              service-description (walk/stringify-keys
-                                    {:allowed-params "VAR_1,VAR_2,VAR_3"
-                                     :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*" :token token})
-              {:keys [body status]}
-              (run-handle-token-request
-                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
-                {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
-                 :headers {}
-                 :request-method :post})]
-          (is (= 200 status))
-          (is (str/includes? body (str "Successfully created " token)))
-          (is (= (-> service-description (dissoc "token") sd/transform-allowed-params)
-                 (-> body json/read-str (get "service-description") sd/transform-allowed-params)))
-          (is (= (-> service-description
-                     sd/transform-allowed-params
+                     sd/transform-allowed-params-token-entry
                      (dissoc "token")
                      (assoc "last-update-time" (clock-millis)
                             "last-update-user" auth-user
@@ -1075,12 +1049,12 @@
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? message "Provided allowed-params is not a vector or a string") body)))
+          (is (str/includes? message "Provided allowed-params is not a vector") body)))
 
       (testing "post:new-service-description:empty-allowed-params-string"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:allowed-params ["VAR_1" "" "VAR_3"]
+                                    {:allowed-params ["" "HOME" "VAR.1"]
                                      :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :permitted-user "*" :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -1091,7 +1065,9 @@
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? message "allowed-params must be a vector with non-empty strings") body))))))
+          (is (str/includes? message "Individual params may not be empty") body)
+          (is (str/includes? message "Individual params must be made up of letters, numbers, and hyphens and must start with a letter") body)
+          (is (str/includes? message "Individual params cannot start with MESOS_, MARATHON_, or PORT and cannot be HOME") body))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))

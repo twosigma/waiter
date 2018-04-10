@@ -40,6 +40,11 @@
       (str/starts-with? name "MESOS_")
       (re-matches #"^PORT\d*$" name)))
 
+(def environment-variable-schema
+  (s/both (s/constrained s/Str #(<= 1 (count %) 512))
+          #"^[A-Za-z][A-Za-z0-9_]*$"
+          (s/pred #(not (reserved-environment-variable? %)) 'reserved-environment-variable)))
+
 (def service-description-schema
   {;; Required
    (s/required-key "cpus") schema/positive-num
@@ -48,7 +53,7 @@
    (s/required-key "version") schema/non-empty-string
    (s/required-key "run-as-user") schema/non-empty-string
    ;; Optional
-   (s/optional-key "allowed-params") #{schema/non-empty-string}
+   (s/optional-key "allowed-params") #{environment-variable-schema}
    (s/optional-key "authentication") schema/valid-authentication
    (s/optional-key "backend-proto") schema/valid-backend-proto
    (s/optional-key "cmd-type") schema/non-empty-string
@@ -57,10 +62,7 @@
                                               #(< (count %) 100))
    (s/optional-key "distribution-scheme") (s/enum "balanced" "simple")
    ; Marathon imposes a 512 character limit on environment variable keys and values
-   (s/optional-key "env") (s/constrained {(s/both (s/constrained s/Str #(<= 1 (count %) 512))
-                                                  #"^[A-Za-z][A-Za-z0-9_]*$"
-                                                  (s/pred #(not (reserved-environment-variable? %)) 'reserved-environment-variable))
-                                          (s/constrained s/Str #(<= 1 (count %) 512))}
+   (s/optional-key "env") (s/constrained {environment-variable-schema (s/constrained s/Str #(<= 1 (count %) 512))}
                                          #(< (count %) 100))
    (s/optional-key "name") schema/non-empty-string
    (s/optional-key "permitted-user") schema/non-empty-string
@@ -118,8 +120,25 @@
 ; keys allowed in the token data
 (def ^:const token-data-keys (set/union service-description-keys token-metadata-keys))
 
-(defn transform-allowed-params
-  "Converts allowed-params in the service-description to a set."
+(defn transform-allowed-params-header
+  "Converts allowed-params comma-separated string in the service-description to a set."
+  [service-description]
+  (cond-> service-description
+          (contains? service-description "allowed-params")
+          (update "allowed-params"
+                  (fn [allowed-params]
+                    (cond
+                      (string? allowed-params)
+                      (if-not (str/blank? allowed-params)
+                        (set (str/split allowed-params #","))
+                        #{})
+
+                      :else
+                      (throw (ex-info "Provided allowed-params is not a string"
+                                      {:allowed-params allowed-params :status 400})))))))
+
+(defn transform-allowed-params-token-entry
+  "Converts allowed-params vector in the service-description to a set."
   [service-description]
   (cond-> service-description
           (contains? service-description "allowed-params")
@@ -129,13 +148,8 @@
                       (coll? allowed-params)
                       (set allowed-params)
 
-                      (string? allowed-params)
-                      (if-not (str/blank? allowed-params)
-                        (set (str/split allowed-params #","))
-                        #{})
-
                       :else
-                      (throw (ex-info "Provided allowed-params is not a vector or a string"
+                      (throw (ex-info "Provided allowed-params is not a vector"
                                       {:allowed-params allowed-params :status 400})))))))
 
 (defn map-validation-helper [issue key]
@@ -205,8 +219,21 @@
   "If the provided allowed-params was invalid, attempt to generate a friendly error message.
    Return nil for unknown error."
   [issue]
-  (when (get issue "allowed-params")
-    "allowed-params must be a vector with non-empty strings."))
+  (when-let [allowed-params-issue (get issue "allowed-params")]
+    (let [length-violation (some #(= "schema.core.Constrained" (some-> % .schema .getClass .getCanonicalName))
+                                 allowed-params-issue)
+          regex-violation (some #(= "java.util.regex.Pattern" (some-> % .schema .getClass .getCanonicalName))
+                                allowed-params-issue)
+          reserved-violation (some #(= "schema.core.Predicate" (some-> % .schema .getClass .getCanonicalName))
+                                   allowed-params-issue)]
+      (str "allowed-params is invalid. "
+           (when length-violation
+             "Individual params may not be empty. ")
+           (when regex-violation
+             "Individual params must be made up of letters, numbers, and hyphens and must start with a letter. ")
+           (when reserved-violation
+             (str "Individual params cannot start with MESOS_, MARATHON_, or PORT and cannot be "
+                  (str/join ", " reserved-environment-vars) ". "))))))
 
 (defn name->metric-group
   "Given a collection of mappings, where each mapping is a
@@ -312,10 +339,11 @@
       (s/validate service-description-schema service-description-to-use)
       (catch Exception e
         (let [issue (s/check service-description-schema service-description-to-use)
-              friendly-error-message (->> {:allowed-params (generate-friendly-allowed-params-error-message issue)
-                                           :env (generate-friendly-environment-variable-error-message issue)
-                                           :metadata (generate-friendly-metadata-error-message issue)}
-                                          (utils/filterm val))]
+              friendly-error-message (utils/filterm
+                                       val
+                                       {:allowed-params (generate-friendly-allowed-params-error-message issue)
+                                        :env (generate-friendly-environment-variable-error-message issue)
+                                        :metadata (generate-friendly-metadata-error-message issue)})]
           (throw-error e (dissoc issue "allowed-params" "env" "metadata") friendly-error-message))))
 
     (try
@@ -590,7 +618,7 @@
                                                       (parse-env-map-headers "env")
                                                       (parse-env-map-headers "param")
                                                       parse-metadata-headers
-                                                      transform-allowed-params
+                                                      transform-allowed-params-header
                                                       (sanitize-service-description service-description-from-header-keys))
         {:keys [service-description-template token-authentication-disabled token-preauthorized]}
         (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostnames)]

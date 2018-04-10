@@ -1376,6 +1376,51 @@
                                               (create-default-service-description-builder {})
                                               (constantly false))))
 
+    (testing "invalid allowed params - reserved"
+      (is (thrown? Exception
+                   (compute-service-description {:defaults {"health-check-url" "/ping"
+                                                            "permitted-user" "bob"}
+                                                 :tokens {"allowed-params" #{"HOME" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                          "cmd" "token-cmd"
+                                                          "cpus" 1
+                                                          "mem" 200
+                                                          "run-as-user" "test-user"
+                                                          "version" "a1b2c3"}
+                                                 :headers {}}
+                                                {} {} kv-store service-id-prefix test-user []
+                                                (create-default-service-description-builder {})
+                                                (constantly false)))))
+
+    (testing "invalid allowed params - bad naming"
+      (is (thrown? Exception
+                   (compute-service-description {:defaults {"health-check-url" "/ping"
+                                                            "permitted-user" "bob"}
+                                                 :tokens {"allowed-params" #{"VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                          "cmd" "token-cmd"
+                                                          "cpus" 1
+                                                          "mem" 200
+                                                          "run-as-user" "test-user"
+                                                          "version" "a1b2c3"}
+                                                 :headers {}}
+                                                {} {} kv-store service-id-prefix test-user []
+                                                (create-default-service-description-builder {})
+                                                (constantly false)))))
+
+    (testing "invalid allowed params - reserved and bad naming"
+      (is (thrown? Exception
+                   (compute-service-description {:defaults {"health-check-url" "/ping"
+                                                            "permitted-user" "bob"}
+                                                 :tokens {"allowed-params" #{"USER" "VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                          "cmd" "token-cmd"
+                                                          "cpus" 1
+                                                          "mem" 200
+                                                          "run-as-user" "test-user"
+                                                          "version" "a1b2c3"}
+                                                 :headers {}}
+                                                {} {} kv-store service-id-prefix test-user []
+                                                (create-default-service-description-builder {})
+                                                (constantly false)))))
+
     (testing "token + disallowed param header - on-the-fly"
       (is (thrown? Exception
                    (compute-service-description {:defaults {"health-check-url" "/ping"
