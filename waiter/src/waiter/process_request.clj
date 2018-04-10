@@ -562,8 +562,8 @@
                             ; close request-state-chan to mark the request as finished
                             (async/close! request-state-chan)
                             (handle-process-exception e request)))
-                        (assoc :instance instance
-                               :get-instance-latency-ns instance-elapsed)
+                        (assoc :get-instance-latency-ns instance-elapsed
+                               :instance instance)
                         (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
