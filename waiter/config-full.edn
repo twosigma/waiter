@@ -336,7 +336,8 @@
  ;; For the other parameters, if the user does not provide a
  ;; value for the parameter when constructing her service
  ;; description, these defaults will be used:
- :service-description-defaults {"authentication" "standard"
+ :service-description-defaults {"allowed-params" #{}
+                                "authentication" "standard"
                                 "backend-proto" "http"
                                 "blacklist-on-503" true
                                 "concurrency-level" 1

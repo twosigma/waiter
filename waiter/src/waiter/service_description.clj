@@ -22,23 +22,26 @@
             [waiter.kv :as kv]
             [waiter.schema :as schema]
             [waiter.utils :as utils])
-  (:import (org.joda.time DateTime)
-           (schema.core RequiredKey)
+  (:import (java.util.regex Pattern)
+           (org.joda.time DateTime)
+           (schema.core Constrained Predicate RequiredKey)
            (schema.utils ValidationError)))
 
 (def ^:const default-health-check-path "/status")
 
-(def reserved-environment-vars #{"WAITER_USERNAME"
-                                 "WAITER_PASSWORD"
-                                 "HOME"
-                                 "LOGNAME"
-                                 "USER"})
+(def reserved-environment-vars #{"HOME" "LOGNAME" "USER"})
 
 (defn reserved-environment-variable? [name]
   (or (contains? reserved-environment-vars name)
       (str/starts-with? name "MARATHON_")
       (str/starts-with? name "MESOS_")
-      (re-matches #"^PORT\d*$" name)))
+      (re-matches #"^PORT\d*$" name)
+      (str/starts-with? name "WAITER_")))
+
+(def environment-variable-schema
+  (s/both (s/constrained s/Str #(<= 1 (count %) 512))
+          #"^[A-Za-z][A-Za-z0-9_]*$"
+          (s/pred #(not (reserved-environment-variable? %)) 'reserved-environment-variable)))
 
 (def service-description-schema
   {;; Required
@@ -48,6 +51,7 @@
    (s/required-key "version") schema/non-empty-string
    (s/required-key "run-as-user") schema/non-empty-string
    ;; Optional
+   (s/optional-key "allowed-params") #{environment-variable-schema}
    (s/optional-key "authentication") schema/valid-authentication
    (s/optional-key "backend-proto") schema/valid-backend-proto
    (s/optional-key "cmd-type") schema/non-empty-string
@@ -56,10 +60,7 @@
                                               #(< (count %) 100))
    (s/optional-key "distribution-scheme") (s/enum "balanced" "simple")
    ; Marathon imposes a 512 character limit on environment variable keys and values
-   (s/optional-key "env") (s/constrained {(s/both (s/constrained s/Str #(<= 1 (count %) 512))
-                                                  #"^[A-Za-z][A-Za-z0-9_]*$"
-                                                  (s/pred #(not (reserved-environment-variable? %)) 'reserved-environment-variable))
-                                          (s/constrained s/Str #(<= 1 (count %) 512))}
+   (s/optional-key "env") (s/constrained {environment-variable-schema (s/constrained s/Str #(<= 1 (count %) 512))}
                                          #(< (count %) 100))
    (s/optional-key "name") schema/non-empty-string
    (s/optional-key "permitted-user") schema/non-empty-string
@@ -103,8 +104,10 @@
 ; keys stored in the service description
 (def ^:const service-description-keys
   (set/union service-override-keys
-             #{"backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata" "metric-group" "name"
-               "permitted-user" "ports" "run-as-user" "version"}))
+             #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata"
+               "metric-group" "name" "permitted-user" "ports" "run-as-user" "version"}))
+
+(def ^:const service-description-from-header-keys (set/union service-description-keys #{"param"}))
 
 ; keys allowed in a service description for on-the-fly requests
 (def ^:const on-the-fly-service-description-keys (set/union service-description-keys #{"token"}))
@@ -114,6 +117,32 @@
 
 ; keys allowed in the token data
 (def ^:const token-data-keys (set/union service-description-keys token-metadata-keys))
+
+(defn transform-allowed-params-header
+  "Converts allowed-params comma-separated string in the service-description to a set."
+  [service-description]
+  (cond-> service-description
+          (contains? service-description "allowed-params")
+          (update "allowed-params"
+                  (fn [allowed-params]
+                    (when-not (string? allowed-params)
+                      (throw (ex-info "Provided allowed-params is not a string"
+                                      {:allowed-params allowed-params :status 400})))
+                    (if-not (str/blank? allowed-params)
+                      (set (str/split allowed-params #","))
+                      #{})))))
+
+(defn transform-allowed-params-token-entry
+  "Converts allowed-params vector in the service-description to a set."
+  [service-description]
+  (cond-> service-description
+          (contains? service-description "allowed-params")
+          (update "allowed-params"
+                  (fn [allowed-params]
+                    (when-not (coll? allowed-params)
+                      (throw (ex-info "Provided allowed-params is not a vector"
+                                      {:allowed-params allowed-params :status 400})))
+                    (set allowed-params)))))
 
 (defn map-validation-helper [issue key]
   (when-let [error (get issue key)]
@@ -136,10 +165,10 @@
 (defn generate-friendly-environment-variable-error-message
   "If the provided metadata was invalid, attempt to generate a friendly error message. Return nil for unknown error."
   [issue]
-  (when-let [env-var-error (map-validation-helper issue "env")]
-    (when-not (empty? env-var-error)
+  (when-let [var-error (map-validation-helper issue "env")]
+    (when-not (empty? var-error)
       (str
-        (let [bad-keys (group-by #(= 'reserved-environment-variable (:pred-name (.schema %))) (get env-var-error :bad-keys))
+        (let [bad-keys (group-by #(= 'reserved-environment-variable (:pred-name (.schema %))) (get var-error :bad-keys))
               reserved-keys (map #(.value %) (get bad-keys true))
               misformatted-keys (map #(.value %) (get bad-keys false))]
           (str
@@ -149,14 +178,14 @@
                    "Keys cannot be longer than 512 characters. "))
             (when (not-empty reserved-keys)
               (str "The following environment variable keys are reserved: " (str/join ", " reserved-keys)
-                   ". Environment variables cannot start with MESOS_, MARATHON_, or PORT and cannot be "
+                   ". Environment variables cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be "
                    (str/join ", " reserved-environment-vars) ". "))))
-        (when-let [bad-key-values (get env-var-error :bad-key-values)]
+        (when-let [bad-key-values (get var-error :bad-key-values)]
           (str "The following environment variable keys did not have string values: " (str/join ", " bad-key-values)
                ". Environment variable values must be strings no longer than 512 characters. "))
-        (when-let [bad-size (get env-var-error :bad-size)]
+        (when-let [bad-size (get var-error :bad-size)]
           (str "Environment variables can only contain 100 keys. You provided " bad-size ". "))
-        (when (contains? env-var-error :bad-type)
+        (when (contains? var-error :bad-type)
           "Environment variables must be a map from string to string. ")
         (utils/message :environment-variable-error-info)))))
 
@@ -177,6 +206,26 @@
         (when (contains? metadata-error :bad-type)
           "Metadata must be a map from string to string. ")
         (utils/message :metadata-error-info)))))
+
+(defn generate-friendly-allowed-params-error-message
+  "If the provided allowed-params was invalid, attempt to generate a friendly error message.
+   Return nil for unknown error."
+  [issue]
+  (when-let [allowed-params-issue (get issue "allowed-params")]
+    (let [length-violation (some #(instance? Constrained (.schema %))
+                                 allowed-params-issue)
+          regex-violation (some #(instance? Pattern (.schema %))
+                                allowed-params-issue)
+          reserved-violation (some #(instance? Predicate (.schema %))
+                                   allowed-params-issue)]
+      (str "allowed-params is invalid. "
+           (when length-violation
+             "Individual params may not be empty. ")
+           (when regex-violation
+             "Individual params must be made up of letters, numbers, and underscores and must start with a letter. ")
+           (when reserved-violation
+             (str "Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be "
+                  (str/join ", " reserved-environment-vars) ". "))))))
 
 (defn name->metric-group
   "Given a collection of mappings, where each mapping is a
@@ -282,10 +331,12 @@
       (s/validate service-description-schema service-description-to-use)
       (catch Exception e
         (let [issue (s/check service-description-schema service-description-to-use)
-              friendly-error-message (utils/filterm val
-                                                    {:metadata (generate-friendly-metadata-error-message issue)
-                                                     :env (generate-friendly-environment-variable-error-message issue)})]
-          (throw-error e issue friendly-error-message))))
+              friendly-error-message (utils/filterm
+                                       val
+                                       {:allowed-params (generate-friendly-allowed-params-error-message issue)
+                                        :env (generate-friendly-environment-variable-error-message issue)
+                                        :metadata (generate-friendly-metadata-error-message issue)})]
+          (throw-error e (dissoc issue "allowed-params" "env" "metadata") friendly-error-message))))
 
     (try
       (s/validate max-constraints-schema service-description-to-use)
@@ -322,8 +373,7 @@
     (let [cmd-type (service-description-to-use "cmd-type")]
       (when (and (not (str/blank? cmd-type)) (not ((:valid-cmd-types args-map) cmd-type)))
         (sling/throw+ {:type :service-description-error
-                       :friendly-error-message (str "Command type " cmd-type
-                                                    " is not supported")
+                       :friendly-error-message (str "Command type " cmd-type " is not supported")
                        :status 400})))))
 
 (defprotocol ServiceDescriptionBuilder
@@ -524,17 +574,18 @@
       (cond-> descriptor
               suspended-state (assoc :suspended-state suspended-state)))))
 
-(defn- parse-env-headers
-  "Parses env headers into the environment map.
-   The keys in the environment map are formed by stripping the `env-` prefix and then upper casing the string."
-  [service-description]
-  (let [env-keys (filter (fn [key] (str/starts-with? key "env-")) (keys service-description))
+(defn- parse-env-map-headers
+  "Parses headers into an environment map.
+   The keys in the environment map are formed by stripping the `(str key-name \"-\")` prefix and then upper casing the string."
+  [service-description key-name]
+  (let [env-keys (filter (fn [key] (str/starts-with? key (str key-name "-"))) (keys service-description))
         env-map (select-keys service-description env-keys)]
     (if (empty? env-map)
       service-description
-      (let [renamed-env-map (pc/map-keys #(str/upper-case (str/replace % #"^env-" "")) env-map)
+      (let [key-regex (re-pattern (str "^" key-name "-"))
+            renamed-env-map (pc/map-keys #(str/upper-case (str/replace % key-regex "")) env-map)
             sanitized-service-description (apply dissoc service-description env-keys)]
-        (assoc sanitized-service-description "env" renamed-env-map)))))
+        (assoc sanitized-service-description key-name renamed-env-map)))))
 
 (defn- parse-metadata-headers
   "Parses metadata headers into the metadata map.
@@ -554,11 +605,13 @@
    Populates the service description for on-the-fly waiter-specific headers.
    Also populates for the service description for a token (first looked in headers and then using the host name).
    Finally, it also includes the service configuration defaults."
-  (let [service-description-template-from-headers
-        (sanitize-service-description (-> waiter-headers
-                                          headers/drop-waiter-header-prefix
-                                          parse-env-headers
-                                          parse-metadata-headers))
+  (let [service-description-template-from-headers (-> waiter-headers
+                                                      headers/drop-waiter-header-prefix
+                                                      (parse-env-map-headers "env")
+                                                      (parse-env-map-headers "param")
+                                                      parse-metadata-headers
+                                                      transform-allowed-params-header
+                                                      (sanitize-service-description service-description-from-header-keys))
         {:keys [service-description-template token-authentication-disabled token-preauthorized]}
         (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostnames)]
     {:defaults service-description-defaults
@@ -592,13 +645,26 @@
       - configured defaults.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user."
-    [{:keys [headers token-authentication-disabled token-preauthorized tokens] :as sources}
+    [{:keys [defaults headers token-authentication-disabled token-preauthorized tokens] :as sources}
      waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
      service-description-builder assoc-run-as-user-approved?]
     (let [service-description-based-on-headers (cond->> headers
                                                         ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
-                                                        (seq headers) (merge {"run-as-user" username}))
-          service-description-from-headers-and-token-sources (merge tokens service-description-based-on-headers)
+                                                        (-> headers (dissoc "param") seq)
+                                                        (merge {"run-as-user" username}))
+          merge-params (fn [{:strs [allowed-params] :as service-description}]
+                         (if-let [params (get headers "param")]
+                           (do
+                             (when-not (every? #(contains? allowed-params %) (keys params))
+                               (throw (ex-info "Some params cannot be configured"
+                                               {:allowed-params allowed-params :params params :status 400})))
+                             (-> service-description
+                                 (update "env" merge params)
+                                 (dissoc "param")))
+                           service-description))
+          service-description-from-headers-and-token-sources (cond-> (merge tokens service-description-based-on-headers)
+                                                                     ; param headers need to update the environment
+                                                                     (contains? headers "param") (merge-params))
           sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
                                                              ;; * run-as-user is the same as a missing run-as-user
                                                              (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))
@@ -614,8 +680,7 @@
                                            (assoc-run-as-requester-fields username)
                                            contains-service-parameter-header?
                                            ; can only set the permitted-user if some service-description-keys waiter header was provided
-                                           (assoc "permitted-user" (or (get headers "permitted-user") username)))
-          defaults (:defaults sources)]
+                                           (assoc "permitted-user" (or (get headers "permitted-user") username)))]
       (when (empty? user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
                         (error-message-map-fn passthrough-headers waiter-headers))))
