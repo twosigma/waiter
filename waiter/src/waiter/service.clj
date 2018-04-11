@@ -160,7 +160,7 @@
 ;; Reserve and Release Instances
 (defmacro release-instance!
   "Sends a rpc to the router state to release the lock on the given instance.
-   Throws an exception if a release channel cannot be found for the specfied service."
+   Throws an exception if a release channel cannot be found for the specified service."
   [instance-rpc-chan instance reservation-result]
   `(let [response-chan# (async/promise-chan)
          service-id# (scheduler/instance->service-id ~instance)]

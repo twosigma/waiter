@@ -10,7 +10,6 @@
 ;;
 (ns waiter.state-test
   (:require [clj-time.core :as t]
-            [clj-time.format :as f]
             [clojure.core.async :as async]
             [clojure.data :as data]
             [clojure.string :as str]
@@ -22,7 +21,7 @@
             [waiter.discovery :as discovery]
             [waiter.state :refer :all]
             [waiter.utils :as utils])
-  (:import [org.joda.time DateTime]))
+  (:import (org.joda.time DateTime)))
 
 (deftest test-find-instance-to-offer-with-concurrency-level-1
   (let [make-instance (fn [id] {:id (str "inst-" id), :started-at (DateTime. (* id 1000000))})
@@ -34,222 +33,299 @@
         instance-6 (make-instance 6)
         instance-7 (make-instance 7)
         instance-8 (make-instance 8)
+        current-time (t/now)
         healthy-instance-combo [instance-2 instance-3 instance-5 instance-6 instance-8]
+        healthy-instance-ids (map :id healthy-instance-combo)
         unhealthy-instance-combo [instance-1 instance-4 instance-7]
+        unhealthy-instance-ids (map :id unhealthy-instance-combo)
         all-instance-combo (concat healthy-instance-combo unhealthy-instance-combo)
         all-sorted-instance-ids (-> (map :id all-instance-combo) (sort))
         instance-id->state-fn #(merge
                                  (into {} (map (fn [instance-id] [instance-id {:slots-assigned 1, :slots-used 0, :status-tags #{:healthy}}]) %1))
                                  (into {} (map (fn [instance-id] [instance-id {:slots-assigned 0, :slots-used 0, :status-tags #{:unhealthy}}]) %2)))
+        all-id->instance (pc/map-from-vals :id all-instance-combo)
+        lingering-request-threshold-ms 60000
+        time-active (->> (- lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
+        time-linger (->> (+ lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
         test-cases (list
                      {:name "find-instance-to-offer:serving-with-no-healthy-instances"
                       :expected nil
                       :reason :serve-request
                       :id->instance {}
-                      :instance-id->state (instance-id->state-fn [] [])
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (instance-id->state-fn [] [])}
                      {:name "find-instance-to-offer:serving-healthy-instance-with-no-unhealthy-instances"
                       :expected [instance-2]
                       :reason :serve-request
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo) [])
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (instance-id->state-fn healthy-instance-ids [])}
                      {:name "find-instance-to-offer:serving-healthy-unblacklisted-instance-with-no-unhealthy-instances"
                       :expected [instance-3]
                       :reason :serve-request
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo) [])
-                                              (update-in [(:id instance-2) :status-tags] conj :blacklisted))
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :blacklisted))}
                      {:name "find-instance-to-offer:serving-healthy-unblacklisted-instance-with-no-unhealthy-instances:limited-sorted-instance-ids"
                       :expected [instance-5]
                       :reason :serve-request
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo) [])
-                                              (update-in [(:id instance-2) :status-tags] conj :blacklisted))
-                      :sorted-instance-ids (drop 3 all-sorted-instance-ids)
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :blacklisted))
+                      :sorted-instance-ids (drop 3 all-sorted-instance-ids)}
                      {:name "find-instance-to-offer:serving-healthy-unblacklisted-instance-with-no-unhealthy-instances:limited-sorted-instance-ids-2"
                       :expected [instance-6]
                       :reason :serve-request
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo) [])
-                                              (update-in [(:id instance-2) :status-tags] conj :blacklisted))
-                      :sorted-instance-ids (drop 5 all-sorted-instance-ids)
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :blacklisted))
+                      :sorted-instance-ids (drop 5 all-sorted-instance-ids)}
                      {:name "find-instance-to-offer:serving-healthy-instance-with-no-unhealthy-instances:exclude-blacklisted-locked-and-killed"
                       :expected [instance-6]
                       :reason :serve-request
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo) [])
-                                              (update-in [(:id instance-2) :status-tags] conj :blacklisted)
-                                              (update-in [(:id instance-3) :status-tags] conj :killed)
-                                              (update-in [(:id instance-5) :status-tags] conj :locked))
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :blacklisted)
+                                              (update-in ["inst-3" :status-tags] conj :killed)
+                                              (update-in ["inst-5" :status-tags] conj :locked))}
                      {:name "find-instance-to-offer:serving-healthy-instance-with-no-unhealthy-instances-but-all-excluded"
                       :expected nil
                       :reason :serve-request
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo) [])
-                      :exclude-ids-set (set (concat (map :id healthy-instance-combo) (map :id unhealthy-instance-combo)))
-                      }
-                     (let [exclude-ids-set #{(:id instance-1) (:id instance-2) (:id instance-7) (:id instance-8)}]
+                      :instance-id->state (instance-id->state-fn healthy-instance-ids [])
+                      :exclude-ids-set (set (concat healthy-instance-ids unhealthy-instance-ids))}
+                     (let [exclude-ids-set #{"inst-1" "inst-2" "inst-7" "inst-8"}]
                        {:name "find-instance-to-offer:serving-healthy-instance-with-no-unhealthy-but-excluded-instances"
                         :expected [instance-3]
                         :reason :serve-request
-                        :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                        :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo) [])
-                        :exclude-ids-set exclude-ids-set
-                        })
+                        :instance-id->state (instance-id->state-fn healthy-instance-ids [])
+                        :exclude-ids-set exclude-ids-set})
                      {:name "find-instance-to-offer:serving-healthy-instance-with-some-unhealthy-instances"
                       :expected [instance-2]
                       :reason :serve-request
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo)
-                                                                 (map :id unhealthy-instance-combo))
-                      :exclude-ids-set #{}
-                      }
-                     (let [exclude-ids-set #{(:id instance-1) (:id instance-2) (:id instance-3) (:id instance-7) (:id instance-8)}]
+                      :instance-id->state (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)}
+                     (let [exclude-ids-set #{"inst-1" "inst-2" "inst-3" "inst-7" "inst-8"}]
                        {:name "find-instance-to-offer:serving-healthy-instance-with-some-unhealthy-and-excluded-instances"
                         :expected [instance-5]
                         :reason :serve-request
-                        :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                        :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo)
-                                                                   (map :id unhealthy-instance-combo))
-                        :exclude-ids-set exclude-ids-set
-                        })
-                     (let [exclude-ids-set (into #{} (map :id healthy-instance-combo))]
+                        :instance-id->state (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                        :exclude-ids-set exclude-ids-set})
+                     (let [exclude-ids-set (into #{} healthy-instance-ids)]
                        {:name "find-instance-to-offer:exclude-all-healthy-instances"
                         :expected [nil]
                         :reason :serve-request
-                        :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                        :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo)
-                                                                   (map :id unhealthy-instance-combo))
-                        :exclude-ids-set exclude-ids-set
-                        })
+                        :instance-id->state (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                        :exclude-ids-set exclude-ids-set})
+                     {:expected [instance-5]
+                      :name "find-instance-to-offer:select-oldest-healthy-live-instance"
+                      :reason :serve-request
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-3" :status-tags] conj :expired)
+                                              (update-in ["inst-8" :status-tags] conj :expired))}
+                     {:expected [instance-8]
+                      :name "find-instance-to-offer:select-youngest-healthy-expired-instance"
+                      :reason :serve-request
+                      :instance-id->state (->> (instance-id->state-fn healthy-instance-ids [])
+                                               (pc/map-vals #(update % :status-tags conj :expired)))}
                      {:name "find-instance-to-offer:killing-with-no-instances"
                       :expected nil
                       :reason :kill-instance
                       :id->instance {}
-                      :instance-id->state (instance-id->state-fn [] [])
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (instance-id->state-fn [] [])}
                      {:name "find-instance-to-offer:killing-healthy-instance-with-no-unhealthy-instances"
                       :expected [instance-8]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo) [])
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (instance-id->state-fn healthy-instance-ids [])}
                      {:name "find-instance-to-offer:killing-healthy-instance-with-no-unhealthy-but-excluded-instances"
                       :expected [instance-6]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo) [])
-                      :exclude-ids-set #{(:id instance-1) (:id instance-2) (:id instance-7) (:id instance-8)}
+                      :instance-id->state (instance-id->state-fn healthy-instance-ids [])
+                      :exclude-ids-set #{"inst-1" "inst-2" "inst-7" "inst-8"}
                       }
                      {:name "find-instance-to-offer:killing-healthy-instance-with-no-unhealthy-but-excluded-instances:exclude-busy"
                       :expected [instance-5]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo) [])
-                                              (update-in [(:id instance-6)]
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-6"]
                                                          assoc :slots-assigned 2 :slots-used 1))
-                      :exclude-ids-set #{(:id instance-1) (:id instance-2) (:id instance-7) (:id instance-8)}
-                      }
+                      :exclude-ids-set #{"inst-1" "inst-2" "inst-7" "inst-8"}}
                      {:name "find-instance-to-offer:killing-unhealthy-instance-with-some-unhealthy-instances"
                       :expected [instance-7]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo)
-                                                                 (map :id unhealthy-instance-combo))
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)}
                      {:name "find-instance-to-offer:killing-unhealthy-instance-with-some-unhealthy-instances:exclude-busy"
                       :expected [instance-4]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo)
-                                                                     (map :id unhealthy-instance-combo))
-                                              (update-in [(:id instance-7)]
-                                                         assoc :slots-assigned 0 :slots-used 1))
-                      :exclude-ids-set #{}
-                      }
+                      :id->instance all-id->instance
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                                              (update-in ["inst-7"]
+                                                         assoc :slots-assigned 0 :slots-used 1))}
                      {:name "find-instance-to-offer:killing-unhealthy-instance-with-some-unhealthy-instances:exclude-killed"
                       :expected [instance-4]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo)
-                                                                     (map :id unhealthy-instance-combo))
-                                              (update-in [(:id instance-7) :status-tags] conj :killed))
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                                              (update-in ["inst-7" :status-tags] conj :killed))}
                      {:name "find-instance-to-offer:killing-unhealthy-instance-with-some-unhealthy-instances:exclude-killed-include-blacklisted"
                       :expected [instance-4]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo)
-                                                                     (map :id unhealthy-instance-combo))
-                                              (update-in [(:id instance-4) :status-tags] conj :blacklisted)
-                                              (update-in [(:id instance-7) :status-tags] conj :killed))
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                                              (update-in ["inst-4" :status-tags] conj :blacklisted)
+                                              (update-in ["inst-7" :status-tags] conj :killed))}
                      {:name "find-instance-to-offer:killing-unhealthy-instance-with-some-unhealthy-and-excluded-instances"
                       :expected [instance-4]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (instance-id->state-fn (map :id healthy-instance-combo)
-                                                                 (map :id unhealthy-instance-combo))
-                      :exclude-ids-set #{(:id instance-1) (:id instance-2) (:id instance-7) (:id instance-8)}
-                      }
+                      :instance-id->state (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                      :exclude-ids-set #{"inst-1" "inst-2" "inst-7" "inst-8"}}
                      {:name "find-instance-to-offer:killing-healthy-blacklisted-instance-with-no-unhealthy-instances"
                       :expected [instance-8]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo) [])
-                                              (update-in [(:id instance-8) :status-tags] conj :blacklisted))
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-8" :status-tags] conj :blacklisted))}
                      {:name "find-instance-to-offer:killing-healthy-instance-with-no-unhealthy-instances:exclude-locked-and-killed"
                       :expected [instance-2]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo) [])
-                                              (update-in [(:id instance-2) :status-tags] conj :blacklisted)
-                                              (update-in [(:id instance-3) :status-tags] conj :killed)
-                                              (update-in [(:id instance-8) :status-tags] conj :locked))
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :blacklisted)
+                                              (update-in ["inst-3" :status-tags] conj :killed)
+                                              (update-in ["inst-8" :status-tags] conj :locked))}
                      {:name "find-instance-to-offer:killing-healthy-blacklisted-instance-with-no-unhealthy-instances:exclude-locked-and-killed"
                       :expected [instance-6]
                       :reason :kill-instance
-                      :id->instance (#(zipmap (map :id %) %) all-instance-combo)
-                      :instance-id->state (-> (instance-id->state-fn (map :id healthy-instance-combo) [])
-                                              (update-in [(:id instance-3) :status-tags] conj :killed)
-                                              (update-in [(:id instance-8) :status-tags] conj :locked))
-                      :exclude-ids-set #{}
-                      }
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-3" :status-tags] conj :killed)
+                                              (update-in ["inst-8" :status-tags] conj :locked))}
+                     {:expected [instance-2]
+                      :name "find-instance-to-offer:get-youngest-unhealthy-in-presence-of-expired-and-unhealthy-instances"
+                      :reason :kill-instance
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-5" :status-tags] conj :expired))}
+                     {:expected [instance-2]
+                      :name "find-instance-to-offer:select-idle-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :expired))}
+                     {:expected [instance-6]
+                      :name "find-instance-to-offer:oldest-idle-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-linger}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-2"] assoc :slots-used 1)
+                                              (update-in ["inst-6" :status-tags] conj :expired)
+                                              (update-in ["inst-8" :status-tags] conj :expired))}
+                     {:expected nil
+                      :name "find-instance-to-offer:no-healthy-instance-in-presence-of-busy-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-active}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-2"] assoc :slots-used 1))}
+                     {:expected [instance-2]
+                      :name "find-instance-to-offer:no-healthy-instance-in-presence-of-lingering-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-linger}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-2"] assoc :slots-used 1))}
+                     {:expected [instance-6]
+                      :name "find-instance-to-offer:oldest-idle-expired-instance-in-presence-of-lingering-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-linger}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-6" :status-tags] conj :expired)
+                                              (update-in ["inst-8" :status-tags] conj :expired)
+                                              (update-in ["inst-2"] assoc :slots-used 1))}
+                     {:exclude-ids-set #{"inst-1" "inst-2" "inst-3"}
+                      :expected [instance-6]
+                      :name "find-instance-to-offer:oldest-acceptable-idle-expired-instance-in-presence-of-lingering-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-6" :status-tags] conj :expired)
+                                              (update-in ["inst-8" :status-tags] conj :expired))}
+                     {:expected [instance-2]
+                      :name "find-instance-to-offer:oldest-expired-instance-in-presence-of-lingering-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-2" {:cid "cid-2" :request-id "req-2" :reason :serve-request :time time-linger}}
+                                                                "inst-6" {"req-6" {:cid "cid-6" :request-id "req-6" :reason :serve-request :time time-linger}}
+                                                                "inst-8" {"req-8" {:cid "cid-8" :request-id "req-8" :reason :serve-request :time time-linger}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-6" :status-tags] conj :expired)
+                                              (update-in ["inst-8" :status-tags] conj :expired)
+                                              (update-in ["inst-2"] assoc :slots-used 1)
+                                              (update-in ["inst-6"] assoc :slots-used 1)
+                                              (update-in ["inst-8"] assoc :slots-used 1))}
+                     {:expected [instance-6]
+                      :name "find-instance-to-offer:youngest-healthy-blacklisted-instance-in-presence-of-busy-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-active}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids [])
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-2"] assoc :slots-used 1)
+                                              (update-in ["inst-5" :status-tags] conj :blacklisted)
+                                              (update-in ["inst-6" :status-tags] conj :blacklisted))}
+                     {:expected [instance-7]
+                      :name "find-instance-to-offer:youngest-unhealthy-instance-in-presence-of-busy-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-active}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-2"] assoc :slots-used 1))}
+                     {:expected [instance-4]
+                      :name "find-instance-to-offer:youngest-unhealthy-unlocked-instance-in-presence-of-busy-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-active}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-7" :status-tags] conj :locked)
+                                              (update-in ["inst-2"] assoc :slots-used 1))}
+                     {:expected [instance-4]
+                      :name "find-instance-to-offer:youngest-unhealthy-live-instance-in-presence-of-busy-expired-instance"
+                      :reason :kill-instance
+                      :instance-id->request-id->use-reason-map {"inst-2" {"req-1" {:cid "cid-1" :request-id "req-1" :reason :serve-request :time time-active}}}
+                      :instance-id->state (-> (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
+                                              (update-in ["inst-2" :status-tags] conj :expired)
+                                              (update-in ["inst-7" :status-tags] conj :killed)
+                                              (update-in ["inst-2"] assoc :slots-used 1))}
+
+                     {:expected [instance-3]
+                      :name "find-instance-to-offer:only-healthy-and-unknown-blacklisted-instance"
+                      :reason :kill-instance
+                      :id->instance (pc/map-from-vals :id [instance-2 instance-3])
+                      :instance-id->request-id->use-reason-map {}
+                      :instance-id->state (-> (instance-id->state-fn (map :id [instance-2 instance-3 instance-5]) [])
+                                              (update-in ["inst-5" :status-tags] (constantly #{:blacklisted}))
+                                              (update-in ["inst-5"] assoc :slots-assigned 0))}
                      )]
-    (doseq [{:keys [name expected reason id->instance instance-id->state sorted-instance-ids exclude-ids-set]} test-cases]
+    (doseq [{:keys [exclude-ids-set expected id->instance instance-id->request-id->use-reason-map
+                    instance-id->state name reason sorted-instance-ids]} test-cases]
       (testing (str "Test " name)
-        (let [sorted-instance-ids (or sorted-instance-ids all-sorted-instance-ids)
-              acceptable-instance-id? (fn [instance-id] (not (contains? exclude-ids-set instance-id)))
-              actual (if (= :kill-instance reason)
-                       (find-killable-instance id->instance instance-id->state acceptable-instance-id?)
-                       (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id?))]
-          (when (nil? expected)
-            (is (nil? actual)))
-          (when (not (nil? expected))
-            (when (not (some #(= actual %) expected))
-              (log/info name "Expected: " expected ", Actual: " actual))
-            (is (not (contains? exclude-ids-set (:id actual))))
-            (is (some #(= actual %) expected))))))))
+        (with-redefs [t/now (constantly current-time)]
+          (let [exclude-ids-set (or exclude-ids-set #{})
+                id->instance (or id->instance all-id->instance)
+                sorted-instance-ids (or sorted-instance-ids
+                                        (let [expired-instance-ids (->> instance-id->state
+                                                                        (filter (fn [[_ state]] (expired? state)))
+                                                                        (map first)
+                                                                        set)]
+                                          (->> (keys instance-id->state)
+                                               (map id->instance)
+                                               (sort-instances-for-processing expired-instance-ids)
+                                               (map :id))))
+                acceptable-instance-id? (fn [instance-id] (not (contains? exclude-ids-set instance-id)))
+                instance-id->request-id->use-reason-map (or instance-id->request-id->use-reason-map {})
+                actual (if (= :kill-instance reason)
+                         (find-killable-instance id->instance instance-id->state acceptable-instance-id?
+                                                 instance-id->request-id->use-reason-map lingering-request-threshold-ms)
+                         (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id?))]
+            (when (or (and (nil? expected) (not (nil? actual)))
+                      (and expected (not (some #(= actual %) expected))))
+              (println name)
+              (doseq [[k v] (into (sorted-map) instance-id->state)] (println "  " k "=>" v))
+              (println "  Expected: " expected ", Actual: " actual))
+            (when (nil? expected)
+              (is (nil? actual)))
+            (when (not (nil? expected))
+              (is (not (contains? exclude-ids-set (:id actual))))
+              (if (= 1 (count expected))
+                (is (= (first expected) actual))
+                (is (some #(= actual %) expected))))))))))
 
 (deftest test-md5-hash-function
   (let [test-cases (list
@@ -1118,14 +1194,14 @@
               (let [expected-services (services-fn n)
                     expected-state (let [index-fn #(Integer/parseInt (subs % (inc (.lastIndexOf ^String % "-"))))]
                                      {:service-id->unhealthy-instances
-                                               (zipmap expected-services
-                                                       (map #(unhealthy-instances-fn % (index-fn %)) expected-services))
+                                      (zipmap expected-services
+                                              (map #(unhealthy-instances-fn % (index-fn %)) expected-services))
                                       :service-id->failed-instances
-                                               (zipmap expected-services
-                                                       (map #(failed-instances-fn % (index-fn %)) expected-services))
+                                      (zipmap expected-services
+                                              (map #(failed-instances-fn % (index-fn %)) expected-services))
                                       :service-id->deployment-error
-                                               (into {} (filter second (zipmap expected-services
-                                                                               (map #(deployment-error-fn % (index-fn %)) expected-services))))})
+                                      (into {} (filter second (zipmap expected-services
+                                                                      (map #(deployment-error-fn % (index-fn %)) expected-services))))})
                     state (async/<!! router-state-push-chan)
                     actual-state (dissoc state :iteration :service-id->healthy-instances :service-id->expired-instances :service-id->starting-instances
                                          :service-id->my-instance->slots :routers :time)]

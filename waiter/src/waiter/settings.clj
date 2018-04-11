@@ -52,6 +52,7 @@
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
                                                   (s/required-key :connection-timeout-ms) schema/positive-int
                                                   (s/required-key :initial-socket-timeout-ms) schema/positive-int
+                                                  (s/required-key :lingering-request-threshold-ms) schema/positive-int
                                                   (s/required-key :output-buffer-size) schema/positive-int
                                                   (s/required-key :streaming-timeout-ms) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int}
@@ -218,6 +219,7 @@
                                  :async-request-timeout-ms 60000
                                  :connection-timeout-ms 5000 ; 5 seconds
                                  :initial-socket-timeout-ms 900000 ; 15 minutes
+                                 :lingering-request-threshold-ms 60000 ; 1 minute
                                  :output-buffer-size 4096
                                  :queue-timeout-ms 300000
                                  :streaming-timeout-ms 20000}

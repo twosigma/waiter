@@ -387,7 +387,7 @@
 
                                ;; After this amount of time (milliseconds) the async request will be
                                ;; considered timed out, and Waiter will release the allocated
-                               ;; instance. This is the default value and can be overriden in the
+                               ;; instance. This is the default value and can be overridden in the
                                ;; service description:
                                :async-request-timeout-ms 60000
 
@@ -396,6 +396,10 @@
 
                                ;; The HTTP idle timeout (milliseconds) for instance requests:
                                :initial-socket-timeout-ms 900000
+
+                               ;; The timeout for in-flight requests to an expired instance after which
+                               ;; expired instances will be eligible for killing:
+                               :lingering-request-threshold-ms 60000
 
                                ;; Size in bytes of the output buffer used to aggregate HTTP responses from a backend.
                                ;; The value must be a positive integer.

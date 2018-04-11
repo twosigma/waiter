@@ -106,7 +106,9 @@
       (let [test-service-id "test-service-id"
             src-router-id "src-router-id"
             inter-kill-request-wait-time-ms 10
-            blacklist-config {:blacklist-backoff-base-time-ms 10000, :max-blacklist-time-ms 60000}
+            timeout-config {:blacklist-backoff-base-time-ms 10000
+                            :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
+                            :max-blacklist-time-ms 60000}
             make-scheduler (fn [operation-tracker-atom]
                              (reify scheduler/ServiceScheduler
                                (scale-app [_ service-id scale-to-instances]
@@ -123,7 +125,7 @@
                                  {:instance-id id, :killed? success-flag, :message message, :service-id service-id,
                                   :status (if success-flag 200 404)})))
             peers-acknowledged-blacklist-requests-fn (fn [{:keys [service-id]} short-circuit? blacklist-period-ms reason]
-                                                       (if (= (:blacklist-backoff-base-time-ms blacklist-config) blacklist-period-ms)
+                                                       (if (= (:blacklist-backoff-base-time-ms timeout-config) blacklist-period-ms)
                                                          (do
                                                            (is short-circuit?)
                                                            (is (= :prepare-to-kill reason)))
@@ -150,7 +152,7 @@
                     (cid/with-correlation-id
                       correlation-id
                       (kill-instance-handler
-                        scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config peers-acknowledged-blacklist-requests-fn
+                        scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
                         {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                     {:keys [body headers status]} (async/<!! response-chan)]
                 (is (= 200 status))
@@ -174,7 +176,7 @@
                   (cid/with-correlation-id
                     correlation-id
                     (kill-instance-handler
-                      scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config peers-acknowledged-blacklist-requests-fn
+                      scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
@@ -202,7 +204,7 @@
                   (cid/with-correlation-id
                     correlation-id
                     (kill-instance-handler
-                      scheduler instance-rpc-chan inter-kill-request-wait-time-ms blacklist-config peers-acknowledged-blacklist-requests-fn
+                      scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
@@ -218,7 +220,9 @@
     (with-redefs [t/now (fn [] current-time)]
       (let [test-service-id "test-service-id"
             inter-kill-request-wait-time-ms 10
-            blacklist-config {:blacklist-backoff-base-time-ms 10000, :max-blacklist-time-ms 60000}
+            timeout-config {:blacklist-backoff-base-time-ms 10000
+                            :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
+                            :max-blacklist-time-ms 60000}
             make-scheduler (fn [operation-tracker-atom]
                              (reify scheduler/ServiceScheduler
                                (scale-app [_ service-id scale-to-instances]
@@ -234,7 +238,7 @@
                                  (is (= test-service-id service-id))
                                  {:instance-id id, :killed? success-flag, :service-id service-id})))
             peers-acknowledged-blacklist-requests-fn (fn [{:keys [service-id]} short-circuit? blacklist-period-ms reason]
-                                                       (if (= (:blacklist-backoff-base-time-ms blacklist-config) blacklist-period-ms)
+                                                       (if (= (:blacklist-backoff-base-time-ms timeout-config) blacklist-period-ms)
                                                          (do
                                                            (is short-circuit?)
                                                            (is (= :prepare-to-kill reason)))
@@ -258,7 +262,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)]
+                  delegate-instance-kill-request-fn timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan {:service-id test-service-id, :scale-amount 0})
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -272,7 +276,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)]
+                  delegate-instance-kill-request-fn timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 30 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -287,7 +291,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)]
+                  delegate-instance-kill-request-fn timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -307,7 +311,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)]
+                  delegate-instance-kill-request-fn timeout-config)]
             (mock-reservation-system
               instance-rpc-chan
               [(fn [[{:keys [reason]} response-chan]]
@@ -334,7 +338,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)]
+                  delegate-instance-kill-request-fn timeout-config)]
             (mock-reservation-system
               instance-rpc-chan
               [(fn [[{:keys [reason]} response-chan]]
@@ -357,7 +361,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)]
+                  delegate-instance-kill-request-fn timeout-config)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
                 instance-rpc-chan
@@ -385,13 +389,13 @@
                 (fn [{:keys [id]} short-circuit? blacklist-period-ms reason]
                   (is (= "instance-1" id))
                   (is short-circuit?)
-                  (is (= (:blacklist-backoff-base-time-ms blacklist-config) blacklist-period-ms))
+                  (is (= (:blacklist-backoff-base-time-ms timeout-config) blacklist-period-ms))
                   (is (= :prepare-to-kill reason))
                   false)
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)
+                  delegate-instance-kill-request-fn timeout-config)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
@@ -424,7 +428,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)
+                  delegate-instance-kill-request-fn timeout-config)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag true}]
@@ -462,7 +466,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)
+                  delegate-instance-kill-request-fn timeout-config)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag false}]
@@ -500,7 +504,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn inter-kill-request-wait-time-ms blacklist-config)]
+                  delegate-instance-kill-request-fn timeout-config)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
                 instance-rpc-chan

@@ -58,7 +58,7 @@
                               (merge
                                 (common-extractor-fn instance-id failed-marathon-task)
                                 {:id instance-id
-                                 :started-at (-> failed-marathon-task :timestamp (utils/str-to-date formatter-marathon))
+                                 :started-at (some-> failed-marathon-task :timestamp (utils/str-to-date formatter-marathon))
                                  :healthy? false
                                  :port 0})))
           max-instances-to-keep 10]
@@ -161,7 +161,7 @@
                                 (merge
                                   (common-extractor-fn instance-id %)
                                   {:id instance-id
-                                   :started-at (-> % :startedAt (utils/str-to-date formatter-marathon))
+                                   :started-at (some-> % :startedAt (utils/str-to-date formatter-marathon))
                                    :healthy? (healthy?-fn %)
                                    ;; first port must be used for the web server, extra ports can be used freely.
                                    :port (-> % :ports first)
