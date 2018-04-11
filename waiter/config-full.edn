@@ -525,6 +525,11 @@
                        ;; flagged as never-passed-health-checks upon failure
                        :failed-check-threshold 5}
 
+ :token-config {
+                ;; Configures the amount of history we store for a token.
+                ;; When it is at least 1, it enables blue/green deployment of services.
+                :history-length 5}
+
  ;; Waiter supports making websocket connections to backends.
  ;; The maximum binary and text message sizes in the websocket request or response can be configured
  ;; as follows, the values are in bytes:

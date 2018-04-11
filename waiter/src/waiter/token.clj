@@ -21,7 +21,6 @@
             [waiter.utils :as utils])
   (:import (org.joda.time DateTime)))
 
-(def ^:const history-length 5) ;; TODO (shams) make this a config
 (def ^:const ANY-USER "*")
 (def ^:const valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+")
 
@@ -91,7 +90,7 @@
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
-    [synchronize-fn kv-store ^String token service-description-template token-metadata & {:keys [version-etag]}]
+    [synchronize-fn kv-store history-length ^String token service-description-template token-metadata & {:keys [version-etag]}]
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
@@ -125,7 +124,7 @@
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
-    [clock synchronize-fn kv-store token owner authenticated-user &
+    [clock synchronize-fn kv-store history-length token owner authenticated-user &
      {:keys [hard-delete version-etag] :or {hard-delete false}}]
     (synchronize-fn
       token-lock
@@ -236,7 +235,8 @@
 
 (defn- handle-delete-token-request
   "Deletes the token configuration if found."
-  [clock synchronize-fn kv-store waiter-hostnames entitlement-manager make-peer-requests-fn {:keys [headers] :as request}]
+  [clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager make-peer-requests-fn
+   {:keys [headers] :as request}]
   (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
         authenticated-user (get request :authorization/user)
         request-params (-> request ru/query-params-request :query-params)
@@ -263,7 +263,7 @@
                                  :status 403
                                  :user authenticated-user}))))
             (delete-service-description-for-token
-              clock synchronize-fn kv-store token token-owner authenticated-user
+              clock synchronize-fn kv-store history-length token token-owner authenticated-user
               :hard-delete hard-delete :version-etag version-etag)
             ; notify peers of token delete and ask them to refresh their caches
             (make-peer-requests-fn "tokens/refresh"
@@ -308,8 +308,8 @@
 (defn- handle-post-token-request
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn
-   validate-service-description-fn {:keys [headers] :as request}]
+  [clock synchronize-fn kv-store token-root history-length waiter-hostnames entitlement-manager
+   make-peer-requests-fn validate-service-description-fn {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         authenticated-user (get request :authorization/user)
         {:strs [token] :as new-token-description} (-> request
@@ -419,8 +419,9 @@
                                      "owner" owner
                                      "root" (or (get existing-token-metadata "root") token-root)}
                                     new-token-metadata)]
-      (store-service-description-for-token synchronize-fn kv-store token new-service-description-template new-token-metadata
-                                           :version-etag version-etag)
+      (store-service-description-for-token
+        synchronize-fn kv-store history-length token new-service-description-template new-token-metadata
+        :version-etag version-etag)
       ; notify peers of token update
       (make-peer-requests-fn "tokens/refresh"
                              :method :post
@@ -441,14 +442,14 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn
+  [clock synchronize-fn kv-store token-root history-length waiter-hostnames entitlement-manager make-peer-requests-fn
    validate-service-description-fn {:keys [request-method] :as request}]
   (try
     (case request-method
-      :delete (handle-delete-token-request clock synchronize-fn kv-store waiter-hostnames entitlement-manager
+      :delete (handle-delete-token-request clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager
                                            make-peer-requests-fn request)
       :get (handle-get-token-request kv-store token-root waiter-hostnames request)
-      :post (handle-post-token-request clock synchronize-fn kv-store token-root waiter-hostnames entitlement-manager
+      :post (handle-post-token-request clock synchronize-fn kv-store token-root history-length waiter-hostnames entitlement-manager
                                        make-peer-requests-fn validate-service-description-fn request)
       (throw (ex-info "Invalid request method" {:request-method request-method, :status 405})))
     (catch Exception ex

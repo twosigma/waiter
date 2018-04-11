@@ -25,6 +25,8 @@
            (java.io StringBufferInputStream)
            (org.joda.time DateTime)))
 
+(def ^:const history-length 5)
+
 (let [current-time (t/now)]
   (defn- clock [] current-time)
 
@@ -44,7 +46,7 @@
 
 (defn- run-handle-token-request
   [kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn request]
-  (handle-token-request clock synchronize-fn kv-store token-root waiter-hostnames entitlement-manager
+  (handle-token-request clock synchronize-fn kv-store token-root history-length waiter-hostnames entitlement-manager
                         make-peer-requests-fn validate-service-description-fn request))
 
 (deftest test-handle-token-request
@@ -1217,7 +1219,7 @@
                           "owner" "test-user"}]
 
     (testing "basic creation"
-      (store-service-description-for-token synchronize-fn kv-store token service-description-1 token-metadata-1)
+      (store-service-description-for-token synchronize-fn kv-store history-length token service-description-1 token-metadata-1)
       (let [token-description (kv/fetch kv-store token)]
         (is (= service-description-1 (select-keys token-description sd/service-description-keys)))
         (is (= token-metadata-1 (select-keys token-description sd/token-metadata-keys)))
@@ -1229,7 +1231,7 @@
       (testing "basic update with valid etag"
         (let [token-data (kv/fetch kv-store token)
               token-etag (token-data->etag token-data)]
-          (store-service-description-for-token synchronize-fn kv-store token service-description-2 token-metadata-2
+          (store-service-description-for-token synchronize-fn kv-store history-length token service-description-2 token-metadata-2
                                                :version-etag token-etag)
           (let [token-description (kv/fetch kv-store token)]
             (is (= service-description-2 (select-keys token-description sd/service-description-keys)))
@@ -1240,7 +1242,7 @@
         (let [{:strs [last-update-time]} (kv/fetch kv-store token)]
           (is (thrown-with-msg?
                 ExceptionInfo #"Cannot modify stale token"
-                (store-service-description-for-token synchronize-fn kv-store token service-description-3 token-metadata-1
+                (store-service-description-for-token synchronize-fn kv-store history-length token service-description-3 token-metadata-1
                                                      :version-etag (- last-update-time 1000))))
           (let [token-description (kv/fetch kv-store token)]
             (is (= service-description-2 (select-keys token-description sd/service-description-keys)))
@@ -1261,7 +1263,7 @@
     (testing "valid soft delete"
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
-      (delete-service-description-for-token clock synchronize-fn kv-store token owner auth-user)
+      (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user)
       (is (= (assoc token-description
                "deleted" true
                "last-update-time" current-time
@@ -1273,7 +1275,7 @@
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
       (let [token-etag (token-data->etag token-description)]
-        (delete-service-description-for-token clock synchronize-fn kv-store token owner auth-user
+        (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
                                               :version-etag token-etag))
       (is (= (assoc token-description
                "deleted" true
@@ -1287,14 +1289,14 @@
       (is (= token-description (kv/fetch kv-store token)))
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
-            (delete-service-description-for-token clock synchronize-fn kv-store token owner auth-user
+            (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
                                                   :version-etag (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))
 
     (testing "valid hard delete"
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
-      (delete-service-description-for-token clock synchronize-fn kv-store token owner auth-user
+      (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
                                             :hard-delete true)
       (is (nil? (kv/fetch kv-store token))))
 
@@ -1302,7 +1304,7 @@
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
       (let [token-etag (token-data->etag token-description)]
-        (delete-service-description-for-token clock synchronize-fn kv-store token owner auth-user
+        (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
                                               :hard-delete true :version-etag token-etag))
       (is (nil? (kv/fetch kv-store token))))
 
@@ -1311,7 +1313,7 @@
       (is (= token-description (kv/fetch kv-store token)))
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
-            (delete-service-description-for-token clock synchronize-fn kv-store token owner auth-user
+            (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
                                                   :hard-delete true :version-etag (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))))
 
@@ -1374,13 +1376,17 @@
         last-update-time-seed (clock-millis)
         token->etag (fn [token] (-> (kv/fetch kv-store token) token-data->etag))]
     (store-service-description-for-token
-      synchronize-fn kv-store "token1" {"cpus" 1} {"last-update-time" (- last-update-time-seed 1000) "owner" "owner1"})
+      synchronize-fn kv-store history-length "token1"
+      {"cpus" 1} {"last-update-time" (- last-update-time-seed 1000) "owner" "owner1"})
     (store-service-description-for-token
-      synchronize-fn kv-store "token2" {"cpus" 2} {"last-update-time" (- last-update-time-seed 2000) "owner" "owner1"})
+      synchronize-fn kv-store history-length "token2"
+      {"cpus" 2} {"last-update-time" (- last-update-time-seed 2000) "owner" "owner1"})
     (store-service-description-for-token
-      synchronize-fn kv-store "token3" {"cpus" 3} {"last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
+      synchronize-fn kv-store history-length "token3"
+      {"cpus" 3} {"last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (store-service-description-for-token
-      synchronize-fn kv-store "token4" {"cpus" 4} {"deleted" true "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
+      synchronize-fn kv-store history-length "token4"
+      {"cpus" 4} {"deleted" true "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (let [request {:query-string "include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store request)]
       (is (= 200 status))
