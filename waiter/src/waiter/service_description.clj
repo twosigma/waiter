@@ -22,23 +22,21 @@
             [waiter.kv :as kv]
             [waiter.schema :as schema]
             [waiter.utils :as utils])
-  (:import (org.joda.time DateTime)
-           (schema.core RequiredKey)
+  (:import (java.util.regex Pattern)
+           (org.joda.time DateTime)
+           (schema.core Constrained Predicate RequiredKey)
            (schema.utils ValidationError)))
 
 (def ^:const default-health-check-path "/status")
 
-(def reserved-environment-vars #{"WAITER_USERNAME"
-                                 "WAITER_PASSWORD"
-                                 "HOME"
-                                 "LOGNAME"
-                                 "USER"})
+(def reserved-environment-vars #{"HOME" "LOGNAME" "USER"})
 
 (defn reserved-environment-variable? [name]
   (or (contains? reserved-environment-vars name)
       (str/starts-with? name "MARATHON_")
       (str/starts-with? name "MESOS_")
-      (re-matches #"^PORT\d*$" name)))
+      (re-matches #"^PORT\d*$" name)
+      (str/starts-with? name "WAITER_")))
 
 (def environment-variable-schema
   (s/both (s/constrained s/Str #(<= 1 (count %) 512))
@@ -127,15 +125,12 @@
           (contains? service-description "allowed-params")
           (update "allowed-params"
                   (fn [allowed-params]
-                    (cond
-                      (string? allowed-params)
-                      (if-not (str/blank? allowed-params)
-                        (set (str/split allowed-params #","))
-                        #{})
-
-                      :else
+                    (when-not (string? allowed-params)
                       (throw (ex-info "Provided allowed-params is not a string"
-                                      {:allowed-params allowed-params :status 400})))))))
+                                      {:allowed-params allowed-params :status 400})))
+                    (if-not (str/blank? allowed-params)
+                      (set (str/split allowed-params #","))
+                      #{})))))
 
 (defn transform-allowed-params-token-entry
   "Converts allowed-params vector in the service-description to a set."
@@ -144,13 +139,10 @@
           (contains? service-description "allowed-params")
           (update "allowed-params"
                   (fn [allowed-params]
-                    (cond
-                      (coll? allowed-params)
-                      (set allowed-params)
-
-                      :else
+                    (when-not (coll? allowed-params)
                       (throw (ex-info "Provided allowed-params is not a vector"
-                                      {:allowed-params allowed-params :status 400})))))))
+                                      {:allowed-params allowed-params :status 400})))
+                    (set allowed-params)))))
 
 (defn map-validation-helper [issue key]
   (when-let [error (get issue key)]
@@ -186,7 +178,7 @@
                    "Keys cannot be longer than 512 characters. "))
             (when (not-empty reserved-keys)
               (str "The following environment variable keys are reserved: " (str/join ", " reserved-keys)
-                   ". Environment variables cannot start with MESOS_, MARATHON_, or PORT and cannot be "
+                   ". Environment variables cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be "
                    (str/join ", " reserved-environment-vars) ". "))))
         (when-let [bad-key-values (get var-error :bad-key-values)]
           (str "The following environment variable keys did not have string values: " (str/join ", " bad-key-values)
@@ -220,19 +212,19 @@
    Return nil for unknown error."
   [issue]
   (when-let [allowed-params-issue (get issue "allowed-params")]
-    (let [length-violation (some #(= "schema.core.Constrained" (some-> % .schema .getClass .getCanonicalName))
+    (let [length-violation (some #(instance? Constrained (.schema %))
                                  allowed-params-issue)
-          regex-violation (some #(= "java.util.regex.Pattern" (some-> % .schema .getClass .getCanonicalName))
+          regex-violation (some #(instance? Pattern (.schema %))
                                 allowed-params-issue)
-          reserved-violation (some #(= "schema.core.Predicate" (some-> % .schema .getClass .getCanonicalName))
+          reserved-violation (some #(instance? Predicate (.schema %))
                                    allowed-params-issue)]
       (str "allowed-params is invalid. "
            (when length-violation
              "Individual params may not be empty. ")
            (when regex-violation
-             "Individual params must be made up of letters, numbers, and hyphens and must start with a letter. ")
+             "Individual params must be made up of letters, numbers, and underscores and must start with a letter. ")
            (when reserved-violation
-             (str "Individual params cannot start with MESOS_, MARATHON_, or PORT and cannot be "
+             (str "Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be "
                   (str/join ", " reserved-environment-vars) ". "))))))
 
 (defn name->metric-group

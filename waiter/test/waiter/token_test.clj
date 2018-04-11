@@ -1035,39 +1035,88 @@
           (is (= 400 status))
           (is (str/includes? message "Tokens with missing required parameters cannot use interstitial support") body)))
 
-      (testing "post:new-service-description:invalid-allowed-params-int"
-        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              service-description (walk/stringify-keys
-                                    {:allowed-params 1 ;; invalid int as input"
-                                     :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :permitted-user "*" :token "abcdefgh"})
-              {:keys [body status]}
-              (run-handle-token-request
-                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
-                {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
-                 :headers {"accept" "application/json"}
-                 :request-method :post})
-              {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
-          (is (str/includes? message "Provided allowed-params is not a vector") body)))
+      (let [run-allowed-params-check
+            (fn [allowed-params-value error-messages]
+              (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+                    service-description (walk/stringify-keys
+                                          {:allowed-params allowed-params-value
+                                           :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :permitted-user "*" :token "abcdefgh"})
+                    {:keys [body status]}
+                    (run-handle-token-request
+                      kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                      {:authorization/user auth-user
+                       :body (StringBufferInputStream. (json/write-str service-description))
+                       :headers {"accept" "application/json"}
+                       :request-method :post})
+                    {{:strs [message]} "waiter-error"} (json/read-str body)]
+                (is (= 400 status))
+                (doseq [error-message error-messages]
+                  (is (str/includes? (str message) error-message) body))))]
 
-      (testing "post:new-service-description:empty-allowed-params-string"
-        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              service-description (walk/stringify-keys
-                                    {:allowed-params ["" "HOME" "VAR.1"]
-                                     :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :permitted-user "*" :token "abcdefgh"})
-              {:keys [body status]}
-              (run-handle-token-request
-                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
-                {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
-                 :headers {"accept" "application/json"}
-                 :request-method :post})
-              {{:strs [message]} "waiter-error"} (json/read-str body)]
-          (is (= 400 status))
-          (is (str/includes? message "Individual params may not be empty") body)
-          (is (str/includes? message "Individual params must be made up of letters, numbers, and hyphens and must start with a letter") body)
-          (is (str/includes? message "Individual params cannot start with MESOS_, MARATHON_, or PORT and cannot be HOME") body))))))
+        (testing "post:new-service-description:invalid-allowed-params-int"
+          (run-allowed-params-check 1 ["Provided allowed-params is not a vector"]))
+
+        (testing "post:new-service-description:empty-allowed-params-string"
+          (run-allowed-params-check
+            [""]
+            ["Individual params may not be empty."]))
+
+        (testing "post:new-service-description:invalid-first-underscore"
+          (run-allowed-params-check
+            ["_HOME"]
+            ["Individual params must be made up of letters, numbers, and underscores and must start with a letter."]))
+
+        (testing "post:new-service-description:invalid-first-digit"
+          (run-allowed-params-check
+            ["1HOME"]
+            ["Individual params must be made up of letters, numbers, and underscores and must start with a letter."]))
+
+        (testing "post:new-service-description:invalid-use-of-hyphen"
+          (run-allowed-params-check
+            ["MY-ENV"]
+            ["Individual params must be made up of letters, numbers, and underscores and must start with a letter."]))
+
+        (testing "post:new-service-description:reserved-MESOS"
+          (run-allowed-params-check
+            ["MESOS_CPU"]
+            ["Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."]))
+
+        (testing "post:new-service-description:reserved-MARATHON"
+          (run-allowed-params-check
+            ["MARATHON_CPU"]
+            ["Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."]))
+
+        (testing "post:new-service-description:reserved-PORT"
+          (run-allowed-params-check
+            ["PORT1"]
+            ["Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."]))
+
+        (testing "post:new-service-description:reserved-WAITER"
+          (run-allowed-params-check
+            ["WAITER_CPU"]
+            ["Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."]))
+
+        (testing "post:new-service-description:reserved-HOME"
+          (run-allowed-params-check
+            ["HOME"]
+            ["Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."]))
+
+        (testing "post:new-service-description:reserved-LOGNAME"
+          (run-allowed-params-check
+            ["LOGNAME"]
+            ["Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."]))
+
+        (testing "post:new-service-description:reserved-USER"
+          (run-allowed-params-check
+            ["USER"]
+            ["Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."]))
+
+        (testing "post:new-service-description:all-errors"
+          (run-allowed-params-check
+            ["" "HOME" "VAR.1"]
+            ["Individual params may not be empty."
+             "Individual params must be made up of letters, numbers, and underscores and must start with a letter."
+             "Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."]))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
