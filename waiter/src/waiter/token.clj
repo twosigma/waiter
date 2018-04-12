@@ -26,14 +26,14 @@
 
 (defn sanitize-history
   "Limits the history length stored in the token-data."
-  [history-length token-data]
+  [token-data history-length]
   (utils/dissoc-in token-data (repeat history-length "previous")))
 
 (defn ensure-history
   "Ensures a non-nil previous entry exists in `token-data`.
    If one already was present when this function was called, returns `token-data` unmodified.
-   Else if assocs `(or previous {})` into `token-data`."
-  [previous token-data]
+   Else assoc `(or previous {})` into `token-data`."
+  [token-data previous]
   (update token-data "previous" (fn [current-previous] (or current-previous previous {}))))
 
 (let [etag-prefix "E-"]
@@ -105,10 +105,9 @@
           ; Validate the token modification for concurrency races
           (validate-token-modification-based-on-etag existing-token-description version-etag)
           ; Store the service description
-          (->> new-token-data
-               (ensure-history existing-token-data)
-               (sanitize-history history-length)
-               (kv/store kv-store token))
+          (kv/store kv-store token (-> new-token-data
+                                       (ensure-history existing-token-data)
+                                       (sanitize-history history-length)))
           ; Remove token from previous owner
           (when (and existing-owner (not= owner existing-owner))
             (let [previous-owner-key (ensure-owner-key kv-store owner->owner-key existing-owner)]
@@ -141,10 +140,9 @@
                                      "deleted" true
                                      "last-update-time" (.getMillis ^DateTime (clock))
                                      "last-update-user" authenticated-user)]
-                (->> new-token-data
-                     (ensure-history existing-token-data)
-                     (sanitize-history history-length)
-                     (kv/store kv-store token))))))
+                (kv/store kv-store token (-> new-token-data
+                                             (ensure-history existing-token-data)
+                                             (sanitize-history history-length)))))))
         ; Remove token from owner (hard-delete) or set the deleted flag (soft-delete)
         (when owner
           (let [owner->owner-key (kv/fetch kv-store token-owners-key)
