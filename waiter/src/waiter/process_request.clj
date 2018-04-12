@@ -313,7 +313,7 @@
                         (confirm-live-connection)
                         (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
                               bytes-read (if buffer
-                                           (alength buffer)
+                                           (count buffer)
                                            -1)]
                           (if-not (= -1 bytes-read)
                             (do
