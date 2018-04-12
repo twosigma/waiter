@@ -34,7 +34,7 @@
            java.util.concurrent.ThreadLocalRandom
            java.util.regex.Pattern
            javax.servlet.ServletResponse
-           (org.joda.time DateTime DateTimeZone ReadablePeriod)
+           (org.joda.time DateTime ReadablePeriod)
            (schema.utils ValidationError)))
 
 (defn select-keys-pred
