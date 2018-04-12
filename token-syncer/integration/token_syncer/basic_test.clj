@@ -36,6 +36,16 @@
     (is (System/getenv "WAITER_URIS"))
     (is (> (count (waiter-urls)) 1))))
 
+(defn- basic-token-metadata
+  "Returns the common metadata used in the tests."
+  [current-time-ms]
+  {"last-update-time" current-time-ms
+   "last-update-user" "auth-user"
+   "owner" "test-user"
+   "previous" {"last-update-time" (- current-time-ms 30000)
+               "last-update-user" "another-auth-user"}
+   "root" "src1"})
+
 (defn- token->etag
   "Retrieves the etag for a token on a waiter router."
   [{:keys [load-token]} waiter-url token-name]
@@ -61,11 +71,8 @@
       (try
         ;; ARRANGE
         (let [last-update-time-ms (- (System/currentTimeMillis) 10000)
-              token-metadata {"deleted" true
-                              "last-update-time" last-update-time-ms
-                              "last-update-user" "auth-user"
-                              "owner" "test-user"
-                              "root" "src1"}
+              token-metadata (-> (basic-token-metadata last-update-time-ms)
+                                 (assoc "deleted" true))
               token-description (merge basic-description token-metadata)]
 
           (doseq [waiter-url waiter-urls]
@@ -110,10 +117,7 @@
       (try
         ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
-              token-metadata {"last-update-time" current-time-ms
-                              "last-update-user" "auth-user"
-                              "owner" "test-user"
-                              "root" "src1"}
+              token-metadata (basic-token-metadata current-time-ms)
               token-description (merge basic-description token-metadata)]
 
           (store-token (first waiter-urls) token-name nil (assoc token-description "deleted" true))
@@ -164,10 +168,7 @@
       (try
         ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
-              token-metadata {"last-update-time" current-time-ms
-                              "last-update-user" "auth-user"
-                              "owner" "test-user"
-                              "root" "src1"}
+              token-metadata (basic-token-metadata current-time-ms)
               token-description (merge basic-description token-metadata)]
 
           (store-token (first waiter-urls) token-name nil token-description)
@@ -214,10 +215,7 @@
       (try
         ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
-              token-metadata {"last-update-time" current-time-ms
-                              "last-update-user" "auth-user"
-                              "owner" "test-user"
-                              "root" "src1"}
+              token-metadata (basic-token-metadata current-time-ms)
               token-description (merge basic-description token-metadata)]
 
           (doseq [waiter-url waiter-urls]
@@ -258,10 +256,7 @@
       (try
         ;; ARRANGE
         (let [current-time-ms (System/currentTimeMillis)
-              token-metadata {"last-update-time" current-time-ms
-                              "last-update-user" "auth-user"
-                              "owner" "test-user"
-                              "root" "src1"}
+              token-metadata (basic-token-metadata current-time-ms)
               token-description (merge basic-description token-metadata)]
 
           (let [last-update-time-ms (- current-time-ms 10000)]
@@ -326,6 +321,8 @@
                                "last-update-time" (- last-update-time-ms index)
                                "last-update-user" (str "auth-user-" index)
                                "owner" (str "test-user-" index)
+                               "previous" {"last-update-time" (- current-time-ms 30000)
+                                           "last-update-user" "foo-user"}
                                "root" "common-root")))
               waiter-urls))
 
@@ -340,6 +337,8 @@
                                          "last-update-time" last-update-time-ms
                                          "last-update-user" "auth-user-0"
                                          "owner" "test-user-0"
+                                         "previous" {"last-update-time" (- current-time-ms 30000)
+                                                     "last-update-user" "foo-user"}
                                          "root" "common-root")
                     waiter-sync-result (constantly
                                          {:code :success/sync-update
@@ -388,6 +387,8 @@
                                "last-update-time" (- last-update-time-ms index)
                                "last-update-user" "auth-user"
                                "owner" "test-user"
+                               "previous" {"last-update-time" (- current-time-ms 30000)
+                                           "last-update-user" "foo-user"}
                                "root" waiter-url)))
               waiter-urls))
 
@@ -402,6 +403,8 @@
                                          "last-update-time" last-update-time-ms
                                          "last-update-user" "auth-user"
                                          "owner" "test-user"
+                                         "previous" {"last-update-time" (- current-time-ms 30000)
+                                                     "last-update-user" "foo-user"}
                                          "root" (first waiter-urls))
                     sync-result (->> (rest waiter-urls)
                                      (map-indexed
@@ -413,6 +416,8 @@
                                                                 "last-update-time" (- last-update-time-ms index 1)
                                                                 "last-update-user" "auth-user"
                                                                 "owner" "test-user"
+                                                                "previous" {"last-update-time" (- current-time-ms 30000)
+                                                                            "last-update-user" "foo-user"}
                                                                 "root" waiter-url)
                                                      :latest latest-description}}]))
                                      (into {}))
@@ -439,6 +444,8 @@
                                                "last-update-time" token-last-modified-time
                                                "last-update-user" "auth-user"
                                                "owner" "test-user"
+                                               "previous" {"last-update-time" (- current-time-ms 30000)
+                                                           "last-update-user" "foo-user"}
                                                "root" waiter-url)
                                 :headers {"content-type" "application/json"
                                           "etag" token-etag}

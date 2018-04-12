@@ -103,6 +103,15 @@
       (f/parse date-str)
       .getMillis))
 
+(defn- convert-iso8601->millis
+  [token-description]
+  (loop [loop-token-description token-description
+         nested-last-update-time-path ["last-update-time"]]
+    (if (get-in loop-token-description nested-last-update-time-path)
+      (recur (update-in loop-token-description nested-last-update-time-path iso8601->millis)
+             (concat ["previous"] nested-last-update-time-path))
+      loop-token-description)))
+
 (defn load-token
   "Loads the description of a token on a cluster."
   [^HttpClient http-client cluster-url token]
@@ -119,9 +128,7 @@
                                    async/<!!
                                    parse-json-data)]
         (cond-> {:description (if (utils/successful? response)
-                                (cond-> token-description
-                                        (contains? token-description "last-update-time")
-                                        (update "last-update-time" iso8601->millis))
+                                (convert-iso8601->millis token-description)
                                 {})
                  :headers (extract-relevant-headers headers)
                  :status status}
