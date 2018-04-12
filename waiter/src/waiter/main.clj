@@ -23,6 +23,7 @@
             [waiter.cors :as cors]
             [waiter.core :as core]
             [waiter.correlation-id :as cid]
+            [waiter.request-log :as rlog]
             [waiter.settings :as settings]
             [waiter.utils :as utils])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
@@ -75,11 +76,13 @@
                                                           (cors/wrap-cors-preflight cors-validator (:max-age cors-config))
                                                           core/wrap-error-handling
                                                           (core/wrap-debug generate-log-url-fn)
+                                                          rlog/wrap-log
                                                           core/correlation-id-middleware
                                                           (core/wrap-request-info router-id support-info)
                                                           consume-request-stream)
                                         :websocket-acceptor websocket-request-authenticator
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)
+                                                               rlog/wrap-log
                                                                core/correlation-id-middleware
                                                                (core/wrap-request-info router-id support-info))
                                         :host host

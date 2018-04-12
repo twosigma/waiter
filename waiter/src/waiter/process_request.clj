@@ -149,17 +149,15 @@
       (au/on-chan-close request-state-chan
                         (fn on-request-state-chan-close []
                           (cid/cdebug correlation-id "request-state-chan closed")
-                          ; request potentially completing normally if no previous status delivered
-                          (deliver reservation-status-promise :success)
-                          (let [status (deref reservation-status-promise 100 :unrealized-promise)] ; don't wait forever
+                          ; assume request did not process successfully if no value in promise
+                          (deliver reservation-status-promise :generic-error)
+                          (let [status @reservation-status-promise]
                             (cid/cinfo correlation-id "done processing request" status)
                             (when (= :success status)
                               (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
                             (when (= :generic-error status)
                               (cid/cerror correlation-id "there was a generic error in processing the request;"
                                           "if this is a client or server related issue, the code needs to be updated."))
-                            (when (= :unrealized-promise status)
-                              (cid/cerror correlation-id "reservation status not received!"))
                             (when (not= :success-async status)
                               (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                               (statsd/gauge-delta! metric-group "request_outstanding" -1))
@@ -338,6 +336,7 @@
                                   (throw error)))
                               (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
                               (log/info bytes-streamed "bytes streamed in response")
+                              (deliver reservation-status-promise :success)
                               [bytes-streamed false])))
                         (catch Exception e
                           (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
@@ -542,24 +541,28 @@
                                                    (make-request-fn instance request instance-request-properties
                                                                     passthrough-headers endpoint metric-group)))
                                 response-elapsed (:elapsed timed-response)
-                                {:keys [error] :as response} (:out timed-response)
-                                request-abort-callback (request-abort-callback-factory response)
-                                confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
+                                {:keys [error] :as response} (:out timed-response)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)
                             (-> (if error
                                   (do
                                     (async/close! request-state-chan)
                                     (handle-response-error error reservation-status-promise service-id request))
-                                  (process-backend-response-fn local-usage-agent instance-request-properties descriptor instance request
-                                                               reason-map reservation-status-promise confirm-live-connection-with-abort
-                                                               request-state-chan response))
+                                  (try
+                                    (let [request-abort-callback (request-abort-callback-factory response)
+                                          confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
+                                      (process-backend-response-fn local-usage-agent instance-request-properties descriptor
+                                                                 instance request reason-map reservation-status-promise
+                                                                 confirm-live-connection-with-abort request-state-chan response))
+                                    (catch Exception e
+                                      (async/close! request-state-chan)
+                                      (handle-process-exception e request))))
+                                (assoc :backend-response-latency-ns response-elapsed)
                                 (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
                           (catch Exception e
-                            (deliver reservation-status-promise :generic-error)
-                            ; close request-state-chan to mark the request as finished
                             (async/close! request-state-chan)
                             (handle-process-exception e request)))
-                        (assoc :instance instance)
+                        (assoc :get-instance-latency-ns instance-elapsed
+                               :instance instance)
                         (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))

@@ -34,7 +34,7 @@
            java.util.concurrent.ThreadLocalRandom
            java.util.regex.Pattern
            javax.servlet.ServletResponse
-           (org.joda.time DateTime DateTimeZone ReadablePeriod)
+           (org.joda.time DateTime ReadablePeriod)
            (schema.utils ValidationError)))
 
 (defn select-keys-pred
@@ -123,8 +123,8 @@
   ([^DateTime date-time formatter]
    (when date-time
      (f/unparse
-       (f/with-zone formatter (t/default-time-zone))
-       (.withZone date-time DateTimeZone/UTC)))))
+       (f/with-zone formatter t/utc)
+       (.withZone date-time t/utc)))))
 
 (defn str-to-date
   (^DateTime [date-str]
@@ -132,7 +132,7 @@
   (^DateTime [date-str formatter]
    (try
      (f/parse
-       (f/with-zone formatter (t/default-time-zone))
+       (f/with-zone formatter t/utc)
        date-str)
      (catch Exception ex
        (log/error "unable to parse" date-str "with formatter" formatter)
