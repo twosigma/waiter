@@ -50,7 +50,7 @@
   (fn [{:keys [body] :as request}]
     (let [resp (handler request)]
       (if (and (instance? ServletInputStream body)
-               (not (.isFinished body))
+               (not (.isFinished ^ServletInputStream body))
                (not (instance? ManyToManyChannel resp)))
         (try
           (slurp body)
