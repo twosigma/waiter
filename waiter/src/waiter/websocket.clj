@@ -208,6 +208,7 @@
                   (deliver reservation-status-promise stream-error-type)
                   (async/>! request-close-chan stream-error-type))))
             (do
+              (deliver reservation-status-promise :success)
               (log/info src-name "input channel has been closed, bytes streamed:" bytes-streamed))))
         (catch Exception e
           (log/error e "error in streaming data from" src-name "to" dest-name)
