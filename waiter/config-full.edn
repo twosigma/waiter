@@ -527,7 +527,7 @@
 
  :token-config {
                 ;; Configures the amount of history we store for a token.
-                ;; When it is at least 1, it enables blue/green deployment of services.
+                ;; It must be a positive integer.
                 :history-length 5}
 
  ;; Waiter supports making websocket connections to backends.
