@@ -289,15 +289,19 @@
         token-etag (token-description->etag token-description)]
     (if (and service-description-template (not-empty service-description-template))
       ;;NB do not ever return the password to the user
-      (do
+      (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
         (log/info "successfully retrieved token " token)
         (utils/map->json-response
           (cond-> service-description-template
-                  show-metadata (merge (cond-> token-metadata
-                                               (contains? token-metadata "last-update-time")
-                                               (update "last-update-time" #(DateTime. %))
-                                               (not (contains? token-metadata "root"))
-                                               (assoc "root" token-root))))
+                  show-metadata
+                  (merge (cond-> (loop [loop-token-metadata token-metadata
+                                        nested-last-update-time-path ["last-update-time"]]
+                                   (if (get-in loop-token-metadata nested-last-update-time-path)
+                                     (recur (update-in loop-token-metadata nested-last-update-time-path epoch-time->date-time)
+                                            (concat ["previous"] nested-last-update-time-path))
+                                     loop-token-metadata))
+                                 (not (contains? token-metadata "root"))
+                                 (assoc "root" token-root))))
           :headers {"etag" token-etag}))
       (do
         (throw (ex-info (str "Couldn't find token " token)
