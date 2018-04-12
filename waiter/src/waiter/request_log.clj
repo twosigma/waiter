@@ -9,13 +9,10 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.request-log
-  (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
-            [clojure.data.json :as json]
+  (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
-            [waiter.async-utils :as au]
             [waiter.metrics :as metrics]
             [waiter.ring-utils :as ru]
             [waiter.utils :as utils]))
@@ -42,7 +39,7 @@
 (defn response->context
   "Convert a response into a context suitable for logging."
   [{:keys [authorization/principal backend-response-latency-ns descriptor get-instance-latency-ns
-           handle-request-latency-ns instance status] :as response}]
+           handle-request-latency-ns instance status]}]
   (let [{:keys [service-id service-description]} descriptor]
     (cond-> {:status (or status 200)}
       backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)
@@ -60,8 +57,12 @@
 
 (defn log-request!
   "Log a request"
-  [request response]
-  (log (merge (request->context request) (response->context response))))
+  [request response additional-context]
+  (log (merge (request->context request)
+              (when (map? response)
+                ;; response is not a map while processing websocket requests
+                (response->context response))
+              additional-context)))
 
 (defn wrap-log
   "Wraps a handler logging data from requests and responses."
@@ -73,5 +74,5 @@
         response
         (fn [response]
           (let [elapsed-ns (timers/stop timer)]
-            (log-request! request (assoc response :handle-request-latency-ns elapsed-ns)))
+            (log-request! request response {:handle-request-latency-ns elapsed-ns}))
           response)))))

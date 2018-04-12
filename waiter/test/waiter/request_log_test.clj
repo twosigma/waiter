@@ -87,3 +87,14 @@
                 :scheme "http"
                 :status 200}
                (dissoc log-entry :handle-request-latency-ns)))))))
+
+(deftest test-log-request!
+  (with-redefs [request->context identity
+                response->context identity
+                log identity]
+    (is (= {:request :foo :response :bar}
+           (log-request! {:request :foo} {:response :bar} {})))
+    (is (= {:context :baz :request :foo :response :bar}
+           (log-request! {:request :foo} {:response :bar} {:context :baz})))
+    (is (= {:request :foo}
+           (log-request! {:request :foo} (Object.) {})))))
