@@ -34,10 +34,7 @@
              :path uri
              :remote-addr (or x-forwarded-for remote-addr)
              :request-id request-id
-             :scheme (let [scheme (utils/request->scheme request)]
-                       (if (keyword? scheme)
-                         (name scheme)
-                         scheme))}
+             :scheme (-> request utils/request->scheme name)}
       request-method (assoc :method (-> request-method name str/upper-case))
       query-string (assoc :query-string query-string)
       request-time (assoc :request-time (utils/date-to-str request-time)))))
