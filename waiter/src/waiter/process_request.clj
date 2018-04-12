@@ -72,10 +72,8 @@
   [^HttpOutput output-stream idle-timeout-ms]
   (try
     (log/debug "executing pill to adjust idle timeout to" idle-timeout-ms "ms.")
-    (let [channel-field (.getDeclaredField HttpOutput "_channel")]
-      (.setAccessible channel-field true)
-      (let [^HttpChannel http-channel (.get channel-field output-stream)]
-        (.setIdleTimeout http-channel idle-timeout-ms)))
+    (let [^HttpChannel http-channel (.getHttpChannel output-stream)]
+      (.setIdleTimeout http-channel idle-timeout-ms))
     (catch Exception e
       (log/error e "gobbling unexpected error while setting idle timeout"))))
 
