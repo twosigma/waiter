@@ -359,7 +359,8 @@
       (catch Exception e
         (async/>!! request-close-promise-chan :process-error)
         (log/error e "error while processing websocket response"))))
-  {}) ;; return an empty response map to maintain consistency with the http case
+  ;; return an empty response map to maintain consistency with the http case
+  {})
 
 (defn wrap-ws-close-on-error
   "Closes the out chan when the handler returns an error."
