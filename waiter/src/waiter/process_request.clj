@@ -544,15 +544,17 @@
                                 {:keys [error] :as response} (:out timed-response)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)
                             (-> (if error
-                                  (do
+                                  (let [error-response (handle-response-error error reservation-status-promise service-id request)]
+                                    ; must close `request-state-chan` after calling `handle-response-error`
+                                    ; which resolves the `reservation-status-promise`
                                     (async/close! request-state-chan)
-                                    (handle-response-error error reservation-status-promise service-id request))
+                                    error-response)
                                   (try
                                     (let [request-abort-callback (request-abort-callback-factory response)
                                           confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
                                       (process-backend-response-fn local-usage-agent instance-request-properties descriptor
-                                                                 instance request reason-map reservation-status-promise
-                                                                 confirm-live-connection-with-abort request-state-chan response))
+                                                                   instance request reason-map reservation-status-promise
+                                                                   confirm-live-connection-with-abort request-state-chan response))
                                     (catch Exception e
                                       (async/close! request-state-chan)
                                       (handle-process-exception e request))))
