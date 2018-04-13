@@ -155,7 +155,9 @@
             (send router-metrics-agent register-router-ws :router-id->incoming-ws source-router-id request encrypt router-metrics-agent)
             (process-incoming-router-metrics source-router-id encrypt decrypt router-metrics-agent metrics-sync-interval-ms request))))
       (catch Exception e
-        (log/error e "error in processing incoming router metrics request")))))
+        (log/error e "error in processing incoming router metrics request")))
+    ;; return an empty response map to maintain consistency with the http case
+    {}))
 
 (defn preserve-metrics-from-routers
   "Removes last-update-time and metrics entries for obsolete routers from the agent state."
