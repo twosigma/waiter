@@ -615,4 +615,5 @@
           "WAITER_CPUS" (-> cpus str)
           "WAITER_MEM_MB" (-> mem str)
           "WAITER_PASSWORD" (service-id->password-fn service-id)
+          "WAITER_SERVICE_ID" service-id
           "WAITER_USERNAME" "waiter"}))

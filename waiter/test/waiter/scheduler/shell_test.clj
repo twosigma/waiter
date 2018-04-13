@@ -392,6 +392,7 @@
                                 "WAITER_CPUS" "2"
                                 "WAITER_MEM_MB" "32"
                                 "WAITER_PASSWORD" "password"
+                                "WAITER_SERVICE_ID" "foo"
                                 "WAITER_USERNAME" "waiter"}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
@@ -410,6 +411,7 @@
                                 "WAITER_CPUS" "2"
                                 "WAITER_MEM_MB" "32"
                                 "WAITER_PASSWORD" "password"
+                                "WAITER_SERVICE_ID" "bar"
                                 "WAITER_USERNAME" "waiter"}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
@@ -428,6 +430,7 @@
                                 "WAITER_CPUS" "2"
                                 "WAITER_MEM_MB" "32"
                                 "WAITER_PASSWORD" "password"
+                                "WAITER_SERVICE_ID" "baz"
                                 "WAITER_USERNAME" "waiter"}
                   :service-description {"backend-proto" "http"
                                         "cmd" "sleep 10000"
@@ -467,6 +470,7 @@
                                                   "WAITER_CPUS" "2"
                                                   "WAITER_MEM_MB" "32"
                                                   "WAITER_PASSWORD" "password"
+                                                  "WAITER_SERVICE_ID" "foo"
                                                   "WAITER_USERNAME" "waiter"}
                                     :service-description {"backend-proto" "http"
                                                           "cmd" "ls"
@@ -575,7 +579,7 @@
       (is (= 1 (count (:failed-instances instances)))))))
 
 (deftest test-pid->memory
-  (with-redefs [sh/sh (fn [& args]
+  (with-redefs [sh/sh (fn [& _]
                         {:out (str "PID  PPID   RSS\n"
                                    "  1     0     1\n"
                                    "  2     1    10\n"
