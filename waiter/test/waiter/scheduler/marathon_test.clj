@@ -549,6 +549,7 @@
                             "WAITER_CPUS" "1"
                             "WAITER_MEM_MB" "1536"
                             "WAITER_PASSWORD" "test-service-1-password"
+                            "WAITER_SERVICE_ID" "test-service-1"
                             "WAITER_USERNAME" "waiter"}
                       :cmd "test-command"
                       :cpus 1

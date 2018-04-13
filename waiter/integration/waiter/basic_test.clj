@@ -225,7 +225,8 @@
             body-json (json/read-str (str body))]
         (is (= 200 status))
         (testing "waiter configured environment variables"
-          (is (every? #(contains? body-json %) ["HOME" "LOGNAME" "USER" "WAITER_CPUS" "WAITER_MEM_MB" "WAITER_USERNAME"])
+          (is (every? #(contains? body-json %)
+                      ["HOME" "LOGNAME" "USER" "WAITER_CPUS" "WAITER_MEM_MB" "WAITER_SERVICE_ID" "WAITER_USERNAME"])
               (str body-json)))
         (testing "on-the-fly environment variables"
           (is (every? #(contains? body-json %) ["BEGIN_DATE" "END_DATE" "TIME2" "TIMESTAMP"])
