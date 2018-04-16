@@ -16,8 +16,8 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [taoensso.nippy :as nippy]
-            [waiter.ring-utils :as ru]
-            [waiter.utils :as utils])
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils])
   (:import clojure.lang.ExceptionInfo
            org.eclipse.jetty.util.UrlEncoded))
 

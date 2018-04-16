@@ -16,10 +16,10 @@
             [clojure.walk :as walk]
             [metrics.counters :as counters]
             [plumbing.core :as pc]
-            [waiter.async-utils :as au]
             [waiter.metrics :as metrics]
             [waiter.service :as service]
-            [waiter.utils :as utils]))
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils]))
 
 (defn compute-help-required
   "Computes the number of slots (requests that can be made to instances) of help required at a router given the values for:

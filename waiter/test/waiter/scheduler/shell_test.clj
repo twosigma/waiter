@@ -19,7 +19,7 @@
             [qbits.jet.client.http :as http]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.shell :refer :all]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import clojure.lang.ExceptionInfo
            java.util.concurrent.TimeUnit
            waiter.scheduler.shell.ShellScheduler))

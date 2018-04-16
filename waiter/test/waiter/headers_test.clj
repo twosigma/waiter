@@ -12,7 +12,7 @@
   (:require [clojure.test :refer :all]
             [waiter.headers :refer :all]
             [waiter.token :as token]
-            [waiter.utils :as utils]))
+            [waiter.util.utils :as utils]))
 
 (deftest test-parse-header-value
 

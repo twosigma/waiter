@@ -17,12 +17,12 @@
             [metrics.histograms :as histograms]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
-            [waiter.async-utils :as au]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
-            [waiter.utils :as utils])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils])
   (:import java.util.concurrent.ExecutorService))
 
 (def ^:const status-check-path "/status")

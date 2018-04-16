@@ -29,12 +29,12 @@
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
-            [waiter.ring-utils :as ru]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
-            [waiter.utils :as utils]))
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils]))
 
 (defn make-auth-user-map
   "Creates a map containing the username and principal from a request"

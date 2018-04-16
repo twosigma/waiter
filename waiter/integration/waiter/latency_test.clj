@@ -12,7 +12,7 @@
   (:require [clojure.java.shell :as shell]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]))
 
 (use-fixtures :once statsd-test-fixture)
 

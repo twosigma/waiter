@@ -9,16 +9,13 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.request-log
-  (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
-            [clojure.data.json :as json]
+  (:require [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
-            [waiter.async-utils :as au]
             [waiter.metrics :as metrics]
-            [waiter.ring-utils :as ru]
-            [waiter.utils :as utils]))
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils]))
 
 (defn log
   "Log log-data as JSON"

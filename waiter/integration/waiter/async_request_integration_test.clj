@@ -14,7 +14,7 @@
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
-            [waiter.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-202-response-without-location-header
   (testing-using-waiter-url

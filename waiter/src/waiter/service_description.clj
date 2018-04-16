@@ -21,7 +21,7 @@
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.schema :as schema]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (java.util.regex Pattern)
            (org.joda.time DateTime)
            (schema.core Constrained Predicate RequiredKey)

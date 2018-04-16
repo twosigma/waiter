@@ -12,8 +12,8 @@
   (:require [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.client-tools :refer :all]
-            [waiter.utils :as utils]))
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.utils :as utils]))
 
 (defn- scaling-for-service-test [testing-str waiter-url target-instances concurrency-level request-fn]
   (testing testing-str

@@ -18,8 +18,8 @@
             [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
             [qbits.jet.client.websocket :as ws-client]
-            [waiter.client-tools :refer :all]
-            [waiter.utils :as utils]
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.utils :as utils]
             [waiter.websocket :as websocket])
   (:import (java.net HttpCookie)
            (org.eclipse.jetty.websocket.api UpgradeException UpgradeRequest)

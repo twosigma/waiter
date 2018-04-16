@@ -17,12 +17,12 @@
             [metrics.counters :as counters]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
-            [waiter.async-utils :as au]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
-            [waiter.utils :as utils])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
 
 (defn get-app-instance-stats

@@ -14,9 +14,9 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [plumbing.core :as pc]
-            [waiter.async-utils :as au]
-            [waiter.client-tools :as ct]
-            [waiter.interstitial :refer :all]))
+            [waiter.interstitial :refer :all]
+            [waiter.util.client-tools :as ct]
+            [waiter.util.async-utils :as au]))
 
 (deftest test-ensure-service-interstitial!
   (testing "new-entry"

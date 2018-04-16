@@ -25,20 +25,20 @@
             [slingshot.slingshot :refer [try+]]
             [try-let :refer [try-let]]
             [waiter.async-request :as async-req]
-            [waiter.async-utils :as au]
             [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.middleware :as middleware]
-            [waiter.ring-utils :as ru]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.token :as token]
-            [waiter.utils :as utils])
+            [waiter.util.async-utils :as au]
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils])
   (:import (java.io InputStream IOException)
            java.util.concurrent.TimeoutException
            org.eclipse.jetty.io.EofException

@@ -8,13 +8,13 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.async-utils-test
+(ns waiter.util.async-utils-test
   (:require [clojure.core.async :as async]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [full.async :refer (<?? <? go-try)]
             [metrics.histograms :as histograms]
-            [waiter.async-utils :refer :all]))
+            [waiter.util.async-utils :refer :all]))
 
 (deftest test-sliding-buffer-chan
   (let [buf-size 4

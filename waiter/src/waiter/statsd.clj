@@ -15,7 +15,7 @@
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
            (java.net InetAddress DatagramPacket DatagramSocket)))
 

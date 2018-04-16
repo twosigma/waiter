@@ -15,7 +15,7 @@
             [clojure.walk :as walk]
             [schema.core :as s]
             [waiter.schema :as schema]
-            [waiter.utils :as utils]))
+            [waiter.util.utils :as utils]))
 
 (def settings-schema
   {(s/required-key :authenticator-config) (s/constrained

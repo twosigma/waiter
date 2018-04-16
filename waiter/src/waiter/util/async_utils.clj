@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.async-utils
+(ns waiter.util.async-utils
   (:require [clojure.core.async :as async]
             [clojure.data.priority-map :as priority-map]
             [clojure.tools.logging :as log]

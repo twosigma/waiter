@@ -13,8 +13,8 @@
             [clojure.data.json :as json]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
-            [waiter.utils :as utils]
             [waiter.test-helpers]
+            [waiter.util.utils :as utils]
             [waiter.work-stealing :refer :all]))
 
 (defn- make-metrics

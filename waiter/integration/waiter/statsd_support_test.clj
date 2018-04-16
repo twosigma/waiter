@@ -11,7 +11,7 @@
 (ns waiter.statsd-support-test
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-header-metric-group
   (testing-using-waiter-url

@@ -17,9 +17,9 @@
             [clojure.walk :as walk]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
-            [waiter.client-tools :refer :all]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils])
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.utils :as utils])
   (:import (java.net URL)
            (org.joda.time DateTime)))
 

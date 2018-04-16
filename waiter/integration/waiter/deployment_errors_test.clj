@@ -13,7 +13,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [plumbing.core :as pc]
-            [waiter.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]))
 
 (defn get-router->service-state
   "Retrieves service state for a service."

@@ -31,7 +31,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.test-helpers :refer :all]
-            [waiter.utils :as utils])
+            [waiter.util.utils :as utils])
   (:import java.io.StringBufferInputStream))
 
 (defn request

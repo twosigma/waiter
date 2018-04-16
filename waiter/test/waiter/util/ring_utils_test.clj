@@ -8,10 +8,10 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.ring-utils-test
+(ns waiter.util.ring-utils-test
   (:require [clojure.core.async :as async]
             [clojure.test :refer :all]
-            [waiter.ring-utils :refer :all]))
+            [waiter.util.ring-utils :refer :all]))
 
 (deftest test-update-response
   (let [update-fn (fn [response] (assoc response :k :v))]

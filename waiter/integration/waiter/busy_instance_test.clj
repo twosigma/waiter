@@ -12,20 +12,18 @@
   (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [clojure.walk :as walk]
-            [waiter.client-tools :refer :all]
-            [waiter.utils :as utils]))
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.utils :as utils]))
 
 (deftest ^:parallel ^:integration-slow test-busy-instance-not-reserved
   (testing-using-waiter-url
     (let [extra-headers {:x-waiter-name (rand-name)
                          :x-waiter-scale-up-factor 0.99}
           parallelism 8
-          canceled (promise)
           make-request-fn (fn [headers]
                             (make-request-with-debug-info (merge extra-headers headers) #(make-kitchen-request waiter-url %)))
           _ (log/info "making canary request")
-          {:keys [service-id] :as canary-response} (make-request-fn {})]
+          {:keys [service-id]} (make-request-fn {})]
 
       ;; Make requests to get instances started and avoid shuffling among routers later
       (let [canceled (promise)]

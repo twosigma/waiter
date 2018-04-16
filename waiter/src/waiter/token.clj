@@ -16,9 +16,9 @@
             [plumbing.core :as pc]
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
-            [waiter.ring-utils :as ru]
             [waiter.service-description :as sd]
-            [waiter.utils :as utils])
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
 
 (def ^:const ANY-USER "*")

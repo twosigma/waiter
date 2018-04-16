@@ -11,7 +11,7 @@
 (ns waiter.request-method-test
   (:require [clojure.test :refer :all]
             [qbits.jet.client.http :as http]
-            [waiter.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-request-method
   (testing-using-waiter-url

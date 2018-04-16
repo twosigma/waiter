@@ -14,11 +14,11 @@
             [clojure.tools.logging :as log]
             [digest]
             [metrics.meters :as meters]
+            [taoensso.nippy :as nippy]
+            [taoensso.nippy.compression :as compression]
             [waiter.curator :as curator]
             [waiter.metrics :as metrics]
-            [waiter.utils :as utils]
-            [taoensso.nippy :as nippy]
-            [taoensso.nippy.compression :as compression])
+            [waiter.util.utils :as utils])
   (:import java.util.Arrays
            org.apache.curator.framework.CuratorFramework))
 

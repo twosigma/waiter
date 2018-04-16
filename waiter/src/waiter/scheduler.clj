@@ -19,9 +19,9 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
-            [waiter.async-utils :as au]
             [waiter.metrics :as metrics]
-            [waiter.utils :as utils])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
            (java.io EOFException)
            (java.net ConnectException SocketTimeoutException)

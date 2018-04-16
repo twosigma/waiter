@@ -16,8 +16,8 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.tools.namespace.find :as find]
-            [waiter.client-tools :as ct]
-            [waiter.correlation-id :as cid])
+            [waiter.correlation-id :as cid]
+            [waiter.util.client-tools :as ct])
   (:import java.io.ByteArrayOutputStream
            (javax.servlet ServletOutputStream
                           ServletResponse)))

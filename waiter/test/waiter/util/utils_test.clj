@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.utils-test
+(ns waiter.util.utils-test
   (:require [clj-time.core :as t]
             [clj-time.format :as f]
             [clj-time.periodic :as periodic]
@@ -21,7 +21,7 @@
             [full.async :refer (<?? <? go-try)]
             [waiter.password-store]
             [waiter.test-helpers :refer :all]
-            [waiter.utils :refer :all])
+            [waiter.util.utils :refer :all])
   (:import clojure.lang.ExceptionInfo
            java.net.ServerSocket
            java.util.UUID
@@ -445,7 +445,7 @@
 (deftest test-periodic-seq
   ; If this test fails after an upgrade to clj-time, we can switch back to using periodic-seq;
   ; in the meantime, this serves as a nice demonstration of the issue with periodic-seq and
-  ; why we wrote waiter.utils/time-seq
+  ; why we wrote waiter.util.utils/time-seq
   (testing "periodic-seq throws due to overflow after a large number of iterations"
     (let [every-ten-secs (periodic/periodic-seq (t/now) (t/millis 10000))]
       (is (thrown-with-msg? ArithmeticException #"Multiplication overflows an int" (nth every-ten-secs 1000000))))))
@@ -532,7 +532,7 @@
     (testing "should call use on namespace before attempting to resolve"
       (is (= :bar
              (create-component {:kind :x
-                                :x {:factory-fn 'waiter.utils-test-ns/foo}}))))))
+                                :x {:factory-fn 'waiter.util.utils-test-ns/foo}}))))))
 
 (deftest test-port-available?
   (let [port (first (filter port-available? (shuffle (range 10000 11000))))]

@@ -21,12 +21,12 @@
             [metrics.meters :as meters]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
-            [waiter.async-utils :as au]
             [waiter.correlation-id :as cid]
             [waiter.discovery :as discovery]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
-            [waiter.utils :as utils]
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils]
             [waiter.work-stealing :as work-stealing])
   (:import clojure.lang.PersistentQueue))
 

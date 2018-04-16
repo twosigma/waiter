@@ -8,12 +8,12 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.ring-utils
+(ns waiter.util.ring-utils
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
             [ring.middleware.params :as ring-params]
             [ring.util.request :as ring-request]
-            [waiter.async-utils :as au]))
+            [waiter.util.async-utils :as au]))
 
 (defn update-response
   "Updates a response, handling the case where it may be a chan."
