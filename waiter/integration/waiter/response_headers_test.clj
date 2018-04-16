@@ -11,7 +11,7 @@
 (ns waiter.response-headers-test
   (:require [clojure.string :as str]
             [clojure.test :refer :all]
-            [waiter.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]))
 
 (defn- make-debug-kitchen-request
   [waiter-url headers]

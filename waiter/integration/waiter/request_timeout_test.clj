@@ -16,7 +16,7 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
-            [waiter.client-tools :refer :all])
+            [waiter.util.client-tools :refer :all])
   (:import java.util.concurrent.CountDownLatch))
 
 (defmacro assert-failed-request [service-name response-body start-time-ms timeout-period-sec faulty-app?]

@@ -11,7 +11,7 @@
 (ns waiter.cookie-support-integration-test
   (:require [clojure.data.json :as json]
             [clojure.test :refer :all]
-            [waiter.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-cookie-support
   (testing-using-waiter-url

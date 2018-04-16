@@ -15,7 +15,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
-            [waiter.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]))
 
 (defn- trigger-killing-of-instance [waiter-url request-headers]
   (log/info "requesting killing of instance")

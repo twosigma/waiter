@@ -13,8 +13,8 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [schema.core :as s]
-            [waiter.client-tools :refer :all]
-            [waiter.schema :as schema]))
+            [waiter.schema :as schema]
+            [waiter.util.client-tools :refer :all]))
 
 (def quantile-metric-schema
   {(s/required-key "count") schema/non-negative-num

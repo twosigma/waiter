@@ -12,7 +12,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.client-tools :refer :all]
+            [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils]))
 
 (deftest ^:parallel ^:integration-slow test-busy-instance-not-reserved

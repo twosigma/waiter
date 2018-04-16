@@ -13,7 +13,7 @@
             [clojure.core.async :as async]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.client-tools :refer :all]
+            [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils])
   (:import (java.util.concurrent Semaphore)))
 

@@ -11,7 +11,7 @@
 (ns waiter.streaming-test
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.client-tools :refer :all])
+            [waiter.util.client-tools :refer :all])
   (:import (java.net HttpURLConnection URL)
            (java.io IOException)))
 
