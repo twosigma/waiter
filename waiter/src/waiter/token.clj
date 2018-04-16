@@ -36,29 +36,19 @@
   [token-data previous]
   (update token-data "previous" (fn [current-previous] (or current-previous previous {}))))
 
-(let [etag-prefix "E-"]
-  (defn token-data->etag
-    "Converts the merged map of service-description and token-metadata to an etag."
-    [token-data]
-    (when (seq token-data)
-      (str etag-prefix (-> token-data
-                           (select-keys sd/token-data-keys)
-                           (dissoc "previous")
-                           utils/parameters->id)))))
-
-(defn- token-description->etag
-  "Converts the token metadata to an etag."
+(defn- token-description->token-hash
+  "Converts the token metadata to a hash."
   [{:keys [service-description-template token-metadata]}]
   (-> (merge service-description-template token-metadata)
-      token-data->etag))
+      sd/token-data->token-hash))
 
-(defn- validate-token-modification-based-on-etag
-  "Validates whether the token modification should be allowed on based on the provided etag."
-  [{:keys [token-metadata] :as token-description} version-etag]
-  (when version-etag
-    (when (not= (token-description->etag token-description) (str version-etag))
+(defn- validate-token-modification-based-on-hash
+  "Validates whether the token modification should be allowed on based on the provided token version-hash."
+  [{:keys [token-metadata] :as token-description} version-hash]
+  (when version-hash
+    (when (not= (token-description->token-hash token-description) (str version-hash))
       (throw (ex-info "Cannot modify stale token"
-                      {:etag version-etag
+                      {:provided-version version-hash
                        :status 412
                        :token-metadata token-metadata})))))
 
@@ -85,12 +75,12 @@
                                new-owner-key)))
       delete-token-from-index (fn delete-token-from-index [index-entries token-to-remove]
                                 (dissoc index-entries token-to-remove))
-      insert-token-into-index (fn insert-token-into-index [index-entries token-to-insert token-etag deleted]
-                                (assoc index-entries token-to-insert {:deleted (true? deleted) :etag token-etag}))]
+      insert-token-into-index (fn insert-token-into-index [index-entries token-to-insert token-hash deleted]
+                                (assoc index-entries token-to-insert {:deleted (true? deleted) :etag token-hash}))]
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
-    [synchronize-fn kv-store history-length ^String token service-description-template token-metadata & {:keys [version-etag]}]
+    [synchronize-fn kv-store history-length ^String token service-description-template token-metadata & {:keys [version-hash]}]
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
@@ -103,7 +93,7 @@
               existing-owner (get existing-token-data "owner")
               owner->owner-key (kv/fetch kv-store token-owners-key)]
           ; Validate the token modification for concurrency races
-          (validate-token-modification-based-on-etag existing-token-description version-etag)
+          (validate-token-modification-based-on-hash existing-token-description version-hash)
           ; Store the service description
           (kv/store kv-store token (-> new-token-data
                                        (ensure-history existing-token-data)
@@ -116,15 +106,15 @@
           ; Add token to new owner
           (when owner
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)
-                  token-etag' (token-data->etag new-token-data)]
+                  token-hash' (sd/token-data->token-hash new-token-data)]
               (log/info "inserting" token "into index of" owner)
-              (update-kv! kv-store owner-key (fn [index] (insert-token-into-index index token token-etag' deleted)))))
+              (update-kv! kv-store owner-key (fn [index] (insert-token-into-index index token token-hash' deleted)))))
           (log/info "stored service description template for" token)))))
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
     [clock synchronize-fn kv-store history-length token owner authenticated-user &
-     {:keys [hard-delete version-etag] :or {hard-delete false}}]
+     {:keys [hard-delete version-hash] :or {hard-delete false}}]
     (synchronize-fn
       token-lock
       (fn inner-delete-service-description-for-token []
@@ -132,7 +122,7 @@
         (let [existing-token-data (kv/fetch kv-store token)
               existing-token-description (sd/token-data->token-description existing-token-data)]
           ; Validate the token modification for concurrency races
-          (validate-token-modification-based-on-etag existing-token-description version-etag)
+          (validate-token-modification-based-on-hash existing-token-description version-hash)
           (if hard-delete
             (kv/delete kv-store token)
             (when existing-token-data
@@ -149,8 +139,8 @@
                 owner-key (ensure-owner-key kv-store owner->owner-key owner)]
             (update-kv! kv-store owner-key (fn [index] (delete-token-from-index index token)))
             (when (not hard-delete)
-              (let [etag (token-data->etag (kv/fetch kv-store token))]
-                (update-kv! kv-store owner-key (fn [index] (insert-token-into-index index token etag true)))))))
+              (let [token-hash (sd/token-data->token-hash (kv/fetch kv-store token))]
+                (update-kv! kv-store owner-key (fn [index] (insert-token-into-index index token token-hash true)))))))
         ; Don't bother removing owner from token-owners, even if they have no tokens now
         (log/info "deleted token for" token))))
 
@@ -218,9 +208,9 @@
                                        (pc/map-from-keys
                                          (fn [token]
                                            (let [{:strs [deleted] :as token-data} (kv/fetch kv-store token)
-                                                 token-etag (token-data->etag token-data)]
+                                                 token-hash (sd/token-data->token-hash token-data)]
                                              {:deleted (true? deleted)
-                                              :etag token-etag}))
+                                              :etag token-hash}))
                                          tokens))
                                      owner->tokens)
               owner->owner-key (pc/map-from-keys (fn [_] (new-owner-key)) (keys owner->index-entries))]
@@ -244,10 +234,10 @@
             {:keys [service-description-template token-metadata]} token-description]
         (if (and service-description-template (not-empty service-description-template))
           (let [token-owner (get token-metadata "owner")
-                version-etag (get headers "if-match")]
+                version-hash (get headers "if-match")]
             (if hard-delete
               (do
-                (when-not version-etag
+                (when-not version-hash
                   (throw (ex-info "Must specify if-match header for token hard deletes"
                                   {:request-headers headers, :status 400})))
                 (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
@@ -262,13 +252,13 @@
                                  :user authenticated-user}))))
             (delete-service-description-for-token
               clock synchronize-fn kv-store history-length token token-owner authenticated-user
-              :hard-delete hard-delete :version-etag version-etag)
+              :hard-delete hard-delete :version-hash version-hash)
             ; notify peers of token delete and ask them to refresh their caches
             (make-peer-requests-fn "tokens/refresh"
                                    :body (json/write-str {:owner token-owner, :token token})
                                    :method :post)
             (utils/map->json-response {:delete token, :hard-delete hard-delete, :success true}
-                                      :headers {"etag" version-etag}))
+                                      :headers {"etag" version-hash}))
           (throw (ex-info (str "Token " token " does not exist")
                           {:status 404 :token token}))))
       (throw (ex-info "Couldn't find token in request" {:status 400 :token token})))))
@@ -284,7 +274,7 @@
                   (:token (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)))
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
         {:keys [service-description-template token-metadata]} token-description
-        token-etag (token-description->etag token-description)]
+        token-hash (token-description->token-hash token-description)]
     (if (and service-description-template (not-empty service-description-template))
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
@@ -300,10 +290,10 @@
                                      loop-token-metadata))
                                  (not (contains? token-metadata "root"))
                                  (assoc "root" token-root))))
-          :headers {"etag" token-etag}))
+          :headers {"etag" token-hash}))
       (do
         (throw (ex-info (str "Couldn't find token " token)
-                        {:headers {"etag" token-etag}
+                        {:headers {"etag" token-hash}
                          :status 404
                          :token token}))))))
 
@@ -325,7 +315,7 @@
         owner (or (get new-token-metadata "owner")
                   (get existing-token-metadata "owner")
                   authenticated-user)
-        version-etag (get headers "if-match")]
+        version-hash (get headers "if-match")]
     (when (str/blank? token)
       (throw (ex-info "Must provide the token" {:status 400})))
     (when (some #(= token %) waiter-hostnames)
@@ -360,7 +350,7 @@
     (case (get request-params "update-mode")
       "admin"
       (do
-        (when (and (seq existing-token-metadata) (not version-etag))
+        (when (and (seq existing-token-metadata) (not version-hash))
           (throw (ex-info "Must specify if-match header for admin mode token updates"
                           {:request-headers headers, :status 400})))
         (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
@@ -423,7 +413,7 @@
                                     new-token-metadata)]
       (store-service-description-for-token
         synchronize-fn kv-store history-length token new-service-description-template new-token-metadata
-        :version-etag version-etag)
+        :version-hash version-hash)
       ; notify peers of token update
       (make-peer-requests-fn "tokens/refresh"
                              :method :post
@@ -432,7 +422,7 @@
                                  :service-description new-service-description-template}
                                 :headers {"etag" (-> {:service-description-template new-service-description-template
                                                       :token-metadata new-token-metadata}
-                                                     token-description->etag)}))))
+                                                     token-description->token-hash)}))))
 
 (defn handle-token-request
   "Ring handler for dealing with tokens.
