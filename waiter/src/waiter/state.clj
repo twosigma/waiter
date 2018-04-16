@@ -401,7 +401,7 @@
       (let [current-state'
             (if (not= status :success-async)
               (cond-> (-> current-state
-                          (update-in [:instance-id->request-id->use-reason-map] #(utils/dissoc-in % [instance-id request-id]))
+                          (update-in [:instance-id->request-id->use-reason-map] utils/dissoc-in [instance-id request-id])
                           (update-in [:instance-id->state instance-id] sanitize-instance-state))
                       ; instance received from work-stealing, do not change slot state
                       (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
@@ -609,8 +609,9 @@
                          ; to be handled before release calls. This allows instances from work-stealing offers
                          ; to be used preferentially. `exit-chan` and `query-state-chan` must be lowest priority
                          ; to facilitate unit testing.
-                         chans (concat (cond-> [update-state-chan]
-                                               (or slots-available? (seq work-stealing-queue) deployment-error) (conj reserve-instance-chan))
+                         chans (concat [update-state-chan]
+                                       (when (or slots-available? (seq work-stealing-queue) deployment-error)
+                                         [reserve-instance-chan])
                                        [release-instance-chan blacklist-instance-chan unblacklist-instance-chan kill-instance-chan
                                         work-stealing-chan query-state-chan exit-chan])
                          [data chan-selected] (async/alts! chans :priority true)]
