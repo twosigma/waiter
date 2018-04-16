@@ -181,7 +181,7 @@
                                              json/read-str
                                              convert-last-update-time
                                              (dissoc "previous")
-                                             utils/parameters->id))]
+                                             sd/parameters->id))]
                   (is (= expected-etag actual-etag))))))))
 
       (log/info "ensuring tokens can be retrieved and listed on each router")

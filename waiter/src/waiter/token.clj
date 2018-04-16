@@ -36,27 +36,17 @@
   [token-data previous]
   (update token-data "previous" (fn [current-previous] (or current-previous previous {}))))
 
-(let [hash-prefix "E-"]
-  (defn token-data->hash
-    "Converts the merged map of service-description and token-metadata to a hash."
-    [token-data]
-    (when (seq token-data)
-      (str hash-prefix (-> token-data
-                           (select-keys sd/token-data-keys)
-                           (dissoc "previous")
-                           utils/parameters->id)))))
-
-(defn- token-description->hash
+(defn- token-description->token-hash
   "Converts the token metadata to a hash."
   [{:keys [service-description-template token-metadata]}]
   (-> (merge service-description-template token-metadata)
-      token-data->hash))
+      sd/token-data->token-hash))
 
 (defn- validate-token-modification-based-on-hash
   "Validates whether the token modification should be allowed on based on the provided token version-hash."
   [{:keys [token-metadata] :as token-description} version-hash]
   (when version-hash
-    (when (not= (token-description->hash token-description) (str version-hash))
+    (when (not= (token-description->token-hash token-description) (str version-hash))
       (throw (ex-info "Cannot modify stale token"
                       {:provided-version version-hash
                        :status 412
@@ -116,7 +106,7 @@
           ; Add token to new owner
           (when owner
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)
-                  token-hash' (token-data->hash new-token-data)]
+                  token-hash' (sd/token-data->token-hash new-token-data)]
               (log/info "inserting" token "into index of" owner)
               (update-kv! kv-store owner-key (fn [index] (insert-token-into-index index token token-hash' deleted)))))
           (log/info "stored service description template for" token)))))
@@ -149,7 +139,7 @@
                 owner-key (ensure-owner-key kv-store owner->owner-key owner)]
             (update-kv! kv-store owner-key (fn [index] (delete-token-from-index index token)))
             (when (not hard-delete)
-              (let [token-hash (token-data->hash (kv/fetch kv-store token))]
+              (let [token-hash (sd/token-data->token-hash (kv/fetch kv-store token))]
                 (update-kv! kv-store owner-key (fn [index] (insert-token-into-index index token token-hash true)))))))
         ; Don't bother removing owner from token-owners, even if they have no tokens now
         (log/info "deleted token for" token))))
@@ -218,7 +208,7 @@
                                        (pc/map-from-keys
                                          (fn [token]
                                            (let [{:strs [deleted] :as token-data} (kv/fetch kv-store token)
-                                                 token-hash (token-data->hash token-data)]
+                                                 token-hash (sd/token-data->token-hash token-data)]
                                              {:deleted (true? deleted)
                                               :etag token-hash}))
                                          tokens))
@@ -284,7 +274,7 @@
                   (:token (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)))
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
         {:keys [service-description-template token-metadata]} token-description
-        token-hash (token-description->hash token-description)]
+        token-hash (token-description->token-hash token-description)]
     (if (and service-description-template (not-empty service-description-template))
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
@@ -432,7 +422,7 @@
                                  :service-description new-service-description-template}
                                 :headers {"etag" (-> {:service-description-template new-service-description-template
                                                       :token-metadata new-token-metadata}
-                                                     token-description->hash)}))))
+                                                     token-description->token-hash)}))))
 
 (defn handle-token-request
   "Ring handler for dealing with tokens.

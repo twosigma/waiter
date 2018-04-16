@@ -288,6 +288,20 @@
       (merge-defaults defaults metric-group-mappings)
       (merge-overrides (:overrides (service-id->overrides kv-store service-id)))))
 
+(defn parameters->id
+  "Generates a deterministic ID from the input parameter map."
+  [parameters]
+  (let [sorted-parameters (sort parameters)
+        id (loop [[[k v] & kvs] sorted-parameters
+                  acc (transient [])]
+             (if k
+               (recur kvs (-> acc
+                              (conj! k)
+                              (conj! (str v))))
+               (str (digest/digest "MD5" (str/join "" (persistent! acc))))))]
+    (log/debug "got ID" id "for" sorted-parameters)
+    id))
+
 (defn service-description->service-id
   "Create an id for marathon from the name (if available), cmd, universe, and resource requirements.
    Keys defined in `keys-filtered-from-service-id` will be excluded from the id computation logic."
@@ -297,7 +311,7 @@
         prefix (cond-> service-id-prefix
                        name (str (str/replace (str/lower-case name) #"[^a-z0-9]" "") "-"))
         service-hash (-> (select-keys service-description service-description-keys)
-                         utils/parameters->id)]
+                         parameters->id)]
     (str prefix service-hash)))
 
 (defn required-keys-present?
@@ -437,6 +451,16 @@
   "Returns the configured health check Url or a default value (available in `default-health-check-path`)"
   [service-description]
   (or (get service-description "health-check-url") default-health-check-path))
+
+(let [hash-prefix "E-"]
+  (defn token-data->token-hash
+    "Converts the merged map of service-description and token-metadata to a hash."
+    [token-data]
+    (when (seq token-data)
+      (str hash-prefix (-> token-data
+                           (select-keys token-data-keys)
+                           (dissoc "previous")
+                           parameters->id)))))
 
 (defn- token->token-data
   "Retrieves the data stored against the token in the kv-store."
