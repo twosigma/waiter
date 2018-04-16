@@ -114,9 +114,12 @@
                      ;; enable remote debugger to connect on port 5005
                      ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]}
              :test {:jvm-opts
-                    [~(str "-Dwaiter.test.kitchen.cmd=" (or
-                                                          (System/getenv "WAITER_TEST_KITCHEN_CMD")
-                                                          (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]}
+                    [~(str "-Dwaiter.test.kitchen.cmd=" (or (System/getenv "WAITER_TEST_KITCHEN_CMD")
+                                                            (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]
+                    :parallel-test {:pools {:serial (constantly 1)
+                                            :parallel (fn []
+                                                        (or (some-> (System/getenv "LEIN_TEST_THREADS") Long/valueOf)
+                                                            (.availableProcessors (Runtime/getRuntime))))}}}
              :test-console {:jvm-opts
                             ["-Dlog4j.configuration=log4j-console.properties"]}
              :test-log {:jvm-opts
