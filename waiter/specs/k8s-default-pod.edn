@@ -1,0 +1,39 @@
+{:kind "ReplicaSet"
+ :apiVersion #waiter/param :replicaset-api-version
+ :metadata {:name #waiter/param :k8s-name
+            :labels {:app #waiter/param :k8s-name
+                     :managed-by #waiter/param :orchestrator-name}
+            :annotations {:waiter-service-id #waiter/param :service-id}}
+ :spec {:replicas #waiter/param :min-instances
+        :selector {:matchLabels {:app #waiter/param :k8s-name
+                                 :managed-by #waiter/param :orchestrator-name}}
+        :template {:metadata {:labels {:app #waiter/param :k8s-name
+                                       :managed-by #waiter/param :orchestrator-name}
+                              :annotations {:waiter-port-count #waiter/param-str :port-count
+                                            :waiter-protocol #waiter/param :backend-protocol
+                                            :waiter-service-id #waiter/param :service-id}}
+                   :spec {:containers [{:command ["/bin/sh" "-c" #waiter/param :cmd]
+                                        :env #waiter/param :env
+                                        :image "twosigma/kitchen:latest"
+                                        :imagePullPolicy "IfNotPresent"
+                                        :livenessProbe {:httpGet {:path #waiter/param :health-check-url
+                                                                  :port #waiter/param :port0
+                                                                  :scheme #waiter/param :backend-protocol-caps}
+                                                        :failureThreshold #waiter/param :health-check-max-consecutive-failures
+                                                        :initialDelaySeconds #waiter/param :grace-period-secs
+                                                        :periodSeconds #waiter/param :health-check-interval-secs
+                                                        :timeoutSeconds 1}
+                                        :name #waiter/param :k8s-name
+                                        :ports [{:containerPort #waiter/param :port0}]
+                                        :readinessProbe {:httpGet {:path #waiter/param :health-check-url
+                                                                   :port #waiter/param :port0
+                                                                   :scheme #waiter/param :backend-protocol-caps}
+                                                         :failureThreshold 1
+                                                         :periodSeconds #waiter/param :health-check-interval-secs
+                                                         :timeoutSeconds 1}
+                                        :resources {:limits {:cpu #waiter/param :cpus
+                                                             :memory #waiter/param :memory}
+                                                    :requests {:cpu #waiter/param :cpus
+                                                               :memory #waiter/param :memory}}
+                                        :workingDir #waiter/param :home-path}]
+                          :terminationGracePeriodSeconds 0}}}}

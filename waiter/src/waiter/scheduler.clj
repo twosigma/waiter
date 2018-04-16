@@ -37,6 +37,11 @@
            (java.util.concurrent TimeoutException)
            (org.joda.time DateTime)))
 
+(defmacro log
+  "Log Scheduler-specific messages."
+  [& args]
+  `(log/log "Scheduler" :debug nil (print-str ~@args)))
+
 (defrecord Service
   [^String id
    instances
