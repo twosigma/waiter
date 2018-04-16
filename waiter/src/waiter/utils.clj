@@ -472,6 +472,11 @@
     (when (and host origin scheme)
       (= origin (str (name scheme) "://" host)))))
 
+(defn resolve-symbol
+  "Resolve the given symbol to the corresponding Var."
+  [sym]
+  (resolve (some-> sym namespace symbol use) sym))
+
 (defn create-component
   "Creates a component based on the specified :kind"
   [{:keys [kind] :as component-config} & {:keys [context]}]
@@ -479,12 +484,9 @@
   (let [kind-config (get component-config kind)
         factory-fn (:factory-fn kind-config)]
     (if factory-fn
-      (let [ns (namespace factory-fn)
-            lookup-env (when ns (use (symbol ns)))
-            resolved-fn (resolve lookup-env factory-fn)]
-        (if resolved-fn
-          (resolved-fn (merge context kind-config))
-          (throw (ex-info "Unable to resolve factory function" (assoc component-config :ns ns)))))
+      (if-let [resolved-fn (resolve-symbol factory-fn)]
+        (resolved-fn (merge context kind-config))
+        (throw (ex-info "Unable to resolve factory function" (assoc component-config :ns (namespace factory-fn)))))
       (throw (ex-info "No :factory-fn specified" component-config)))))
 
 (defn pos-int?
