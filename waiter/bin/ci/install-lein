@@ -2,7 +2,7 @@
 
 set -ex
 
-lein_bin=$HOME/.lein/bin
+lein_bin=$HOME/.local/bin
 
 if ! [ -f $lein_bin/lein ]; then
     mkdir -p $lein_bin
