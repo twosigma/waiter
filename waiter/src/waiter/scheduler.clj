@@ -23,6 +23,7 @@
             [waiter.metrics :as metrics]
             [waiter.utils :as utils])
   (:import (clojure.lang PersistentQueue)
+           (java.io EOFException)
            (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
            (org.joda.time DateTime)))
@@ -217,6 +218,7 @@
               {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
               error-flag (cond
                            (instance? ConnectException error) :connect-exception
+                           (instance? EOFException error) :hangup-exception
                            (instance? SocketTimeoutException error) :timeout-exception
                            (instance? TimeoutException error) :timeout-exception)]
           (log-health-check-issues service-instance instance-health-check-url status error)
@@ -382,6 +384,7 @@
     (if-not service
       service->service-instances'
       (let [{:strs [health-check-url]} (service-id->service-description-fn (:id service))
+            connection-errors #{:connect-exception :hangup-exception :timeout-exception}
             update-unhealthy-instance (fn [instance status error]
                                         (-> instance
                                             (assoc :healthy? false
@@ -392,8 +395,7 @@
                                                         (not= error :connect-exception)
                                                         (conj :has-connected)
 
-                                                        (and (not= error :connect-exception)
-                                                             (not= error :timeout-exception))
+                                                        (not (contains? connection-errors error))
                                                         (conj :has-responded))))))
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
