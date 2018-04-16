@@ -23,18 +23,20 @@
    It performs a blocking read on the response and the response body.
    The body is assumed to be json and is parsed into a clojure data structure.
    If the status of the response in not 2XX, the response is thrown as an exception."
-  [http-client request-url & {:keys [accept body content-type headers query-string request-method
-                                     spnego-auth throw-exceptions]
+  [http-client request-url & {:keys [accept auth-str body content-type headers query-string
+                                     request-method spnego-auth throw-exceptions]
                               :or {spnego-auth false
                                    throw-exceptions true}}]
-  (let [request-map (cond-> {:as :string
+  (let [hs (cond-> headers
+             auth-str (assoc "Authorization" auth-str))
+        request-map (cond-> {:as :string
                              :method (or request-method :get)
                              :url request-url}
                             spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
                             accept (assoc :accept accept)
                             body (assoc :body body)
                             content-type (assoc :content-type content-type)
-                            (seq headers) (assoc :headers headers)
+                            (seq hs) (assoc :headers hs)
                             query-string (assoc :query-string query-string))
         raw-response (http/request http-client request-map)
         {:keys [error status] :as response} (async/<!! raw-response)]
