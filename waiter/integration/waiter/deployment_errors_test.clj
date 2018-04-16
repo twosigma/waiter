@@ -52,7 +52,7 @@
 (deftest ^:parallel ^:integration-slow test-invalid-health-check-response
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
-                   :x-waiter-grace-period-secs 15
+                   :x-waiter-grace-period-secs 45
                    ; health check endpoint always returns status 402
                    :x-waiter-health-check-url "/bad-status?status=402"
                    :x-waiter-health-check-interval-secs 5
@@ -80,7 +80,7 @@
     (let [headers {:x-waiter-name (rand-name)
                    ; health check endpoint sleeps for 300000 ms (= 5 minutes)
                    :x-waiter-health-check-url "/sleep?sleep-ms=300000&status=400"
-                   :x-waiter-grace-period-secs 15
+                   :x-waiter-grace-period-secs 45
                    :x-waiter-health-check-interval-secs 5
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
