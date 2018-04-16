@@ -226,12 +226,12 @@
           (try
             (kv/store kv-store token service-description-1')
             (is (not (nil? (kv/fetch kv-store token))))
-            (let [token-etag (token-data->etag service-description-1')
+            (let [token-hash (token-data->hash service-description-1')
                   {:keys [body headers status]}
                   (run-handle-token-request
                     kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                     {:authorization/user auth-user
-                     :headers {"if-match" token-etag
+                     :headers {"if-match" token-hash
                                "x-waiter-token" token}
                      :query-params {"hard-delete" "true"}
                      :request-method :delete})]
@@ -288,7 +288,7 @@
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
-          (is (= (get headers "etag") (token-data->etag (kv/fetch kv-store token))))
+          (is (= (get headers "etag") (token-data->hash (kv/fetch kv-store token))))
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (select-keys service-description-1 sd/token-data-keys)
                  (sd/token->service-description-template kv-store token)))
@@ -311,7 +311,7 @@
                  :request-method :get})]
           (is (= 200 status))
           (is (= [{"deleted" false
-                   "etag" (token-data->etag (kv/fetch kv-store token))
+                   "etag" (token-data->hash (kv/fetch kv-store token))
                    "owner" "tu1"
                    "token" token}]
                  (json/read-str body)))))
@@ -1230,9 +1230,9 @@
                             "previous" (kv/fetch kv-store token :refresh true)}]
       (testing "basic update with valid etag"
         (let [token-data (kv/fetch kv-store token)
-              token-etag (token-data->etag token-data)]
+              token-hash (token-data->hash token-data)]
           (store-service-description-for-token synchronize-fn kv-store history-length token service-description-2 token-metadata-2
-                                               :version-etag token-etag)
+                                               :version-hash token-hash)
           (let [token-description (kv/fetch kv-store token)]
             (is (= service-description-2 (select-keys token-description sd/service-description-keys)))
             (is (= token-metadata-2 (select-keys token-description sd/token-metadata-keys)))
@@ -1243,7 +1243,7 @@
           (is (thrown-with-msg?
                 ExceptionInfo #"Cannot modify stale token"
                 (store-service-description-for-token synchronize-fn kv-store history-length token service-description-3 token-metadata-1
-                                                     :version-etag (- last-update-time 1000))))
+                                                     :version-hash (- last-update-time 1000))))
           (let [token-description (kv/fetch kv-store token)]
             (is (= service-description-2 (select-keys token-description sd/service-description-keys)))
             (is (= token-metadata-2 (select-keys token-description sd/token-metadata-keys)))
@@ -1274,9 +1274,9 @@
     (testing "valid soft delete with up-to-date etag"
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
-      (let [token-etag (token-data->etag token-description)]
+      (let [token-hash (token-data->hash token-description)]
         (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
-                                              :version-etag token-etag))
+                                              :version-hash token-hash))
       (is (= (assoc token-description
                "deleted" true
                "last-update-time" current-time
@@ -1290,7 +1290,7 @@
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
             (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
-                                                  :version-etag (- current-time 5000))))
+                                                  :version-hash (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))
 
     (testing "valid hard delete"
@@ -1303,9 +1303,9 @@
     (testing "valid hard delete with up-to-date etag"
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
-      (let [token-etag (token-data->etag token-description)]
+      (let [token-hash (token-data->hash token-description)]
         (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
-                                              :hard-delete true :version-etag token-etag))
+                                              :hard-delete true :version-hash token-hash))
       (is (nil? (kv/fetch kv-store token))))
 
     (testing "invalid hard delete"
@@ -1314,7 +1314,7 @@
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
             (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
-                                                  :hard-delete true :version-etag (- current-time 5000))))
+                                                  :hard-delete true :version-hash (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))))
 
 (deftest test-token-index
@@ -1329,10 +1329,10 @@
     (doseq [[token token-data] tokens]
       (kv/store kv-store token token-data))
     (reindex-tokens synchronize-fn kv-store (keys tokens))
-    (is (= {"token1" {:deleted false :etag (-> (get tokens "token1") token-data->etag)}
-            "token2" {:deleted false :etag (-> (get tokens "token2") token-data->etag)}}
+    (is (= {"token1" {:deleted false :etag (-> (get tokens "token1") token-data->hash)}
+            "token2" {:deleted false :etag (-> (get tokens "token2") token-data->hash)}}
            (list-index-entries-for-owner kv-store "owner1")))
-    (is (= {"token3" {:deleted false :etag (-> (get tokens "token3") token-data->etag)}}
+    (is (= {"token3" {:deleted false :etag (-> (get tokens "token3") token-data->hash)}}
            (list-index-entries-for-owner kv-store "owner2")))))
 
 (deftest test-handle-reindex-tokens-request
@@ -1374,7 +1374,7 @@
         kv-store (kv/->LocalKeyValueStore (atom {}))
         handle-list-tokens-request (wrap-handler-json-response handle-list-tokens-request)
         last-update-time-seed (clock-millis)
-        token->etag (fn [token] (-> (kv/fetch kv-store token) token-data->etag))]
+        token->hash (fn [token] (-> (kv/fetch kv-store token) token-data->hash))]
     (store-service-description-for-token
       synchronize-fn kv-store history-length "token1"
       {"cpus" 1} {"last-update-time" (- last-update-time-seed 1000) "owner" "owner1"})
@@ -1390,17 +1390,17 @@
     (let [request {:query-string "include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->etag "token1") "owner" "owner1" "token" "token1"}
-               {"deleted" false "etag" (token->etag "token2") "owner" "owner1" "token" "token2"}
-               {"deleted" false "etag" (token->etag "token3") "owner" "owner2" "token" "token3"}}
+      (is (= #{{"deleted" false "etag" (token->hash "token1") "owner" "owner1" "token" "token1"}
+               {"deleted" false "etag" (token->hash "token2") "owner" "owner1" "token" "token2"}
+               {"deleted" false "etag" (token->hash "token3") "owner" "owner2" "token" "token3"}}
              (set (json/read-str body)))))
     (let [request {:query-string "include=metadata&include=deleted" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->etag "token1") "owner" "owner1" "token" "token1"}
-               {"deleted" false "etag" (token->etag "token2") "owner" "owner1" "token" "token2"}
-               {"deleted" false "etag" (token->etag "token3") "owner" "owner2" "token" "token3"}
-               {"deleted" true "etag" (token->etag "token4") "owner" "owner2" "token" "token4"}}
+      (is (= #{{"deleted" false "etag" (token->hash "token1") "owner" "owner1" "token" "token1"}
+               {"deleted" false "etag" (token->hash "token2") "owner" "owner1" "token" "token2"}
+               {"deleted" false "etag" (token->hash "token3") "owner" "owner2" "token" "token3"}
+               {"deleted" true "etag" (token->hash "token4") "owner" "owner2" "token" "token4"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store request)]
@@ -1418,8 +1418,8 @@
     (let [request {:query-string "owner=owner1&include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->etag "token1") "owner" "owner1" "token" "token1"}
-               {"deleted" false "etag" (token->etag "token2") "owner" "owner1" "token" "token2"}}
+      (is (= #{{"deleted" false "etag" (token->hash "token1") "owner" "owner1" "token" "token1"}
+               {"deleted" false "etag" (token->hash "token2") "owner" "owner1" "token" "token2"}}
              (set (json/read-str body)))))
     (let [{:keys [body status]} (handle-list-tokens-request kv-store {:headers {"accept" "application/json"}
                                                                       :request-method :post})
@@ -1431,13 +1431,13 @@
     (let [request {:request-method :get :query-string "owner=owner2&include=metadata"}
           {:keys [body status]} (handle-list-tokens-request kv-store request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->etag "token3") "owner" "owner2" "token" "token3"}}
+      (is (= #{{"deleted" false "etag" (token->hash "token3") "owner" "owner2" "token" "token3"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "owner=owner2&include=metadata&include=deleted"}
           {:keys [body status]} (handle-list-tokens-request kv-store request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->etag "token3") "owner" "owner2" "token" "token3"}
-               {"deleted" true "etag" (token->etag "token4") "owner" "owner2" "token" "token4"}}
+      (is (= #{{"deleted" false "etag" (token->hash "token3") "owner" "owner2" "token" "token3"}
+               {"deleted" true "etag" (token->hash "token4") "owner" "owner2" "token" "token4"}}
              (set (json/read-str body)))))
     (let [{:keys [body]} (handle-list-token-owners-request kv-store {:headers {"accept" "application/json"}
                                                                      :request-method :get})
