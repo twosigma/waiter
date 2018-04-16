@@ -531,9 +531,10 @@
 ;   :shell-scheduler/pid
 ;
 (defrecord ShellScheduler [work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range]
+
   scheduler/ServiceScheduler
 
-  (get-apps->instances [_ _]
+  (get-apps->instances [_]
     (let [id->service @id->service-agent]
       (into {} (map (fn [[_ service-entry]]
                       (service-entry->instances service-entry))
@@ -543,7 +544,7 @@
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 
-  (get-instances [_ service-id _]
+  (get-instances [_ service-id]
     (let [id->service @id->service-agent
           service-entry (get id->service service-id)]
       (second (service-entry->instances service-entry))))

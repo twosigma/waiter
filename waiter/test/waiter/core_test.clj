@@ -282,9 +282,9 @@
 
 (deftest test-service-view-logs-handler
   (let [scheduler (marathon/->MarathonScheduler (Object.) {:slave-port 5051} (fn [] nil) "/home/path/"
-                                                (atom {}) (atom {}) 0 (constantly true))
+                                                (atom {}) (atom {}) {} 0 (constantly true))
         configuration {:routines {:generate-log-url-fn (partial handler/generate-log-url identity)}
-                       :state {:scheduler scheduler}
+                       :scheduler {:scheduler scheduler}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-view-logs-handler-fn ((:service-view-logs-handler-fn request-handlers) configuration)}
         waiter-request?-fn (fn [_] true)
@@ -391,8 +391,8 @@
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
                                   :make-inter-router-requests-sync-fn nil}
-                       :state {:router-id "router-id"
-                               :scheduler (Object.)}
+                       :scheduler {:scheduler (Object.)}
+                       :state {:router-id "router-id"}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
     (testing "service-handler:delete-successful"
@@ -463,8 +463,8 @@
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
                                   :make-inter-router-requests-sync-fn nil}
-                       :state {:router-id "router-id"
-                               :scheduler (Object.)}
+                       :scheduler {:scheduler (Object.)}
+                       :state {:router-id "router-id"}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))
@@ -483,7 +483,7 @@
             (is (= "test-service-1" service-id))))))
     (testing "service-handler:valid-response-missing-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
-                    scheduler/get-instances (fn [_ service-id _]
+                    scheduler/get-instances (fn [_ service-id]
                                               {:active-instances [{:id (str service-id ".A")
                                                                    :service-id service-id
                                                                    :healthy? true,
@@ -514,7 +514,7 @@
                    {"name" "test-service-1-name", "run-as-user" "waiter-user"}))))))
     (testing "service-handler:valid-response-including-active-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
-                    scheduler/get-instances (fn [_ service-id _]
+                    scheduler/get-instances (fn [_ service-id]
                                               {:active-instances [{:id (str service-id ".A"), :service-id service-id}]
                                                :failed-instances [{:id (str service-id ".F"), :service-id service-id}]
                                                :killed-instances [{:id (str service-id ".K"), :service-id service-id}]})]

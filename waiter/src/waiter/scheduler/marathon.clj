@@ -271,11 +271,12 @@
 
 (defrecord MarathonScheduler [marathon-api mesos-api retrieve-framework-id-fn
                               home-path-prefix service-id->failed-instances-transient-store
-                              service-id->kill-info-store force-kill-after-ms is-waiter-app?-fn]
+                              service-id->kill-info-store service-id->service-description
+                              force-kill-after-ms is-waiter-app?-fn]
 
   scheduler/ServiceScheduler
 
-  (get-apps->instances [_ service-id->service-description]
+  (get-apps->instances [_]
     (let [apps (get-apps marathon-api is-waiter-app?-fn)]
       (response-data->service->service-instances
         apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
@@ -284,12 +285,11 @@
   (get-apps [_]
     (map response->Service (get-apps marathon-api is-waiter-app?-fn)))
 
-  (get-instances [_ service-id service-description]
+  (get-instances [_ service-id]
     (ss/try+
       (scheduler/retry-on-transient-server-exceptions
         (str "get-instances[" service-id "]")
-        (let [marathon-response (marathon/get-app marathon-api service-id)
-              service-id->service-description {service-id service-description}]
+        (let [marathon-response (marathon/get-app marathon-api service-id)]
           (response-data->service-instances
             marathon-response [:app] retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
             service-id->service-description)))
@@ -406,8 +406,8 @@
 (defn marathon-scheduler
   "Returns a new MarathonScheduler with the provided configuration. Validates the
   configuration against marathon-scheduler-schema and throws if it's not valid."
-  [{:keys [home-path-prefix http-options force-kill-after-ms framework-id-ttl
-           mesos-slave-port slave-directory url is-waiter-app?-fn]}]
+  [{:keys [home-path-prefix http-options force-kill-after-ms framework-id-ttl mesos-slave-port
+           service-id->service-description-fn slave-directory url is-waiter-app?-fn]}]
   {:pre [(not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
          (or (nil? mesos-slave-port) (utils/pos-int? mesos-slave-port))
@@ -425,4 +425,4 @@
         retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)]
     (->MarathonScheduler marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                          service-id->failed-instances-transient-store service-id->last-force-kill-store
-                         force-kill-after-ms is-waiter-app?-fn)))
+                         service-id->service-description-fn force-kill-after-ms is-waiter-app?-fn)))

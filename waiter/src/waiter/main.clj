@@ -61,11 +61,12 @@
 
 (defn wire-app
   [settings]
-  {:settings (pc/fnk dummy-symbol-for-fnk-schema-logic :- settings/settings-schema [] settings)
-   :curator core/curator
-   :routines core/routines
+  {:curator core/curator
    :daemons core/daemons
    :handlers core/request-handlers
+   :routines core/routines
+   :scheduler core/scheduler
+   :settings (pc/fnk dummy-symbol-for-fnk-schema-logic :- settings/settings-schema [] settings)
    :state core/state
    :http-server (pc/fnk [[:routines generate-log-url-fn waiter-request?-fn websocket-request-authenticator]
                          [:settings cors-config host port support-info websocket-config]
