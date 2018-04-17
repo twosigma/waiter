@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.handler-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -1037,87 +1038,91 @@
     (is (str/includes? body "http://www.example.com:6789/some-path"))))
 
 (deftest test-request-consent-handler
-  (let [token->service-description-template (fn [token]
-                                              (when (= token "www.example.com")
-                                                {"cmd" "some-cmd", "cpus" 1, "mem" 1024})) ;; produces service-4.67
-        service-description->service-id (fn [service-description]
-                                          (str "service-" (count service-description) "." (count (str service-description))))
-        consent-expiry-days 1
-        request-consent-handler-fn (fn [request]
-                                     (let [request' (-> request
-                                                        (update :authorization/user #(or %1 "test-user"))
-                                                        (update :request-method #(or %1 :get)))]
-                                       (request-consent-handler token->service-description-template service-description->service-id
-                                                                consent-expiry-days request')))
-        io-resource-fn (fn [file-path]
-                         (is (= "web/consent.html" file-path))
-                         (StringReader. "some-content"))
-        template-eval-factory (fn [scheme]
-                                (fn [data]
-                                  (is (= {:auth-user "test-user"
-                                          :consent-expiry-days 1
-                                          :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
-                                          :service-id "service-5.97"
-                                          :target-url (str scheme "://www.example.com:6789/some-path?"
-                                                           interstitial/bypass-interstitial-param-name-value)
-                                          :token "www.example.com"}
-                                         data))
-                                  "template:some-content"))]
-    (testing "unsupported request method"
-      (let [request {:authorization/user "test-user"
-                     :request-method :post
-                     :scheme :http}
-            {:keys [body headers status]} (request-consent-handler-fn request)]
-        (is (= 405 status))
-        (is (= {"content-type" "text/plain"} headers))
-        (is (str/includes? body "Only GET supported"))))
+  (let [current-time (t/now)]
+    (with-redefs [t/now (constantly current-time)]
+      (let [token->service-description-template (fn [token]
+                                                  (when (= token "www.example.com")
+                                                    {"cmd" "some-cmd", "cpus" 1, "mem" 1024})) ;; produces service-4.67
+            service-description->service-id (fn [service-description]
+                                              (str "service-" (count service-description) "." (count (str service-description))))
+            consent-expiry-days 1
+            request-consent-handler-fn (fn [request]
+                                         (let [request' (-> request
+                                                            (update :authorization/user #(or %1 "test-user"))
+                                                            (update :request-method #(or %1 :get)))]
+                                           (request-consent-handler token->service-description-template service-description->service-id
+                                                                    consent-expiry-days request')))
+            io-resource-fn (fn [file-path]
+                             (is (= "web/consent.html" file-path))
+                             (StringReader. "some-content"))
+            template-eval-factory (fn [scheme]
+                                    (fn [data]
+                                      (is (= {:auth-user "test-user"
+                                              :consent-expiry-days 1
+                                              :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
+                                              :service-id "service-5.97"
+                                              :target-url (str scheme "://www.example.com:6789/some-path?"
+                                                               interstitial/interstitial-param-name "="
+                                                               (format (str "%0" interstitial/interstitial-param-value-length "d")
+                                                                       (+ (.getMillis current-time) interstitial/interstitial-timeout-ms)))
+                                              :token "www.example.com"}
+                                             data))
+                                      "template:some-content"))]
+        (testing "unsupported request method"
+          (let [request {:authorization/user "test-user"
+                         :request-method :post
+                         :scheme :http}
+                {:keys [body headers status]} (request-consent-handler-fn request)]
+            (is (= 405 status))
+            (is (= {"content-type" "text/plain"} headers))
+            (is (str/includes? body "Only GET supported"))))
 
-    (testing "token without service description"
-      (let [request {:authorization/user "test-user"
-                     :headers {"host" "www.example2.com:6789"}
-                     :request-method :get
-                     :route-params {:path "some-path"}
-                     :scheme :http}
-            {:keys [body headers status]} (request-consent-handler-fn request)]
-        (is (= 404 status))
-        (is (= {"content-type" "text/plain"} headers))
-        (is (str/includes? body "Unable to load description for token"))))
+        (testing "token without service description"
+          (let [request {:authorization/user "test-user"
+                         :headers {"host" "www.example2.com:6789"}
+                         :request-method :get
+                         :route-params {:path "some-path"}
+                         :scheme :http}
+                {:keys [body headers status]} (request-consent-handler-fn request)]
+            (is (= 404 status))
+            (is (= {"content-type" "text/plain"} headers))
+            (is (str/includes? body "Unable to load description for token"))))
 
-    (with-redefs [io/resource io-resource-fn
-                  render-consent-template (template-eval-factory "http")]
-      (testing "token without service description - http scheme"
-        (let [request {:authorization/user "test-user"
-                       :headers {"host" "www.example.com:6789"}
-                       :route-params {:path "some-path"}
-                       :scheme :http}
-              {:keys [body headers status]} (request-consent-handler-fn request)]
-          (is (= 200 status))
-          (is (= {"content-type" "text/html"} headers))
-          (is (= body "template:some-content")))))
+        (with-redefs [io/resource io-resource-fn
+                      render-consent-template (template-eval-factory "http")]
+          (testing "token without service description - http scheme"
+            (let [request {:authorization/user "test-user"
+                           :headers {"host" "www.example.com:6789"}
+                           :route-params {:path "some-path"}
+                           :scheme :http}
+                  {:keys [body headers status]} (request-consent-handler-fn request)]
+              (is (= 200 status))
+              (is (= {"content-type" "text/html"} headers))
+              (is (= body "template:some-content")))))
 
-    (with-redefs [io/resource io-resource-fn
-                  render-consent-template (template-eval-factory "https")]
-      (testing "token without service description - https scheme"
-        (let [request {:authorization/user "test-user"
-                       :headers {"host" "www.example.com:6789"}
-                       :route-params {:path "some-path"}
-                       :scheme :https}
-              {:keys [body headers status]} (request-consent-handler-fn request)]
-          (is (= 200 status))
-          (is (= {"content-type" "text/html"} headers))
-          (is (= body "template:some-content")))))
+        (with-redefs [io/resource io-resource-fn
+                      render-consent-template (template-eval-factory "https")]
+          (testing "token without service description - https scheme"
+            (let [request {:authorization/user "test-user"
+                           :headers {"host" "www.example.com:6789"}
+                           :route-params {:path "some-path"}
+                           :scheme :https}
+                  {:keys [body headers status]} (request-consent-handler-fn request)]
+              (is (= 200 status))
+              (is (= {"content-type" "text/html"} headers))
+              (is (= body "template:some-content")))))
 
-    (with-redefs [io/resource io-resource-fn
-                  render-consent-template (template-eval-factory "https")]
-      (testing "token without service description - https x-forwarded-proto"
-        (let [request {:authorization/user "test-user"
-                       :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
-                       :route-params {:path "some-path"}
-                       :scheme :http}
-              {:keys [body headers status]} (request-consent-handler-fn request)]
-          (is (= 200 status))
-          (is (= {"content-type" "text/html"} headers))
-          (is (= body "template:some-content")))))))
+        (with-redefs [io/resource io-resource-fn
+                      render-consent-template (template-eval-factory "https")]
+          (testing "token without service description - https x-forwarded-proto"
+            (let [request {:authorization/user "test-user"
+                           :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
+                           :route-params {:path "some-path"}
+                           :scheme :http}
+                  {:keys [body headers status]} (request-consent-handler-fn request)]
+              (is (= 200 status))
+              (is (= {"content-type" "text/html"} headers))
+              (is (= body "template:some-content")))))))))
 
 (deftest test-blacklist-instance-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
