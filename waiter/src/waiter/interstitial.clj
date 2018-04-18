@@ -184,13 +184,17 @@
 (def ^:const interstitial-param-value-length 18)
 (def ^:const interstitial-bypass-timeout-ms (-> 10 t/seconds t/in-millis))
 
-(defn generate-interstitial-param
-  "Returns the name=value pair for the interstitial parameter."
+(defn request-time->interstitial-param-value
+  "Returns the interstitial parameter value."
   [request-time]
   (->> (ct/to-long request-time)
        (+ interstitial-bypass-timeout-ms)
-       (format (str "%0" interstitial-param-value-length "d"))
-       (str interstitial-param-name "=")))
+       (format (str "%0" interstitial-param-value-length "d"))))
+
+(defn request-time->interstitial-param-string
+  "Returns the interstitial parameter as name=value string."
+  [request-time]
+  (str interstitial-param-name "=" (request-time->interstitial-param-value request-time)))
 
 (defn- query-string->interstitial-param-value
   "When the query string ends with the interstitial param, return the interstitial param value."
@@ -264,7 +268,7 @@
                         (when (not (str/blank? query-string))
                           (str query-string "&"))
                         ;; the bypass interstitial should be the last query parameter
-                        (generate-interstitial-param request-time))]
+                        (request-time->interstitial-param-string request-time))]
     {:body (render-interstitial-template
              {:service-description (update service-description "cmd" utils/truncate 100)
               :service-id service-id

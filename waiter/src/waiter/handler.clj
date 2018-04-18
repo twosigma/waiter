@@ -757,7 +757,7 @@
                   :service-id service-id
                   :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path "?"
                                    (when (not (str/blank? query-string)) (str query-string "&"))
-                                   (interstitial/generate-interstitial-param request-time))
+                                   (interstitial/request-time->interstitial-param-string request-time))
                   :token token})
          :headers {"content-type" "text/html"}
          :status 200}))

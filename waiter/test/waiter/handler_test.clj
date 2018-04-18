@@ -1061,7 +1061,7 @@
                                           :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
                                           :service-id "service-5.97"
                                           :target-url (str scheme "://www.example.com:6789/some-path?"
-                                                           (interstitial/generate-interstitial-param request-time))
+                                                           (interstitial/request-time->interstitial-param-string request-time))
                                           :token "www.example.com"}
                                          data))
                                   "template:some-content"))]

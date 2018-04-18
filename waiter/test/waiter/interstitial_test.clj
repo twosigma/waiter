@@ -25,14 +25,14 @@
   (let [request-time (DateTime.)]
     (testing "generate and strip with current timestamp and empty query string"
       (let [base-query-string nil
-            query-string (str base-query-string (generate-interstitial-param request-time))]
+            query-string (str base-query-string (request-time->interstitial-param-string request-time))]
         (is (str/includes? query-string (str interstitial-param-name "=")))
         (is (bypass-interstitial? query-string request-time))
         (is (= (str base-query-string) (strip-interstitial-param query-string)))))
 
     (testing "generate and strip with current timestamp and non-empty query string"
       (let [base-query-string "a=b&c=d"
-            query-string (str base-query-string "&" (generate-interstitial-param request-time))]
+            query-string (str base-query-string "&" (request-time->interstitial-param-string request-time))]
         (is (str/includes? query-string (str "&" interstitial-param-name "=")))
         (is (bypass-interstitial? query-string request-time))
         (is (= (str base-query-string) (strip-interstitial-param query-string)))))
@@ -40,7 +40,7 @@
     (testing "generate and strip with expired timestamp and empty query string"
       (let [base-query-string nil
             param-time-millis (- (coerce/to-long request-time) interstitial-bypass-timeout-ms 123456)
-            query-string (str base-query-string (generate-interstitial-param param-time-millis))]
+            query-string (str base-query-string (request-time->interstitial-param-string param-time-millis))]
         (is (str/includes? query-string (str interstitial-param-name "=")))
         (is (not (bypass-interstitial? query-string request-time)))
         (is (= (str base-query-string) (strip-interstitial-param query-string)))))
@@ -48,7 +48,7 @@
     (testing "generate and strip with future timestamp and empty query string"
       (let [base-query-string nil
             param-time-millis (+ (coerce/to-long request-time) interstitial-bypass-timeout-ms 123456)
-            query-string (str base-query-string (generate-interstitial-param param-time-millis))]
+            query-string (str base-query-string (request-time->interstitial-param-string param-time-millis))]
         (is (str/includes? query-string (str interstitial-param-name "=")))
         (is (bypass-interstitial? query-string request-time))
         (is (= (str base-query-string) (strip-interstitial-param query-string)))))))
@@ -291,7 +291,7 @@
             (let [request {:descriptor {:service-description {"interstitial-secs" 10}
                                         :service-id service-id}
                            :headers {"accept" "text/html", "host" "www.example.com"}
-                           :query-string (generate-interstitial-param interstitial-time)
+                           :query-string (request-time->interstitial-param-string interstitial-time)
                            :request-id :interstitial-bypass
                            :request-time request-time}
                   response ((wrap-interstitial handler interstitial-state-atom) request)]
@@ -301,7 +301,7 @@
             (let [request {:descriptor {:service-description {"interstitial-secs" 10}
                                         :service-id service-id}
                            :headers {"accept" "text/html", "host" "www.example.com"}
-                           :query-string (str "a=b&c=d&" (generate-interstitial-param interstitial-time))
+                           :query-string (str "a=b&c=d&" (request-time->interstitial-param-string interstitial-time))
                            :request-id :interstitial-bypass
                            :request-time request-time}
                   response ((wrap-interstitial handler interstitial-state-atom) request)]
@@ -348,32 +348,32 @@
                    response))))))))
 
 (deftest test-display-interstitial-handler
-  (let [current-time (t/now)]
+  (let [request-time (t/now)]
     (with-redefs [render-interstitial-template identity
-                  t/now (constantly current-time)]
+                  t/now (constantly request-time)]
       (let [service-id "test-service-id"
             service-description {"cmd" "lorem ipsum dolor sit amet"
                                  "interstitial-secs" 10}
             descriptor {:service-description service-description
                         :service-id service-id}]
         (let [request {:descriptor descriptor
-                       :request-time current-time
+                       :request-time request-time
                        :route-params {:path "test"
                                       :service-id service-id}}
               response (display-interstitial-handler request)]
           (is (= {:body {:service-description service-description
                          :service-id service-id
-                         :target-url (str "/test?" (generate-interstitial-param current-time))}
+                         :target-url (str "/test?" (request-time->interstitial-param-string request-time))}
                   :status 200}
                  response)))
         (let [request {:descriptor descriptor
                        :query-string "a=b&c=d"
-                       :request-time current-time
+                       :request-time request-time
                        :route-params {:path "test"
                                       :service-id service-id}}
               response (display-interstitial-handler request)]
           (is (= {:body {:service-description service-description
                          :service-id service-id
-                         :target-url (str "/test?a=b&c=d&" (generate-interstitial-param current-time))}
+                         :target-url (str "/test?a=b&c=d&" (request-time->interstitial-param-string request-time))}
                   :status 200}
                  response)))))))

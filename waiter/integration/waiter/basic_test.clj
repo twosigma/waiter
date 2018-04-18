@@ -19,6 +19,7 @@
             [clojure.walk :as walk]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
+            [waiter.interstitial :as interstitial]
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils])
@@ -703,7 +704,7 @@
                                         :query-params {"a" "b"})]
                       (assert-response-status response 200)
                       (is (str/includes? body (str "<title>Waiter - Interstitial for " service-id "</title>")))
-                      (is (str/includes? body (str "/some-endpoint?a=b&x-waiter-bypass-interstitial=1")))))
+                      (is (str/includes? body (str "/some-endpoint?a=b&x-waiter-bypass-interstitial=")))))
                   (async/thread ;; GET request inside the interstitial period, using DNS token
                     (let [start-time (t/now)
                           endpoint "/hello"
@@ -751,7 +752,8 @@
                           (make-request router-url endpoint
                                         :cookies cookies
                                         :headers request-headers
-                                        :query-params {"x-waiter-bypass-interstitial" "1"})]
+                                        :query-params {"x-waiter-bypass-interstitial"
+                                                       (interstitial/request-time->interstitial-param-value (t/now))})]
                       (assert-response-status response 200)
                       (is (str/includes? (str body) "Hello World"))
                       (is (not (contains? headers "x-waiter-interstitial")))))
