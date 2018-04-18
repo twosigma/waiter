@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.interstitial
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as ct]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.java.io :as io]
             [clojure.set :as set]
@@ -21,8 +22,7 @@
             [plumbing.core :as pc]
             [waiter.metrics :as metrics]
             [waiter.util.async-utils :as au]
-            [waiter.util.utils :as utils])
-  (:import (org.joda.time DateTime)))
+            [waiter.util.utils :as utils]))
 
 (defn- service-id->interstitial-promise
   "Returns the promise mapped against a service-id.
@@ -182,75 +182,58 @@
 (def ^:const interstitial-param-name "x-waiter-bypass-interstitial")
 (def ^:const interstitial-param-name-length (count interstitial-param-name))
 (def ^:const interstitial-param-value-length 18)
-(def ^:const interstitial-timeout-ms (-> 10 t/seconds t/in-millis))
-
-(defn- current-time-millis
-  "Returns the current time in milliseconds."
-  []
-  (.getMillis ^DateTime (t/now)))
-
-(defn- interstitial-query-computation-helper
-  "Helper function to avoid duplicating logic for interstitial param computations."
-  [query-string]
-  (let [query-string-length (count query-string)
-        interstitial-param-location (->> (+ interstitial-param-name-length interstitial-param-value-length 1)
-                                         (- query-string-length)
-                                         (max 0))
-        interstitial-value-location (+ interstitial-param-location interstitial-param-name-length 1)]
-    {:interstitial-param-location interstitial-param-location
-     :interstitial-value-location interstitial-value-location
-     :query-string-length query-string-length}))
+(def ^:const interstitial-bypass-timeout-ms (-> 10 t/seconds t/in-millis))
 
 (defn generate-interstitial-param
   "Returns the name=value pair for the interstitial parameter."
-  ([]
-   (-> (current-time-millis)
-       (+ interstitial-timeout-ms)
-       generate-interstitial-param))
-  ([time-in-millis]
-   (->> time-in-millis
-        (format (str "%0" interstitial-param-value-length "d"))
-        (str interstitial-param-name "="))))
+  [request-time]
+  (->> (ct/to-long request-time)
+       (+ interstitial-bypass-timeout-ms)
+       (format (str "%0" interstitial-param-value-length "d"))
+       (str interstitial-param-name "=")))
+
+(defn- query-string->interstitial-param-value
+  "When the query string ends with the interstitial param, return the interstitial param value."
+  [query-string]
+  (when query-string
+    (let [query-string-length (count query-string)
+          interstitial-param-location (->> (+ interstitial-param-name-length interstitial-param-value-length 1)
+                                           (- query-string-length)
+                                           (max 0))
+          interstitial-value-location (+ interstitial-param-location interstitial-param-name-length 1)]
+      (when (and (<= interstitial-value-location query-string-length)
+                 (= (subs query-string interstitial-param-location interstitial-value-location)
+                    (str interstitial-param-name "=")))
+        (subs query-string interstitial-value-location)))))
 
 (defn strip-interstitial-param
   "Removes the interstitial param at the end from the query string."
   [query-string]
-  (when query-string
-    (let [{:keys [interstitial-param-location interstitial-value-location]}
-          (interstitial-query-computation-helper query-string)]
-      (if (= (subs query-string interstitial-param-location interstitial-value-location)
-             (str interstitial-param-name "="))
-        (->> (+ interstitial-param-name-length interstitial-param-value-length 1)
-             inc
-             (- (count query-string))
-             (max 0)
-             (subs query-string 0))
-        query-string))))
+  (if (query-string->interstitial-param-value query-string)
+    (->> (+ interstitial-param-name-length interstitial-param-value-length 1)
+         inc
+         (- (count query-string))
+         (max 0)
+         (subs query-string 0))
+    query-string))
 
 (defn bypass-interstitial?
   "Returns true if the query string contains the bypass interstitial flag with an unexpired timestamp.
    Else returns false or nil."
-  [query-string current-time-ms]
-  (when query-string
-    (let [{:keys [interstitial-param-location interstitial-value-location query-string-length]}
-          (interstitial-query-computation-helper query-string)]
-      (when (and (<= interstitial-value-location query-string-length)
-                 (= (subs query-string interstitial-param-location interstitial-value-location)
-                    (str interstitial-param-name "=")))
-        (let [interstitial-param-value (subs query-string interstitial-value-location)]
-          (try
-            (<= current-time-ms (Long/parseLong interstitial-param-value))
-            (catch Exception ex
-              (.printStackTrace ex)
-              (log/error ex "error in parsing interstitial parameter"
-                         {:interstitial-param-value interstitial-param-value
-                          :query-string query-string}))))))))
+  [query-string request-time]
+  (when-let [interstitial-param-value (query-string->interstitial-param-value query-string)]
+    (try
+      (<= (ct/to-long request-time) (Long/parseLong interstitial-param-value))
+      (catch Exception ex
+        (log/error ex "error in parsing interstitial parameter"
+                   {:interstitial-param-value interstitial-param-value
+                    :query-string query-string})))))
 
 (defn wrap-interstitial
   "Redirects users to the interstitial page when interstitial has been enabled and the service has not been started.
    The interstitial page will retry the request as a GET with the same query parameters but bypass the interstitial page."
   [handler interstitial-state-atom]
-  (fn wrap-interstitial-handler [{:keys [descriptor headers query-string uri] :as request}]
+  (fn wrap-interstitial-handler [{:keys [descriptor headers query-string request-time uri] :as request}]
     (let [{:keys [on-the-fly? service-description service-id]} descriptor
           {:strs [interstitial-secs]} service-description]
       (if (or on-the-fly? ;; on-the-fly request
@@ -259,7 +242,7 @@
               (not (:initialized? @interstitial-state-atom))
               (realized? (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs))
               ;; bypass query parameter provided, it should be the last query parameter
-              (bypass-interstitial? query-string (current-time-millis)))
+              (bypass-interstitial? query-string request-time))
         ;; continue processing down the handler chain
         (->> query-string
              strip-interstitial-param
@@ -274,14 +257,14 @@
            :status 303})))))
 
 (defn display-interstitial-handler
-  [{:keys [descriptor query-string route-params]}]
+  [{:keys [descriptor query-string request-time route-params]}]
   (let [{:keys [service-description service-id]} descriptor
         {:keys [path]} route-params
         target-url (str "/" path "?"
                         (when (not (str/blank? query-string))
                           (str query-string "&"))
                         ;; the bypass interstitial should be the last query parameter
-                        (generate-interstitial-param))]
+                        (generate-interstitial-param request-time))]
     {:body (render-interstitial-template
              {:service-description (update service-description "cmd" utils/truncate 100)
               :service-id service-id

@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.interstitial-test
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as coerce]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -17,38 +18,39 @@
             [plumbing.core :as pc]
             [waiter.interstitial :refer :all]
             [waiter.util.async-utils :as au]
-            [waiter.util.client-tools :as ct]))
+            [waiter.util.client-tools :as ct])
+  (:import (org.joda.time DateTime)))
 
 (deftest test-generate-and-strip-interstitial-param
-  (let [current-time-millis (System/currentTimeMillis)]
+  (let [request-time (DateTime.)]
     (testing "generate and strip with current timestamp and empty query string"
       (let [base-query-string nil
-            query-string (str base-query-string (generate-interstitial-param current-time-millis))]
+            query-string (str base-query-string (generate-interstitial-param request-time))]
         (is (str/includes? query-string (str interstitial-param-name "=")))
-        (is (bypass-interstitial? query-string current-time-millis))
+        (is (bypass-interstitial? query-string request-time))
         (is (= (str base-query-string) (strip-interstitial-param query-string)))))
 
     (testing "generate and strip with current timestamp and non-empty query string"
       (let [base-query-string "a=b&c=d"
-            query-string (str base-query-string "&" (generate-interstitial-param current-time-millis))]
+            query-string (str base-query-string "&" (generate-interstitial-param request-time))]
         (is (str/includes? query-string (str "&" interstitial-param-name "=")))
-        (is (bypass-interstitial? query-string current-time-millis))
+        (is (bypass-interstitial? query-string request-time))
         (is (= (str base-query-string) (strip-interstitial-param query-string)))))
 
     (testing "generate and strip with expired timestamp and empty query string"
       (let [base-query-string nil
-            param-time-millis (- current-time-millis interstitial-timeout-ms 123456)
+            param-time-millis (- (coerce/to-long request-time) interstitial-bypass-timeout-ms 123456)
             query-string (str base-query-string (generate-interstitial-param param-time-millis))]
         (is (str/includes? query-string (str interstitial-param-name "=")))
-        (is (not (bypass-interstitial? query-string current-time-millis)))
+        (is (not (bypass-interstitial? query-string request-time)))
         (is (= (str base-query-string) (strip-interstitial-param query-string)))))
 
     (testing "generate and strip with future timestamp and empty query string"
       (let [base-query-string nil
-            param-time-millis (+ current-time-millis interstitial-timeout-ms 123456)
+            param-time-millis (+ (coerce/to-long request-time) interstitial-bypass-timeout-ms 123456)
             query-string (str base-query-string (generate-interstitial-param param-time-millis))]
         (is (str/includes? query-string (str interstitial-param-name "=")))
-        (is (bypass-interstitial? query-string current-time-millis))
+        (is (bypass-interstitial? query-string request-time))
         (is (= (str base-query-string) (strip-interstitial-param query-string)))))))
 
 (deftest test-ensure-service-interstitial!
@@ -279,7 +281,9 @@
                     not))))
 
     (testing "interstitial promise unresolved"
-      (let [interstitial-promise (promise)
+      (let [request-time (t/plus (t/now) (t/minutes 1))
+            interstitial-time (t/plus request-time (t/minutes 1))
+            interstitial-promise (promise)
             interstitial-state-atom (atom {:initialized? true
                                            :service-id->interstitial-promise {service-id interstitial-promise}})]
         (testing "bypass interstitial"
@@ -287,8 +291,9 @@
             (let [request {:descriptor {:service-description {"interstitial-secs" 10}
                                         :service-id service-id}
                            :headers {"accept" "text/html", "host" "www.example.com"}
-                           :query-string (generate-interstitial-param)
-                           :request-id :interstitial-bypass}
+                           :query-string (generate-interstitial-param interstitial-time)
+                           :request-id :interstitial-bypass
+                           :request-time request-time}
                   response ((wrap-interstitial handler interstitial-state-atom) request)]
               (is (= {:query-string "" :request-id :interstitial-bypass :status 201} response))))
 
@@ -296,8 +301,9 @@
             (let [request {:descriptor {:service-description {"interstitial-secs" 10}
                                         :service-id service-id}
                            :headers {"accept" "text/html", "host" "www.example.com"}
-                           :query-string (str "a=b&c=d&" (generate-interstitial-param))
-                           :request-id :interstitial-bypass}
+                           :query-string (str "a=b&c=d&" (generate-interstitial-param interstitial-time))
+                           :request-id :interstitial-bypass
+                           :request-time request-time}
                   response ((wrap-interstitial handler interstitial-state-atom) request)]
               (is (= {:query-string "a=b&c=d" :request-id :interstitial-bypass :status 201} response)))))
 
@@ -307,6 +313,7 @@
                          :headers {"accept" "text/html", "host" "www.example.com"}
                          :query-string "a=b"
                          :request-id :interstitial-bypass
+                         :request-time request-time
                          :scheme :http}
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial?a=b")
@@ -319,6 +326,7 @@
                          :headers {"accept" "text/html", "host" "www.example.com"}
                          :query-string "c=d&x-waiter-bypass-interstitial=1&a=b" ;; incorrectly bypass param not at end
                          :request-id :interstitial-bypass
+                         :request-time request-time
                          :scheme :http}
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
             (is (= {:headers {"location" (str "/waiter-interstitial?c=d&x-waiter-bypass-interstitial=1&a=b")
@@ -330,6 +338,7 @@
                                       :service-id service-id}
                          :headers {"accept" "text/html", "host" "www.example.com"}
                          :request-id :interstitial-bypass
+                         :request-time request-time
                          :scheme :https
                          :uri "/test"}
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
@@ -339,8 +348,7 @@
                    response))))))))
 
 (deftest test-display-interstitial-handler
-  (let [current-time (t/now)
-        current-time-ms (.getMillis current-time)]
+  (let [current-time (t/now)]
     (with-redefs [render-interstitial-template identity
                   t/now (constantly current-time)]
       (let [service-id "test-service-id"
@@ -349,25 +357,23 @@
             descriptor {:service-description service-description
                         :service-id service-id}]
         (let [request {:descriptor descriptor
+                       :request-time current-time
                        :route-params {:path "test"
                                       :service-id service-id}}
               response (display-interstitial-handler request)]
           (is (= {:body {:service-description service-description
                          :service-id service-id
-                         :target-url (->> (+ current-time-ms interstitial-timeout-ms)
-                                          generate-interstitial-param
-                                          (str "/test?"))}
+                         :target-url (str "/test?" (generate-interstitial-param current-time))}
                   :status 200}
                  response)))
         (let [request {:descriptor descriptor
                        :query-string "a=b&c=d"
+                       :request-time current-time
                        :route-params {:path "test"
                                       :service-id service-id}}
               response (display-interstitial-handler request)]
           (is (= {:body {:service-description service-description
                          :service-id service-id
-                         :target-url (->> (+ current-time-ms interstitial-timeout-ms)
-                                          generate-interstitial-param
-                                          (str "/test?a=b&c=d&"))}
+                         :target-url (str "/test?a=b&c=d&" (generate-interstitial-param current-time))}
                   :status 200}
                  response)))))))
