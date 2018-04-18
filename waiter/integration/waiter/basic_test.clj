@@ -17,7 +17,6 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.interstitial :as interstitial]
             [waiter.service-description :as sd]
