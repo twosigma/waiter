@@ -182,6 +182,7 @@
 (def ^:const interstitial-param-name "x-waiter-bypass-interstitial")
 (def ^:const interstitial-param-name-length (count interstitial-param-name))
 (def ^:const interstitial-param-value-length 18)
+(def ^:const interstitial-param-string-length (+ interstitial-param-name-length interstitial-param-value-length 1))
 (def ^:const interstitial-bypass-timeout-ms (-> 10 t/seconds t/in-millis))
 
 (defn request-time->interstitial-param-value
@@ -201,9 +202,7 @@
   [query-string]
   (when query-string
     (let [query-string-length (count query-string)
-          interstitial-param-location (->> (+ interstitial-param-name-length interstitial-param-value-length 1)
-                                           (- query-string-length)
-                                           (max 0))
+          interstitial-param-location (max 0 (- query-string-length interstitial-param-string-length))
           interstitial-value-location (+ interstitial-param-location interstitial-param-name-length 1)]
       (when (and (<= interstitial-value-location query-string-length)
                  (= (subs query-string interstitial-param-location interstitial-value-location)
