@@ -376,19 +376,23 @@
         token-user "token-user"
         kv-store (Object.)
         waiter-hostname "waiter-hostname.app.example.com"
-        waiter-hostnames #{waiter-hostname}]
-    (with-redefs [token->service-description-template (fn [_ token & _]
-                                                        (if (and token (not (str/includes? token "no-token")))
-                                                          (cond-> {"name" token
-                                                                   "cmd" token-user
-                                                                   "version" "token"
-                                                                   "owner" "token-owner"}
-                                                                  (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
-                                                                  (str/includes? token "cpus") (assoc "cpus" "1")
-                                                                  (str/includes? token "mem") (assoc "mem" "2")
-                                                                  (str/includes? token "per") (assoc "permitted-user" "puser")
-                                                                  (str/includes? token "run") (assoc "run-as-user" "ruser"))
-                                                          {}))]
+        waiter-hostnames #{waiter-hostname}
+        create-token-data (fn [token]
+                            (if (and token (not (str/includes? token "no-token")))
+                              (cond-> {"name" token
+                                       "cmd" token-user
+                                       "owner" "token-owner"
+                                       "previous" {}
+                                       "version" "token"}
+                                      (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
+                                      (str/includes? token "cpus") (assoc "cpus" "1")
+                                      (str/includes? token "mem") (assoc "mem" "2")
+                                      (str/includes? token "per") (assoc "permitted-user" "puser")
+                                      (str/includes? token "run") (assoc "run-as-user" "ruser"))
+                              {}))]
+    (with-redefs [kv/fetch (fn [in-kv-store token]
+                             (is (= kv-store in-kv-store))
+                             (create-token-data token))]
       (let [service-description-defaults {"name" "default-name" "health-check-url" "/ping"}
             test-cases (list
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers except run-as-user"
@@ -411,8 +415,10 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token-preauthorized false
+                                     :token-sequence ["test-host"]}}
                          {:name "prepare-service-description-sources:WITH Waiter Hostname"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -430,9 +436,11 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :service-description-template {}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :service-description-template {},
+                                     :token->token-data {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence []}}
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -453,8 +461,10 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token-preauthorized false
+                                     :token-sequence ["test-host"]}}
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -471,9 +481,11 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :service-description-template {}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :service-description-template {},
+                                     :token->token-data {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence []}}
                          {:name "prepare-service-description-sources:WITHOUT Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"}
@@ -485,8 +497,10 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token-preauthorized false
+                                     :token-sequence ["test-host"]}}
                          {:name "prepare-service-description-sources:Token in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"
@@ -498,8 +512,10 @@
                                      :service-description-template {"name" "test-token"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :token->token-data {"test-token" (create-token-data "test-token")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token-preauthorized false
+                                     :token-sequence ["test-token"]}}
                          {:name "prepare-service-description-sources:Two tokens in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"
@@ -512,8 +528,11 @@
                                      :service-description-template {"name" "test-token2"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :token->token-data {"test-token" (create-token-data "test-token")
+                                                         "test-token2" (create-token-data "test-token2")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token-preauthorized false
+                                     :token-sequence ["test-token" "test-token2"]}}
                          {:name "prepare-service-description-sources:Multiple tokens in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"
@@ -526,8 +545,13 @@
                                                                     "cpus" "1"
                                                                     "mem" "2"
                                                                     "version" "token"}
+                                     :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
+                                                         "test-mem-token" (create-token-data "test-mem-token")
+                                                         "test-token" (create-token-data "test-token")
+                                                         "test-token2" (create-token-data "test-token2")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token-preauthorized false
+                                     :token-sequence ["test-token" "test-token2" "test-cpus-token" "test-mem-token"]}}
                          {:name "prepare-service-description-sources:Using Host with missing values"
                           :waiter-headers {}
                           :passthrough-headers {"host" "test-host"
@@ -538,8 +562,10 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token-preauthorized false
+                                     :token-sequence ["test-host"]}}
                          {:name "prepare-service-description-sources:Using Host without port with missing values"
                           :waiter-headers {}
                           :passthrough-headers {"host" "test-host:1234"
@@ -550,8 +576,10 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token->token-data {"test-host" (create-token-data "test-host")}
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence ["test-host"]}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user"
                           :waiter-headers {"x-waiter-token" "test-token-run"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -563,8 +591,10 @@
                                                                     "cmd" "token-user"
                                                                     "version" "token"
                                                                     "run-as-user" "ruser"}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token->token-data {"test-token-run" (create-token-data "test-token-run")}
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence ["test-token-run"]}}
                          {:name "prepare-service-description-sources:Using Token with permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-per"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -575,8 +605,10 @@
                                      :service-description-template {"name" "test-token-per"
                                                                     "cmd" "token-user"
                                                                     "version" "token" "permitted-user" "puser"}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token->token-data {"test-token-per" (create-token-data "test-token-per")}
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence ["test-token-per"]}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user and another token"
                           :waiter-headers {"x-waiter-token" "test-token-per-run"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -589,8 +621,10 @@
                                                                     "version" "token"
                                                                     "run-as-user" "ruser"
                                                                     "permitted-user" "puser"}
+                                     :token->token-data {"test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized true}}
+                                     :token-preauthorized true
+                                     :token-sequence ["test-token-per-run"]}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-per-run,test-cpus-token"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -604,8 +638,11 @@
                                                                     "cpus" "1"
                                                                     "run-as-user" "ruser"
                                                                     "permitted-user" "puser"}
+                                     :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
+                                                         "test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :token-preauthorized false
+                                     :token-sequence ["test-token-per-run" "test-cpus-token"]}}
                          {:name "prepare-service-description-sources:Parse metadata headers"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-metadata-baz" "quux"
@@ -616,9 +653,11 @@
                                      :headers {"metadata" {"foo" "bar"
                                                            "baz" "quux"}
                                                "cpus" "1"}
-                                     :service-description-template {}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :service-description-template {},
+                                     :token->token-data {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence []}}
                          {:name "prepare-service-description-sources:Parse environment headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -629,9 +668,11 @@
                                      :headers {"env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar"}
                                                "cpus" "1"}
-                                     :service-description-template {}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :service-description-template {},
+                                     :token->token-data {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence []}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys:host-token"
                           :waiter-headers {"x-waiter-param-bar" "bar-value"
                                            "x-waiter-param-foo" "foo-value"}
@@ -648,8 +689,10 @@
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
                                                                     "version" "token"}
+                                     :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized true}}
+                                     :token-preauthorized true
+                                     :token-sequence ["test-host-allowed-cpus-mem-per-run"]}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys:host-token:on-the-fly"
                           :waiter-headers {"x-waiter-cpus" "20"
                                            "x-waiter-param-bar" "bar-value"
@@ -668,8 +711,10 @@
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
                                                                     "version" "token"}
+                                     :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized true}}
+                                     :token-preauthorized true
+                                     :token-sequence ["test-host-allowed-cpus-mem-per-run"]}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys:token-header"
                           :waiter-headers {"x-waiter-param-bar" "bar-value"
                                            "x-waiter-param-foo" "foo-value"
@@ -687,8 +732,10 @@
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
                                                                     "version" "token"}
+                                     :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
-                                     :token-preauthorized true}}
+                                     :token-preauthorized true
+                                     :token-sequence ["test-host-allowed-cpus-mem-per-run"]}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-param-baz" "quux"
@@ -699,10 +746,12 @@
                                      :headers {"cpus" "1"
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
-                                     :service-description-template {}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
-                         {:name "prepare-service-description-sources:Parse distinct env and param headers:valid keys"
+                                     :service-description-template {},
+                                     :token->token-data {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence []}}
+                         {:name "prepare-service-description-sources:Parse distinct e and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
                                            "x-waiter-env-foo_bar" "bar"
@@ -716,9 +765,11 @@
                                                       "FOO_BAR" "bar"}
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
-                                     :service-description-template {}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :service-description-template {},
+                                     :token->token-data {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence []}}
                          {:name "prepare-service-description-sources:Parse overlap env and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -733,9 +784,11 @@
                                                       "FOO_BAR" "bar1"}
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar2"}}
-                                     :service-description-template {}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :service-description-template {},
+                                     :token->token-data {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence []}}
                          {:name "prepare-service-description-sources:Parse environment headers:invalid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-1" "quux"
@@ -746,9 +799,11 @@
                                      :headers {"cpus" "1"
                                                "env" {"1" "quux"
                                                       "FOO-BAR" "bar"}}
-                                     :service-description-template {}
-                                     :token-authentication-disabled false
-                                     :token-preauthorized false}}
+                                     :service-description-template {},
+                                     :token->token-data {},
+                                     :token-authentication-disabled false,
+                                     :token-preauthorized false,
+                                     :token-sequence []}}
                          )]
         (doseq [{:keys [expected name passthrough-headers waiter-headers]} test-cases]
           (testing (str "Test " name)
@@ -768,10 +823,11 @@
         test-token "test-token-name"]
     (testing "authentication-disabled token"
       (let [token-description {"authentication" "disabled", "cmd" "a-command", "cpus" "1", "mem" "2", "name" test-token
-                               "owner" "token-owner", "permitted-user" "*", "run-as-user" "ruser", "version" "token"}]
-        (with-redefs [token->service-description-template (fn [_ token & _]
-                                                            (is (= test-token token))
-                                                            token-description)]
+                               "owner" "token-owner", "permitted-user" "*", "previous" {}, "run-as-user" "ruser", "version" "token"}]
+        (with-redefs [kv/fetch (fn [in-kv-store token]
+                                 (is (= kv-store in-kv-store))
+                                 (is (= test-token token))
+                                 token-description)]
           (let [waiter-headers {"x-waiter-token" test-token}
                 passthrough-headers {"host" "test-host:1234", "fee" "foe"}
                 actual (prepare-service-description-sources
@@ -780,17 +836,20 @@
                          kv-store waiter-hostname {"name" "default-name" "health-check-url" "/ping"})
                 expected {:defaults {"name" "default-name", "health-check-url" "/ping"}
                           :headers {}
-                          :service-description-template (dissoc token-description "owner")
+                          :service-description-template (select-keys token-description service-description-keys)
+                          :token->token-data {test-token token-description}
                           :token-authentication-disabled true
-                          :token-preauthorized true}]
+                          :token-preauthorized true
+                          :token-sequence [test-token]}]
             (is (= expected actual))))))
 
     (testing "limited-access token"
       (let [token-description {"authentication" "standard", "cmd" "a-command", "cpus" "1", "mem" "2", "name" test-token
-                               "owner" "token-owner", "permitted-user" "*", "run-as-user" "ruser", "version" "token"}]
-        (with-redefs [token->service-description-template (fn [_ token & _]
-                                                            (is (= test-token token))
-                                                            token-description)]
+                               "owner" "token-owner", "permitted-user" "*", "previous" {}, "run-as-user" "ruser", "version" "token"}]
+        (with-redefs [kv/fetch (fn [in-kv-store token]
+                                 (is (= kv-store in-kv-store))
+                                 (is (= test-token token))
+                                 token-description)]
           (let [waiter-headers {"x-waiter-token" test-token}
                 passthrough-headers {"host" "test-host:1234", "fee" "foe"}
                 actual (prepare-service-description-sources
@@ -799,9 +858,11 @@
                          kv-store waiter-hostname {"name" "default-name" "health-check-url" "/ping"})
                 expected {:defaults {"name" "default-name", "health-check-url" "/ping"}
                           :headers {}
-                          :service-description-template (dissoc token-description "owner")
+                          :service-description-template (select-keys token-description service-description-keys)
+                          :token->token-data {test-token token-description}
                           :token-authentication-disabled false
-                          :token-preauthorized true}]
+                          :token-preauthorized true
+                          :token-sequence [test-token]}]
             (is (= expected actual))))))))
 
 (defn- compute-service-description-helper
