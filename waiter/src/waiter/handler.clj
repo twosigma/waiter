@@ -734,7 +734,7 @@
   "Displays the consent form and requests approval from user. The content is rendered from consent.html.
    Approval form is submitted using AJAX and the user is then redirected to the target url that triggered a redirect to this form."
   [token->service-description-template service-description->service-id consent-expiry-days
-   {:keys [headers query-string request-method route-params] :as request}]
+   {:keys [headers query-string request-method request-time route-params] :as request}]
   (try
     (when-not (= :get request-method)
       (throw (ex-info "Only GET supported" {:request-method request-method, :status 405})))
@@ -757,7 +757,7 @@
                   :service-id service-id
                   :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path "?"
                                    (when (not (str/blank? query-string)) (str query-string "&"))
-                                   interstitial/bypass-interstitial-param-name-value)
+                                   (interstitial/request-time->interstitial-param-string request-time))
                   :token token})
          :headers {"content-type" "text/html"}
          :status 200}))

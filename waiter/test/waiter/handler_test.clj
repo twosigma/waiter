@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.handler-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -1037,7 +1038,8 @@
     (is (str/includes? body "http://www.example.com:6789/some-path"))))
 
 (deftest test-request-consent-handler
-  (let [token->service-description-template (fn [token]
+  (let [request-time (t/now)
+        token->service-description-template (fn [token]
                                               (when (= token "www.example.com")
                                                 {"cmd" "some-cmd", "cpus" 1, "mem" 1024})) ;; produces service-4.67
         service-description->service-id (fn [service-description]
@@ -1059,13 +1061,14 @@
                                           :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
                                           :service-id "service-5.97"
                                           :target-url (str scheme "://www.example.com:6789/some-path?"
-                                                           interstitial/bypass-interstitial-param-name-value)
+                                                           (interstitial/request-time->interstitial-param-string request-time))
                                           :token "www.example.com"}
                                          data))
                                   "template:some-content"))]
     (testing "unsupported request method"
       (let [request {:authorization/user "test-user"
                      :request-method :post
+                     :request-time request-time
                      :scheme :http}
             {:keys [body headers status]} (request-consent-handler-fn request)]
         (is (= 405 status))
@@ -1076,6 +1079,7 @@
       (let [request {:authorization/user "test-user"
                      :headers {"host" "www.example2.com:6789"}
                      :request-method :get
+                     :request-time request-time
                      :route-params {:path "some-path"}
                      :scheme :http}
             {:keys [body headers status]} (request-consent-handler-fn request)]
@@ -1088,6 +1092,7 @@
       (testing "token without service description - http scheme"
         (let [request {:authorization/user "test-user"
                        :headers {"host" "www.example.com:6789"}
+                       :request-time request-time
                        :route-params {:path "some-path"}
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]
@@ -1100,6 +1105,7 @@
       (testing "token without service description - https scheme"
         (let [request {:authorization/user "test-user"
                        :headers {"host" "www.example.com:6789"}
+                       :request-time request-time
                        :route-params {:path "some-path"}
                        :scheme :https}
               {:keys [body headers status]} (request-consent-handler-fn request)]
@@ -1112,6 +1118,7 @@
       (testing "token without service description - https x-forwarded-proto"
         (let [request {:authorization/user "test-user"
                        :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
+                       :request-time request-time
                        :route-params {:path "some-path"}
                        :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]

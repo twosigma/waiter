@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.interstitial
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as ct]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.java.io :as io]
             [clojure.set :as set]
@@ -178,36 +179,71 @@
     [context]
     (interstitial-template-fn context)))
 
-(def ^:const bypass-interstitial-param-name-value "x-waiter-bypass-interstitial=1")
+(def ^:const interstitial-param-name "x-waiter-bypass-interstitial")
+(def ^:const interstitial-param-name-length (count interstitial-param-name))
+(def ^:const interstitial-bypass-timeout-ms (-> 10 t/seconds t/in-millis))
+;; the interstitial must be the last query parameter
+(def interstitial-param-pattern (re-pattern (str "(^|.*&)" interstitial-param-name "=(\\d+)$")))
 
-(defn- strip-interstitial-param
-  "Removes the interstitial param at the end from the query string.
-   It assumes the query string already ends with the interstitial param."
+(defn request-time->interstitial-param-value
+  "Returns the interstitial parameter value."
+  [request-time]
+  (-> (ct/to-long request-time)
+      (+ interstitial-bypass-timeout-ms)))
+
+(defn request-time->interstitial-param-string
+  "Returns the interstitial parameter as name=value string."
+  [request-time]
+  (str interstitial-param-name "=" (request-time->interstitial-param-value request-time)))
+
+(defn- query-string->interstitial-param-value
+  "When the query string ends with the interstitial param, return the interstitial param value."
   [query-string]
-  (->> (count bypass-interstitial-param-name-value)
-       inc
-       (- (count query-string))
-       (max 0)
-       (subs query-string 0)))
+  (when query-string
+    (-> (re-matches interstitial-param-pattern (str query-string))
+        (nth 2))))
+
+(defn strip-interstitial-param
+  "Removes the interstitial param at the end from the query string."
+  [query-string]
+  (if-let [interstitial-param-value (query-string->interstitial-param-value query-string)]
+    (->> (count interstitial-param-value)
+         (+ interstitial-param-name-length 1)
+         inc ;; account for & in the query string, if only param still fine
+         (- (count query-string))
+         (max 0)
+         (subs query-string 0))
+    query-string))
+
+(defn bypass-interstitial?
+  "Returns true if the query string contains the bypass interstitial flag with an unexpired timestamp.
+   Else returns false or nil."
+  [query-string request-time]
+  (when-let [interstitial-param-value (query-string->interstitial-param-value query-string)]
+    (try
+      (<= (ct/to-long request-time) (Long/parseLong interstitial-param-value))
+      (catch Exception ex
+        (log/error ex "error in parsing interstitial parameter"
+                   {:interstitial-param-value interstitial-param-value
+                    :query-string query-string})))))
 
 (defn wrap-interstitial
   "Redirects users to the interstitial page when interstitial has been enabled and the service has not been started.
    The interstitial page will retry the request as a GET with the same query parameters but bypass the interstitial page."
   [handler interstitial-state-atom]
-  (fn wrap-interstitial-handler [{:keys [descriptor headers query-string uri] :as request}]
+  (fn wrap-interstitial-handler [{:keys [descriptor headers query-string request-time uri] :as request}]
     (let [{:keys [on-the-fly? service-description service-id]} descriptor
-          {:strs [interstitial-secs]} service-description
-          ;; the bypass interstitial should be the last query parameter
-          bypass-interstitial? (str/ends-with? (str query-string) bypass-interstitial-param-name-value)]
-      (if (or bypass-interstitial? ;; bypass query parameter provided
-              on-the-fly? ;; on-the-fly request
+          {:strs [interstitial-secs]} service-description]
+      (if (or on-the-fly? ;; on-the-fly request
               (zero? interstitial-secs) ;; interstitial support has been disabled
               (not (str/includes? (str (get headers "accept")) "text/html")) ;; expecting html response
               (not (:initialized? @interstitial-state-atom))
-              (realized? (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs)))
+              (realized? (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs))
+              ;; bypass query parameter provided, it should be the last query parameter
+              (bypass-interstitial? query-string request-time))
         ;; continue processing down the handler chain
-        (->> (cond-> query-string
-                     bypass-interstitial? (strip-interstitial-param))
+        (->> query-string
+             strip-interstitial-param
              (assoc request :query-string)
              handler)
         ;; redirect to interstitial page
@@ -219,14 +255,14 @@
            :status 303})))))
 
 (defn display-interstitial-handler
-  [{:keys [descriptor query-string route-params]}]
+  [{:keys [descriptor query-string request-time route-params]}]
   (let [{:keys [service-description service-id]} descriptor
         {:keys [path]} route-params
         target-url (str "/" path "?"
                         (when (not (str/blank? query-string))
                           (str query-string "&"))
                         ;; the bypass interstitial should be the last query parameter
-                        bypass-interstitial-param-name-value)]
+                        (request-time->interstitial-param-string request-time))]
     {:body (render-interstitial-template
              {:service-description (update service-description "cmd" utils/truncate 100)
               :service-id service-id
