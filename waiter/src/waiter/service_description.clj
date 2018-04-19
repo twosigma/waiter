@@ -642,15 +642,15 @@
         (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostnames)]
     {:defaults service-description-defaults
      :headers service-description-template-from-headers
+     :service-description-template service-description-template
      :token-authentication-disabled token-authentication-disabled
-     :token-preauthorized token-preauthorized
-     :tokens service-description-template}))
+     :token-preauthorized token-preauthorized}))
 
 (defn- merge-service-description-sources
   [descriptor kv-store waiter-hostnames service-description-defaults]
   "Merges the sources for a service-description into the descriptor."
-  (let [sources (prepare-service-description-sources descriptor kv-store waiter-hostnames service-description-defaults)]
-    (assoc descriptor :sources sources)))
+  (->> (prepare-service-description-sources descriptor kv-store waiter-hostnames service-description-defaults)
+       (assoc descriptor :sources)))
 
 (defn- sanitize-metadata [{:strs [metadata] :as service-description}]
   (if metadata
@@ -671,7 +671,7 @@
       - configured defaults.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user."
-    [{:keys [defaults headers token-authentication-disabled token-preauthorized tokens] :as sources}
+    [{:keys [defaults headers service-description-template token-authentication-disabled token-preauthorized] :as sources}
      waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
      service-description-builder assoc-run-as-user-approved?]
     (let [service-description-based-on-headers (cond->> headers
@@ -688,7 +688,8 @@
                                  (update "env" merge params)
                                  (dissoc "param")))
                            service-description))
-          service-description-from-headers-and-token-sources (cond-> (merge tokens service-description-based-on-headers)
+          service-description-from-headers-and-token-sources (cond-> (merge service-description-template
+                                                                            service-description-based-on-headers)
                                                                      ; param headers need to update the environment
                                                                      (contains? headers "param") (merge-params))
           sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
