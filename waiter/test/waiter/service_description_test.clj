@@ -407,11 +407,11 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-host"
-                                              "cmd" "token-user"
-                                              "version" "token"}}}
+                                     :service-description-template {"name" "test-host"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:WITH Waiter Hostname"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -420,7 +420,8 @@
                                            "x-waiter-run-as-user" test-user
                                            "x-waiter-source" "serv-desc"
                                            "x-waiter-version" "test-version"}
-                          :passthrough-headers {"host" waiter-hostname, "fee" "foe"}
+                          :passthrough-headers {"host" waiter-hostname
+                                                "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {"cpus" 1
@@ -428,9 +429,9 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {}}}
+                                     :service-description-template {}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -448,11 +449,11 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-host"
-                                              "cmd" "token-user"
-                                              "version" "token"}}}
+                                     :service-description-template {"name" "test-host"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -469,9 +470,9 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {}}}
+                                     :service-description-template {}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:WITHOUT Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"}
@@ -480,11 +481,11 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-host"
-                                              "cmd" "token-user"
-                                              "version" "token"}}}
+                                     :service-description-template {"name" "test-host"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Token in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"
@@ -493,11 +494,11 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-token"
-                                              "cmd" "token-user"
-                                              "version" "token"}}}
+                                     :service-description-template {"name" "test-token"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Two tokens in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"
@@ -507,11 +508,11 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-token2"
-                                              "cmd" "token-user"
-                                              "version" "token"}}}
+                                     :service-description-template {"name" "test-token2"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Multiple tokens in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"
@@ -519,13 +520,13 @@
                           :passthrough-headers {"host" "test-host" "fee" "foe"}
                           :expected {:defaults {"name" "default-name" "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-mem-token"
-                                              "cmd" "token-user"
-                                              "cpus" "1"
-                                              "mem" "2"
-                                              "version" "token"}}}
+                                     :service-description-template {"name" "test-mem-token"
+                                                                    "cmd" "token-user"
+                                                                    "cpus" "1"
+                                                                    "mem" "2"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Using Host with missing values"
                           :waiter-headers {}
                           :passthrough-headers {"host" "test-host"
@@ -533,11 +534,11 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-host"
-                                              "cmd" "token-user"
-                                              "version" "token"}}}
+                                     :service-description-template {"name" "test-host"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Using Host without port with missing values"
                           :waiter-headers {}
                           :passthrough-headers {"host" "test-host:1234"
@@ -545,11 +546,11 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-host"
-                                              "cmd" "token-user"
-                                              "version" "token"}}}
+                                     :service-description-template {"name" "test-host"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user"
                           :waiter-headers {"x-waiter-token" "test-token-run"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -557,12 +558,12 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-token-run"
-                                              "cmd" "token-user"
-                                              "version" "token"
-                                              "run-as-user" "ruser"}}}
+                                     :service-description-template {"name" "test-token-run"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"
+                                                                    "run-as-user" "ruser"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Using Token with permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-per"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -570,11 +571,11 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-token-per"
-                                              "cmd" "token-user"
-                                              "version" "token" "permitted-user" "puser"}}}
+                                     :service-description-template {"name" "test-token-per"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token" "permitted-user" "puser"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user and another token"
                           :waiter-headers {"x-waiter-token" "test-token-per-run"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -582,13 +583,13 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized true,
-                                     :tokens {"name" "test-token-per-run"
-                                              "cmd" "token-user"
-                                              "version" "token"
-                                              "run-as-user" "ruser"
-                                              "permitted-user" "puser"}}}
+                                     :service-description-template {"name" "test-token-per-run"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"
+                                                                    "run-as-user" "ruser"
+                                                                    "permitted-user" "puser"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized true}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-per-run,test-cpus-token"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -596,14 +597,14 @@
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
                                      :headers {}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {"name" "test-cpus-token"
-                                              "cmd" "token-user"
-                                              "version" "token"
-                                              "cpus" "1"
-                                              "run-as-user" "ruser"
-                                              "permitted-user" "puser"}}}
+                                     :service-description-template {"name" "test-cpus-token"
+                                                                    "cmd" "token-user"
+                                                                    "version" "token"
+                                                                    "cpus" "1"
+                                                                    "run-as-user" "ruser"
+                                                                    "permitted-user" "puser"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Parse metadata headers"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-metadata-baz" "quux"
@@ -614,9 +615,9 @@
                                      :headers {"metadata" {"foo" "bar"
                                                            "baz" "quux"}
                                                "cpus" "1"}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {}}}
+                                     :service-description-template {}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Parse environment headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -627,9 +628,9 @@
                                      :headers {"env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar"}
                                                "cpus" "1"}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {}}}
+                                     :service-description-template {}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-param-baz" "quux"
@@ -640,9 +641,9 @@
                                      :headers {"cpus" "1"
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {}}}
+                                     :service-description-template {}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Parse distinct e and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -657,9 +658,9 @@
                                                       "FOO_BAR" "bar"}
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {}}}
+                                     :service-description-template {}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Parse overlap env and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -674,9 +675,9 @@
                                                       "FOO_BAR" "bar1"}
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar2"}}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {}}}
+                                     :service-description-template {}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          {:name "prepare-service-description-sources:Parse environment headers:invalid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-1" "quux"
@@ -687,9 +688,9 @@
                                      :headers {"cpus" "1"
                                                "env" {"1" "quux"
                                                       "FOO-BAR" "bar"}}
-                                     :token-authentication-disabled false,
-                                     :token-preauthorized false,
-                                     :tokens {}}}
+                                     :service-description-template {}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false}}
                          )]
         (doseq [{:keys [expected name passthrough-headers waiter-headers]} test-cases]
           (testing (str "Test " name)
@@ -721,9 +722,9 @@
                          kv-store waiter-hostname {"name" "default-name" "health-check-url" "/ping"})
                 expected {:defaults {"name" "default-name", "health-check-url" "/ping"}
                           :headers {}
-                          :token-authentication-disabled true,
-                          :token-preauthorized true,
-                          :tokens (dissoc token-description "owner")}]
+                          :service-description-template (dissoc token-description "owner")
+                          :token-authentication-disabled true
+                          :token-preauthorized true}]
             (is (= expected actual))))))
 
     (testing "limited-access token"
@@ -740,9 +741,9 @@
                          kv-store waiter-hostname {"name" "default-name" "health-check-url" "/ping"})
                 expected {:defaults {"name" "default-name", "health-check-url" "/ping"}
                           :headers {}
-                          :token-authentication-disabled false,
-                          :token-preauthorized true,
-                          :tokens (dissoc token-description "owner")}]
+                          :service-description-template (dissoc token-description "owner")
+                          :token-authentication-disabled false
+                          :token-preauthorized true}]
             (is (= expected actual))))))))
 
 (defn- compute-service-description-helper
@@ -768,7 +769,7 @@
 
 (deftest test-compute-service-description-on-the-fly?
   (let [defaults {"health-check-url" "/ping", "permitted-user" "bob"}
-        sources {:defaults defaults :tokens {"cmd" "token-cmd"}}
+        sources {:defaults defaults :service-description-template {"cmd" "token-cmd"}}
         compute-on-the-fly (fn compute-on-the-fly [waiter-headers]
                              (-> (compute-service-description-helper sources :waiter-headers waiter-headers)
                                  :on-the-fly?))]
@@ -787,13 +788,13 @@
               "permitted-user" "bob"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"}}))))
+                                   :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "only token from host without permitted-user in defaults"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"cmd" "token-cmd"}}))))
+                                   :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "only token from header without permitted-user"
       (is (= {"cmd" "token-cmd"
@@ -802,7 +803,7 @@
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"}}
+                                   :service-description-template {"cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
 
     (testing "only token from header with permitted-user"
@@ -812,9 +813,9 @@
               "run-as-user" "token-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "permitted-user" "token-user"
-                                            "run-as-user" "token-user"}}
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "permitted-user" "token-user"
+                                                                  "run-as-user" "token-user"}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
 
     (testing "token and run-as-user from header with permitted-user"
@@ -825,9 +826,9 @@
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
                                    :headers {"run-as-user" "on-the-fly-ru"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "permitted-user" "token-user"
-                                            "run-as-user" "token-user"}}
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "permitted-user" "token-user"
+                                                                  "run-as-user" "token-user"}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"
                                                    "x-waiter-run-as-user" "on-the-fly-ru"}))))
 
@@ -835,7 +836,7 @@
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"cmd" "token-cmd"}}))))
+                                   :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "only token from header with defaults missing permitted user"
       (is (= {"cmd" "token-cmd"
@@ -843,14 +844,14 @@
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"cmd" "token-cmd"}}
+                                   :service-description-template {"cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
 
     (testing "only token from host with dummy header"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"cmd" "token-cmd"}}
+                                   :service-description-template {"cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-dummy" "value-does-not-matter"}))))
 
     (testing "only on-the-fly"
@@ -870,8 +871,8 @@
               "version" "on-the-fly-version"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"}
-                                   :headers {"version" "on-the-fly-version"}}))))
+                                   :headers {"version" "on-the-fly-version"}
+                                   :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "token header with non-intersecting values"
       (is (= {"cmd" "token-cmd"
@@ -882,9 +883,9 @@
               "version" "on-the-fly-version"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "concurrency-level" 5}
-                                   :headers {"version" "on-the-fly-version"}}))))
+                                   :headers {"version" "on-the-fly-version"}
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "concurrency-level" 5}}))))
 
     (testing "token + param header - on-the-fly"
       (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
@@ -898,13 +899,13 @@
               "version" "on-the-fly-version"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                            "cmd" "token-cmd"
-                                            "concurrency-level" 5
-                                            "run-as-user" "test-user"}
                                    :headers {"param" {"VAR_1" "VALUE-1"
                                                       "VAR_2" "VALUE-2"}
-                                             "version" "on-the-fly-version"}}))))
+                                             "version" "on-the-fly-version"}
+                                   :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                  "cmd" "token-cmd"
+                                                                  "concurrency-level" 5
+                                                                  "run-as-user" "test-user"}}))))
 
     (testing "token + distinct param header - on-the-fly"
       (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
@@ -920,15 +921,15 @@
               "version" "on-the-fly-version"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                            "cmd" "token-cmd"
-                                            "concurrency-level" 5
-                                            "env" {"VAR_1" "VALUE-1e"
-                                                   "VAR_2" "VALUE-2e"}
-                                            "run-as-user" "test-user"}
                                    :headers {"param" {"VAR_3" "VALUE-3p"
                                                       "VAR_4" "VALUE-4p"}
-                                             "version" "on-the-fly-version"}}))))
+                                             "version" "on-the-fly-version"}
+                                   :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                  "cmd" "token-cmd"
+                                                                  "concurrency-level" 5
+                                                                  "env" {"VAR_1" "VALUE-1e"
+                                                                         "VAR_2" "VALUE-2e"}
+                                                                  "run-as-user" "test-user"}}))))
 
     (testing "token + overlap param header - on-the-fly"
       (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
@@ -943,15 +944,15 @@
               "version" "on-the-fly-version"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                            "cmd" "token-cmd"
-                                            "concurrency-level" 5
-                                            "env" {"VAR_1" "VALUE-1e"
-                                                   "VAR_2" "VALUE-2e"}
-                                            "run-as-user" "test-user"}
                                    :headers {"param" {"VAR_2" "VALUE-2p"
                                                       "VAR_3" "VALUE-3p"}
-                                             "version" "on-the-fly-version"}}))))
+                                             "version" "on-the-fly-version"}
+                                   :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                  "cmd" "token-cmd"
+                                                                  "concurrency-level" 5
+                                                                  "env" {"VAR_1" "VALUE-1e"
+                                                                         "VAR_2" "VALUE-2e"}
+                                                                  "run-as-user" "test-user"}}))))
 
     (testing "token + param header - token due to param"
       (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
@@ -964,12 +965,12 @@
               "run-as-user" "test-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                            "cmd" "token-cmd"
-                                            "concurrency-level" 5
-                                            "run-as-user" "test-user"}
                                    :headers {"param" {"VAR_1" "VALUE-1"
-                                                      "VAR_2" "VALUE-2"}}}))))
+                                                      "VAR_2" "VALUE-2"}}
+                                   :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                  "cmd" "token-cmd"
+                                                                  "concurrency-level" 5
+                                                                  "run-as-user" "test-user"}}))))
 
     (testing "token + distinct param header - token due to param"
       (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
@@ -984,14 +985,14 @@
               "run-as-user" "test-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                            "cmd" "token-cmd"
-                                            "concurrency-level" 5
-                                            "env" {"VAR_1" "VALUE-1e"
-                                                   "VAR_2" "VALUE-2e"}
-                                            "run-as-user" "test-user"}
                                    :headers {"param" {"VAR_3" "VALUE-3p"
-                                                      "VAR_4" "VALUE-4p"}}}))))
+                                                      "VAR_4" "VALUE-4p"}}
+                                   :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                  "cmd" "token-cmd"
+                                                                  "concurrency-level" 5
+                                                                  "env" {"VAR_1" "VALUE-1e"
+                                                                         "VAR_2" "VALUE-2e"}
+                                                                  "run-as-user" "test-user"}}))))
 
     (testing "token + overlap param header - token due to param"
       (is (= {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
@@ -1005,14 +1006,14 @@
               "run-as-user" "test-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                            "cmd" "token-cmd"
-                                            "concurrency-level" 5
-                                            "env" {"VAR_1" "VALUE-1e"
-                                                   "VAR_2" "VALUE-2e"}
-                                            "run-as-user" "test-user"}
                                    :headers {"param" {"VAR_2" "VALUE-2p"
-                                                      "VAR_3" "VALUE-3p"}}}))))
+                                                      "VAR_3" "VALUE-3p"}}
+                                   :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                  "cmd" "token-cmd"
+                                                                  "concurrency-level" 5
+                                                                  "env" {"VAR_1" "VALUE-1e"
+                                                                         "VAR_2" "VALUE-2e"}
+                                                                  "run-as-user" "test-user"}}))))
 
     (testing "token host with intersecting values"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1022,9 +1023,9 @@
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"}
                                    :headers {"cmd" "on-the-fly-cmd"
-                                             "concurrency-level" 6}}))))
+                                             "concurrency-level" 6}
+                                   :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "token header with intersecting values"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1033,8 +1034,8 @@
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"}
-                                   :headers {"cmd" "on-the-fly-cmd"}}))))
+                                   :headers {"cmd" "on-the-fly-cmd"}
+                                   :service-description-template {"cmd" "token-cmd"}}))))
 
     (testing "intersecting values with additional fields"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1045,10 +1046,10 @@
               "version" "on-the-fly-version"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "name" "token-name"}
                                    :headers {"cmd" "on-the-fly-cmd"
-                                             "version" "on-the-fly-version"}}))))
+                                             "version" "on-the-fly-version"}
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "name" "token-name"}}))))
 
     (testing "permitted user from token"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1056,8 +1057,8 @@
               "permitted-user" "token-pu"
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"permitted-user" "token-pu"}
-                                   :headers {"cmd" "on-the-fly-cmd"}}))))
+                                   :headers {"cmd" "on-the-fly-cmd"}
+                                   :service-description-template {"permitted-user" "token-pu"}}))))
 
     (testing "permitted user from on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1074,9 +1075,9 @@
               "permitted-user" "on-the-fly-pu"
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"permitted-user" "token-pu"}
                                    :headers {"cmd" "on-the-fly-cmd"
-                                             "permitted-user" "on-the-fly-pu"}}))))
+                                             "permitted-user" "on-the-fly-pu"}
+                                   :service-description-template {"permitted-user" "token-pu"}}))))
 
     (testing "run as user and permitted user only in token"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1084,9 +1085,9 @@
               "permitted-user" "token-pu"
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"run-as-user" "token-ru"
-                                            "permitted-user" "token-pu"}
-                                   :headers {"cmd" "on-the-fly-cmd"}}))))
+                                   :headers {"cmd" "on-the-fly-cmd"}
+                                   :service-description-template {"run-as-user" "token-ru"
+                                                                  "permitted-user" "token-pu"}}))))
 
     (testing "run as user and permitted user from token and no on-the-fly headers"
       (is (= {"cmd" "token-cmd"
@@ -1094,9 +1095,9 @@
               "permitted-user" "token-pu"
               "run-as-user" "token-ru"}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "run-as-user" "token-ru"
-                                            "permitted-user" "token-pu"}}))))
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "run-as-user" "token-ru"
+                                                                  "permitted-user" "token-pu"}}))))
 
     (testing "missing permitted user in token"
       (is (= {"cmd" "token-cmd"
@@ -1105,8 +1106,8 @@
               "run-as-user" "token-ru"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "run-as-user" "token-ru"}}))))
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "run-as-user" "token-ru"}}))))
 
     (testing "run as user from on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1127,9 +1128,9 @@
               "run-as-user" "on-the-fly-ru"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"run-as-user" "token-ru"}
                                    :headers {"cmd" "on-the-fly-cmd"
-                                             "run-as-user" "on-the-fly-ru"}}
+                                             "run-as-user" "on-the-fly-ru"}
+                                   :service-description-template {"run-as-user" "token-ru"}}
                                   :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd"
                                                    "x-waiter-run-as-user" "on-the-fly-ru"}))))
 
@@ -1140,9 +1141,9 @@
               "run-as-user" "chris"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "run-as-user" "alice"}
-                                   :headers {"run-as-user" "chris"}}
+                                   :headers {"run-as-user" "chris"}
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "run-as-user" "alice"}}
                                   :waiter-headers {"x-waiter-run-as-user" "chris"}))))
 
     (testing "run as user star from on-the-fly header with hostname token"
@@ -1152,9 +1153,9 @@
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "run-as-user" "alice"}
-                                   :headers {"run-as-user" "*"}}
+                                   :headers {"run-as-user" "*"}
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "run-as-user" "alice"}}
                                   :waiter-headers {"x-waiter-run-as-user" "*"}))))
 
     (testing "run as user star from hostname token"
@@ -1163,9 +1164,9 @@
               "permitted-user" "bob"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "run-as-user" "*"}
-                                   :headers {}}
+                                   :headers {}
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "run-as-user" "*"}}
                                   :waiter-headers {}))))
 
     (testing "run as user star from on-the-fly token"
@@ -1175,8 +1176,8 @@
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd", "run-as-user" "*"}
-                                   :headers {}}
+                                   :headers {}
+                                   :service-description-template {"cmd" "token-cmd", "run-as-user" "*"}}
                                   :waiter-headers {"x-waiter-token" "on-the-fly-token"}))))
 
     (testing "run as user star from on-the-fly headers without permitted-user"
@@ -1185,9 +1186,9 @@
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping", "permitted-user" "bob"}
-                                   :tokens {"run-as-user" "token-ru"}
                                    :headers {"cmd" "on-the-fly-cmd"
-                                             "run-as-user" "*"}}
+                                             "run-as-user" "*"}
+                                   :service-description-template {"run-as-user" "token-ru"}}
                                   :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd"
                                                    "x-waiter-run-as-user" "*"}))))
 
@@ -1198,10 +1199,10 @@
               "run-as-user" "current-request-user"}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"run-as-user" "token-ru"}
                                    :headers {"cmd" "on-the-fly-cmd"
                                              "permitted-user" "alice"
-                                             "run-as-user" "*"}}
+                                             "run-as-user" "*"}
+                                   :service-description-template {"run-as-user" "token-ru"}}
                                   :waiter-headers {"x-waiter-cmd" "on-the-fly-cmd"
                                                    "x-waiter-permitted-user" "alice"
                                                    "x-waiter-run-as-user" "*"}))))
@@ -1212,10 +1213,10 @@
               "permitted-user" "current-request-user"
               "run-as-user" "header-user"}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"run-as-user" "*"
-                                            "permitted-user" "*"
-                                            "cmd" "token-cmd"}
-                                   :headers {"run-as-user" "header-user"}}
+                                   :headers {"run-as-user" "header-user"}
+                                   :service-description-template {"run-as-user" "*"
+                                                                  "permitted-user" "*"
+                                                                  "cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-run-as-user" "header-user"}))))
 
     (testing "active overrides"
@@ -1271,9 +1272,9 @@
               "metadata" {"e" "f"}}
              (service-description {:defaults {"health-check-url" "/ping"
                                               "permitted-user" "bob"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "metadata" {"a" "b", "c" "d"}}
-                                   :headers {"metadata" {"e" "f"}}}))))
+                                   :headers {"metadata" {"e" "f"}}
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "metadata" {"a" "b", "c" "d"}}}))))
 
     (testing "sanitize metadata"
       (is (= {"cmd" "token-cmd"
@@ -1282,8 +1283,8 @@
               "run-as-user" "current-request-user"
               "metadata" {"abc" "DEF"}}
              (service-description {:defaults {"health-check-url" "/ping"}
-                                   :tokens {"cmd" "token-cmd"
-                                            "metadata" {"Abc" "DEF"}}}
+                                   :service-description-template {"cmd" "token-cmd"
+                                                                  "metadata" {"Abc" "DEF"}}}
                                   :waiter-headers {"x-waiter-token" "value-does-not-matter"}))))
 
     (testing "metric group from token"
@@ -1292,8 +1293,8 @@
               "run-as-user" "current-request-user"
               "metric-group" "token-mg"}
              (service-description {:defaults {"health-check-url" "/health"}
-                                   :tokens {"metric-group" "token-mg"}
-                                   :headers {"cmd" "on-the-fly-cmd"}}))))
+                                   :headers {"cmd" "on-the-fly-cmd"}
+                                   :service-description-template {"metric-group" "token-mg"}}))))
 
     (testing "metric group from on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
@@ -1310,9 +1311,9 @@
               "run-as-user" "current-request-user"
               "metric-group" "on-the-fly-mg"}
              (service-description {:defaults {"health-check-url" "/health"}
-                                   :tokens {"metric-group" "token-mg"}
                                    :headers {"cmd" "on-the-fly-cmd"
-                                             "metric-group" "on-the-fly-mg"}}))))
+                                             "metric-group" "on-the-fly-mg"}
+                                   :service-description-template {"metric-group" "token-mg"}}))))
 
     (testing "auto-populate run-as-user"
       (is (= {"cmd" "some-cmd"
@@ -1321,8 +1322,8 @@
               "permitted-user" "current-request-user"
               "metric-group" "token-mg"}
              (service-description {:defaults {"health-check-url" "/health"}
-                                   :tokens {"cmd" "some-cmd"
-                                            "metric-group" "token-mg"}}
+                                   :service-description-template {"cmd" "some-cmd"
+                                                                  "metric-group" "token-mg"}}
                                   :assoc-run-as-user-approved? (constantly true)))))
 
     (testing "disable instance-expiry"
@@ -1330,8 +1331,8 @@
               "health-check-url" "/health"
               "instance-expiry-mins" 0}
              (service-description {:defaults {"health-check-url" "/health"}
-                                   :tokens {"cmd" "some-cmd"
-                                            "instance-expiry-mins" 0}}))))))
+                                   :service-description-template {"cmd" "some-cmd"
+                                                                  "instance-expiry-mins" 0}}))))))
 
 (deftest test-compute-service-description-error-scenarios
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1339,39 +1340,39 @@
         test-user "test-header-user"]
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" "/ping"}
-                                               :tokens {"cmd" "test command"
-                                                        "cpus" "one"
-                                                        "mem" 200
-                                                        "version" "a1b2c3"
-                                                        "run-as-user" test-user}
-                                               :headers {}}
+                                               :headers {}
+                                               :service-description-template {"cmd" "test command"
+                                                                              "cpus" "one"
+                                                                              "mem" 200
+                                                                              "version" "a1b2c3"
+                                                                              "run-as-user" test-user}}
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
                                               (constantly false))))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" 1}
-                                               :tokens {"cmd" "test command"
-                                                        "cpus" 1
-                                                        "mem" 200
-                                                        "version" "a1b2c3"
-                                                        "run-as-user" test-user}
-                                               :headers {}}
+                                               :headers {}
+                                               :service-description-template {"cmd" "test command"
+                                                                              "cpus" 1
+                                                                              "mem" 200
+                                                                              "version" "a1b2c3"
+                                                                              "run-as-user" test-user}}
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
                                               (constantly false))))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" 1}
-                                               :tokens {}
-                                               :headers {}}
+                                               :headers {}
+                                               :service-description-template {}}
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
                                               (constantly false))))
     (is (thrown? Exception
                  (compute-service-description {:defaults {"health-check-url" "/health"}
-                                               :tokens {"cmd" "cmd for missing run-as-user"
-                                                        "cpus" 1
-                                                        "mem" 200
-                                                        "version" "a1b2c3"}}
+                                               :service-description-template {"cmd" "cmd for missing run-as-user"
+                                                                              "cpus" 1
+                                                                              "mem" 200
+                                                                              "version" "a1b2c3"}}
                                               {} {} kv-store service-id-prefix test-user []
                                               (create-default-service-description-builder {})
                                               (constantly false))))
@@ -1380,13 +1381,13 @@
       (is (thrown? Exception
                    (compute-service-description {:defaults {"health-check-url" "/ping"
                                                             "permitted-user" "bob"}
-                                                 :tokens {"allowed-params" #{"HOME" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                          "cmd" "token-cmd"
-                                                          "cpus" 1
-                                                          "mem" 200
-                                                          "run-as-user" "test-user"
-                                                          "version" "a1b2c3"}
-                                                 :headers {}}
+                                                 :headers {}
+                                                 :service-description-template {"allowed-params" #{"HOME" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                "cmd" "token-cmd"
+                                                                                "cpus" 1
+                                                                                "mem" 200
+                                                                                "run-as-user" "test-user"
+                                                                                "version" "a1b2c3"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
                                                 (constantly false)))))
@@ -1395,13 +1396,13 @@
       (is (thrown? Exception
                    (compute-service-description {:defaults {"health-check-url" "/ping"
                                                             "permitted-user" "bob"}
-                                                 :tokens {"allowed-params" #{"VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                          "cmd" "token-cmd"
-                                                          "cpus" 1
-                                                          "mem" 200
-                                                          "run-as-user" "test-user"
-                                                          "version" "a1b2c3"}
-                                                 :headers {}}
+                                                 :headers {}
+                                                 :service-description-template {"allowed-params" #{"VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                "cmd" "token-cmd"
+                                                                                "cpus" 1
+                                                                                "mem" 200
+                                                                                "run-as-user" "test-user"
+                                                                                "version" "a1b2c3"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
                                                 (constantly false)))))
@@ -1410,13 +1411,13 @@
       (is (thrown? Exception
                    (compute-service-description {:defaults {"health-check-url" "/ping"
                                                             "permitted-user" "bob"}
-                                                 :tokens {"allowed-params" #{"USER" "VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                          "cmd" "token-cmd"
-                                                          "cpus" 1
-                                                          "mem" 200
-                                                          "run-as-user" "test-user"
-                                                          "version" "a1b2c3"}
-                                                 :headers {}}
+                                                 :headers {}
+                                                 :service-description-template {"allowed-params" #{"USER" "VAR.1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                "cmd" "token-cmd"
+                                                                                "cpus" 1
+                                                                                "mem" 200
+                                                                                "run-as-user" "test-user"
+                                                                                "version" "a1b2c3"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
                                                 (constantly false)))))
@@ -1425,13 +1426,13 @@
       (is (thrown? Exception
                    (compute-service-description {:defaults {"health-check-url" "/ping"
                                                             "permitted-user" "bob"}
-                                                 :tokens {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
-                                                          "cmd" "token-cmd"
-                                                          "concurrency-level" 5
-                                                          "run-as-user" "test-user"}
                                                  :headers {"param" {"VAR_1" "VALUE-1"
                                                                     "ANOTHER_VAR_2" "VALUE-2"}
-                                                           "version" "on-the-fly-version"}}
+                                                           "version" "on-the-fly-version"}
+                                                 :service-description-template {"allowed-params" #{"VAR_1" "VAR_2" "VAR_3" "VAR_4" "VAR_5"}
+                                                                                "cmd" "token-cmd"
+                                                                                "concurrency-level" 5
+                                                                                "run-as-user" "test-user"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
                                                 (constantly false)))))
@@ -1440,13 +1441,13 @@
       (is (thrown? Exception
                    (compute-service-description {:defaults {"health-check-url" "/ping"
                                                             "permitted-user" "bob"}
-                                                 :tokens {"allowed-params" #{}
-                                                          "cmd" "token-cmd"
-                                                          "concurrency-level" 5
-                                                          "run-as-user" "test-user"}
                                                  :headers {"param" {"VAR_1" "VALUE-1"
                                                                     "VAR_2" "VALUE-2"}
-                                                           "version" "on-the-fly-version"}}
+                                                           "version" "on-the-fly-version"}
+                                                 :service-description-template {"allowed-params" #{}
+                                                                                "cmd" "token-cmd"
+                                                                                "concurrency-level" 5
+                                                                                "run-as-user" "test-user"}}
                                                 {} {} kv-store service-id-prefix test-user []
                                                 (create-default-service-description-builder {})
                                                 (constantly false)))))
@@ -1459,7 +1460,7 @@
                                       "version" "a1b2c3"}
             run-compute-service-description (fn [service-description]
                                               (compute-service-description {:defaults {"health-check-url" "/health"}
-                                                                            :tokens service-description}
+                                                                            :service-description-template service-description}
                                                                            {} {} kv-store service-id-prefix test-user []
                                                                            (create-default-service-description-builder {})
                                                                            (constantly false)))]
@@ -1471,9 +1472,9 @@
   (letfn [(execute-test [token-description header-parameters]
             (let [{:keys [service-authentication-disabled service-preauthorized]}
                   (compute-service-description-helper {:headers header-parameters
+                                                       :service-description-template token-description
                                                        :token-authentication-disabled (token-authentication-disabled? token-description)
-                                                       :token-preauthorized (token-preauthorized? token-description)
-                                                       :tokens token-description})]
+                                                       :token-preauthorized (token-preauthorized? token-description)})]
               {:service-authentication-disabled service-authentication-disabled, :service-preauthorized service-preauthorized}))]
 
     (testing "not-preauthorized-service-1"
@@ -1844,7 +1845,9 @@
           (validate builder service-description validation-settings)
           (is false)
           (catch ExceptionInfo ex
-            (is (= {:issue {"cpus" 'missing-required-key} :status 400, :type :service-description-error}
+            (is (= {:issue {"cpus" 'missing-required-key}
+                    :status 400
+                    :type :service-description-error}
                    (select-keys (ex-data ex) [:issue :status :type])))))))
 
     (testing "validate-service-description-cpus-outside-limits"
@@ -1855,7 +1858,8 @@
           (catch ExceptionInfo ex
             (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
                                                  "cpus is 200 but the max allowed is 100")
-                    :status 400, :type :service-description-error}
+                    :status 400
+                    :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))
 
     (testing "validate-service-description-cpus-and-mem-outside-limits"
@@ -1867,5 +1871,6 @@
             (is (= {:friendly-error-message (str "The following fields exceed their allowed limits: "
                                                  "cpus is 200 but the max allowed is 100, "
                                                  "mem is 40960 but the max allowed is 32768")
-                    :status 400, :type :service-description-error}
+                    :status 400
+                    :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))
