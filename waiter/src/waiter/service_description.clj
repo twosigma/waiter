@@ -666,32 +666,37 @@
     "Computes the service description applying any processing rules,
      It also validates the services description.
      It creates the service-description using the following preferential order:
+      - env from param headers
       - on-the-fly headers
       - token description
       - configured defaults.
-     If after the merge a permitted-user is not available, then `username` becomes the permitted-user.
-     If after the merge a run-as-user is not available, then `username` becomes the run-as-user."
+     If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
+     If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
+     If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
     [{:keys [defaults headers service-description-template token-authentication-disabled token-preauthorized] :as sources}
      waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
      service-description-builder assoc-run-as-user-approved?]
-    (let [service-description-based-on-headers (cond->> headers
-                                                        ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
-                                                        (-> headers (dissoc "param") seq)
-                                                        (merge {"run-as-user" username}))
+    (let [headers-without-params (dissoc headers "param")
+          header-params (get headers "param")
+          ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
+          service-description-based-on-headers (if (and (seq headers-without-params)
+                                                        (not (contains? headers-without-params "run-as-user")))
+                                                 (assoc headers-without-params "run-as-user" username)
+                                                 headers-without-params)
           merge-params (fn [{:strs [allowed-params] :as service-description}]
-                         (if-let [params (get headers "param")]
+                         (if header-params
                            (do
-                             (when-not (every? #(contains? allowed-params %) (keys params))
+                             (when-not (every? #(contains? allowed-params %) (keys header-params))
                                (throw (ex-info "Some params cannot be configured"
-                                               {:allowed-params allowed-params :params params :status 400})))
+                                               {:allowed-params allowed-params :params header-params :status 400})))
                              (-> service-description
-                                 (update "env" merge params)
+                                 (update "env" merge header-params)
                                  (dissoc "param")))
                            service-description))
-          service-description-from-headers-and-token-sources (cond-> (merge service-description-template
-                                                                            service-description-based-on-headers)
-                                                                     ; param headers need to update the environment
-                                                                     (contains? headers "param") (merge-params))
+          service-description-from-headers-and-token-sources (-> (merge service-description-template
+                                                                        service-description-based-on-headers)
+                                                                 ; param headers need to update the environment
+                                                                 merge-params)
           sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
                                                              ;; * run-as-user is the same as a missing run-as-user
                                                              (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))

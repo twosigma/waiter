@@ -383,6 +383,7 @@
                                                                    "cmd" token-user
                                                                    "version" "token"
                                                                    "owner" "token-owner"}
+                                                                  (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
                                                                   (str/includes? token "cpus") (assoc "cpus" "1")
                                                                   (str/includes? token "mem") (assoc "mem" "2")
                                                                   (str/includes? token "per") (assoc "permitted-user" "puser")
@@ -631,6 +632,63 @@
                                      :service-description-template {}
                                      :token-authentication-disabled false
                                      :token-preauthorized false}}
+                         {:name "prepare-service-description-sources:Parse param headers:valid keys:host-token"
+                          :waiter-headers {"x-waiter-param-bar" "bar-value"
+                                           "x-waiter-param-foo" "foo-value"}
+                          :passthrough-headers {"host" "test-host-allowed-cpus-mem-per-run:1234"}
+                          :expected {:defaults {"health-check-url" "/ping"
+                                                "name" "default-name"}
+                                     :headers {"param" {"BAR" "bar-value"
+                                                        "FOO" "foo-value"}}
+                                     :service-description-template {"allowed-params" #{"BAR" "FOO"}
+                                                                    "cmd" "token-user"
+                                                                    "cpus" "1"
+                                                                    "mem" "2"
+                                                                    "name" "test-host-allowed-cpus-mem-per-run"
+                                                                    "permitted-user" "puser"
+                                                                    "run-as-user" "ruser"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized true}}
+                         {:name "prepare-service-description-sources:Parse param headers:valid keys:host-token:on-the-fly"
+                          :waiter-headers {"x-waiter-cpus" "20"
+                                           "x-waiter-param-bar" "bar-value"
+                                           "x-waiter-param-foo" "foo-value"}
+                          :passthrough-headers {"host" "test-host-allowed-cpus-mem-per-run:1234"}
+                          :expected {:defaults {"health-check-url" "/ping"
+                                                "name" "default-name"}
+                                     :headers {"cpus" "20"
+                                               "param" {"BAR" "bar-value"
+                                                        "FOO" "foo-value"}}
+                                     :service-description-template {"allowed-params" #{"BAR" "FOO"}
+                                                                    "cmd" "token-user"
+                                                                    "cpus" "1"
+                                                                    "mem" "2"
+                                                                    "name" "test-host-allowed-cpus-mem-per-run"
+                                                                    "permitted-user" "puser"
+                                                                    "run-as-user" "ruser"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized true}}
+                         {:name "prepare-service-description-sources:Parse param headers:valid keys:token-header"
+                          :waiter-headers {"x-waiter-param-bar" "bar-value"
+                                           "x-waiter-param-foo" "foo-value"
+                                           "x-waiter-token" "test-host-allowed-cpus-mem-per-run"}
+                          :passthrough-headers {}
+                          :expected {:defaults {"health-check-url" "/ping"
+                                                "name" "default-name"}
+                                     :headers {"param" {"BAR" "bar-value"
+                                                        "FOO" "foo-value"}}
+                                     :service-description-template {"allowed-params" #{"BAR" "FOO"}
+                                                                    "cmd" "token-user"
+                                                                    "cpus" "1"
+                                                                    "mem" "2"
+                                                                    "name" "test-host-allowed-cpus-mem-per-run"
+                                                                    "permitted-user" "puser"
+                                                                    "run-as-user" "ruser"
+                                                                    "version" "token"}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized true}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-param-baz" "quux"
@@ -644,7 +702,7 @@
                                      :service-description-template {}
                                      :token-authentication-disabled false
                                      :token-preauthorized false}}
-                         {:name "prepare-service-description-sources:Parse distinct e and param headers:valid keys"
+                         {:name "prepare-service-description-sources:Parse distinct env and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
                                            "x-waiter-env-foo_bar" "bar"
@@ -1469,55 +1527,63 @@
         (is (run-compute-service-description (assoc core-service-description "instance-expiry-mins" 1)))))))
 
 (deftest test-compute-service-description-service-preauthorized-and-authentication-disabled
-  (letfn [(execute-test [token-description header-parameters]
+  (letfn [(execute-test [service-description-template header-parameters]
             (let [{:keys [service-authentication-disabled service-preauthorized]}
                   (compute-service-description-helper {:headers header-parameters
-                                                       :service-description-template token-description
-                                                       :token-authentication-disabled (token-authentication-disabled? token-description)
-                                                       :token-preauthorized (token-preauthorized? token-description)})]
-              {:service-authentication-disabled service-authentication-disabled, :service-preauthorized service-preauthorized}))]
+                                                       :service-description-template service-description-template
+                                                       :token-authentication-disabled (token-authentication-disabled? service-description-template)
+                                                       :token-preauthorized (token-preauthorized? service-description-template)})]
+              {:service-authentication-disabled service-authentication-disabled :service-preauthorized service-preauthorized}))]
 
     (testing "not-preauthorized-service-1"
-      (is (= {:service-authentication-disabled false
-              :service-preauthorized false}
-             (execute-test {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "*", "version" "a1b2c3"}
+      (is (= {:service-authentication-disabled false :service-preauthorized false}
+             (execute-test {"cmd" "tc" "cpus" 1 "mem" 200 "permitted-user" "tu2" "run-as-user" "*" "version" "a1b2c3"}
                            {}))))
 
     (testing "not-preauthorized-service-2"
-      (is (= {:service-authentication-disabled false
-              :service-preauthorized false}
-             (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "*", "version" "a1b2c3"}
+      (is (= {:service-authentication-disabled false :service-preauthorized false}
+             (execute-test {"authentication" "disabled" "cmd" "tc" "cpus" 1 "mem" 200 "permitted-user" "tu2" "run-as-user" "*" "version" "a1b2c3"}
                            {}))))
 
     (testing "preauthorized-service"
-      (is (= {:service-authentication-disabled false
-              :service-preauthorized true}
-             (execute-test {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1", "version" "a1b2c3"}
+      (is (= {:service-authentication-disabled false :service-preauthorized true}
+             (execute-test {"cmd" "tc" "cpus" 1 "mem" 200 "permitted-user" "tu2" "run-as-user" "tu1" "version" "a1b2c3"}
                            {}))))
 
     (testing "not-preauthorized-service-due-to-headers"
-      (is (= {:service-authentication-disabled false
-              :service-preauthorized false}
-             (execute-test {"cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "tu2", "run-as-user" "tu1", "version" "a1b2c3"}
+      (is (= {:service-authentication-disabled false :service-preauthorized false}
+             (execute-test {"cmd" "tc" "cpus" 1 "mem" 200 "permitted-user" "tu2" "run-as-user" "tu1" "version" "a1b2c3"}
                            {"cpus" 10}))))
 
     (testing "partial-preauthorized-service"
-      (is (= {:service-authentication-disabled false
-              :service-preauthorized true}
-             (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "permitted-user" "*", "run-as-user" "tu1", "version" "a1b2c3"}
+      (is (= {:service-authentication-disabled false :service-preauthorized true}
+             (execute-test {"authentication" "disabled" "cmd" "tc" "cpus" 1 "permitted-user" "*" "run-as-user" "tu1" "version" "a1b2c3"}
                            {}))))
 
     (testing "authentication-disabled-service"
-      (is (= {:service-authentication-disabled true
-              :service-preauthorized true}
-             (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "*", "run-as-user" "tu1", "version" "a1b2c3"}
+      (is (= {:service-authentication-disabled true :service-preauthorized true}
+             (execute-test {"authentication" "disabled" "cmd" "tc" "cpus" 1 "mem" 200 "permitted-user" "*" "run-as-user" "tu1" "version" "a1b2c3"}
                            {}))))
 
     (testing "not-authentication-disabled-service-due-to-headers"
-      (is (= {:service-authentication-disabled false
-              :service-preauthorized false}
-             (execute-test {"authentication" "disabled", "cmd" "tc", "cpus" 1, "mem" 200, "permitted-user" "*", "run-as-user" "tu1", "version" "a1b2c3"}
-                           {"cmd" "tc2"}))))))
+      (is (= {:service-authentication-disabled false :service-preauthorized false}
+             (execute-test {"authentication" "disabled" "cmd" "tc" "cpus" 1 "mem" 200 "permitted-user" "*" "run-as-user" "tu1" "version" "a1b2c3"}
+                           {"cmd" "tc2"}))))
+
+    (testing "preauthorized-service:param-headers+token-preauth"
+      (is (= {:service-authentication-disabled false :service-preauthorized true}
+             (execute-test {"allowed-params" #{"BAR" "FOO"} "permitted-user" "puser" "run-as-user" "ruser" "version" "token"}
+                           {"param" {"BAR" "bar-value" "FOO" "foo-value"}}))))
+
+    (testing "not-preauthorized-service:param-headers+on-the-fly-cpus"
+      (is (= {:service-authentication-disabled false :service-preauthorized false}
+             (execute-test {"allowed-params" #{"BAR" "FOO"} "permitted-user" "puser" "run-as-user" "ruser" "version" "token"}
+                           {"cpus" "20" "param" {"BAR" "bar-value" "FOO" "foo-value"}}))))
+
+    (testing "not-preauthorized-service:param-headers+token-not-preauth"
+      (is (= {:service-authentication-disabled false :service-preauthorized false}
+             (execute-test {"allowed-params" #{"BAR" "FOO"} "cmd" "token-user" "version" "token"}
+                           {"param" {"BAR" "bar-value" "FOO" "foo-value"}}))))))
 
 (deftest test-service-id-and-token-storing
   (with-redefs [service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd service-description-keys))))]
