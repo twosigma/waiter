@@ -181,16 +181,15 @@
 
 (def ^:const interstitial-param-name "x-waiter-bypass-interstitial")
 (def ^:const interstitial-param-name-length (count interstitial-param-name))
-(def ^:const interstitial-param-value-length 18)
-(def ^:const interstitial-param-string-length (+ interstitial-param-name-length interstitial-param-value-length 1))
 (def ^:const interstitial-bypass-timeout-ms (-> 10 t/seconds t/in-millis))
+;; the interstitial must be the last query parameter
+(def interstitial-param-pattern (re-pattern (str "(^|.*&)" interstitial-param-name "=(\\d+)$")))
 
 (defn request-time->interstitial-param-value
   "Returns the interstitial parameter value."
   [request-time]
-  (->> (ct/to-long request-time)
-       (+ interstitial-bypass-timeout-ms)
-       (format (str "%0" interstitial-param-value-length "d"))))
+  (-> (ct/to-long request-time)
+      (+ interstitial-bypass-timeout-ms)))
 
 (defn request-time->interstitial-param-string
   "Returns the interstitial parameter as name=value string."
@@ -201,20 +200,16 @@
   "When the query string ends with the interstitial param, return the interstitial param value."
   [query-string]
   (when query-string
-    (let [query-string-length (count query-string)
-          interstitial-param-location (max 0 (- query-string-length interstitial-param-string-length))
-          interstitial-value-location (+ interstitial-param-location interstitial-param-name-length 1)]
-      (when (and (<= interstitial-value-location query-string-length)
-                 (= (subs query-string interstitial-param-location interstitial-value-location)
-                    (str interstitial-param-name "=")))
-        (subs query-string interstitial-value-location)))))
+    (-> (re-matches interstitial-param-pattern (str query-string))
+        (nth 2))))
 
 (defn strip-interstitial-param
   "Removes the interstitial param at the end from the query string."
   [query-string]
-  (if (query-string->interstitial-param-value query-string)
-    (->> (+ interstitial-param-name-length interstitial-param-value-length 1)
-         inc
+  (if-let [interstitial-param-value (query-string->interstitial-param-value query-string)]
+    (->> (count interstitial-param-value)
+         (+ interstitial-param-name-length 1)
+         inc ;; account for & in the query string, if only param still fine
          (- (count query-string))
          (max 0)
          (subs query-string 0))

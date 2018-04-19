@@ -21,6 +21,22 @@
             [waiter.util.client-tools :as ct])
   (:import (org.joda.time DateTime)))
 
+(deftest test-strip-interstitial-param
+  (is (nil? (strip-interstitial-param nil)))
+  (is (= "" (strip-interstitial-param "")))
+  (is (= "a=b"
+         (strip-interstitial-param "a=b")))
+  (is (= "a=b&c=d"
+         (strip-interstitial-param "a=b&c=d")))
+  (is (= "a=b&c=d"
+         (strip-interstitial-param (str "a=b&c=d&" interstitial-param-name "=2"))))
+  (is (= (str "a=b&" interstitial-param-name "=2&c=d")
+         (strip-interstitial-param (str "a=b&" interstitial-param-name "=2&c=d"))))
+  (is (= (str "a=b&c=d&" interstitial-param-name "=2a")
+         (strip-interstitial-param (str "a=b&c=d&" interstitial-param-name "=2a"))))
+  (is (= (str "a=b&c=d" interstitial-param-name "=2")
+         (strip-interstitial-param (str "a=b&c=d" interstitial-param-name "=2")))))
+
 (deftest test-generate-and-strip-interstitial-param
   (let [request-time (DateTime.)]
     (testing "generate and strip with current timestamp and empty query string"
