@@ -259,10 +259,7 @@
 (defn sanitize-service-description
   "Sanitizes the service description by removing unsupported keys."
   ([service-description] (sanitize-service-description service-description service-description-keys))
-  ([service-description allowed-fields]
-   (if (not-every? #(allowed-fields (key %)) service-description)
-     (utils/filterm #(allowed-fields (key %)) service-description)
-     service-description)))
+  ([service-description allowed-fields] (select-keys service-description allowed-fields)))
 
 (let [service-id->key #(str "^OVERRIDE#" %)]
   (defn store-service-description-overrides
@@ -506,8 +503,10 @@
         host-header (get request-headers "host")
         hostname (first (str/split (str host-header) #":"))]
     (cond
-      (not (str/blank? token-header)) {:token token-header, :source :waiter-header}
-      (and (not (contains? waiter-hostnames hostname)) (not (str/blank? hostname))) {:token hostname, :source :host-header}
+      (not (str/blank? token-header))
+      {:source :waiter-header :token token-header}
+      (and (not (contains? waiter-hostnames hostname)) (not (str/blank? hostname)))
+      {:source :host-header :token hostname}
       :else nil)))
 
 (defn token-preauthorized?
@@ -532,30 +531,39 @@
   (let [{:keys [token source]} (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostnames)]
     (cond
       (= source :host-header)
-      (let [service-description-template (sanitize-service-description
-                                           (token->service-description-template kv-store token :error-on-missing false))]
+      (let [token-data (token->token-data kv-store token false false)
+            service-description-template (sanitize-service-description token-data)]
         {:service-description-template service-description-template
+         :token->token-data (if (seq service-description-template) {token token-data} {})
          :token-authentication-disabled (token-authentication-disabled? service-description-template)
-         :token-preauthorized (token-preauthorized? service-description-template)})
+         :token-preauthorized (token-preauthorized? service-description-template)
+         :token-sequence (if (seq service-description-template) [token] [])})
 
       (= source :waiter-header)
       (let [token-names (str/split (str token) #",")]
-        (loop [service-description-template {}
+        (loop [loop-service-description-template {}
+               loop-token->token-data {}
                [token-name & remaining-token-names] token-names]
-          (let [service-description-template' (merge service-description-template
-                                                     (token->service-description-template kv-store token-name))]
-            (if remaining-token-names
-              (recur service-description-template' remaining-token-names)
-              {:service-description-template (sanitize-service-description service-description-template')
-               :token-authentication-disabled (and (= 1 (count token-names))
-                                                   (token-authentication-disabled? service-description-template'))
-               :token-preauthorized (and (= 1 (count token-names))
-                                         (token-preauthorized? service-description-template'))}))))
+          (if token-name
+            (let [token-data (token->token-data kv-store token-name true false)
+                  service-description-template (sanitize-service-description token-data)]
+              (recur (merge loop-service-description-template service-description-template)
+                     (assoc loop-token->token-data token-name token-data)
+                     remaining-token-names))
+            {:service-description-template (sanitize-service-description loop-service-description-template)
+             :token->token-data loop-token->token-data
+             :token-authentication-disabled (and (= 1 (count token-names))
+                                                 (token-authentication-disabled? loop-service-description-template))
+             :token-preauthorized (and (= 1 (count token-names))
+                                       (token-preauthorized? loop-service-description-template))
+             :token-sequence token-names})))
 
       :else
       {:service-description-template {}
+       :token->token-data {}
        :token-authentication-disabled false
-       :token-preauthorized false})))
+       :token-preauthorized false
+       :token-sequence []})))
 
 (let [service-id->key #(str "^SERVICE-ID#" %)]
   (defn store-core
@@ -637,14 +645,10 @@
                                                       (parse-env-map-headers "param")
                                                       parse-metadata-headers
                                                       transform-allowed-params-header
-                                                      (sanitize-service-description service-description-from-header-keys))
-        {:keys [service-description-template token-authentication-disabled token-preauthorized]}
-        (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostnames)]
-    {:defaults service-description-defaults
-     :headers service-description-template-from-headers
-     :service-description-template service-description-template
-     :token-authentication-disabled token-authentication-disabled
-     :token-preauthorized token-preauthorized}))
+                                                      (sanitize-service-description service-description-from-header-keys))]
+    (-> (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostnames)
+        (assoc :defaults service-description-defaults
+               :headers service-description-template-from-headers))))
 
 (defn- merge-service-description-sources
   [descriptor kv-store waiter-hostnames service-description-defaults]
