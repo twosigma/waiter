@@ -131,7 +131,7 @@
                                      "last-update-time" (.getMillis ^DateTime (clock))
                                      "last-update-user" authenticated-user)]
                 (kv/store kv-store token (-> new-token-data
-                                             (ensure-history existing-token-data)
+                                             (assoc "previous" existing-token-data)
                                              (sanitize-history history-length)))))))
         ; Remove token from owner (hard-delete) or set the deleted flag (soft-delete)
         (when owner
