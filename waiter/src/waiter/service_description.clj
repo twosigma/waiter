@@ -45,45 +45,45 @@
 
 (def service-description-schema
   {;; Required
+   (s/required-key "cmd") schema/non-empty-string
    (s/required-key "cpus") schema/positive-num
    (s/required-key "mem") schema/positive-num
-   (s/required-key "cmd") schema/non-empty-string
-   (s/required-key "version") schema/non-empty-string
    (s/required-key "run-as-user") schema/non-empty-string
+   (s/required-key "version") schema/non-empty-string
    ;; Optional
    (s/optional-key "allowed-params") #{environment-variable-schema}
    (s/optional-key "authentication") schema/valid-authentication
    (s/optional-key "backend-proto") schema/valid-backend-proto
    (s/optional-key "cmd-type") schema/non-empty-string
-   (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
-                                               schema/valid-string-length}
-                                              #(< (count %) 100))
    (s/optional-key "distribution-scheme") (s/enum "balanced" "simple")
    ; Marathon imposes a 512 character limit on environment variable keys and values
    (s/optional-key "env") (s/constrained {environment-variable-schema (s/constrained s/Str #(<= 1 (count %) 512))}
                                          #(< (count %) 100))
+   (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
+                                               schema/valid-string-length}
+                                              #(< (count %) 100))
+   (s/optional-key "metric-group") schema/valid-metric-group
    (s/optional-key "name") schema/non-empty-string
    (s/optional-key "permitted-user") schema/non-empty-string
    (s/optional-key "ports") schema/valid-number-of-ports
-   (s/optional-key "metric-group") schema/valid-metric-group
    ; start-up related
-   (s/optional-key "health-check-url") schema/non-empty-string
+   (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
    (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
-   (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
+   (s/optional-key "health-check-url") schema/non-empty-string
    (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 1 % (t/in-minutes (t/days 30))) 'between-1-minute-and-30-days))
    (s/optional-key "interstitial-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
    ; auto-scaling related
-   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 0 % 2) 'between-zero-and-two))
-   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
-   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
-   (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
-   (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
-   (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "concurrency-level") (s/both s/Int (s/pred #(<= 1 % 10000) 'between-one-and-10000))
-   (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
+   (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
+   (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
+   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
+   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 0 % 2) 'between-zero-and-two))
+   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
+   (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
+   (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
    ; per-request related
    (s/optional-key "blacklist-on-503") s/Bool
    (s/optional-key "max-queue-length") schema/positive-int
@@ -663,6 +663,8 @@
       (assoc service-description "metadata" sanitized-metadata))
     service-description))
 
+(declare compute-fallback-service-description)
+
 (let [error-message-map-fn (fn [passthrough-headers waiter-headers]
                              {:status 400
                               :non-waiter-headers (dissoc passthrough-headers "authorization")
@@ -722,12 +724,13 @@
                         (error-message-map-fn passthrough-headers waiter-headers))))
       (sling/try+
         (let [{:keys [service-id service-description core-service-description]}
-              (build service-description-builder user-service-description {:service-id-prefix service-id-prefix
-                                                                           :metric-group-mappings metric-group-mappings
-                                                                           :kv-store kv-store
-                                                                           :defaults defaults
-                                                                           :assoc-run-as-user-approved? assoc-run-as-user-approved?
-                                                                           :username username})
+              (build service-description-builder user-service-description
+                     {:assoc-run-as-user-approved? assoc-run-as-user-approved?
+                      :defaults defaults
+                      :kv-store kv-store
+                      :metric-group-mappings metric-group-mappings
+                      :service-id-prefix service-id-prefix
+                      :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
               service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))
               stored-service-description? (fetch-core kv-store service-id)]
@@ -738,6 +741,10 @@
             (validate service-description-builder service-description {:allow-missing-required-fields? false}))
           {:core-service-description core-service-description
            :on-the-fly? contains-waiter-header?
+           :retrieve-fallback-service-description (fn []
+                                                    (compute-fallback-service-description
+                                                      sources waiter-headers passthrough-headers kv-store service-id-prefix username
+                                                      metric-group-mappings service-description-builder assoc-run-as-user-approved?))
            :service-authentication-disabled service-authentication-disabled
            :service-description service-description
            :service-id service-id
@@ -747,12 +754,37 @@
                           (merge (error-message-map-fn passthrough-headers waiter-headers) (dissoc ex-data :message))
                           (:throwable &throw-context))))))))
 
+(defn retrieve-fallback-token
+  "Computes the most recently modified token from the token->token-data map."
+  [token->token-data]
+  (first (apply max-key (fn [[_ token-data]] (get-in token-data ["previous" "last-update-time"] 0)) token->token-data)))
+
+(defn compute-fallback-service-description
+  "Computes the service-id, service-description and authorization values of the fallback service."
+  [{:keys [token->token-data token-sequence] :as sources}
+   waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
+   service-description-builder assoc-run-as-user-approved?]
+  (when (seq token-sequence)
+    (let [previous-token (retrieve-fallback-token token->token-data)
+          previous-token-data (get-in token->token-data [previous-token "previous"])]
+      (when (seq previous-token-data)
+        (let [compute-service-description-helper
+              (fn [new-sources]
+                (compute-service-description
+                  new-sources waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
+                  service-description-builder assoc-run-as-user-approved?))]
+          (->> (assoc token->token-data previous-token previous-token-data)
+               (compute-service-description-template-from-tokens token-sequence)
+               (merge sources)
+               compute-service-description-helper))))))
+
 (defn merge-service-description-and-id
   "Populates the descriptor with the service-description and service-id."
   [{:keys [passthrough-headers sources waiter-headers] :as descriptor} kv-store service-id-prefix username
    metric-group-mappings service-description-builder assoc-run-as-user-approved?]
-  (merge descriptor (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix
-                                                 username metric-group-mappings service-description-builder assoc-run-as-user-approved?)))
+  (->> (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix
+                                    username metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+       (merge descriptor)))
 
 (defn request->descriptor
   "Creates the service descriptor from the request.

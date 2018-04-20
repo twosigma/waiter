@@ -2001,3 +2001,193 @@
                     :status 400
                     :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))
+
+(deftest test-retrieve-fallback-token
+  (testing "all tokens have previous"
+    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
+                        "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
+          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500
+                        "previous" {"cmd" "c-2-A" "last-update-time" 1200}}
+          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
+                        "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
+          token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
+      (is (= "token-2" (retrieve-fallback-token token->token-data)))))
+
+  (testing "some tokens have previous"
+    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
+                        "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
+          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500}
+          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
+                        "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
+          token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
+      (is (= "token-1" (retrieve-fallback-token token->token-data)))))
+
+  (testing "tokens tied for previous"
+    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
+                        "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
+          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500
+                        "previous" {"cmd" "c-2-A" "last-update-time" 1100}}
+          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
+                        "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
+          token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
+      (is (= "token-2" (retrieve-fallback-token (into (sorted-map) token->token-data))))))
+
+  (testing "no tokens have previous"
+    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500}
+          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500}
+          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100}
+          token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
+      (is (= "token-3" (retrieve-fallback-token (into (sorted-map) token->token-data)))))))
+
+(deftest test-compute-fallback-service-description
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        service-id-prefix "service-prefix-"
+        username "test-user"
+        metric-group-mappings []
+        constraints {"cpus" {:max 100} "mem" {:max 1024}}
+        builder (create-default-service-description-builder {:constraints constraints})
+        assoc-run-as-user-approved? (constantly false)]
+
+    (testing "no token"
+      (let [sources {:defaults {"permitted-user" "*"}
+                     :headers {}
+                     :service-description-template {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}
+                     :token->token-data {}
+                     :token-authentication-disabled false
+                     :token-preauthorized false
+                     :token-sequence []}
+            passthrough-headers {}
+            waiter-headers {}]
+        (is (nil? (compute-fallback-service-description
+                    sources waiter-headers passthrough-headers kv-store service-id-prefix username
+                    metric-group-mappings builder assoc-run-as-user-approved?)))))
+
+    (testing "single token without previous"
+      (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}
+            sources {:defaults {"permitted-user" "*"}
+                     :headers {}
+                     :service-description-template service-description-1
+                     :token->token-data {"token-1" {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}}
+                     :token-authentication-disabled false
+                     :token-preauthorized false
+                     :token-sequence ["token-1"]}
+            passthrough-headers {}
+            waiter-headers {}]
+        (is (nil? (compute-fallback-service-description
+                    sources waiter-headers passthrough-headers kv-store service-id-prefix username
+                    metric-group-mappings builder assoc-run-as-user-approved?)))))
+
+    (testing "single token with previous"
+      (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru1" "version" "foo1"}
+            service-description-2 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru2" "version" "foo2"}
+            sources {:defaults {"metric-group" "other" "permitted-user" "*"}
+                     :headers {}
+                     :service-description-template service-description-1
+                     :token->token-data {"token-1" {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"
+                                                    "previous" service-description-2}}
+                     :token-authentication-disabled false
+                     :token-preauthorized false
+                     :token-sequence ["token-1"]}
+            passthrough-headers {}
+            waiter-headers {}
+            actual-result (compute-fallback-service-description
+                            sources waiter-headers passthrough-headers kv-store service-id-prefix username
+                            metric-group-mappings builder assoc-run-as-user-approved?)]
+        (is (= {:core-service-description service-description-2
+                :on-the-fly? nil
+                :service-authentication-disabled false
+                :service-description (merge (:defaults sources) service-description-2)
+                :service-id (service-description->service-id service-id-prefix service-description-2)
+                :service-preauthorized false}
+               (dissoc actual-result :retrieve-fallback-service-description)))
+        (is (nil? ((-> actual-result :retrieve-fallback-service-description))))))
+
+    (testing "single on-the-fly+token with previous"
+      (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru1" "version" "foo1"}
+            service-description-2 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru2" "version" "foo2"}
+            sources {:defaults {"metric-group" "other" "permitted-user" "*"}
+                     :headers {"cpus" 20}
+                     :on-the-fly? nil ;; invalid value to check if it is ignored and generated in the fallback
+                     :service-description-template service-description-1
+                     :token->token-data {"token-1" {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"
+                                                    "previous" service-description-2}}
+                     :token-authentication-disabled false
+                     :token-preauthorized false
+                     :token-sequence ["token-1"]}
+            passthrough-headers {}
+            waiter-headers {"x-waiter-cpus" 20}
+            actual-result (compute-fallback-service-description
+                            sources waiter-headers passthrough-headers kv-store service-id-prefix username
+                            metric-group-mappings builder assoc-run-as-user-approved?)]
+        (is (= {:core-service-description (merge service-description-2
+                                                 {"cpus" 20 "permitted-user" username "run-as-user" username})
+                :on-the-fly? true
+                :service-authentication-disabled false
+                :service-description (merge (:defaults sources)
+                                            service-description-2
+                                            {"cpus" 20 "permitted-user" username "run-as-user" username})
+                :service-id (service-description->service-id
+                              service-id-prefix
+                              (merge service-description-2
+                                     {"cpus" 20 "permitted-user" username "run-as-user" username}))
+                :service-preauthorized false}
+               (dissoc actual-result :retrieve-fallback-service-description)))
+        (is (nil? ((-> actual-result :retrieve-fallback-service-description))))))
+
+    (testing "multiple tokens without previous"
+      (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32}
+            service-description-2 {"run-as-user" "ru" "version" "foo"}
+            sources {:defaults {"permitted-user" "*"}
+                     :headers {}
+                     :service-description-template (merge service-description-1 service-description-2)
+                     :token->token-data {"token-1" service-description-1
+                                         "token-2" service-description-2}
+                     :token-authentication-disabled false
+                     :token-preauthorized false
+                     :token-sequence ["token-1" "token-2"]}
+            passthrough-headers {}
+            waiter-headers {}]
+        (is (nil? (compute-fallback-service-description
+                    sources waiter-headers passthrough-headers kv-store service-id-prefix username
+                    metric-group-mappings builder assoc-run-as-user-approved?)))))
+
+    (testing "multiple tokens with previous"
+      (let [service-description-1p {"cmd" "lsp" "cpus" 1 "last-update-time" 1000 "mem" 32}
+            service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "previous" service-description-1p}
+            service-description-2p {"last-update-time" 2000 "run-as-user" "rup" "version" "foo"}
+            service-description-2 {"previous" service-description-2p "run-as-user" "ru" "version" "foo"}
+            sources {:defaults {"metric-group" "other" "permitted-user" "*"}
+                     :headers {}
+                     :service-description-template (merge service-description-1 service-description-2)
+                     :token->token-data {"token-1" service-description-1
+                                         "token-2" service-description-2}
+                     :token-authentication-disabled false
+                     :token-preauthorized false
+                     :token-sequence ["token-1" "token-2"]}
+            passthrough-headers {}
+            waiter-headers {}
+            actual-result (compute-fallback-service-description
+                            sources waiter-headers passthrough-headers kv-store service-id-prefix username
+                            metric-group-mappings builder assoc-run-as-user-approved?)]
+        (is (= {:core-service-description (-> (merge service-description-1 service-description-2p)
+                                              (select-keys service-description-keys))
+                :on-the-fly? nil
+                :service-authentication-disabled false
+                :service-description (-> (merge (:defaults sources) service-description-1 service-description-2p)
+                                         (select-keys service-description-keys))
+                :service-id (->> (dissoc (merge service-description-1 service-description-2p) "previous")
+                                 (service-description->service-id service-id-prefix))
+                :service-preauthorized false}
+               (dissoc actual-result :retrieve-fallback-service-description)))
+        (let [actual-result-2 ((-> actual-result :retrieve-fallback-service-description))]
+          (is (= {:core-service-description (-> (merge service-description-1p service-description-2p)
+                                                (select-keys service-description-keys))
+                  :on-the-fly? nil
+                  :service-authentication-disabled false
+                  :service-description (-> (merge (:defaults sources) service-description-1p service-description-2p)
+                                           (select-keys service-description-keys))
+                  :service-id (->> (dissoc (merge service-description-1p service-description-2p) "previous")
+                                   (service-description->service-id service-id-prefix))
+                  :service-preauthorized false}
+                 (dissoc actual-result-2 :retrieve-fallback-service-description)))
+          (is (nil? ((-> actual-result-2 :retrieve-fallback-service-description)))))))))
