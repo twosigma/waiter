@@ -1317,6 +1317,55 @@
                                                   :hard-delete true :version-hash (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))))
 
+(deftest test-soft-delete-loses-history
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        token "test-token"
+        service-description-1 {"cpus" 200 "version" "foo-bar-1"}
+        token-metadata-1 {"last-update-time" (clock-millis) "owner" "test-user-1"}
+        token-data-1 (merge service-description-1 token-metadata-1)]
+
+    (store-service-description-for-token
+      synchronize-fn kv-store history-length token service-description-1 token-metadata-1)
+    (is (= token-data-1
+           (kv/fetch kv-store token)))
+
+    (let [service-description-2 {"mem" 300 "version" "foo-bar-2"}
+          token-metadata-2 {"last-update-time" (clock-millis) "owner" "test-user-2"}
+          token-data-2 (merge service-description-2 token-metadata-2)]
+      (store-service-description-for-token
+        synchronize-fn kv-store history-length token service-description-2 token-metadata-2)
+      (is (= (assoc token-data-2 "previous" token-data-1)
+             (kv/fetch kv-store token)))
+
+      (let [service-description-3 {"cmd" "cmd-400" "version" "foo-bar-3"}
+            token-metadata-3 {"last-update-time" (clock-millis) "owner" "test-user-3"}
+            token-data-3 (merge service-description-3 token-metadata-3)]
+        (store-service-description-for-token
+          synchronize-fn kv-store history-length token service-description-3 token-metadata-3)
+        (is (= (->> token-data-1
+                    (assoc token-data-2 "previous")
+                    (assoc token-data-3 "previous"))
+               (kv/fetch kv-store token)))
+
+        (delete-service-description-for-token
+          clock synchronize-fn kv-store history-length token "test-user-3" "test-auth-3")
+
+        (is (= (-> token-data-3
+                   (assoc "deleted" true
+                          "last-update-user" "test-auth-3"
+                          "previous" (->> token-data-1
+                                          (assoc token-data-2 "previous")
+                                          (assoc token-data-3 "previous"))))
+               (kv/fetch kv-store token)))
+
+        (let [service-description-4 {"cmd" "cmd-400" "version" "foo-bar-4"}
+              token-metadata-4 {"last-update-time" (clock-millis) "owner" "test-user-4"}
+              token-data-4 (merge service-description-4 token-metadata-4)]
+          (store-service-description-for-token
+            synchronize-fn kv-store history-length token service-description-4 token-metadata-4)
+          (is (= token-data-4
+                 (kv/fetch kv-store token))))))))
+
 (deftest test-token-index
   (let [lock (Object.)
         synchronize-fn (fn [_ f]
