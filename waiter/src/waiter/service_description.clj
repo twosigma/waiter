@@ -463,10 +463,10 @@
   "Retrieves the data stored against the token in the kv-store."
   [kv-store ^String token error-on-missing include-deleted]
   (let [{:strs [deleted run-as-user] :as token-data} (when token (kv/fetch kv-store token))
-        token-data (when token-data ; populate token owner for backwards compatibility
-                     (cond-> token-data
-                             (not (contains? token-data "owner")) (assoc "owner" run-as-user)
-                             (not (contains? token-data "previous")) (assoc "previous" {})))]
+        token-data (when (seq token-data) ; populate token owner for backwards compatibility
+                     (-> token-data
+                         (utils/assoc-if-absent "owner" run-as-user)
+                         (utils/assoc-if-absent "previous" {})))]
     (when (and error-on-missing (not token-data))
       (throw (ex-info (str "Token not found: " token) {:status 400})))
     (log/debug "Extracted data for" token "is" token-data)
@@ -525,45 +525,46 @@
        (-> run-as-user str/blank? not)
        (required-keys-present? description)))
 
+(defn- compute-service-description-template-from-tokens
+  "Computes the service description, preauthorization and authentication data using the token-sequence and token-data."
+  [token-sequence token->token-data]
+  (loop [loop-service-description-template {}
+         [token & remaining-tokens] token-sequence]
+    (if token
+      (let [token-data (token->token-data token)
+            service-description-template (sanitize-service-description token-data)]
+        (recur (merge loop-service-description-template service-description-template)
+               remaining-tokens))
+      {:service-description-template (sanitize-service-description loop-service-description-template)
+       :token->token-data token->token-data
+       :token-authentication-disabled (and (= 1 (count token-sequence))
+                                           (token-authentication-disabled? loop-service-description-template))
+       :token-preauthorized (and (= 1 (count token-sequence))
+                                 (token-preauthorized? loop-service-description-template))
+       :token-sequence token-sequence})))
+
 (defn- prepare-service-description-template-from-tokens
   "Prepares the service description using the token(s)."
   [waiter-headers request-headers kv-store waiter-hostnames]
   (let [{:keys [token source]} (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostnames)]
     (cond
       (= source :host-header)
-      (let [token-data (token->token-data kv-store token false false)
-            service-description-template (sanitize-service-description token-data)]
-        {:service-description-template service-description-template
-         :token->token-data (if (seq service-description-template) {token token-data} {})
-         :token-authentication-disabled (token-authentication-disabled? service-description-template)
-         :token-preauthorized (token-preauthorized? service-description-template)
-         :token-sequence (if (seq service-description-template) [token] [])})
+      (let [token-data (token->token-data kv-store token false false)]
+        (compute-service-description-template-from-tokens
+          (if (seq token-data) [token] [])
+          (if (seq token-data) {token token-data} {})))
 
       (= source :waiter-header)
-      (let [token-names (str/split (str token) #",")]
-        (loop [loop-service-description-template {}
-               loop-token->token-data {}
-               [token-name & remaining-token-names] token-names]
-          (if token-name
-            (let [token-data (token->token-data kv-store token-name true false)
-                  service-description-template (sanitize-service-description token-data)]
-              (recur (merge loop-service-description-template service-description-template)
-                     (assoc loop-token->token-data token-name token-data)
-                     remaining-token-names))
-            {:service-description-template (sanitize-service-description loop-service-description-template)
-             :token->token-data loop-token->token-data
-             :token-authentication-disabled (and (= 1 (count token-names))
-                                                 (token-authentication-disabled? loop-service-description-template))
-             :token-preauthorized (and (= 1 (count token-names))
-                                       (token-preauthorized? loop-service-description-template))
-             :token-sequence token-names})))
+      (let [token-sequence (str/split (str token) #",")]
+        (loop [loop-token->token-data {}
+               [loop-token & remaining-tokens] token-sequence]
+          (if loop-token
+            (let [token-data (token->token-data kv-store loop-token true false)]
+              (recur (assoc loop-token->token-data loop-token token-data) remaining-tokens))
+            (compute-service-description-template-from-tokens token-sequence loop-token->token-data))))
 
       :else
-      {:service-description-template {}
-       :token->token-data {}
-       :token-authentication-disabled false
-       :token-preauthorized false
-       :token-sequence []})))
+      (compute-service-description-template-from-tokens [] {}))))
 
 (let [service-id->key #(str "^SERVICE-ID#" %)]
   (defn store-core
@@ -683,9 +684,8 @@
     (let [headers-without-params (dissoc headers "param")
           header-params (get headers "param")
           ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
-          service-description-based-on-headers (if (and (seq headers-without-params)
-                                                        (not (contains? headers-without-params "run-as-user")))
-                                                 (assoc headers-without-params "run-as-user" username)
+          service-description-based-on-headers (if (seq headers-without-params)
+                                                 (utils/assoc-if-absent headers-without-params "run-as-user" username)
                                                  headers-without-params)
           merge-params (fn [{:strs [allowed-params] :as service-description}]
                          (if header-params
