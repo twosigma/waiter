@@ -663,8 +663,6 @@
       (assoc service-description "metadata" sanitized-metadata))
     service-description))
 
-(declare compute-fallback-service-description)
-
 (let [error-message-map-fn (fn [passthrough-headers waiter-headers]
                              {:status 400
                               :non-waiter-headers (dissoc passthrough-headers "authorization")
@@ -680,7 +678,7 @@
      If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
-    [{:keys [defaults headers service-description-template token-authentication-disabled token-preauthorized] :as sources}
+    [{:keys [defaults headers service-description-template token-authentication-disabled token-preauthorized]}
      waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
      service-description-builder assoc-run-as-user-approved?]
     (let [headers-without-params (dissoc headers "param")
@@ -741,10 +739,6 @@
             (validate service-description-builder service-description {:allow-missing-required-fields? false}))
           {:core-service-description core-service-description
            :on-the-fly? contains-waiter-header?
-           :retrieve-fallback-service-description (fn []
-                                                    (compute-fallback-service-description
-                                                      sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                                                      metric-group-mappings service-description-builder assoc-run-as-user-approved?))
            :service-authentication-disabled service-authentication-disabled
            :service-description service-description
            :service-id service-id
@@ -754,36 +748,12 @@
                           (merge (error-message-map-fn passthrough-headers waiter-headers) (dissoc ex-data :message))
                           (:throwable &throw-context))))))))
 
-(defn retrieve-fallback-token
-  "Computes the most recently modified token from the token->token-data map."
-  [token->token-data]
-  (first (apply max-key (fn [[_ token-data]] (get-in token-data ["previous" "last-update-time"] 0)) token->token-data)))
-
-(defn compute-fallback-service-description
-  "Computes the service-id, service-description and authorization values of the fallback service."
-  [{:keys [token->token-data token-sequence] :as sources}
-   waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
-   service-description-builder assoc-run-as-user-approved?]
-  (when (seq token-sequence)
-    (let [previous-token (retrieve-fallback-token token->token-data)
-          previous-token-data (get-in token->token-data [previous-token "previous"])]
-      (when (seq previous-token-data)
-        (let [compute-service-description-helper
-              (fn [new-sources]
-                (compute-service-description
-                  new-sources waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
-                  service-description-builder assoc-run-as-user-approved?))]
-          (->> (assoc token->token-data previous-token previous-token-data)
-               (compute-service-description-template-from-tokens token-sequence)
-               (merge sources)
-               compute-service-description-helper))))))
-
 (defn merge-service-description-and-id
   "Populates the descriptor with the service-description and service-id."
   [{:keys [passthrough-headers sources waiter-headers] :as descriptor} kv-store service-id-prefix username
    metric-group-mappings service-description-builder assoc-run-as-user-approved?]
-  (->> (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix
-                                    username metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+  (->> (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix username
+                                    metric-group-mappings service-description-builder assoc-run-as-user-approved?)
        (merge descriptor)))
 
 (defn request->descriptor
@@ -798,6 +768,31 @@
         (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
                                           service-description-builder assoc-run-as-user-approved?)
         (merge-suspended kv-store))))
+
+(defn retrieve-previous-token
+  "Computes the most recently modified token from the token->token-data map."
+  [token->token-data]
+  (first (apply max-key (fn [[_ token-data]] (get-in token-data ["previous" "last-update-time"] 0)) token->token-data)))
+
+(defn descriptor->previous-descriptor
+  "Creates the service descriptor from the request.
+   The result map contains the following elements:
+   {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
+  [kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?
+   {:keys [sources] :as descriptor}]
+  (when-let [token-sequence (-> sources :token-sequence seq)]
+    (let [{:keys [token->token-data]} sources
+          previous-token (retrieve-previous-token token->token-data)
+          previous-token-data (get-in token->token-data [previous-token "previous"])]
+      (when (seq previous-token-data)
+        (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
+                               (compute-service-description-template-from-tokens token-sequence)
+                               (merge sources))]
+          (-> (select-keys descriptor [:auth-user :passthrough-headers :waiter-headers])
+              (assoc :sources new-sources)
+              (merge-service-description-and-id
+                kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+              (merge-suspended kv-store)))))))
 
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."

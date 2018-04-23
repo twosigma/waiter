@@ -2002,7 +2002,7 @@
                     :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))
 
-(deftest test-retrieve-fallback-token
+(deftest test-retrieve-previous-token
   (testing "all tokens have previous"
     (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
                         "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
@@ -2011,7 +2011,7 @@
           token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
                         "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-2" (retrieve-fallback-token token->token-data)))))
+      (is (= "token-2" (retrieve-previous-token token->token-data)))))
 
   (testing "some tokens have previous"
     (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
@@ -2020,7 +2020,7 @@
           token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
                         "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-1" (retrieve-fallback-token token->token-data)))))
+      (is (= "token-1" (retrieve-previous-token token->token-data)))))
 
   (testing "tokens tied for previous"
     (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
@@ -2030,16 +2030,16 @@
           token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
                         "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-2" (retrieve-fallback-token (into (sorted-map) token->token-data))))))
+      (is (= "token-2" (retrieve-previous-token (into (sorted-map) token->token-data))))))
 
   (testing "no tokens have previous"
     (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500}
           token-data-2 {"cmd" "c-2-B" "last-update-time" 1500}
           token-data-3 {"cmd" "c-3-B" "last-update-time" 1100}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-3" (retrieve-fallback-token (into (sorted-map) token->token-data)))))))
+      (is (= "token-3" (retrieve-previous-token (into (sorted-map) token->token-data)))))))
 
-(deftest test-compute-fallback-service-description
+(deftest test-descriptor->previous-descriptor
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-id-prefix "service-prefix-"
         username "test-user"
@@ -2058,9 +2058,11 @@
                      :token-sequence []}
             passthrough-headers {}
             waiter-headers {}]
-        (is (nil? (compute-fallback-service-description
-                    sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                    metric-group-mappings builder assoc-run-as-user-approved?)))))
+        (is (nil? (descriptor->previous-descriptor
+                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                    {:passthrough-headers passthrough-headers
+                     :sources sources
+                     :waiter-headers waiter-headers})))))
 
     (testing "single token without previous"
       (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}
@@ -2073,9 +2075,11 @@
                      :token-sequence ["token-1"]}
             passthrough-headers {}
             waiter-headers {}]
-        (is (nil? (compute-fallback-service-description
-                    sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                    metric-group-mappings builder assoc-run-as-user-approved?)))))
+        (is (nil? (descriptor->previous-descriptor
+                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                    {:passthrough-headers passthrough-headers
+                     :sources sources
+                     :waiter-headers waiter-headers})))))
 
     (testing "single token with previous"
       (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru1" "version" "foo1"}
@@ -2090,17 +2094,26 @@
                      :token-sequence ["token-1"]}
             passthrough-headers {}
             waiter-headers {}
-            actual-result (compute-fallback-service-description
-                            sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                            metric-group-mappings builder assoc-run-as-user-approved?)]
+            previous-descriptor (descriptor->previous-descriptor
+                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                                  {:passthrough-headers passthrough-headers
+                                   :sources sources
+                                   :waiter-headers waiter-headers})]
         (is (= {:core-service-description service-description-2
                 :on-the-fly? nil
+                :passthrough-headers passthrough-headers
                 :service-authentication-disabled false
                 :service-description (merge (:defaults sources) service-description-2)
                 :service-id (service-description->service-id service-id-prefix service-description-2)
-                :service-preauthorized false}
-               (dissoc actual-result :retrieve-fallback-service-description)))
-        (is (nil? ((-> actual-result :retrieve-fallback-service-description))))))
+                :service-preauthorized false
+                :sources (-> sources
+                             (assoc :service-description-template service-description-2)
+                             (update :token->token-data assoc "token-1" service-description-2))
+                :waiter-headers waiter-headers}
+               previous-descriptor))
+        (is (nil? (descriptor->previous-descriptor
+                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                    previous-descriptor)))))
 
     (testing "single on-the-fly+token with previous"
       (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru1" "version" "foo1"}
@@ -2116,12 +2129,15 @@
                      :token-sequence ["token-1"]}
             passthrough-headers {}
             waiter-headers {"x-waiter-cpus" 20}
-            actual-result (compute-fallback-service-description
-                            sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                            metric-group-mappings builder assoc-run-as-user-approved?)]
+            previous-descriptor (descriptor->previous-descriptor
+                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                                  {:passthrough-headers passthrough-headers
+                                   :sources sources
+                                   :waiter-headers waiter-headers})]
         (is (= {:core-service-description (merge service-description-2
                                                  {"cpus" 20 "permitted-user" username "run-as-user" username})
                 :on-the-fly? true
+                :passthrough-headers passthrough-headers
                 :service-authentication-disabled false
                 :service-description (merge (:defaults sources)
                                             service-description-2
@@ -2130,9 +2146,12 @@
                               service-id-prefix
                               (merge service-description-2
                                      {"cpus" 20 "permitted-user" username "run-as-user" username}))
-                :service-preauthorized false}
-               (dissoc actual-result :retrieve-fallback-service-description)))
-        (is (nil? ((-> actual-result :retrieve-fallback-service-description))))))
+                :service-preauthorized false
+                :sources (-> sources
+                             (assoc :service-description-template service-description-2)
+                             (update :token->token-data assoc "token-1" service-description-2))
+                :waiter-headers waiter-headers}
+               previous-descriptor))))
 
     (testing "multiple tokens without previous"
       (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32}
@@ -2147,9 +2166,11 @@
                      :token-sequence ["token-1" "token-2"]}
             passthrough-headers {}
             waiter-headers {}]
-        (is (nil? (compute-fallback-service-description
-                    sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                    metric-group-mappings builder assoc-run-as-user-approved?)))))
+        (is (nil? (descriptor->previous-descriptor
+                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                    {:passthrough-headers passthrough-headers
+                     :sources sources
+                     :waiter-headers waiter-headers})))))
 
     (testing "multiple tokens with previous"
       (let [service-description-1p {"cmd" "lsp" "cpus" 1 "last-update-time" 1000 "mem" 32}
@@ -2166,28 +2187,49 @@
                      :token-sequence ["token-1" "token-2"]}
             passthrough-headers {}
             waiter-headers {}
-            actual-result (compute-fallback-service-description
-                            sources waiter-headers passthrough-headers kv-store service-id-prefix username
-                            metric-group-mappings builder assoc-run-as-user-approved?)]
+            previous-descriptor (descriptor->previous-descriptor
+                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                                  {:passthrough-headers passthrough-headers
+                                   :sources sources
+                                   :waiter-headers waiter-headers})]
         (is (= {:core-service-description (-> (merge service-description-1 service-description-2p)
                                               (select-keys service-description-keys))
                 :on-the-fly? nil
+                :passthrough-headers passthrough-headers
                 :service-authentication-disabled false
                 :service-description (-> (merge (:defaults sources) service-description-1 service-description-2p)
                                          (select-keys service-description-keys))
                 :service-id (->> (dissoc (merge service-description-1 service-description-2p) "previous")
                                  (service-description->service-id service-id-prefix))
-                :service-preauthorized false}
-               (dissoc actual-result :retrieve-fallback-service-description)))
-        (let [actual-result-2 ((-> actual-result :retrieve-fallback-service-description))]
+                :service-preauthorized false
+                :sources (-> sources
+                             (assoc :service-description-template
+                                    (-> (merge service-description-1 service-description-2p)
+                                        (select-keys service-description-keys)))
+                             (update :token->token-data assoc "token-2" service-description-2p))
+                :waiter-headers waiter-headers}
+               previous-descriptor))
+        (let [prev-descriptor-2 (descriptor->previous-descriptor
+                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                                  previous-descriptor)]
           (is (= {:core-service-description (-> (merge service-description-1p service-description-2p)
                                                 (select-keys service-description-keys))
                   :on-the-fly? nil
+                  :passthrough-headers passthrough-headers
                   :service-authentication-disabled false
                   :service-description (-> (merge (:defaults sources) service-description-1p service-description-2p)
                                            (select-keys service-description-keys))
                   :service-id (->> (dissoc (merge service-description-1p service-description-2p) "previous")
                                    (service-description->service-id service-id-prefix))
-                  :service-preauthorized false}
-                 (dissoc actual-result-2 :retrieve-fallback-service-description)))
-          (is (nil? ((-> actual-result-2 :retrieve-fallback-service-description)))))))))
+                  :service-preauthorized false
+                  :sources (-> sources
+                               (assoc :service-description-template
+                                      (-> (merge service-description-1p service-description-2p)
+                                          (select-keys service-description-keys)))
+                               (update :token->token-data assoc "token-2" service-description-2p)
+                               (update :token->token-data assoc "token-1" service-description-1p))
+                  :waiter-headers waiter-headers}
+                 (dissoc prev-descriptor-2 :retrieve-fallback-service-description)))
+          (is (nil? (descriptor->previous-descriptor
+                      kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                      prev-descriptor-2))))))))
