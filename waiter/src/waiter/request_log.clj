@@ -25,7 +25,7 @@
 (defn request->context
   "Convert a request into a context suitable for logging."
   [{:keys [headers query-string remote-addr request-id request-method request-time uri] :as request}]
-  (let [{:strs [host x-cid x-forwarded-for]} headers]
+  (let [{:strs [host user-agent x-cid x-forwarded-for]} headers]
     (cond-> {:cid x-cid
              :host host
              :path uri
@@ -34,7 +34,8 @@
              :scheme (-> request utils/request->scheme name)}
       request-method (assoc :method (-> request-method name str/upper-case))
       query-string (assoc :query-string query-string)
-      request-time (assoc :request-time (utils/date-to-str request-time)))))
+      request-time (assoc :request-time (utils/date-to-str request-time))
+      user-agent (assoc :user-agent user-agent))))
 
 (defn response->context
   "Convert a response into a context suitable for logging."

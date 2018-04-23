@@ -14,8 +14,9 @@
             [waiter.request-log :refer :all]))
 
 (deftest test-request->context
-  (let [request {:headers {"x-cid" "123"
-                           "host" "host"}
+  (let [request {:headers {"host" "host"
+                           "user-agent" "test-user-agent"
+                           "x-cid" "123"}
                  :request-method :post
                  :query-string "a=1"
                  :remote-addr "127.0.0.1"
@@ -31,7 +32,8 @@
             :remote-addr "127.0.0.1"
             :request-id "abc"
             :request-time "2018-04-11T00:00:00.000Z"
-            :scheme "http"}
+            :scheme "http"
+            :user-agent "test-user-agent"}
            (request->context request)))))
 
 (deftest test-response->context
