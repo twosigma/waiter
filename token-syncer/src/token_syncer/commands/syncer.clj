@@ -97,8 +97,7 @@
                              :latest latest-token-description}}
 
                   (not= latest-token-description description)
-                  (let [token-etag (when-not (get description "deleted")
-                                     (:token-etag token-data))
+                  (let [token-etag (:token-etag token-data)
                         {:keys [headers status] :as response} (store-token cluster-url token token-etag latest-token-description)]
                     {:code (if (get latest-token-description "deleted")
                              (if (utils/successful? response) :success/soft-delete :error/soft-delete)

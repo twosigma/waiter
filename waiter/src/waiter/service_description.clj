@@ -453,7 +453,8 @@
   (defn token-data->token-hash
     "Converts the merged map of service-description and token-metadata to a hash."
     [token-data]
-    (when (seq token-data)
+    (when (and (seq token-data)
+               (not (get token-data "deleted")))
       (str hash-prefix (-> token-data
                            (select-keys token-data-keys)
                            (dissoc "previous")

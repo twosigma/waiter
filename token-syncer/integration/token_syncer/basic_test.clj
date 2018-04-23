@@ -50,8 +50,7 @@
   "Retrieves the etag for a token on a waiter router."
   [{:keys [load-token]} waiter-url token-name]
   (-> (load-token waiter-url token-name)
-      (get :token-etag)
-      str))
+      (get :token-etag)))
 
 (defn- cleanup-token
   [{:keys [hard-delete-token] :as waiter-api} waiter-urls token-name]
@@ -151,10 +150,8 @@
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description (assoc token-description "deleted" true)
-                          :headers {"content-type" "application/json"
-                                    "etag" token-etag}
-                          :status 200
-                          :token-etag token-etag}
+                          :headers {"content-type" "application/json"}
+                          :status 200}
                          (load-token waiter-url token-name))))))))
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))
@@ -204,10 +201,8 @@
                 (is (= expected-result actual-result))
                 (doseq [waiter-url waiter-urls]
                   (is (= {:description (assoc token-description "deleted" true)
-                          :headers {"content-type" "application/json"
-                                    "etag" token-etag}
-                          :status 200
-                          :token-etag token-etag}
+                          :headers {"content-type" "application/json"}
+                          :status 200}
                          (load-token waiter-url token-name))))))))
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))

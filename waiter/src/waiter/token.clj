@@ -236,15 +236,11 @@
           (let [token-owner (get token-metadata "owner")
                 version-hash (get headers "if-match")]
             (if hard-delete
-              (do
-                (when-not version-hash
-                  (throw (ex-info "Must specify if-match header for token hard deletes"
-                                  {:request-headers headers, :status 400})))
-                (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
-                  (throw (ex-info "Cannot hard-delete token"
-                                  {:metadata token-metadata
-                                   :status 403
-                                   :user authenticated-user}))))
+              (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)
+                (throw (ex-info "Cannot hard-delete token"
+                                {:metadata token-metadata
+                                 :status 403
+                                 :user authenticated-user})))
               (when-not (authz/manage-token? entitlement-manager authenticated-user token token-metadata)
                 (throw (ex-info "User not allowed to delete token"
                                 {:owner token-owner

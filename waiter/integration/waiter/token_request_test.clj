@@ -428,14 +428,6 @@
                   (assert-response-status response 412)
                   (is (str/includes? (str body) "Cannot modify stale token"))))
 
-              (testing "hard-delete without etag"
-                (let [{:keys [body] :as response} (make-request waiter-url "/token"
-                                                                :headers {"host" token}
-                                                                :http-method-fn http/delete
-                                                                :query-params {"hard-delete" true})]
-                  (assert-response-status response 400)
-                  (is (str/includes? (str body) "Must specify if-match header for token hard deletes"))))
-
               (testing "hard-delete with invalid etag"
                 (let [{:keys [body] :as response} (make-request waiter-url "/token"
                                                                 :headers {"host" token
