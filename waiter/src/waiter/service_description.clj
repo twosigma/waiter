@@ -45,45 +45,45 @@
 
 (def service-description-schema
   {;; Required
+   (s/required-key "cmd") schema/non-empty-string
    (s/required-key "cpus") schema/positive-num
    (s/required-key "mem") schema/positive-num
-   (s/required-key "cmd") schema/non-empty-string
-   (s/required-key "version") schema/non-empty-string
    (s/required-key "run-as-user") schema/non-empty-string
+   (s/required-key "version") schema/non-empty-string
    ;; Optional
    (s/optional-key "allowed-params") #{environment-variable-schema}
    (s/optional-key "authentication") schema/valid-authentication
    (s/optional-key "backend-proto") schema/valid-backend-proto
    (s/optional-key "cmd-type") schema/non-empty-string
-   (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
-                                               schema/valid-string-length}
-                                              #(< (count %) 100))
    (s/optional-key "distribution-scheme") (s/enum "balanced" "simple")
    ; Marathon imposes a 512 character limit on environment variable keys and values
    (s/optional-key "env") (s/constrained {environment-variable-schema (s/constrained s/Str #(<= 1 (count %) 512))}
                                          #(< (count %) 100))
+   (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
+                                               schema/valid-string-length}
+                                              #(< (count %) 100))
+   (s/optional-key "metric-group") schema/valid-metric-group
    (s/optional-key "name") schema/non-empty-string
    (s/optional-key "permitted-user") schema/non-empty-string
    (s/optional-key "ports") schema/valid-number-of-ports
-   (s/optional-key "metric-group") schema/valid-metric-group
    ; start-up related
-   (s/optional-key "health-check-url") schema/non-empty-string
+   (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
    (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
-   (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 1 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
+   (s/optional-key "health-check-url") schema/non-empty-string
    (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 1 % (t/in-minutes (t/days 30))) 'between-1-minute-and-30-days))
    (s/optional-key "interstitial-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
    ; auto-scaling related
-   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 0 % 2) 'between-zero-and-two))
-   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
-   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
-   (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
-   (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
-   (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "concurrency-level") (s/both s/Int (s/pred #(<= 1 % 10000) 'between-one-and-10000))
-   (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "expired-instance-restart-rate") schema/positive-fraction-less-than-or-equal-to-1
+   (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
+   (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
+   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
+   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 0 % 2) 'between-zero-and-two))
+   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
+   (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
+   (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
    ; per-request related
    (s/optional-key "blacklist-on-503") s/Bool
    (s/optional-key "max-queue-length") schema/positive-int
@@ -463,10 +463,10 @@
   "Retrieves the data stored against the token in the kv-store."
   [kv-store ^String token error-on-missing include-deleted]
   (let [{:strs [deleted run-as-user] :as token-data} (when token (kv/fetch kv-store token))
-        token-data (when token-data ; populate token owner for backwards compatibility
-                     (cond-> token-data
-                             (not (contains? token-data "owner")) (assoc "owner" run-as-user)
-                             (not (contains? token-data "previous")) (assoc "previous" {})))]
+        token-data (when (seq token-data) ; populate token owner for backwards compatibility
+                     (-> token-data
+                         (utils/assoc-if-absent "owner" run-as-user)
+                         (utils/assoc-if-absent "previous" {})))]
     (when (and error-on-missing (not token-data))
       (throw (ex-info (str "Token not found: " token) {:status 400})))
     (log/debug "Extracted data for" token "is" token-data)
@@ -525,45 +525,46 @@
        (-> run-as-user str/blank? not)
        (required-keys-present? description)))
 
+(defn- compute-service-description-template-from-tokens
+  "Computes the service description, preauthorization and authentication data using the token-sequence and token-data."
+  [token-sequence token->token-data]
+  (loop [loop-service-description-template {}
+         [token & remaining-tokens] token-sequence]
+    (if token
+      (let [token-data (token->token-data token)
+            service-description-template (sanitize-service-description token-data)]
+        (recur (merge loop-service-description-template service-description-template)
+               remaining-tokens))
+      {:service-description-template (sanitize-service-description loop-service-description-template)
+       :token->token-data token->token-data
+       :token-authentication-disabled (and (= 1 (count token-sequence))
+                                           (token-authentication-disabled? loop-service-description-template))
+       :token-preauthorized (and (= 1 (count token-sequence))
+                                 (token-preauthorized? loop-service-description-template))
+       :token-sequence token-sequence})))
+
 (defn- prepare-service-description-template-from-tokens
   "Prepares the service description using the token(s)."
   [waiter-headers request-headers kv-store waiter-hostnames]
   (let [{:keys [token source]} (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostnames)]
     (cond
       (= source :host-header)
-      (let [token-data (token->token-data kv-store token false false)
-            service-description-template (sanitize-service-description token-data)]
-        {:service-description-template service-description-template
-         :token->token-data (if (seq service-description-template) {token token-data} {})
-         :token-authentication-disabled (token-authentication-disabled? service-description-template)
-         :token-preauthorized (token-preauthorized? service-description-template)
-         :token-sequence (if (seq service-description-template) [token] [])})
+      (let [token-data (token->token-data kv-store token false false)]
+        (compute-service-description-template-from-tokens
+          (if (seq token-data) [token] [])
+          (if (seq token-data) {token token-data} {})))
 
       (= source :waiter-header)
-      (let [token-names (str/split (str token) #",")]
-        (loop [loop-service-description-template {}
-               loop-token->token-data {}
-               [token-name & remaining-token-names] token-names]
-          (if token-name
-            (let [token-data (token->token-data kv-store token-name true false)
-                  service-description-template (sanitize-service-description token-data)]
-              (recur (merge loop-service-description-template service-description-template)
-                     (assoc loop-token->token-data token-name token-data)
-                     remaining-token-names))
-            {:service-description-template (sanitize-service-description loop-service-description-template)
-             :token->token-data loop-token->token-data
-             :token-authentication-disabled (and (= 1 (count token-names))
-                                                 (token-authentication-disabled? loop-service-description-template))
-             :token-preauthorized (and (= 1 (count token-names))
-                                       (token-preauthorized? loop-service-description-template))
-             :token-sequence token-names})))
+      (let [token-sequence (str/split (str token) #",")]
+        (loop [loop-token->token-data {}
+               [loop-token & remaining-tokens] token-sequence]
+          (if loop-token
+            (let [token-data (token->token-data kv-store loop-token true false)]
+              (recur (assoc loop-token->token-data loop-token token-data) remaining-tokens))
+            (compute-service-description-template-from-tokens token-sequence loop-token->token-data))))
 
       :else
-      {:service-description-template {}
-       :token->token-data {}
-       :token-authentication-disabled false
-       :token-preauthorized false
-       :token-sequence []})))
+      (compute-service-description-template-from-tokens [] {}))))
 
 (let [service-id->key #(str "^SERVICE-ID#" %)]
   (defn store-core
@@ -677,15 +678,14 @@
      If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
-    [{:keys [defaults headers service-description-template token-authentication-disabled token-preauthorized] :as sources}
+    [{:keys [defaults headers service-description-template token-authentication-disabled token-preauthorized]}
      waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
      service-description-builder assoc-run-as-user-approved?]
     (let [headers-without-params (dissoc headers "param")
           header-params (get headers "param")
           ; any change with the on-the-fly must change the run-as-user if it doesn't already exist
-          service-description-based-on-headers (if (and (seq headers-without-params)
-                                                        (not (contains? headers-without-params "run-as-user")))
-                                                 (assoc headers-without-params "run-as-user" username)
+          service-description-based-on-headers (if (seq headers-without-params)
+                                                 (utils/assoc-if-absent headers-without-params "run-as-user" username)
                                                  headers-without-params)
           merge-params (fn [{:strs [allowed-params] :as service-description}]
                          (if header-params
@@ -722,12 +722,13 @@
                         (error-message-map-fn passthrough-headers waiter-headers))))
       (sling/try+
         (let [{:keys [service-id service-description core-service-description]}
-              (build service-description-builder user-service-description {:service-id-prefix service-id-prefix
-                                                                           :metric-group-mappings metric-group-mappings
-                                                                           :kv-store kv-store
-                                                                           :defaults defaults
-                                                                           :assoc-run-as-user-approved? assoc-run-as-user-approved?
-                                                                           :username username})
+              (build service-description-builder user-service-description
+                     {:assoc-run-as-user-approved? assoc-run-as-user-approved?
+                      :defaults defaults
+                      :kv-store kv-store
+                      :metric-group-mappings metric-group-mappings
+                      :service-id-prefix service-id-prefix
+                      :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
               service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))
               stored-service-description? (fetch-core kv-store service-id)]
@@ -751,8 +752,9 @@
   "Populates the descriptor with the service-description and service-id."
   [{:keys [passthrough-headers sources waiter-headers] :as descriptor} kv-store service-id-prefix username
    metric-group-mappings service-description-builder assoc-run-as-user-approved?]
-  (merge descriptor (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix
-                                                 username metric-group-mappings service-description-builder assoc-run-as-user-approved?)))
+  (->> (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix username
+                                    metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+       (merge descriptor)))
 
 (defn request->descriptor
   "Creates the service descriptor from the request.
@@ -766,6 +768,31 @@
         (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
                                           service-description-builder assoc-run-as-user-approved?)
         (merge-suspended kv-store))))
+
+(defn retrieve-previous-token
+  "Computes the most recently modified token from the token->token-data map."
+  [token->token-data]
+  (first (apply max-key (fn [[_ token-data]] (get-in token-data ["previous" "last-update-time"] 0)) token->token-data)))
+
+(defn descriptor->previous-descriptor
+  "Creates the service descriptor from the request.
+   The result map contains the following elements:
+   {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
+  [kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?
+   {:keys [sources] :as descriptor}]
+  (when-let [token-sequence (-> sources :token-sequence seq)]
+    (let [{:keys [token->token-data]} sources
+          previous-token (retrieve-previous-token token->token-data)
+          previous-token-data (get-in token->token-data [previous-token "previous"])]
+      (when (seq previous-token-data)
+        (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
+                               (compute-service-description-template-from-tokens token-sequence)
+                               (merge sources))]
+          (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
+              (assoc :sources new-sources)
+              (merge-service-description-and-id
+                kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+              (merge-suspended kv-store)))))))
 
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
