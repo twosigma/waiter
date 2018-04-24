@@ -85,8 +85,8 @@
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "storing service description for token:" token)
-        (let [token-description (merge service-description-template (select-keys token-metadata sd/token-metadata-keys))
-              {:strs [deleted owner] :as new-token-data} (sd/sanitize-service-description token-description sd/token-data-keys)
+        (let [token-data (merge service-description-template (select-keys token-metadata sd/token-metadata-keys))
+              {:strs [deleted owner] :as new-token-data} (sd/sanitize-service-description token-data sd/token-data-keys)
               existing-token-data (kv/fetch kv-store token :refresh true)
               existing-token-data (if-not (get existing-token-data "deleted") existing-token-data {})
               existing-token-description (sd/token-data->token-description existing-token-data)
@@ -304,13 +304,13 @@
    make-peer-requests-fn validate-service-description-fn {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         authenticated-user (get request :authorization/user)
-        {:strs [token] :as new-token-description} (-> request
-                                                      ru/json-request
-                                                      :body
-                                                      sd/transform-allowed-params-token-entry)
-        new-token-metadata (select-keys new-token-description sd/token-metadata-keys)
+        {:strs [token] :as new-token-data} (-> request
+                                               ru/json-request
+                                               :body
+                                               sd/transform-allowed-params-token-entry)
+        new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
         {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-description-template}
-        (select-keys new-token-description sd/service-description-keys)
+        (select-keys new-token-data sd/service-description-keys)
         {existing-token-metadata :token-metadata} (sd/token->token-description kv-store token)
         owner (or (get new-token-metadata "owner")
                   (get existing-token-metadata "owner")
@@ -324,7 +324,7 @@
       (throw (ex-info "Token must match pattern"
                       {:status 400 :token token :pattern (str valid-token-re)})))
     (validate-service-description-fn new-service-description-template)
-    (let [unknown-keys (-> new-token-description
+    (let [unknown-keys (-> new-token-data
                            keys
                            set
                            (set/difference sd/token-data-keys)
