@@ -1176,7 +1176,7 @@
                          (log/trace "scheduler-state-chan received, type:" message-type)
                          (let [loop-state'
                                (case message-type
-                                 :update-available-apps
+                                 :update-available-services
                                  (let [{:keys [available-apps scheduler-sync-time]} message-data
                                        available-service-ids (into #{} available-apps)
                                        services-without-instances (remove #(contains? service-id->my-instance->slots %) available-service-ids)
@@ -1189,7 +1189,7 @@
                                    (when (or (not= service-id->healthy-instances service-id->healthy-instances')
                                              (not= service-id->unhealthy-instances service-id->unhealthy-instances')
                                              (seq services-without-instances))
-                                     (log/info "update-available-apps:"
+                                     (log/info "update-available-services:"
                                                (count service-id->healthy-instances') "services with healthy instances and"
                                                (count services-without-instances) "services without instances:"
                                                (vec services-without-instances)))

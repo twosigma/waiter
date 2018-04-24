@@ -265,7 +265,7 @@
     (let [transformer-fn (fn [scheduler-messages out*]
                            (async/go
                              (doseq [[message-type message-data] scheduler-messages]
-                               (when (= :update-available-apps message-type)
+                               (when (= :update-available-services message-type)
                                  (when-let [global-state (service-id->metrics-fn)]
                                    (let [service->state (fn [service-id]
                                                           [service-id
@@ -313,7 +313,7 @@
                            (async/go
                              (loop [[[message-type message-data] & remaining-scheduler-messages] scheduler-messages
                                     service->data {}]
-                               (if (= :update-available-apps message-type)
+                               (if (= :update-available-services message-type)
                                  (let [service->state (fn service->state [service-id] [service-id (get service->data service-id)])
                                        service->data' (into {} (map service->state (:available-apps message-data)))]
                                    (recur remaining-scheduler-messages service->data'))
@@ -392,11 +392,11 @@
                                             (update :flags
                                                     (fn [flags]
                                                       (cond-> flags
-                                                        (not= error :connect-exception)
-                                                        (conj :has-connected)
+                                                              (not= error :connect-exception)
+                                                              (conj :has-connected)
 
-                                                        (not (contains? connection-errors error))
-                                                        (conj :has-responded))))))
+                                                              (not (contains? connection-errors error))
+                                                              (conj :has-responded))))))
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
                                        (if (:healthy? instance)
@@ -445,7 +445,7 @@
           (when (zero? (reduce + 0 (filter number? (vals (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])))))
             (log/info "scheduler-syncer:" (:id service) "has no live instances!" (:task-stats service))))
         (loop [service-id->health-check-context' {}
-               scheduler-messages [[:update-available-apps {:available-apps available-service-ids :scheduler-sync-time request-apps-time}]]
+               scheduler-messages [[:update-available-services {:available-apps available-service-ids :scheduler-sync-time request-apps-time}]]
                [[{:keys [id]} {:keys [active-instances failed-instances]}] & remaining] (seq service->service-instances)]
           (if id
             (let [request-instances-time (t/now)

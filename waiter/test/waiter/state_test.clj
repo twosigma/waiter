@@ -993,8 +993,8 @@
       (let [{:keys [router-state-push-mult]} (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
         (async/tap router-state-push-mult router-state-push-chan))
       (async/>!! router-chan {router-id (str "http://www." router-id ".com")})
-      (async/>!! scheduler-state-chan [[:update-available-apps {:available-apps [service-id]
-                                                                :scheduler-sync-time (t/now)}]])
+      (async/>!! scheduler-state-chan [[:update-available-services {:available-apps [service-id]
+                                                                    :scheduler-sync-time (t/now)}]])
       (async/<!! router-state-push-chan)
       (async/>!! scheduler-state-chan [[:update-app-instances {:healthy-instances [instance]
                                                                :unhealthy-instances []
@@ -1065,8 +1065,8 @@
             (let [current-time (t/plus start-time (t/minutes n))]
               (let [services (services-fn n)]
                 (loop [index 0
-                       scheduler-messages [[:update-available-apps {:available-apps services
-                                                                    :scheduler-sync-time current-time}]]]
+                       scheduler-messages [[:update-available-services {:available-apps services
+                                                                        :scheduler-sync-time current-time}]]]
                   (if (>= index (count services))
                     (async/>!! scheduler-state-chan scheduler-messages)
                     (let [service-id (str "service-" index)
@@ -1168,8 +1168,8 @@
                                {:message nil :flags #{:connect-exception}} {:flags #{:timeout-exception :never-passed-health-checks}}]
               failed-instances-fn (fn [service-id index]
                                     (vec (map (fn [x] (merge (get failed-messages (mod index (count failed-messages)))
-                                                        {:id (str service-id "." x "1")
-                                                         :started-at start-time}))
+                                                             {:id (str service-id "." x "1")
+                                                              :started-at start-time}))
                                               (range (if (zero? (mod index 2)) 1 0)))))
               deployment-error-fn (fn [service-id index]
                                     (get-deployment-error [] (unhealthy-instances-fn service-id index) (failed-instances-fn service-id index) deployment-error-config))]
@@ -1177,8 +1177,8 @@
             (let [current-time (t/plus start-time (t/minutes n))]
               (let [services (services-fn n)]
                 (loop [index 0
-                       scheduler-messages [[:update-available-apps {:available-apps services
-                                                                    :scheduler-sync-time current-time}]]]
+                       scheduler-messages [[:update-available-services {:available-apps services
+                                                                        :scheduler-sync-time current-time}]]]
                   (if (>= index (count services))
                     (async/>!! scheduler-state-chan scheduler-messages)
                     (let [service-id (str "service-" index)

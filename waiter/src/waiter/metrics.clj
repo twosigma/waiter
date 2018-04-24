@@ -375,7 +375,7 @@
     (let [service-id->metrics (async/<! service-id->metrics-chan)
           scheduler-messages (async/<! scheduler-state-chan)
           available-service-ids (->> scheduler-messages
-                                     (filter (fn [[message-type _]] (= message-type :update-available-apps)))
+                                     (filter (fn [[message-type _]] (= message-type :update-available-services)))
                                      first
                                      second
                                      :available-apps

@@ -96,7 +96,7 @@
   [interstitial-state-atom service-id->service-description current-available-service-ids scheduler-messages]
   (let [available-service-ids (->> scheduler-messages
                                    (some (fn [[message-type message-data]]
-                                           (when (= :update-available-apps message-type)
+                                           (when (= :update-available-services message-type)
                                              (:available-apps message-data))))
                                    set)
         healthy-instance-service-ids (->> scheduler-messages

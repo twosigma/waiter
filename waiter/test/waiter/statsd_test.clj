@@ -77,7 +77,7 @@
 (deftest test-scheduler-messages->instance-counts-by-metric-group
   (testing "Conversion of scheduler messages to instance counts by metric group"
     (testing "should produce aggregate instance counts by metric group"
-      (let [messages [[:update-available-apps {}]
+      (let [messages [[:update-available-services {}]
                       [:update-app-instances {:service-id :fee
                                               :healthy-instances [:i]
                                               :unhealthy-instances [:i :i]

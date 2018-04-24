@@ -409,7 +409,7 @@
             (async/thread
               (while (not @exit-flag-atom)
                 (let [available-service-ids (remove #(str/includes? % (str @remove-target-atom)) @available-services-atom)
-                      scheduler-messages [[:update-available-apps {:available-apps available-service-ids}]]]
+                      scheduler-messages [[:update-available-services {:available-apps available-service-ids}]]]
                   (async/>!! scheduler-state-chan scheduler-messages)))
               (async/close! scheduler-state-chan))
             (async/thread
