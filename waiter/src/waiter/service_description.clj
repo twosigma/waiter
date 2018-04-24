@@ -788,7 +788,7 @@
         (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
                                (compute-service-description-template-from-tokens token-sequence)
                                (merge sources))]
-          (-> (select-keys descriptor [:auth-user :passthrough-headers :waiter-headers])
+          (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
               (assoc :sources new-sources)
               (merge-service-description-and-id
                 kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?)

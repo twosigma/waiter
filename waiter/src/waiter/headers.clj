@@ -58,8 +58,8 @@
         (recur kvs
                waiter-headers
                (assoc! passthrough-headers k v)))
-      {:waiter-headers (persistent! waiter-headers)
-       :passthrough-headers (persistent! passthrough-headers)})))
+      {:passthrough-headers (persistent! passthrough-headers)
+       :waiter-headers (persistent! waiter-headers)})))
 
 (defn drop-waiter-header-prefix
   "Return a map with the `waiter-header-prefix` dropped from the keys."
