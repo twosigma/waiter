@@ -101,7 +101,7 @@
                                    set)
         healthy-instance-service-ids (->> scheduler-messages
                                           (keep (fn [[message-type message-data]]
-                                                  (when (and (= :update-app-instances message-type)
+                                                  (when (and (= :update-service-instances message-type)
                                                              (seq (:healthy-instances message-data)))
                                                     (:service-id message-data)))))
         service-ids-to-remove (set/difference current-available-service-ids available-service-ids)

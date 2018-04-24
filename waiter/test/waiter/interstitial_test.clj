@@ -186,13 +186,13 @@
                                      atom)
         available-service-ids' ["service-0" "service-7" "service-8" "service-9"]
         scheduler-messages [[:update-available-services {:available-apps available-service-ids'}]
-                            [:update-app-instances {:healthy-instances [{:id "service-0.1"}]
+                            [:update-service-instances {:healthy-instances [{:id "service-0.1"}]
                                                     :service-id "service-0"}]
-                            [:update-app-instances {:healthy-instances [{:id "service-6.1"}]
+                            [:update-service-instances {:healthy-instances [{:id "service-6.1"}]
                                                     :service-id "service-6"}]
-                            [:update-app-instances {:healthy-instances [{:id "service-8.1"}]
+                            [:update-service-instances {:healthy-instances [{:id "service-8.1"}]
                                                     :service-id "service-8"}]
-                            [:update-app-instances {:service-id "service-9"
+                            [:update-service-instances {:service-id "service-9"
                                                     :unhealthy-instances [{:id "service-9.1"}]}]]
         service-id->service-description (fn [service-id]
                                           {"interstitial-secs" (->> (str/last-index-of service-id "-")

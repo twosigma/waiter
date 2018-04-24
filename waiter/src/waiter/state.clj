@@ -1202,7 +1202,7 @@
                                      :service-id->deployment-error service-id->deployment-error'
                                      :time scheduler-sync-time))
 
-                                 :update-app-instances
+                                 :update-service-instances
                                  (let [{:keys [service-id healthy-instances unhealthy-instances failed-instances scheduler-sync-time]} message-data
                                        service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
                                        service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)

@@ -317,7 +317,7 @@
                                  (let [service->state (fn service->state [service-id] [service-id (get service->data service-id)])
                                        service->data' (into {} (map service->state (:available-apps message-data)))]
                                    (recur remaining-scheduler-messages service->data'))
-                                 (if (= :update-app-instances message-type)
+                                 (if (= :update-service-instances message-type)
                                    (let [{:keys [service-id failed-instances healthy-instances]} message-data
                                          service->data' (assoc service->data
                                                           service-id {"has-healthy-instances" (not (empty? healthy-instances))
@@ -469,7 +469,7 @@
                   scheduler-messages' (if service-instance-info
                                         ; Assume nil service-instance-info means there was a failure in invoking marathon
                                         (conj scheduler-messages
-                                              [:update-app-instances
+                                              [:update-service-instances
                                                (assoc service-instance-info
                                                  :service-id id
                                                  :failed-instances all-failed-instances

@@ -996,19 +996,19 @@
       (async/>!! scheduler-state-chan [[:update-available-services {:available-apps [service-id]
                                                                     :scheduler-sync-time (t/now)}]])
       (async/<!! router-state-push-chan)
-      (async/>!! scheduler-state-chan [[:update-app-instances {:healthy-instances [instance]
-                                                               :unhealthy-instances []
-                                                               :sorted-instance-ids [(:id instance)]
-                                                               :service-id service-id
-                                                               :scheduler-sync-time (t/now)}]])
+      (async/>!! scheduler-state-chan [[:update-service-instances {:healthy-instances [instance]
+                                                                   :unhealthy-instances []
+                                                                   :sorted-instance-ids [(:id instance)]
+                                                                   :service-id service-id
+                                                                   :scheduler-sync-time (t/now)}]])
       (let [{:keys [service-id->healthy-instances service-id->expired-instances]} (async/<!! router-state-push-chan)]
         (is (= [instance] (get service-id->healthy-instances service-id)))
         (is (= [instance] (get service-id->expired-instances service-id))))
-      (async/>!! scheduler-state-chan [[:update-app-instances {:healthy-instances []
-                                                               :unhealthy-instances []
-                                                               :sorted-instance-ids []
-                                                               :service-id service-id
-                                                               :scheduler-sync-time (t/now)}]])
+      (async/>!! scheduler-state-chan [[:update-service-instances {:healthy-instances []
+                                                                   :unhealthy-instances []
+                                                                   :sorted-instance-ids []
+                                                                   :service-id service-id
+                                                                   :scheduler-sync-time (t/now)}]])
       (let [{:keys [service-id->healthy-instances service-id->expired-instances]} (async/<!! router-state-push-chan)]
         (is (empty? (get service-id->healthy-instances service-id)))
         (is (empty? (get service-id->expired-instances service-id))))
@@ -1073,7 +1073,7 @@
                           failed-instances (failed-instances-fn service-id index)
                           healthy-instances (healthy-instances-fn service-id index n)
                           unhealthy-instances (unhealthy-instances-fn service-id index)
-                          service-instances-message [:update-app-instances
+                          service-instances-message [:update-service-instances
                                                      (assoc {:healthy-instances healthy-instances
                                                              :unhealthy-instances unhealthy-instances}
                                                        :service-id service-id
@@ -1184,7 +1184,7 @@
                     (let [service-id (str "service-" index)
                           failed-instances (failed-instances-fn service-id index)
                           unhealthy-instances (unhealthy-instances-fn service-id index)
-                          service-instances-message [:update-app-instances
+                          service-instances-message [:update-service-instances
                                                      (assoc {:healthy-instances [] ; no healthy instances
                                                              :unhealthy-instances unhealthy-instances}
                                                        :service-id service-id
