@@ -89,6 +89,10 @@
    (s/optional-key "max-queue-length") schema/positive-int
    s/Str s/Any})
 
+(def request-parameter-schema
+  {(s/optional-key "service-fallback-period-secs") schema/non-negative-int
+   s/Str s/Any})
+
 (def ^:const service-required-keys (->> (keys service-description-schema)
                                         (filter #(instance? RequiredKey %1))
                                         (map :k)
@@ -115,8 +119,11 @@
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys #{"deleted" "last-update-time" "last-update-user" "owner" "previous" "root"})
 
+; keys allowed in request-scope for tokens, these need to be distinct from service description keys
+(def ^:const request-parameter-keys #{"service-fallback-period-secs"})
+
 ; keys allowed in the token data
-(def ^:const token-data-keys (set/union service-description-keys token-metadata-keys))
+(def ^:const token-data-keys (set/union request-parameter-keys service-description-keys token-metadata-keys))
 
 (defn transform-allowed-params-header
   "Converts allowed-params comma-separated string in the service-description to a set."
@@ -479,7 +486,8 @@
    parameters and metadata) is provided.
    The token-description consists of the following keys: :service-description-template and :token-metadata"
   [config]
-  {:service-description-template (select-keys config service-description-keys)
+  {:request-parameters (select-keys config request-parameter-keys)
+   :service-description-template (select-keys config service-description-keys)
    :token-metadata (select-keys config token-metadata-keys)})
 
 (defn token->token-description
@@ -488,13 +496,22 @@
   (let [config (token->token-data kv-store token false include-deleted)]
     (token-data->token-description config)))
 
+(defn- token->sanitized-map
+  "Retrieves the service description template for the given token."
+  [kv-store ^String token allowed-keys error-on-missing]
+  (-> (token->token-data kv-store token error-on-missing false)
+      (or {})
+      (select-keys allowed-keys)))
+
 (defn token->service-description-template
   "Retrieves the service description template for the given token."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (let [config (token->token-data kv-store token error-on-missing false)]
-    (if (not-empty config)
-      (select-keys config service-description-keys)
-      {})))
+  (token->sanitized-map kv-store token service-description-keys error-on-missing))
+
+(defn token->token-metadata
+  "Retrieves the token metadata for the given token."
+  [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
+  (token->sanitized-map kv-store token token-metadata-keys error-on-missing))
 
 (defn retrieve-token-from-service-description-or-hostname
   "Retrieve the token name from the service description map using the x-waiter-token key.
@@ -526,23 +543,30 @@
        (-> run-as-user str/blank? not)
        (required-keys-present? description)))
 
+(defn token-sequence->merged-data
+  "Computes the merged token-data using the provided token-sequence and token->token-data mapping.
+   It removes the metadata keys from the returned result."
+  [allowed-keys token->token-data token-sequence]
+  (loop [loop-token-data {}
+         [token & remaining-tokens] token-sequence]
+    (if token
+      (recur (merge loop-token-data
+                    (-> (token->token-data token)
+                        (select-keys allowed-keys)))
+             remaining-tokens)
+      (apply dissoc loop-token-data token-metadata-keys))))
+
 (defn- compute-service-description-template-from-tokens
   "Computes the service description, preauthorization and authentication data using the token-sequence and token-data."
   [token-sequence token->token-data]
-  (loop [loop-service-description-template {}
-         [token & remaining-tokens] token-sequence]
-    (if token
-      (let [token-data (token->token-data token)
-            service-description-template (sanitize-service-description token-data)]
-        (recur (merge loop-service-description-template service-description-template)
-               remaining-tokens))
-      {:service-description-template (sanitize-service-description loop-service-description-template)
-       :token->token-data token->token-data
-       :token-authentication-disabled (and (= 1 (count token-sequence))
-                                           (token-authentication-disabled? loop-service-description-template))
-       :token-preauthorized (and (= 1 (count token-sequence))
-                                 (token-preauthorized? loop-service-description-template))
-       :token-sequence token-sequence})))
+  (let [service-description-template (token-sequence->merged-data service-description-keys token->token-data token-sequence)]
+    {:service-description-template service-description-template
+     :token->token-data token->token-data
+     :token-authentication-disabled (and (= 1 (count token-sequence))
+                                         (token-authentication-disabled? service-description-template))
+     :token-preauthorized (and (= 1 (count token-sequence))
+                               (token-preauthorized? service-description-template))
+     :token-sequence token-sequence}))
 
 (defn- prepare-service-description-template-from-tokens
   "Prepares the service description using the token(s)."
@@ -770,20 +794,24 @@
                                           service-description-builder assoc-run-as-user-approved?)
         (merge-suspended kv-store))))
 
-(defn retrieve-previous-token
+(defn retrieve-most-recently-modified-token
   "Computes the most recently modified token from the token->token-data map."
   [token->token-data]
-  (first (apply max-key (fn [[_ token-data]] (get-in token-data ["previous" "last-update-time"] 0)) token->token-data)))
+  (->> token->token-data
+       (apply max-key (fn [[_ {:strs [last-update-time]}]] (or last-update-time 0)))
+       first))
 
 (defn descriptor->previous-descriptor
   "Creates the service descriptor from the request.
    The result map contains the following elements:
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
-  [kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?
+  [kv-store service-id-prefix metric-group-mappings service-description-builder service-approved? username
    {:keys [sources] :as descriptor}]
   (when-let [token-sequence (-> sources :token-sequence seq)]
     (let [{:keys [token->token-data]} sources
-          previous-token (retrieve-previous-token token->token-data)
+          previous-token (->> token->token-data
+                              (pc/map-vals (fn [token-data] (get token-data "previous")))
+                              retrieve-most-recently-modified-token)
           previous-token-data (get-in token->token-data [previous-token "previous"])]
       (when (seq previous-token-data)
         (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
@@ -792,7 +820,7 @@
           (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
               (assoc :sources new-sources)
               (merge-service-description-and-id
-                kv-store service-id-prefix username metric-group-mappings service-description-builder assoc-run-as-user-approved?)
+                kv-store service-id-prefix username metric-group-mappings service-description-builder service-approved?)
               (merge-suspended kv-store)))))))
 
 (defn service-id->service-description

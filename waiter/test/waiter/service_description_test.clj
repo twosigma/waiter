@@ -1952,7 +1952,11 @@
   (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
   (is (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
 
-(deftest test-no-intersection-in-token-service-description-and-metadata
+(deftest test-no-intersection-in-token-request-scope-and-service-description-and-metadata
+  (is (empty? (set/intersection request-parameter-keys service-description-keys))
+      "We found common elements in request-parameter-keys and service-description-keys!")
+  (is (empty? (set/intersection request-parameter-keys token-metadata-keys))
+      "We found common elements in request-parameter-keys and token-metadata-keys!")
   (is (empty? (set/intersection service-description-keys token-metadata-keys))
       "We found common elements in service-description-keys and token-metadata-keys!"))
 
@@ -2002,42 +2006,34 @@
                     :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))
 
-(deftest test-retrieve-previous-token
-  (testing "all tokens have previous"
-    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
-          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-2-A" "last-update-time" 1200}}
-          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
-                        "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
+(deftest test-retrieve-most-recently-modified-token
+  (testing "all tokens have last-update-time"
+    (let [token-data-1 {"cmd" "c-1-A" "last-update-time" 1100}
+          token-data-2 {"cmd" "c-2-A" "last-update-time" 1200}
+          token-data-3 {"cmd" "c-3-A" "last-update-time" 1000}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-2" (retrieve-previous-token token->token-data)))))
+      (is (= "token-2" (retrieve-most-recently-modified-token token->token-data)))))
 
-  (testing "some tokens have previous"
-    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
-          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500}
-          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
-                        "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
+  (testing "some tokens have last-update-time"
+    (let [token-data-1 {"cmd" "c-1-A" "last-update-time" 1100}
+          token-data-2 {"cmd" "c-2-A"}
+          token-data-3 {"cmd" "c-3-A" "last-update-time" 1000}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-1" (retrieve-previous-token token->token-data)))))
+      (is (= "token-1" (retrieve-most-recently-modified-token token->token-data)))))
 
-  (testing "tokens tied for previous"
-    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
-          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-2-A" "last-update-time" 1100}}
-          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
-                        "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
+  (testing "tokens tied for last-update-time"
+    (let [token-data-1 {"cmd" "c-1-A" "last-update-time" 1100}
+          token-data-2 {"cmd" "c-2-A" "last-update-time" 1100}
+          token-data-3 {"cmd" "c-3-A" "last-update-time" 1000}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-2" (retrieve-previous-token (into (sorted-map) token->token-data))))))
+      (is (= "token-2" (retrieve-most-recently-modified-token (into (sorted-map) token->token-data))))))
 
-  (testing "no tokens have previous"
-    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500}
-          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500}
-          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100}
+  (testing "no tokens have last-update-time"
+    (let [token-data-1 {"cmd" "c-1-B"}
+          token-data-2 {"cmd" "c-2-B"}
+          token-data-3 {"cmd" "c-3-B"}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-3" (retrieve-previous-token (into (sorted-map) token->token-data)))))))
+      (is (= "token-3" (retrieve-most-recently-modified-token (into (sorted-map) token->token-data)))))))
 
 (deftest test-descriptor->previous-descriptor
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -2059,7 +2055,7 @@
             passthrough-headers {}
             waiter-headers {}]
         (is (nil? (descriptor->previous-descriptor
-                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                    kv-store service-id-prefix metric-group-mappings builder assoc-run-as-user-approved? username
                     {:passthrough-headers passthrough-headers
                      :sources sources
                      :waiter-headers waiter-headers})))))
@@ -2076,7 +2072,7 @@
             passthrough-headers {}
             waiter-headers {}]
         (is (nil? (descriptor->previous-descriptor
-                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                    kv-store service-id-prefix metric-group-mappings builder assoc-run-as-user-approved? username
                     {:passthrough-headers passthrough-headers
                      :sources sources
                      :waiter-headers waiter-headers})))))
@@ -2095,7 +2091,7 @@
             passthrough-headers {}
             waiter-headers {}
             previous-descriptor (descriptor->previous-descriptor
-                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                                  kv-store service-id-prefix metric-group-mappings builder assoc-run-as-user-approved? username
                                   {:passthrough-headers passthrough-headers
                                    :sources sources
                                    :waiter-headers waiter-headers})]
@@ -2112,7 +2108,7 @@
                 :waiter-headers waiter-headers}
                previous-descriptor))
         (is (nil? (descriptor->previous-descriptor
-                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                    kv-store service-id-prefix metric-group-mappings builder assoc-run-as-user-approved? username
                     previous-descriptor)))))
 
     (testing "single on-the-fly+token with previous"
@@ -2130,7 +2126,7 @@
             passthrough-headers {}
             waiter-headers {"x-waiter-cpus" 20}
             previous-descriptor (descriptor->previous-descriptor
-                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                                  kv-store service-id-prefix metric-group-mappings builder assoc-run-as-user-approved? username
                                   {:passthrough-headers passthrough-headers
                                    :sources sources
                                    :waiter-headers waiter-headers})]
@@ -2167,7 +2163,7 @@
             passthrough-headers {}
             waiter-headers {}]
         (is (nil? (descriptor->previous-descriptor
-                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                    kv-store service-id-prefix metric-group-mappings builder assoc-run-as-user-approved? username
                     {:passthrough-headers passthrough-headers
                      :sources sources
                      :waiter-headers waiter-headers})))))
@@ -2188,7 +2184,7 @@
             passthrough-headers {}
             waiter-headers {}
             previous-descriptor (descriptor->previous-descriptor
-                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                                  kv-store service-id-prefix metric-group-mappings builder assoc-run-as-user-approved? username
                                   {:passthrough-headers passthrough-headers
                                    :sources sources
                                    :waiter-headers waiter-headers})]
@@ -2210,7 +2206,7 @@
                 :waiter-headers waiter-headers}
                previous-descriptor))
         (let [prev-descriptor-2 (descriptor->previous-descriptor
-                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                                  kv-store service-id-prefix metric-group-mappings builder assoc-run-as-user-approved? username
                                   previous-descriptor)]
           (is (= {:core-service-description (-> (merge service-description-1p service-description-2p)
                                                 (select-keys service-description-keys))
@@ -2231,5 +2227,5 @@
                   :waiter-headers waiter-headers}
                  (dissoc prev-descriptor-2 :retrieve-fallback-service-description)))
           (is (nil? (descriptor->previous-descriptor
-                      kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
+                      kv-store service-id-prefix metric-group-mappings builder assoc-run-as-user-approved? username
                       prev-descriptor-2))))))))

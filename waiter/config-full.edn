@@ -411,6 +411,9 @@
                                ;; can be overriden in the service description:
                                :queue-timeout-ms 300000
 
+                               ;; The default period (minutes) for which an instance from a fallback service can be requested:
+                               :service-fallback-period-secs 240
+
                                ;; Configures the idle timeout (milliseconds) in the response output stream:
                                :streaming-timeout-ms 20000}
 

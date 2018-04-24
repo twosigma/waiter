@@ -21,7 +21,7 @@
 (defn log
   "Log log-data as JSON"
   [log-data]
-  (log/log "RequestLog":info nil (json/write-str log-data :escape-slash false)))
+  (log/log "RequestLog" :info nil (json/write-str log-data :escape-slash false)))
 
 (defn request->context
   "Convert a request into a context suitable for logging."
@@ -40,7 +40,7 @@
 
 (defn response->context
   "Convert a response into a context suitable for logging."
-  [{:keys [authorization/principal backend-response-latency-ns descriptor get-instance-latency-ns
+  [{:keys [authorization/principal backend-response-latency-ns descriptor fallback-source-id get-instance-latency-ns
            handle-request-latency-ns instance status] :as response}]
   (let [{:keys [service-id service-description]} descriptor]
     (cond-> {:status (or status 200)}
@@ -49,6 +49,7 @@
                         :service-id service-id
                         :service-name (get service-description "name")
                         :service-version (get service-description "version"))
+      fallback-source-id (assoc :fallback-source-id fallback-source-id)
       instance (assoc :instance-host (:host instance)
                       :instance-id (:id instance)
                       :instance-port (:port instance)

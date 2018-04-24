@@ -14,6 +14,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [schema.core :as s]
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
@@ -80,12 +81,15 @@
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
-    [synchronize-fn kv-store history-length ^String token service-description-template token-metadata & {:keys [version-hash]}]
+    [synchronize-fn kv-store history-length ^String token request-parameters service-description-template token-metadata &
+     {:keys [version-hash]}]
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "storing service description for token:" token)
-        (let [token-data (merge service-description-template (select-keys token-metadata sd/token-metadata-keys))
+        (let [token-data (merge service-description-template
+                                (select-keys request-parameters sd/request-parameter-keys)
+                                (select-keys token-metadata sd/token-metadata-keys))
               {:strs [deleted owner] :as new-token-data} (sd/sanitize-service-description token-data sd/token-data-keys)
               existing-token-data (kv/fetch kv-store token :refresh true)
               existing-token-data (if-not (get existing-token-data "deleted") existing-token-data {})
@@ -273,14 +277,15 @@
         token (or (get request-params "token")
                   (:token (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)))
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
-        {:keys [service-description-template token-metadata]} token-description
+        {:keys [request-parameters service-description-template token-metadata]} token-description
+        parameters-to-display (merge request-parameters service-description-template)
         token-hash (token-description->token-hash token-description)]
-    (if (and service-description-template (not-empty service-description-template))
+    (if (seq parameters-to-display)
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
         (log/info "successfully retrieved token " token)
         (utils/map->json-response
-          (cond-> service-description-template
+          (cond-> parameters-to-display
                   show-metadata
                   (merge (cond-> (loop [loop-token-metadata token-metadata
                                         nested-last-update-time-path ["last-update-time"]]
@@ -309,9 +314,10 @@
                                                :body
                                                sd/transform-allowed-params-token-entry)
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
+        new-request-parameters (select-keys new-token-data sd/request-parameter-keys)
         {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-description-template}
         (select-keys new-token-data sd/service-description-keys)
-        {existing-token-metadata :token-metadata} (sd/token->token-description kv-store token)
+        existing-token-metadata (sd/token->token-metadata kv-store token :error-on-missing false)
         owner (or (get new-token-metadata "owner")
                   (get existing-token-metadata "owner")
                   authenticated-user)
@@ -324,6 +330,9 @@
       (throw (ex-info "Token must match pattern"
                       {:status 400 :token token :pattern (str valid-token-re)})))
     (validate-service-description-fn new-service-description-template)
+    (when-let [request-parameter-check (s/check sd/request-parameter-schema new-request-parameters)]
+      (throw (ex-info "Request parameter validation failed"
+                      {:failed-check request-parameter-check :status 400 :token token})))
     (let [unknown-keys (-> new-token-data
                            keys
                            set
@@ -412,14 +421,17 @@
                                      "root" (or (get existing-token-metadata "root") token-root)}
                                     new-token-metadata)]
       (store-service-description-for-token
-        synchronize-fn kv-store history-length token new-service-description-template new-token-metadata
-        :version-hash version-hash)
+        synchronize-fn kv-store history-length token new-request-parameters new-service-description-template
+        new-token-metadata :version-hash version-hash)
       ; notify peers of token update
       (make-peer-requests-fn "tokens/refresh"
                              :method :post
                              :body (json/write-str {:token token, :owner owner}))
-      (utils/map->json-response {:message (str "Successfully created " token)
-                                 :service-description new-service-description-template}
+      (utils/map->json-response (cond-> {:message (str "Successfully created " token)}
+                                        (seq new-request-parameters)
+                                        (assoc :request-parameters new-request-parameters)
+                                        (seq new-service-description-template)
+                                        (assoc :service-description new-service-description-template))
                                 :headers {"etag" (-> {:service-description-template new-service-description-template
                                                       :token-metadata new-token-metadata}
                                                      token-description->token-hash)}))))

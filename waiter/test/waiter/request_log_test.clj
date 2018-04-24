@@ -43,6 +43,7 @@
                                :service-description {"metric-group" "service-metric-group"
                                                      "name" "service-name"
                                                      "version" "service-version"}}
+                  :fallback-source-id "fallback-source-id"
                   :get-instance-latency-ns 500
                   :handle-request-latency-ns 2000
                   :instance {:host "instance-host"
@@ -51,6 +52,7 @@
                              :protocol "instance-proto"}
                   :status 200}]
     (is (= {:backend-response-latency-ns 1000
+            :fallback-source-id "fallback-source-id"
             :get-instance-latency-ns 500
             :handle-request-latency-ns 2000
             :instance-host "instance-host"

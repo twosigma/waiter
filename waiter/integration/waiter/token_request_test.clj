@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.token-request-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -911,7 +912,7 @@
                     (let [previous-service-id service-id
                           {:keys [body cookies service-id] :as response}
                           (make-request-with-debug-info
-                            {"host" host-header}
+                            {"host" host-header "x-waiter-service-fallback-period-secs" 0}
                             #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))]
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
@@ -973,5 +974,84 @@
             (is (contains? headers "x-cid"))
             (delete-service waiter-url service-id)))
 
+        (finally
+          (delete-token-and-assert waiter-url token))))))
+
+(deftest ^:parallel ^:integration-slow test-service-fallback-support
+  (testing-using-waiter-url
+    (let [service-name (rand-name)
+          token (create-token-name waiter-url service-name)
+          current-user (retrieve-username)
+          scheduler-syncer-interval-secs (setting waiter-url [:scheduler-syncer-interval-secs])
+          service-fallback-period-secs (+ 30 scheduler-syncer-interval-secs)
+          service-description-1 (-> (kitchen-request-headers :prefix "")
+                                    (assoc :name (str service-name "-v1")
+                                           :permitted-user "*"
+                                           :run-as-user current-user
+                                           :service-fallback-period-secs service-fallback-period-secs
+                                           :version "version-1"))
+          request-headers {:x-waiter-token token}
+          service-id-headers (assoc request-headers :x-waiter-service-fallback-period-secs 0)
+          kitchen-env-service-id (fn []
+                                   (-> (make-request waiter-url "/environment" :headers request-headers)
+                                       :body
+                                       (json/read-str)
+                                       (get "WAITER_SERVICE_ID")))
+          thread-sleep (fn [time-in-secs] (-> time-in-secs inc t/seconds t/in-millis Thread/sleep))]
+      (try
+        (let [token-description-1 (assoc service-description-1 :token token)
+              post-response (post-token waiter-url token-description-1)
+              _ (assert-response-status post-response 200)
+              service-id-1 (retrieve-service-id waiter-url service-id-headers)]
+          (with-service-cleanup
+            service-id-1
+
+            (is (= service-id-1 (kitchen-env-service-id)))
+            ;; allow syncer state to get updated
+            (thread-sleep scheduler-syncer-interval-secs)
+
+            (let [service-description-2 (assoc service-description-1 :name (str service-name "-v2") :version "version-2")
+                  token-description-2 (assoc service-description-2 :token token)
+                  post-response (post-token waiter-url token-description-2)
+                  _ (assert-response-status post-response 200)
+                  service-id-2 (retrieve-service-id waiter-url service-id-headers)]
+              (with-service-cleanup
+                service-id-2
+
+                (is (not= service-id-1 service-id-2))
+                ;; fallback to service-id-1
+                (is (= service-id-1 (retrieve-service-id waiter-url request-headers)))
+                (is (= service-id-1 (kitchen-env-service-id)))
+                (thread-sleep service-fallback-period-secs)
+                ;; outside fallback duration
+                (is (= service-id-2 (kitchen-env-service-id)))
+                ;; allow syncer state to get updated
+                (thread-sleep scheduler-syncer-interval-secs)
+
+                (let [sleep-duration (* 2 scheduler-syncer-interval-secs)
+                      service-description-3 (-> service-description-1
+                                                (assoc :name (str service-name "-v3") :version "version-3")
+                                                (update "cmd" (fn [c] (str "sleep " sleep-duration " && " c))))
+                      token-description-3 (assoc service-description-3 :token token)
+                      post-response (post-token waiter-url token-description-3)
+                      _ (assert-response-status post-response 200)
+                      service-id-3 (retrieve-service-id waiter-url service-id-headers)]
+                  (with-service-cleanup
+                    service-id-3
+
+                    (is (not= service-id-1 service-id-3))
+                    (is (not= service-id-2 service-id-3))
+                    ;; fallback to service-id-2
+                    (is (= service-id-2 (retrieve-service-id waiter-url request-headers)))
+                    (is (= service-id-2 (kitchen-env-service-id)))
+                    (thread-sleep service-fallback-period-secs)
+                    ;; outside fallback duration
+                    (is (= service-id-3 (kitchen-env-service-id)))
+                    ;; delete service-id-3 to trigger fallback logic on next request
+                    (delete-service waiter-url service-id-3)
+                    ;; allow syncer state to get updated
+                    (thread-sleep scheduler-syncer-interval-secs)
+                    ;; outside fallback duration
+                    (is (= service-id-3 (kitchen-env-service-id)))))))))
         (finally
           (delete-token-and-assert waiter-url token))))))

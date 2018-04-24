@@ -9,7 +9,8 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.settings
-  (:require [clojure.edn :as edn]
+  (:require [clj-time.core :as t]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
@@ -54,8 +55,9 @@
                                                   (s/required-key :initial-socket-timeout-ms) schema/positive-int
                                                   (s/required-key :lingering-request-threshold-ms) schema/positive-int
                                                   (s/required-key :output-buffer-size) schema/positive-int
-                                                  (s/required-key :streaming-timeout-ms) schema/positive-int
-                                                  (s/required-key :queue-timeout-ms) schema/positive-int}
+                                                  (s/required-key :queue-timeout-ms) schema/positive-int
+                                                  (s/required-key :service-fallback-period-secs) schema/non-negative-int
+                                                  (s/required-key :streaming-timeout-ms) schema/positive-int}
    (s/required-key :kv-config) (s/constrained
                                  {:kind s/Keyword
                                   (s/optional-key :encrypt) s/Bool
@@ -224,6 +226,7 @@
                                  :lingering-request-threshold-ms 60000 ; 1 minute
                                  :output-buffer-size 4096
                                  :queue-timeout-ms 300000
+                                 :service-fallback-period-secs (-> 4 t/hours t/in-seconds)
                                  :streaming-timeout-ms 20000}
    :kv-config {:kind :zk
                :zk {:factory-fn 'waiter.kv/new-zk-kv-store
