@@ -359,7 +359,7 @@
 
 (defn- request-available-waiter-apps
   "Queries the scheduler and builds a list of available Waiter apps."
-  [scheduler service-id->service-description-fn]
+  [scheduler]
   (when-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "get-apps")
                                           (retry-on-transient-server-exceptions
@@ -437,7 +437,7 @@
     (log/trace "scheduler-syncer: querying scheduler")
     (if-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "app->available-tasks")
-                                          (do-health-checks (request-available-waiter-apps scheduler service-id->service-description-fn)
+                                          (do-health-checks (request-available-waiter-apps scheduler)
                                                             (fn available [instance health-check-path]
                                                               (available? instance health-check-path http-client))
                                                             service-id->service-description-fn))]
