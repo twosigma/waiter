@@ -77,31 +77,31 @@
 (deftest test-scheduler-messages->instance-counts-by-metric-group
   (testing "Conversion of scheduler messages to instance counts by metric group"
     (testing "should produce aggregate instance counts by metric group"
-      (let [messages [[:update-available-apps {}]
-                      [:update-app-instances {:service-id :fee
-                                              :healthy-instances [:i]
-                                              :unhealthy-instances [:i :i]
-                                              :failed-instances [:i :i :i]}]
-                      [:update-app-instances {:service-id :fie
-                                              :healthy-instances [:i]
-                                              :unhealthy-instances [:i :i]
-                                              :failed-instances [:i :i :i]}]
-                      [:update-app-instances {:service-id :foe
-                                              :healthy-instances [:i :i :i]
-                                              :unhealthy-instances [:i :i :i]
-                                              :failed-instances [:i :i :i]}]
-                      [:update-app-instances {:service-id :fum
-                                              :healthy-instances [:i :i :i]
-                                              :unhealthy-instances [:i :i :i]
-                                              :failed-instances [:i :i :i]}]
-                      [:update-app-instances {:service-id :qux
-                                              :healthy-instances [:i :i :i]
-                                              :unhealthy-instances [:i :i :i]
-                                              :failed-instances [:i :i :i]}]
-                      [:update-app-instances {:service-id :eek
-                                              :healthy-instances [:i]
-                                              :unhealthy-instances [:i :i]
-                                              :failed-instances [:i :i :i]}]]
+      (let [messages [[:update-available-services {}]
+                      [:update-service-instances {:service-id :fee
+                                                  :healthy-instances [:i]
+                                                  :unhealthy-instances [:i :i]
+                                                  :failed-instances [:i :i :i]}]
+                      [:update-service-instances {:service-id :fie
+                                                  :healthy-instances [:i]
+                                                  :unhealthy-instances [:i :i]
+                                                  :failed-instances [:i :i :i]}]
+                      [:update-service-instances {:service-id :foe
+                                                  :healthy-instances [:i :i :i]
+                                                  :unhealthy-instances [:i :i :i]
+                                                  :failed-instances [:i :i :i]}]
+                      [:update-service-instances {:service-id :fum
+                                                  :healthy-instances [:i :i :i]
+                                                  :unhealthy-instances [:i :i :i]
+                                                  :failed-instances [:i :i :i]}]
+                      [:update-service-instances {:service-id :qux
+                                                  :healthy-instances [:i :i :i]
+                                                  :unhealthy-instances [:i :i :i]
+                                                  :failed-instances [:i :i :i]}]
+                      [:update-service-instances {:service-id :eek
+                                                  :healthy-instances [:i]
+                                                  :unhealthy-instances [:i :i]
+                                                  :failed-instances [:i :i :i]}]]
             service-id->service-description #(% {:fee {"metric-group" "foo", "cpus" 0.1, "mem" 128}
                                                  :fie {"metric-group" "bar", "cpus" 0.2, "mem" 256}
                                                  :foe {"metric-group" "bar", "cpus" 0.4, "mem" 512}
@@ -128,31 +128,31 @@
     (testing "should be resilient to empty service description"
       (is (= {nil {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0, :mem 0}}
              (statsd/scheduler-messages->instance-counts-by-metric-group
-               [[:update-app-instances {:service-id :fee
-                                        :healthy-instances [:i]
-                                        :unhealthy-instances [:i :i]
-                                        :failed-instances [:i :i :i]}]]
+               [[:update-service-instances {:service-id :fee
+                                            :healthy-instances [:i]
+                                            :unhealthy-instances [:i :i]
+                                            :failed-instances [:i :i :i]}]]
                (constantly {})))))))
 
-(deftest test-process-update-app-instances-message
-  (testing "Processing of an :update-app-instances scheduler message"
+(deftest test-process-update-service-instances-message
+  (testing "Processing of an :update-service-instances scheduler message"
 
     (testing "should not let exceptions bubble out"
       (let [misbehaving-fn (fn [_] (throw (Exception. "I'm misbehaving")))]
-        (is (= {} (statsd/process-update-app-instances-message {} {} misbehaving-fn)))
+        (is (= {} (statsd/process-update-service-instances-message {} {} misbehaving-fn)))
         (is (= {"foo" {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0.5, :mem 384}}
-               (statsd/process-update-app-instances-message
+               (statsd/process-update-service-instances-message
                  {"foo" {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0.5, :mem 384}}
                  {:service-id "bar"}
                  misbehaving-fn)))))
 
     (testing "should not include instance counts when service description is nil"
-      (is (= {} (statsd/process-update-app-instances-message {}
-                                                             {:service-id :fee
-                                                              :healthy-instances [:i]
-                                                              :unhealthy-instances [:i :i]
-                                                              :failed-instances [:i :i :i]}
-                                                             (constantly nil)))))))
+      (is (= {} (statsd/process-update-service-instances-message {}
+                                                                 {:service-id :fee
+                                                                  :healthy-instances [:i]
+                                                                  :unhealthy-instances [:i :i]
+                                                                  :failed-instances [:i :i :i]}
+                                                                 (constantly nil)))))))
 
 (deftest test-process-scheduler-messages
   (testing "Processing a batch of scheduler messages"

@@ -1176,9 +1176,9 @@
                          (log/trace "scheduler-state-chan received, type:" message-type)
                          (let [loop-state'
                                (case message-type
-                                 :update-available-apps
-                                 (let [{:keys [available-apps scheduler-sync-time]} message-data
-                                       available-service-ids (into #{} available-apps)
+                                 :update-available-services
+                                 (let [{:keys [available-service-ids scheduler-sync-time]} message-data
+                                       available-service-ids (into #{} available-service-ids)
                                        services-without-instances (remove #(contains? service-id->my-instance->slots %) available-service-ids)
                                        service-id->healthy-instances' (select-keys service-id->healthy-instances available-service-ids)
                                        service-id->unhealthy-instances' (select-keys service-id->unhealthy-instances available-service-ids)
@@ -1189,7 +1189,7 @@
                                    (when (or (not= service-id->healthy-instances service-id->healthy-instances')
                                              (not= service-id->unhealthy-instances service-id->unhealthy-instances')
                                              (seq services-without-instances))
-                                     (log/info "update-available-apps:"
+                                     (log/info "update-available-services:"
                                                (count service-id->healthy-instances') "services with healthy instances and"
                                                (count services-without-instances) "services without instances:"
                                                (vec services-without-instances)))
@@ -1202,7 +1202,7 @@
                                      :service-id->deployment-error service-id->deployment-error'
                                      :time scheduler-sync-time))
 
-                                 :update-app-instances
+                                 :update-service-instances
                                  (let [{:keys [service-id healthy-instances unhealthy-instances failed-instances scheduler-sync-time]} message-data
                                        service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
                                        service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)

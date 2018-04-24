@@ -96,12 +96,12 @@
   [interstitial-state-atom service-id->service-description current-available-service-ids scheduler-messages]
   (let [available-service-ids (->> scheduler-messages
                                    (some (fn [[message-type message-data]]
-                                           (when (= :update-available-apps message-type)
-                                             (:available-apps message-data))))
+                                           (when (= :update-available-services message-type)
+                                             (:available-service-ids message-data))))
                                    set)
         healthy-instance-service-ids (->> scheduler-messages
                                           (keep (fn [[message-type message-data]]
-                                                  (when (and (= :update-app-instances message-type)
+                                                  (when (and (= :update-service-instances message-type)
                                                              (seq (:healthy-instances message-data)))
                                                     (:service-id message-data)))))
         service-ids-to-remove (set/difference current-available-service-ids available-service-ids)

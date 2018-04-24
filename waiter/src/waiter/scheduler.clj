@@ -265,13 +265,13 @@
     (let [transformer-fn (fn [scheduler-messages out*]
                            (async/go
                              (doseq [[message-type message-data] scheduler-messages]
-                               (when (= :update-available-apps message-type)
+                               (when (= :update-available-services message-type)
                                  (when-let [global-state (service-id->metrics-fn)]
                                    (let [service->state (fn [service-id]
                                                           [service-id
                                                            (merge {"outstanding" 0 "total" 0}
                                                                   (select-keys (get global-state service-id) ["outstanding" "total"]))])
-                                         service->data (into {} (map service->state (:available-apps message-data)))]
+                                         service->data (into {} (map service->state (:available-service-ids message-data)))]
                                      (async/>! out* service->data)))))
                              (async/close! out*)))]
       (async/pipeline-async 1 service-data-chan transformer-fn scheduler-state-chan false))
@@ -313,18 +313,21 @@
                            (async/go
                              (loop [[[message-type message-data] & remaining-scheduler-messages] scheduler-messages
                                     service->data {}]
-                               (if (= :update-available-apps message-type)
-                                 (let [service->state (fn service->state [service-id] [service-id (get service->data service-id)])
-                                       service->data' (into {} (map service->state (:available-apps message-data)))]
+                               (condp = message-type
+                                 :update-available-services
+                                 (let [service->data' (select-keys service->data (:available-service-ids message-data))]
                                    (recur remaining-scheduler-messages service->data'))
-                                 (if (= :update-app-instances message-type)
-                                   (let [{:keys [service-id failed-instances healthy-instances]} message-data
-                                         service->data' (assoc service->data
-                                                          service-id {"has-healthy-instances" (not (empty? healthy-instances))
-                                                                      "has-failed-instances" (not (empty? failed-instances))
-                                                                      "failed-instance-hosts" (set (map :host failed-instances))})]
-                                     (recur remaining-scheduler-messages service->data'))
-                                   (async/>! out* service->data))))
+
+                                 :update-service-instances
+                                 (let [{:keys [service-id failed-instances healthy-instances]} message-data
+                                       service->data' (assoc service->data
+                                                        service-id {"failed-instance-hosts" (set (map :host failed-instances))
+                                                                    "has-healthy-instances" (not (empty? healthy-instances))
+                                                                    "has-failed-instances" (not (empty? failed-instances))})]
+                                   (recur remaining-scheduler-messages service->data'))
+
+                                 ;; else
+                                 (async/>! out* service->data)))
                              (async/close! out*)))]
       (async/pipeline-async 1 service-data-chan transformer-fn scheduler-state-chan false))
     (let [service->state-fn (fn [_ {:strs [failed-hosts-limit-reached]} {:strs [failed-instance-hosts has-healthy-instances] :as data}]
@@ -356,7 +359,7 @@
 
 (defn- request-available-waiter-apps
   "Queries the scheduler and builds a list of available Waiter apps."
-  [scheduler service-id->service-description-fn]
+  [scheduler]
   (when-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "get-apps")
                                           (retry-on-transient-server-exceptions
@@ -392,11 +395,11 @@
                                             (update :flags
                                                     (fn [flags]
                                                       (cond-> flags
-                                                        (not= error :connect-exception)
-                                                        (conj :has-connected)
+                                                              (not= error :connect-exception)
+                                                              (conj :has-connected)
 
-                                                        (not (contains? connection-errors error))
-                                                        (conj :has-responded))))))
+                                                              (not (contains? connection-errors error))
+                                                              (conj :has-responded))))))
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
                                        (if (:healthy? instance)
@@ -434,7 +437,7 @@
     (log/trace "scheduler-syncer: querying scheduler")
     (if-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "app->available-tasks")
-                                          (do-health-checks (request-available-waiter-apps scheduler service-id->service-description-fn)
+                                          (do-health-checks (request-available-waiter-apps scheduler)
                                                             (fn available [instance health-check-path]
                                                               (available? instance health-check-path http-client))
                                                             service-id->service-description-fn))]
@@ -445,7 +448,7 @@
           (when (zero? (reduce + 0 (filter number? (vals (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])))))
             (log/info "scheduler-syncer:" (:id service) "has no live instances!" (:task-stats service))))
         (loop [service-id->health-check-context' {}
-               scheduler-messages [[:update-available-apps {:available-apps available-service-ids :scheduler-sync-time request-apps-time}]]
+               scheduler-messages [[:update-available-services {:available-service-ids available-service-ids :scheduler-sync-time request-apps-time}]]
                [[{:keys [id]} {:keys [active-instances failed-instances]}] & remaining] (seq service->service-instances)]
           (if id
             (let [request-instances-time (t/now)
@@ -469,7 +472,7 @@
                   scheduler-messages' (if service-instance-info
                                         ; Assume nil service-instance-info means there was a failure in invoking marathon
                                         (conj scheduler-messages
-                                              [:update-app-instances
+                                              [:update-service-instances
                                                (assoc service-instance-info
                                                  :service-id id
                                                  :failed-instances all-failed-instances

@@ -354,8 +354,8 @@
                 (gauge! metric-group "mem" mem))
               counts-by-metric-group)))
 
-(defn process-update-app-instances-message
-  "Merges the current map of resources by metric group with data from a :update-app-instances scheduler message"
+(defn process-update-service-instances-message
+  "Merges the current map of resources by metric group with data from a :update-service-instances scheduler message"
   [counts-by-metric-group {:keys [service-id healthy-instances unhealthy-instances failed-instances] :as message-data}
    service-id->service-description-fn]
   (try
@@ -374,7 +374,7 @@
         (log/warn "No service description found for service id" service-id)
         counts-by-metric-group))
     (catch Throwable e
-      (log/error e "Error processing update-app-instances message" message-data)
+      (log/error e "Error processing update-service-instances message" message-data)
       counts-by-metric-group)))
 
 (defn scheduler-messages->instance-counts-by-metric-group
@@ -385,8 +385,8 @@
          counts-by-metric-group {}]
     (let [counts-by-metric-group'
           (cond-> counts-by-metric-group
-                  (= message-type :update-app-instances)
-                  (process-update-app-instances-message message-data service-id->service-description-fn))]
+                  (= message-type :update-service-instances)
+                  (process-update-service-instances-message message-data service-id->service-description-fn))]
       (if (some? remaining)
         (recur remaining counts-by-metric-group')
         counts-by-metric-group'))))

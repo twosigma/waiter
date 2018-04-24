@@ -148,10 +148,10 @@
               (let [global-state (pc/map-vals #(update-in % ["outstanding"] (fn [v] (max 0 (- v n))))
                                               initial-global-state)]
                 (async/>!! scheduler-state-chan (concat
-                                                  [[:update-available-apps {:available-apps (vec @available-services-atom)}]]
+                                                  [[:update-available-services {:available-service-ids (vec @available-services-atom)}]]
                                                   (vec
                                                     (map (fn [service-id]
-                                                           [:update-app-instances
+                                                           [:update-service-instances
                                                             {:service-id service-id
                                                              :failed-instances (cond
                                                                                  (str/includes? service-id "broken") [{:id (str service-id ".failed1"), :host "failed1.example.com"},
@@ -200,10 +200,10 @@
           (dotimes [iteration 20]
             (async/>!! scheduler-state-chan
                        (concat
-                         [[:update-available-apps {:available-apps (vec @available-services-atom)}]]
+                         [[:update-available-services {:available-service-ids (vec @available-services-atom)}]]
                          (vec
                            (map (fn [service-id]
-                                  [:update-app-instances
+                                  [:update-service-instances
                                    {:service-id service-id
                                     :failed-instances
                                     (cond
@@ -250,9 +250,9 @@
         (start-scheduler-syncer clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn available? {} 5)]
     (async/>!! timeout-chan :timeout)
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
-      (is (= :update-available-apps update-apps-msg))
-      (is (= (list "s1") (:available-apps update-apps)))
-      (is (= :update-app-instances update-instances-msg))
+      (is (= :update-available-services update-apps-msg))
+      (is (= (list "s1") (:available-service-ids update-apps)))
+      (is (= :update-service-instances update-instances-msg))
       (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
       (is (= [(assoc instance3
                 :healthy? false
