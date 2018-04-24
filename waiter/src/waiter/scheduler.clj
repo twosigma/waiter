@@ -313,18 +313,21 @@
                            (async/go
                              (loop [[[message-type message-data] & remaining-scheduler-messages] scheduler-messages
                                     service->data {}]
-                               (if (= :update-available-services message-type)
-                                 (let [service->state (fn service->state [service-id] [service-id (get service->data service-id)])
-                                       service->data' (into {} (map service->state (:available-service-ids message-data)))]
+                               (condp = message-type
+                                 :update-available-services
+                                 (let [service->data' (select-keys service->data (:available-service-ids message-data))]
                                    (recur remaining-scheduler-messages service->data'))
-                                 (if (= :update-service-instances message-type)
-                                   (let [{:keys [service-id failed-instances healthy-instances]} message-data
-                                         service->data' (assoc service->data
-                                                          service-id {"has-healthy-instances" (not (empty? healthy-instances))
-                                                                      "has-failed-instances" (not (empty? failed-instances))
-                                                                      "failed-instance-hosts" (set (map :host failed-instances))})]
-                                     (recur remaining-scheduler-messages service->data'))
-                                   (async/>! out* service->data))))
+
+                                 :update-service-instances
+                                 (let [{:keys [service-id failed-instances healthy-instances]} message-data
+                                       service->data' (assoc service->data
+                                                        service-id {"failed-instance-hosts" (set (map :host failed-instances))
+                                                                    "has-healthy-instances" (not (empty? healthy-instances))
+                                                                    "has-failed-instances" (not (empty? failed-instances))})]
+                                   (recur remaining-scheduler-messages service->data'))
+
+                                 ;; else
+                                 (async/>! out* service->data)))
                              (async/close! out*)))]
       (async/pipeline-async 1 service-data-chan transformer-fn scheduler-state-chan false))
     (let [service->state-fn (fn [_ {:strs [failed-hosts-limit-reached]} {:strs [failed-instance-hosts has-healthy-instances] :as data}]
