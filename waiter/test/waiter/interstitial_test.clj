@@ -185,7 +185,7 @@
                                      (assoc {:initialized? false} :service-id->interstitial-promise)
                                      atom)
         available-service-ids' ["service-0" "service-7" "service-8" "service-9"]
-        scheduler-messages [[:update-available-services {:available-apps available-service-ids'}]
+        scheduler-messages [[:update-available-services {:available-service-ids available-service-ids'}]
                             [:update-service-instances {:healthy-instances [{:id "service-0.1"}]
                                                     :service-id "service-0"}]
                             [:update-service-instances {:healthy-instances [{:id "service-6.1"}]

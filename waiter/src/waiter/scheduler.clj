@@ -271,7 +271,7 @@
                                                           [service-id
                                                            (merge {"outstanding" 0 "total" 0}
                                                                   (select-keys (get global-state service-id) ["outstanding" "total"]))])
-                                         service->data (into {} (map service->state (:available-apps message-data)))]
+                                         service->data (into {} (map service->state (:available-service-ids message-data)))]
                                      (async/>! out* service->data)))))
                              (async/close! out*)))]
       (async/pipeline-async 1 service-data-chan transformer-fn scheduler-state-chan false))
@@ -315,7 +315,7 @@
                                     service->data {}]
                                (if (= :update-available-services message-type)
                                  (let [service->state (fn service->state [service-id] [service-id (get service->data service-id)])
-                                       service->data' (into {} (map service->state (:available-apps message-data)))]
+                                       service->data' (into {} (map service->state (:available-service-ids message-data)))]
                                    (recur remaining-scheduler-messages service->data'))
                                  (if (= :update-service-instances message-type)
                                    (let [{:keys [service-id failed-instances healthy-instances]} message-data
@@ -445,7 +445,7 @@
           (when (zero? (reduce + 0 (filter number? (vals (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])))))
             (log/info "scheduler-syncer:" (:id service) "has no live instances!" (:task-stats service))))
         (loop [service-id->health-check-context' {}
-               scheduler-messages [[:update-available-services {:available-apps available-service-ids :scheduler-sync-time request-apps-time}]]
+               scheduler-messages [[:update-available-services {:available-service-ids available-service-ids :scheduler-sync-time request-apps-time}]]
                [[{:keys [id]} {:keys [active-instances failed-instances]}] & remaining] (seq service->service-instances)]
           (if id
             (let [request-instances-time (t/now)

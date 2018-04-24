@@ -97,7 +97,7 @@
   (let [available-service-ids (->> scheduler-messages
                                    (some (fn [[message-type message-data]]
                                            (when (= :update-available-services message-type)
-                                             (:available-apps message-data))))
+                                             (:available-service-ids message-data))))
                                    set)
         healthy-instance-service-ids (->> scheduler-messages
                                           (keep (fn [[message-type message-data]]

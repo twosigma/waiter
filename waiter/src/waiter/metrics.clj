@@ -378,7 +378,7 @@
                                      (filter (fn [[message-type _]] (= message-type :update-available-services)))
                                      first
                                      second
-                                     :available-apps
+                                     :available-service-ids
                                      set)
           service-id->state (pc/map-from-keys (fn service-id->state-fn [service-id]
                                                 (-> (get service-id->metrics service-id)

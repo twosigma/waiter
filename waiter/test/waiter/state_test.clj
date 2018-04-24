@@ -993,7 +993,7 @@
       (let [{:keys [router-state-push-mult]} (start-router-state-maintainer scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
         (async/tap router-state-push-mult router-state-push-chan))
       (async/>!! router-chan {router-id (str "http://www." router-id ".com")})
-      (async/>!! scheduler-state-chan [[:update-available-services {:available-apps [service-id]
+      (async/>!! scheduler-state-chan [[:update-available-services {:available-service-ids [service-id]
                                                                     :scheduler-sync-time (t/now)}]])
       (async/<!! router-state-push-chan)
       (async/>!! scheduler-state-chan [[:update-service-instances {:healthy-instances [instance]
@@ -1065,7 +1065,7 @@
             (let [current-time (t/plus start-time (t/minutes n))]
               (let [services (services-fn n)]
                 (loop [index 0
-                       scheduler-messages [[:update-available-services {:available-apps services
+                       scheduler-messages [[:update-available-services {:available-service-ids services
                                                                         :scheduler-sync-time current-time}]]]
                   (if (>= index (count services))
                     (async/>!! scheduler-state-chan scheduler-messages)
@@ -1177,7 +1177,7 @@
             (let [current-time (t/plus start-time (t/minutes n))]
               (let [services (services-fn n)]
                 (loop [index 0
-                       scheduler-messages [[:update-available-services {:available-apps services
+                       scheduler-messages [[:update-available-services {:available-service-ids services
                                                                         :scheduler-sync-time current-time}]]]
                   (if (>= index (count services))
                     (async/>!! scheduler-state-chan scheduler-messages)
