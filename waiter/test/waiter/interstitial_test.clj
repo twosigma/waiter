@@ -176,6 +176,7 @@
   (let [resolved-service-ids #{"service-1" "service-3" "service-5" "service-7"}
         unresolved-service-ids #{"service-2" "service-4" "service-6"}
         all-service-ids (set/union resolved-service-ids unresolved-service-ids)
+        healthy-service-ids #{"service-0" "service-6" "service-8"}
         interstitial-state-atom (->> all-service-ids
                                      (pc/map-from-keys (fn [service-id]
                                                          (let [p (promise)]
@@ -185,15 +186,16 @@
                                      (assoc {:initialized? false} :service-id->interstitial-promise)
                                      atom)
         available-service-ids' ["service-0" "service-7" "service-8" "service-9"]
-        scheduler-messages [[:update-available-services {:available-service-ids available-service-ids'}]
+        scheduler-messages [[:update-available-services {:available-service-ids available-service-ids'
+                                                         :healthy-service-ids healthy-service-ids}]
                             [:update-service-instances {:healthy-instances [{:id "service-0.1"}]
-                                                    :service-id "service-0"}]
+                                                        :service-id "service-0"}]
                             [:update-service-instances {:healthy-instances [{:id "service-6.1"}]
-                                                    :service-id "service-6"}]
+                                                        :service-id "service-6"}]
                             [:update-service-instances {:healthy-instances [{:id "service-8.1"}]
-                                                    :service-id "service-8"}]
+                                                        :service-id "service-8"}]
                             [:update-service-instances {:service-id "service-9"
-                                                    :unhealthy-instances [{:id "service-9.1"}]}]]
+                                                        :unhealthy-instances [{:id "service-9.1"}]}]]
         service-id->service-description (fn [service-id]
                                           {"interstitial-secs" (->> (str/last-index-of service-id "-")
                                                                     inc

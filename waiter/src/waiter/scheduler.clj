@@ -449,33 +449,36 @@
           (when (zero? (reduce + 0 (filter number? (vals (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])))))
             (log/info "scheduler-syncer:" (:id service) "has no live instances!" (:task-stats service))))
         (loop [service-id->health-check-context' {}
-               scheduler-messages [[:update-available-services {:available-service-ids available-service-ids :scheduler-sync-time request-apps-time}]]
-               [[{:keys [id]} {:keys [active-instances failed-instances]}] & remaining] (seq service->service-instances)]
-          (if id
+               healthy-service-ids #{}
+               scheduler-messages []
+               [[service-id {:keys [active-instances failed-instances]}] & remaining] (seq (pc/map-keys :id service->service-instances))]
+          (if service-id
             (let [request-instances-time (t/now)
                   active-instance-ids (->> active-instances (map :id) set)
-                  {:keys [instance-id->unhealthy-instance
-                          instance-id->tracked-failed-instance
-                          instance-id->failed-health-check-count]} (get service-id->health-check-context id)
-                  {:keys [unhealthy-instances] :as service-instance-info} (retrieve-instances-for-app id active-instances)
-                  instance-id->tracked-failed-instance' ((fnil into {}) instance-id->tracked-failed-instance
-                                                          (keep (fn [[instance-id unhealthy-instance]]
-                                                                  (when (and (not (contains? active-instance-ids instance-id))
-                                                                             (>= (or (get instance-id->failed-health-check-count instance-id) 0) failed-check-threshold))
-                                                                    [instance-id (update-in unhealthy-instance [:flags] conj :never-passed-health-checks)]))
-                                                                instance-id->unhealthy-instance))
-                  all-failed-instances (vals (merge-with (fn [failed-instance tracked-instance]
-                                                           (-> failed-instance
-                                                               (update-in [:flags] into (:flags tracked-instance))
-                                                               (assoc :health-check-status (:health-check-status tracked-instance))))
-                                                         (pc/map-from-vals :id failed-instances)
-                                                         instance-id->tracked-failed-instance'))
+                  {:keys [instance-id->unhealthy-instance instance-id->tracked-failed-instance instance-id->failed-health-check-count]}
+                  (get service-id->health-check-context service-id)
+                  {:keys [healthy-instances unhealthy-instances] :as service-instance-info}
+                  (retrieve-instances-for-app service-id active-instances)
+                  instance-id->tracked-failed-instance'
+                  ((fnil into {}) instance-id->tracked-failed-instance
+                    (keep (fn [[instance-id unhealthy-instance]]
+                            (when (and (not (contains? active-instance-ids instance-id))
+                                       (>= (or (get instance-id->failed-health-check-count instance-id) 0) failed-check-threshold))
+                              [instance-id (update-in unhealthy-instance [:flags] conj :never-passed-health-checks)]))
+                          instance-id->unhealthy-instance))
+                  all-failed-instances
+                  (-> (fn [failed-instance tracked-instance]
+                        (-> failed-instance
+                            (update-in [:flags] into (:flags tracked-instance))
+                            (assoc :health-check-status (:health-check-status tracked-instance))))
+                      (merge-with (pc/map-from-vals :id failed-instances) instance-id->tracked-failed-instance')
+                      vals)
                   scheduler-messages' (if service-instance-info
                                         ; Assume nil service-instance-info means there was a failure in invoking marathon
                                         (conj scheduler-messages
                                               [:update-service-instances
                                                (assoc service-instance-info
-                                                 :service-id id
+                                                 :service-id service-id
                                                  :failed-instances all-failed-instances
                                                  :scheduler-sync-time request-instances-time)])
                                         scheduler-messages)
@@ -487,16 +490,29 @@
                   instance-id->failed-health-check-count' (pc/map-from-keys #((fnil inc 0) (get instance-id->failed-health-check-count %))
                                                                             (keys instance-id->unhealthy-instance'))]
               (metrics/reset-counter
-                (metrics/service-counter id "instance-counts" "failed")
+                (metrics/service-counter service-id "instance-counts" "failed")
                 (count all-failed-instances))
-              (recur (conj service-id->health-check-context'
-                           {id {:instance-id->unhealthy-instance instance-id->unhealthy-instance'
-                                :instance-id->tracked-failed-instance instance-id->tracked-failed-instance'
-                                :instance-id->failed-health-check-count instance-id->failed-health-check-count'}})
-                     scheduler-messages' remaining))
-            (do (log/info (timing-message-fn) "for" (count service->service-instances) "services.")
-                {:service-id->health-check-context service-id->health-check-context'
-                 :scheduler-messages scheduler-messages}))))
+              (recur
+                (assoc service-id->health-check-context'
+                  service-id {:instance-id->unhealthy-instance instance-id->unhealthy-instance'
+                              :instance-id->tracked-failed-instance instance-id->tracked-failed-instance'
+                              :instance-id->failed-health-check-count instance-id->failed-health-check-count'})
+                (cond-> healthy-service-ids
+                        (seq healthy-instances) (conj service-id))
+                scheduler-messages'
+                remaining))
+            (let [healthy-service-ids (->> scheduler-messages
+                                           (keep (fn [[message-type message-data]]
+                                                   (when (and (= :update-service-instances message-type)
+                                                              (seq (:healthy-instances message-data)))
+                                                     (:service-id message-data)))))
+                  summary-message [:update-available-services
+                                   {:available-service-ids available-service-ids
+                                    :healthy-service-ids healthy-service-ids
+                                    :scheduler-sync-time request-apps-time}]]
+              (log/info (timing-message-fn) "for" (count service->service-instances) "services.")
+              {:scheduler-messages (concat [summary-message] scheduler-messages)
+               :service-id->health-check-context service-id->health-check-context'}))))
       (do
         (log/info (timing-message-fn) "and found no active services")
         {:service-id->health-check-context service-id->health-check-context}))))
