@@ -15,6 +15,7 @@
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
            (java.net InetAddress DatagramPacket DatagramSocket)))
@@ -163,8 +164,8 @@
           (when config-histogram-max-size
             (reset! histogram-max-size config-histogram-max-size))
           (when (> config-publish-interval-ms 0)
-            (utils/start-timer-task (t/millis config-publish-interval-ms) trigger-publish
-                                    :delay-ms config-publish-interval-ms)))))
+            (du/start-timer-task (t/millis config-publish-interval-ms) trigger-publish
+                                 :delay-ms config-publish-interval-ms)))))
 
     (defn add-value
       "Given the current map of [metric-group metric metric-type] -> value(s), adds the value to the map

@@ -24,6 +24,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (org.joda.time.format DateTimeFormat)))
 
@@ -58,7 +59,7 @@
                               (merge
                                 (common-extractor-fn instance-id failed-marathon-task)
                                 {:id instance-id
-                                 :started-at (some-> failed-marathon-task :timestamp (utils/str-to-date formatter-marathon))
+                                 :started-at (some-> failed-marathon-task :timestamp (du/str-to-date formatter-marathon))
                                  :healthy? false
                                  :port 0})))
           max-instances-to-keep 10]
@@ -161,7 +162,7 @@
                                 (merge
                                   (common-extractor-fn instance-id %)
                                   {:id instance-id
-                                   :started-at (some-> % :startedAt (utils/str-to-date formatter-marathon))
+                                   :started-at (some-> % :startedAt (du/str-to-date formatter-marathon))
                                    :healthy? (healthy?-fn %)
                                    ;; first port must be used for the web server, extra ports can be used freely.
                                    :port (-> % :ports first)
@@ -302,7 +303,7 @@
           (get @service-id->kill-info-store service-id)
           use-force (t/after? current-time (t/plus kill-failing-since (t/millis force-kill-after-ms)))
           _ (when use-force
-              (log/info "using force killing" id "as kills have been failing since" (utils/date-to-str kill-failing-since)))
+              (log/info "using force killing" id "as kills have been failing since" (du/date-to-str kill-failing-since)))
           params {:force use-force, :scale true}
           {:keys [killed?] :as kill-result} (process-kill-instance-request marathon-api service-id id params)]
       (if killed?

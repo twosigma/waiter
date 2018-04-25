@@ -25,6 +25,7 @@
             [waiter.correlation-id :as cid]
             [waiter.request-log :as rlog]
             [waiter.settings :as settings]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            java.io.IOException
@@ -101,7 +102,7 @@
     (let [async-threads (System/getProperty "clojure.core.async.pool-size")
           settings (assoc (settings/load-settings config-file (retrieve-git-version))
                      :async-threads async-threads
-                     :started-at (utils/date-to-str (t/now)))]
+                     :started-at (du/date-to-str (t/now)))]
       (log/info "core.async threadpool configured to use" async-threads "threads.")
       (log/info "loaded settings:\n" (with-out-str (clojure.pprint/pprint settings)))
       (let [app-map (wire-app settings)]

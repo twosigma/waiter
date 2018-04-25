@@ -14,7 +14,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.utils :as utils])
+            [waiter.util.date-utils :as du])
   (:import (java.util.concurrent Semaphore)))
 
 ; Marked explicit due to:
@@ -58,7 +58,7 @@
           request-thread-done-atom (atom false)
           first-request-thread (launch-thread
                                  (log/info (str "Making initial request at "
-                                                (utils/date-to-str (t/now))
+                                                (du/date-to-str (t/now))
                                                 " (will take "
                                                 (colored-time (str ">" (t/in-minutes (t/millis long-request-time-ms)) "minutes"))
                                                 " to complete)."))

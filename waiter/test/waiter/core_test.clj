@@ -20,7 +20,6 @@
             [waiter.auth.authentication :as auth]
             [waiter.authorization :as authz]
             [waiter.core :refer :all]
-            [waiter.cors :as cors]
             [waiter.curator :as curator]
             [waiter.discovery :as discovery]
             [waiter.handler :as handler]
@@ -31,6 +30,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.test-helpers :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import java.io.StringBufferInputStream))
 
@@ -505,7 +505,7 @@
                                          "host" "10.141.141.11"
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.A&host=10.141.141.11"
                                          "port" 31045,
-                                         "started-at" (utils/date-to-str started-time utils/formatter-iso8601)}]}))
+                                         "started-at" (du/date-to-str started-time du/formatter-iso8601)}]}))
             (is (= (get body-json "metrics")
                    {"aggregate" {"routers-sent-requests-to" 0}}))
             (is (= (get body-json "num-active-instances") 1))

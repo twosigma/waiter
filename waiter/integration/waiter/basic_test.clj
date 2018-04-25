@@ -21,7 +21,7 @@
             [waiter.interstitial :as interstitial]
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.utils :as utils])
+            [waiter.util.date-utils :as du])
   (:import java.io.ByteArrayInputStream))
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality
@@ -263,7 +263,7 @@
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
           _ (assert-response-status first-response 200)
           canary-request-time-from-header (-> (get headers "x-waiter-request-date")
-                                              (utils/str-to-date utils/formatter-rfc822))]
+                                              (du/str-to-date du/formatter-rfc822))]
       (with-service-cleanup
         service-id
         (is (pos? metrics-sync-interval-ms))
@@ -284,19 +284,19 @@
       (testing "without parameters"
         (let [service (service waiter-url service-id {})] ;; see my app as myself
           (is service)
-          (is (-> (get service "last-request-time") utils/str-to-date .getMillis pos?))
+          (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "waiter user disabled" ;; see my app as myself
         (let [service (service waiter-url service-id {"force" "false"})]
           (is service)
-          (is (-> (get service "last-request-time") utils/str-to-date .getMillis pos?))
+          (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "waiter user disabled and same user" ;; see my app as myself
         (let [service (service waiter-url service-id {"force" "false", "run-as-user" (retrieve-username)})]
           (is service)
-          (is (-> (get service "last-request-time") utils/str-to-date .getMillis pos?))
+          (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
       (testing "different run-as-user" ;; no such app
@@ -326,7 +326,7 @@
       (testing "list-apps-with-waiter-user-disabled-and-see-another-app" ;; can see another user's app
         (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
           (is service)
-          (is (-> (get service "last-request-time") utils/str-to-date .getMillis pos?))
+          (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
       (delete-service waiter-url service-id))))
 

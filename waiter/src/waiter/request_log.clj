@@ -14,6 +14,7 @@
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [waiter.metrics :as metrics]
+            [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]))
 
@@ -34,7 +35,7 @@
              :scheme (-> request utils/request->scheme name)}
       request-method (assoc :method (-> request-method name str/upper-case))
       query-string (assoc :query-string query-string)
-      request-time (assoc :request-time (utils/date-to-str request-time))
+      request-time (assoc :request-time (du/date-to-str request-time))
       user-agent (assoc :user-agent user-agent))))
 
 (defn response->context

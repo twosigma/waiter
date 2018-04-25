@@ -21,6 +21,7 @@
             [full.async :refer (<?? <? go-try)]
             [waiter.password-store]
             [waiter.test-helpers :refer :all]
+            [waiter.util.date-utils :refer :all]
             [waiter.util.utils :refer :all])
   (:import clojure.lang.ExceptionInfo
            java.net.ServerSocket
@@ -55,41 +56,6 @@
     (let [m {"this.is.an.example" 1 "this.is.an.example2" 2}
           nm {"this" {"is" {"an" {"example" 1 "example2" 2}}}}]
       (is (= nm (keys->nested-map m #"\."))))))
-
-(deftest test-extract-expired-keys
-  (let [current-time (t/now)
-        time1 (t/minus current-time (t/millis 2000))
-        time2 (t/minus current-time (t/millis 1000))
-        time3 current-time
-        time4 (t/plus current-time (t/millis 1000))
-        time5 (t/plus current-time (t/millis 1400))
-        time6 (t/plus current-time (t/millis 1500))
-        time7 (t/plus current-time (t/millis 2000))
-        test-cases [{:name "two-item-result"
-                     :input-map {:a time1, :b time2, :c time3, :d time4, :e time5, :f time7}
-                     :time-limit time6
-                     :expected [:a :b :c :d :e]}
-                    {:name "multiple-item-items"
-                     :input-map {:a time1, :b time2, :c time3, :d time4, :e time5, :f time7}
-                     :time-limit time3
-                     :expected [:a :b :c]}
-                    {:name "single-item-result"
-                     :input-map {:a time1, :b time2, :c time3, :d time4, :f time7}
-                     :time-limit time6
-                     :expected [:a :b :c :d]}
-                    {:name "empty-result"
-                     :input-map {:a time1, :b time2, :c time3}
-                     :time-limit time6
-                     :expected [:a :b :c]}
-                    {:name "nil-item-result"
-                     :input-map {:a time1, :b nil, :c time3, :d time4, :f time7}
-                     :time-limit time6
-                     :expected [:a :c :d]}]]
-    (doseq [test-case test-cases]
-      (testing (str "Test " (:name test-case))
-        (let [{:keys [input-map time-limit expected]} test-case
-              actual (extract-expired-keys input-map time-limit)]
-          (is (= expected actual)))))))
 
 (deftest test-truncate
   (let [test-cases [{:name "truncate:nil-input"
@@ -445,7 +411,7 @@
 (deftest test-periodic-seq
   ; If this test fails after an upgrade to clj-time, we can switch back to using periodic-seq;
   ; in the meantime, this serves as a nice demonstration of the issue with periodic-seq and
-  ; why we wrote waiter.util.utils/time-seq
+  ; why we wrote waiter.util.date-utils/time-seq
   (testing "periodic-seq throws due to overflow after a large number of iterations"
     (let [every-ten-secs (periodic/periodic-seq (t/now) (t/millis 10000))]
       (is (thrown-with-msg? ArithmeticException #"Multiplication overflows an int" (nth every-ten-secs 1000000))))))

@@ -23,6 +23,7 @@
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.util.async-utils :as au]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (qbits.jet.websocket WebSocket)))
 
@@ -182,7 +183,7 @@
   [{:keys [router-id router-id->outgoing-ws] :as router-metrics-state} encrypt router-metrics tag]
   (with-catch
     router-metrics-state
-    (let [time (utils/date-to-str (t/now))
+    (let [time (du/date-to-str (t/now))
           metrics-data {:router-metrics router-metrics, :source-router-id router-id, :time time}]
       (doseq [[target-router-id {:keys [out request-id]}] (seq router-id->outgoing-ws)]
         (let [encrypted-data (timers/start-stop-time!

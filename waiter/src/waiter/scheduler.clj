@@ -21,6 +21,7 @@
             [slingshot.slingshot :as ss]
             [waiter.metrics :as metrics]
             [waiter.util.async-utils :as au]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
            (java.io EOFException)
@@ -283,7 +284,7 @@
                                   (let [service-description (service-id->service-description-fn service-id)
                                         idle-timeout-mins (get service-description "idle-timeout-mins")
                                         timeout-time (t/plus last-modified-time (t/minutes idle-timeout-mins))]
-                                    (log/debug service-id "timeout:" (utils/date-to-str timeout-time) "current:" (utils/date-to-str current-time))
+                                    (log/debug service-id "timeout:" (du/date-to-str timeout-time) "current:" (du/date-to-str current-time))
                                     (t/after? current-time timeout-time)))))
           perform-gc-fn (fn [service-id]
                           (log/info "deleting idle service" service-id)
@@ -607,7 +608,7 @@
    (let [max-instances-to-keep 10]
      (add-instance-to-buffered-collection!
        service-id->killed-instances-transient-store max-instances-to-keep service-id
-       (assoc instance :killed-at (utils/date-to-str (t/now)))
+       (assoc instance :killed-at (du/date-to-str (t/now)))
        #(PersistentQueue/EMPTY) pop))))
 
 (defn environment

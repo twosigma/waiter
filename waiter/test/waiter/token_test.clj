@@ -20,6 +20,7 @@
             [waiter.service-description :as sd]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (java.io StringBufferInputStream)
@@ -452,7 +453,7 @@
                  :request-method :get})]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
-          (is (-> body json/read-str (get "last-update-time") utils/str-to-date))
+          (is (-> body json/read-str (get "last-update-time") du/str-to-date))
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-description-keys]
               (is (= (get service-description-2 key) (get body-map key))))
@@ -485,7 +486,7 @@
                  :request-method :get})]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
-          (is (-> body json/read-str (get "last-update-time") utils/str-to-date))
+          (is (-> body json/read-str (get "last-update-time") du/str-to-date))
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-description-keys]
               (is (= (get service-description-2 key) (get body-map key))))
