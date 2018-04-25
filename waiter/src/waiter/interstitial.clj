@@ -94,12 +94,10 @@
    In particular, it resolves all promises for services which have healthy instances.
    It also removes from the interstitial state any resolved promises for services which are no longer available."
   [interstitial-state-atom service-id->service-description current-available-service-ids scheduler-messages]
-  (let [summary-data (some (fn [[message-type message-data]]
-                             (when (= :update-available-services message-type)
-                               message-data))
-                           scheduler-messages)
-        available-service-ids (-> summary-data :available-service-ids set)
-        healthy-service-ids (-> summary-data :healthy-service-ids set)
+  (let [{:keys [available-service-ids healthy-service-ids]} (some (fn [[message-type message-data]]
+                                                                    (when (= :update-available-services message-type)
+                                                                      message-data))
+                                                                  scheduler-messages)
         service-ids-to-remove (set/difference current-available-service-ids available-service-ids)
         removed-service-ids (remove-resolved-interstitial-promises! interstitial-state-atom service-ids-to-remove)]
     (doseq [service-id available-service-ids]

@@ -443,10 +443,14 @@
                                                               (available? instance health-check-path http-client))
                                                             service-id->service-description-fn))]
       (let [available-services (keys service->service-instances)
-            available-service-ids (map :id available-services)]
+            available-service-ids (->> available-services (map :id ) (set ))]
         (log/debug "scheduler-syncer:" (count service->service-instances) "available services:" available-service-ids)
         (doseq [service available-services]
-          (when (zero? (reduce + 0 (filter number? (vals (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])))))
+          (when (->> (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])
+                     vals
+                     (filter number?)
+                     (reduce + 0)
+                     zero?)
             (log/info "scheduler-syncer:" (:id service) "has no live instances!" (:task-stats service))))
         (loop [service-id->health-check-context' {}
                healthy-service-ids #{}

@@ -185,8 +185,8 @@
                                                            p)))
                                      (assoc {:initialized? false} :service-id->interstitial-promise)
                                      atom)
-        available-service-ids' ["service-0" "service-7" "service-8" "service-9"]
-        scheduler-messages [[:update-available-services {:available-service-ids available-service-ids'
+        available-service-ids #{"service-0" "service-7" "service-8" "service-9"}
+        scheduler-messages [[:update-available-services {:available-service-ids available-service-ids
                                                          :healthy-service-ids healthy-service-ids}]
                             [:update-service-instances {:healthy-instances [{:id "service-0.1"}]
                                                         :service-id "service-0"}]
@@ -210,7 +210,7 @@
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan})
           state (async/<!! response-chan)]
-      (is (= (set/union (set available-service-ids') unresolved-service-ids)
+      (is (= (set/union (set available-service-ids) unresolved-service-ids)
              (set (get-in state [:maintainer :available-service-ids]))))
       (is (get-in state [:interstitial :initialized?]))
       (is (= {"service-2" :not-realized

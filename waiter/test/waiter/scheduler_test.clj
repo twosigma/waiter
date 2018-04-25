@@ -148,7 +148,7 @@
               (let [global-state (pc/map-vals #(update-in % ["outstanding"] (fn [v] (max 0 (- v n))))
                                               initial-global-state)]
                 (async/>!! scheduler-state-chan (concat
-                                                  [[:update-available-services {:available-service-ids (vec @available-services-atom)}]]
+                                                  [[:update-available-services {:available-service-ids (set @available-services-atom)}]]
                                                   (vec
                                                     (map (fn [service-id]
                                                            [:update-service-instances
@@ -200,7 +200,7 @@
           (dotimes [iteration 20]
             (async/>!! scheduler-state-chan
                        (concat
-                         [[:update-available-services {:available-service-ids (vec @available-services-atom)}]]
+                         [[:update-available-services {:available-service-ids (set @available-services-atom)}]]
                          (vec
                            (map (fn [service-id]
                                   [:update-service-instances
@@ -257,7 +257,7 @@
     (async/>!! timeout-chan :timeout)
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-services update-apps-msg))
-      (is (= (list "s1" "s2") (:available-service-ids update-apps)))
+      (is (= #{"s1" "s2"} (:available-service-ids update-apps)))
       (is (= #{"s1"} (:healthy-service-ids update-apps)))
       (is (= :update-service-instances update-instances-msg))
       (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
