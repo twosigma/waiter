@@ -501,12 +501,7 @@
                         (seq healthy-instances) (conj service-id))
                 scheduler-messages'
                 remaining))
-            (let [healthy-service-ids (->> scheduler-messages
-                                           (keep (fn [[message-type message-data]]
-                                                   (when (and (= :update-service-instances message-type)
-                                                              (seq (:healthy-instances message-data)))
-                                                     (:service-id message-data)))))
-                  summary-message [:update-available-services
+            (let [summary-message [:update-available-services
                                    {:available-service-ids available-service-ids
                                     :healthy-service-ids healthy-service-ids
                                     :scheduler-sync-time request-apps-time}]]

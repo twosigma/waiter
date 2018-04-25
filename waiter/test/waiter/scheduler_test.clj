@@ -258,7 +258,7 @@
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-services update-apps-msg))
       (is (= (list "s1" "s2") (:available-service-ids update-apps)))
-      (is (= (list "s1") (:healthy-service-ids update-apps)))
+      (is (= #{"s1"} (:healthy-service-ids update-apps)))
       (is (= :update-service-instances update-instances-msg))
       (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
       (is (= [instance3-unhealthy] (:unhealthy-instances update-instances)))
