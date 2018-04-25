@@ -24,6 +24,7 @@
             [waiter.correlation-id :as cid]
             [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
@@ -128,7 +129,7 @@
 (defmacro time-it
   ([name & body]
    `(do
-      (let [date-str# (utils/date-to-str (t/now))]
+      (let [date-str# (du/date-to-str (t/now))]
         (log/info (str INFO (cyan ~name) " started at " date-str#)))
       (let [start-time-ms# (System/currentTimeMillis)
             execution-result# (atom nil)
@@ -886,4 +887,4 @@
   [waiter-url service-id]
   (when-let [last-request-time-str (-> (service waiter-url service-id {})
                                        (get "last-request-time"))]
-    (utils/str-to-date last-request-time-str)))
+    (du/str-to-date last-request-time-str)))

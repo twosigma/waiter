@@ -19,7 +19,7 @@
             [qbits.jet.client.http :as http]
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.utils :as utils])
+            [waiter.util.date-utils :as du])
   (:import (java.net URL)
            (org.joda.time DateTime)))
 
@@ -175,7 +175,7 @@
                                                  (cond-> service-description
                                                          last-update-time
                                                          (assoc "last-update-time"
-                                                                (-> last-update-time utils/str-to-date .getMillis))))
+                                                                (-> last-update-time du/str-to-date .getMillis))))
                       expected-etag (str "E-"
                                          (-> body
                                              json/read-str
@@ -405,7 +405,7 @@
                 (let [token-response (get-token waiter-url token)
                       response-body (json/read-str (:body token-response))]
                   (is (= {"health-check-url" "/probe-2"
-                          "last-update-time" (-> last-update-time DateTime. utils/date-to-str)
+                          "last-update-time" (-> last-update-time DateTime. du/date-to-str)
                           "last-update-user" (retrieve-username)
                           "name" service-id-prefix,
                           "owner" (retrieve-username)
@@ -481,7 +481,7 @@
                     response-body (json/read-str (:body token-response))]
                 (is (= {"deleted" true
                         "health-check-url" "/probe"
-                        "last-update-time" (-> last-update-time DateTime. utils/date-to-str)
+                        "last-update-time" (-> last-update-time DateTime. du/date-to-str)
                         "last-update-user" (retrieve-username)
                         "name" service-id-prefix
                         "owner" (retrieve-username)

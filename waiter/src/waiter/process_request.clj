@@ -37,6 +37,7 @@
             [waiter.statsd :as statsd]
             [waiter.token :as token]
             [waiter.util.async-utils :as au]
+            [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (java.io InputStream IOException)
@@ -578,7 +579,7 @@
     (if (get suspended-state :suspended false)
       (let [{:keys [last-updated-by time]} suspended-state
             response-map (cond-> {:service-id service-id}
-                           time (assoc :suspended-at (utils/date-to-str time))
+                           time (assoc :suspended-at (du/date-to-str time))
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "Service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))

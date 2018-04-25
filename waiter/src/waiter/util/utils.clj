@@ -9,10 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.util.utils
-  (:require [chime]
-            [clj-time.core :as t]
-            [clj-time.format :as f]
-            [clojure.core.cache :as cache]
+  (:require [clojure.core.cache :as cache]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
@@ -22,7 +19,8 @@
             [comb.template :as template]
             [digest]
             [taoensso.nippy :as nippy]
-            [taoensso.nippy.compression :as compression])
+            [taoensso.nippy.compression :as compression]
+            [waiter.util.date-utils :as du])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            clojure.lang.ExceptionInfo
            clojure.lang.PersistentQueue
@@ -34,7 +32,7 @@
            java.util.concurrent.ThreadLocalRandom
            java.util.regex.Pattern
            javax.servlet.ServletResponse
-           (org.joda.time DateTime ReadablePeriod)
+           (org.joda.time DateTime)
            (schema.utils ValidationError)))
 
 (defn select-keys-pred
@@ -94,49 +92,12 @@
   [cache key]
   (swap! cache #(cache/evict % key)))
 
-(defn extract-expired-keys
-  "Extracts the expired keys from the input map (key->expiry time) given the expiry time."
-  [input-map expiry-time]
-  (->> input-map
-       (remove
-         (fn [[k v]]
-           (let [alive? (or (nil? expiry-time)
-                            (nil? v)
-                            (t/after? v expiry-time))]
-             (when-not alive? (log/info "Filtering expired entry:" (str "[" k "->" v "]")))
-             alive?)))
-       (map first)))
-
 (defn truncate [in-str max-len]
   (let [ellipsis "..."
         ellipsis-len (count ellipsis)]
     (if (and (string? in-str) (> (count in-str) max-len) (> max-len ellipsis-len))
       (str (subs in-str 0 (- max-len ellipsis-len)) ellipsis)
       in-str)))
-
-(def formatter-iso8601 (:date-time f/formatters))
-(def formatter-rfc822 (:rfc822 f/formatters))
-
-(defn date-to-str
-  ([^DateTime date-time]
-   (date-to-str date-time formatter-iso8601))
-  ([^DateTime date-time formatter]
-   (when date-time
-     (f/unparse
-       (f/with-zone formatter t/utc)
-       (.withZone date-time t/utc)))))
-
-(defn str-to-date
-  (^DateTime [date-str]
-   (str-to-date date-str formatter-iso8601))
-  (^DateTime [date-str formatter]
-   (try
-     (f/parse
-       (f/with-zone formatter t/utc)
-       date-str)
-     (catch Exception ex
-       (log/error "unable to parse" date-str "with formatter" formatter)
-       (throw ex)))))
 
 (defn non-neg? [x]
   (or (zero? x) (pos? x)))
@@ -153,7 +114,7 @@
   (if (vector? v)
     (map (partial stringify-elements k) v)
     (cond
-      (instance? DateTime v) (date-to-str v)
+      (instance? DateTime v) (du/date-to-str v)
       (instance? UUID v) (str v)
       (instance? Pattern v) (str v)
       (instance? PersistentQueue v) (vec v)
@@ -226,7 +187,7 @@
      :service-id service-id
      :status status
      :support-info support-info
-     :timestamp (date-to-str request-time)
+     :timestamp (du/date-to-str request-time)
      :uri uri}))
 
 (let [html-fn (template/fn
@@ -303,22 +264,6 @@
      (catch Exception e#
        (log/error e# ~error-message))))
 
-(defn time-seq
-  "Returns a sequence of date-time values growing over specific period.
-  Takes as input the starting value and the growing value, returning a
-  lazy infinite sequence."
-  [start ^ReadablePeriod period]
-  (iterate (fn [^DateTime t] (.plus t period)) start))
-
-(defn start-timer-task
-  "Executes the callback functions sequentially as specified intervals. Returns
-  a function that will cancel the timer when called."
-  [interval-period callback-fn & {:keys [delay-ms] :or {delay-ms 0}}]
-  (chime/chime-at
-    (time-seq (t/plus (t/now) (t/millis delay-ms)) interval-period)
-    (fn [_] (callback-fn))
-    {:error-handler (fn [ex] (log/error ex (str "Exception in timer task.")))}))
-
 ;; source: https://github.com/clojure/core.incubator/blob/master/src/main/clojure/clojure/core/incubator.clj#L62
 ;; clojure.core.incubator
 (defn dissoc-in
@@ -379,11 +324,6 @@
   []
   (let [thread-local-random (ThreadLocalRandom/current)]
     (str (Long/toString (System/nanoTime) 16) "-" (Long/toString (.nextLong thread-local-random Long/MAX_VALUE) 16))))
-
-(defn older-than? [current-time duration {:keys [started-at]}]
-  (if (and duration started-at)
-    (t/after? current-time (t/plus started-at duration))
-    false))
 
 (defn deep-sort-map
   "Deep sorts entries in the map by their keys."

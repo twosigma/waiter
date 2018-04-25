@@ -19,7 +19,7 @@
             [waiter.core :as core]
             [waiter.curator :as curator]
             [waiter.scheduler :refer :all]
-            [waiter.util.utils :as utils])
+            [waiter.util.date-utils :as du])
   (:import (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)))
 
@@ -39,7 +39,7 @@
       (is (= test-instance-1 test-instance-3)))))
 
 (deftest test-record-ServiceInstance
-  (let [start-time (utils/str-to-date "2014-09-13T00:24:46.959Z" utils/formatter-iso8601)
+  (let [start-time (du/str-to-date "2014-09-13T00:24:46.959Z" du/formatter-iso8601)
         test-instance (->ServiceInstance
                         "instance-id"
                         "service-id"
@@ -460,7 +460,7 @@
 
 (deftest test-killed-instances-transient-store
   (let [current-time (t/now)
-        current-time-str (utils/date-to-str current-time)
+        current-time-str (du/date-to-str current-time)
         make-instance (fn [service-id instance-id]
                         {:id instance-id
                          :service-id service-id})]
@@ -511,7 +511,7 @@
 
 (deftest test-max-killed-instances-cache
   (let [current-time (t/now)
-        current-time-str (utils/date-to-str current-time)
+        current-time-str (du/date-to-str current-time)
         make-instance (fn [service-id instance-id]
                         {:id instance-id, :service-id service-id, :killed-at current-time-str})]
     (with-redefs [t/now (fn [] current-time)]

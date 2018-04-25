@@ -20,7 +20,7 @@
             [waiter.discovery :as discovery]
             [waiter.state :refer :all]
             [waiter.util.async-utils :as au]
-            [waiter.util.utils :as utils])
+            [waiter.util.date-utils :as du])
   (:import (org.joda.time DateTime)))
 
 (deftest test-find-instance-to-offer-with-concurrency-level-1
@@ -1096,7 +1096,7 @@
                                                 expiry-mins-int (Integer/parseInt (str/replace service "service-" ""))
                                                 expiry-mins (t/minutes expiry-mins-int)]
                                             (filter #(and (pos? expiry-mins-int)
-                                                          (utils/older-than? current-time expiry-mins %1))
+                                                          (du/older-than? current-time expiry-mins %1))
                                                     healthy-instances)))
                                         expected-services)
                                       :service-id->starting-instances
@@ -1104,7 +1104,7 @@
                                         (fn [service]
                                           (let [unhealthy-instances (unhealthy-instances-fn service (index-fn service))
                                                 grace-period-mins (t/minutes (Integer/parseInt (str/replace service "service-" "")))]
-                                            (filter #(not (utils/older-than? current-time grace-period-mins %)) unhealthy-instances)))
+                                            (filter #(not (du/older-than? current-time grace-period-mins %)) unhealthy-instances)))
                                         expected-services)
                                       :service-id->my-instance->slots
                                       (pc/map-from-keys

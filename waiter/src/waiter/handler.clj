@@ -33,6 +33,7 @@
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
+            [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]))
 
@@ -162,7 +163,7 @@
                       walk/keywordize-keys
                       (update :started-at (fn [started-at]
                                             (when started-at
-                                              (utils/str-to-date started-at))))
+                                              (du/str-to-date started-at))))
                       scheduler/process-instance-killed!))
                 (utils/map->json-response {:instance-id instance-id
                                            :blacklist-period period-in-ms}))
@@ -789,7 +790,7 @@
                       :message "Welcome to Waiter"
                       :port port
                       :support-info support-info
-                      :timestamp (utils/date-to-str request-time)}
+                      :timestamp (du/date-to-str request-time)}
         content-type (utils/request->content-type request)]
     (try
       (case request-method

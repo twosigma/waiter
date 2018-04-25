@@ -26,6 +26,7 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.util.async-utils :as au]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
             [waiter.work-stealing :as work-stealing])
   (:import clojure.lang.PersistentQueue))
@@ -715,7 +716,7 @@
                                    c ([_] :item-handled)
                                    timeout ([_]
                                              (cid/cinfo (:cid reason-map) "timeout in handling"
-                                                        (assoc-in (update-in reason-map [:time] utils/date-to-str)
+                                                        (assoc-in (update-in reason-map [:time] du/date-to-str)
                                                                   [:state :timeout]
                                                                   (metrics/retrieve-local-stats-for-service service-id)))
                                              (async/put! c {:id reason-map
@@ -1211,9 +1212,9 @@
                                        expiry-mins-int (int (get service-description "instance-expiry-mins"))
                                        expiry-mins (t/minutes expiry-mins-int)
                                        expired-instances (filter #(and (pos? expiry-mins-int)
-                                                                       (utils/older-than? scheduler-sync-time expiry-mins %))
+                                                                       (du/older-than? scheduler-sync-time expiry-mins %))
                                                                  healthy-instances)
-                                       starting-instances (filter #(not (utils/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
+                                       starting-instances (filter #(not (du/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
                                        service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
                                        service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
                                        service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
@@ -1299,7 +1300,7 @@
    sends the list to the router state maintainer."
   [discovery router-chan router-syncer-interval-ms router-syncer-delay-ms]
   (log/info "Starting router syncer")
-  (utils/start-timer-task
+  (du/start-timer-task
     (t/millis router-syncer-interval-ms)
     #(retrieve-peer-routers discovery router-chan)
     :delay-ms router-syncer-delay-ms))

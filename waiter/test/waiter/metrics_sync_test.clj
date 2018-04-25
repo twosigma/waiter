@@ -19,6 +19,7 @@
             [waiter.metrics :as metrics]
             [waiter.metrics-sync :refer :all]
             [waiter.test-helpers :as test-helpers]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (org.eclipse.jetty.websocket.client WebSocketClient)
            (org.joda.time DateTime)
@@ -178,13 +179,13 @@
                                                                 "router-4" ws-request-4}
                                        :fee :fie}
               out-router-metrics-state (publish-router-metrics in-router-metrics-state encrypt router-metrics "core")]
-          (let [output-data {:data {:router-metrics router-metrics, :source-router-id "router-1", :time (utils/date-to-str test-start-time)}}]
+          (let [output-data {:data {:router-metrics router-metrics, :source-router-id "router-1", :time (du/date-to-str test-start-time)}}]
             (is (= output-data (async/<!! (:out ws-request-2))))
             (is (= output-data (async/<!! (:out ws-request-3))))
             (is (= output-data (async/<!! (:out ws-request-4)))))
           (is (= (-> in-router-metrics-state
                      (assoc-in [:metrics :routers "router-1"] router-metrics)
-                     (assoc-in [:last-update-times "router-1"] (utils/date-to-str test-start-time)))
+                     (assoc-in [:last-update-times "router-1"] (du/date-to-str test-start-time)))
                  out-router-metrics-state)))))))
 
 (deftest test-update-metrics-router-state-no-new-nor-missing-router-ids

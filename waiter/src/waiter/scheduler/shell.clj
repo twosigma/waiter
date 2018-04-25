@@ -22,6 +22,7 @@
             [schema.core :as s]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import java.io.File
            java.lang.UNIXProcess
@@ -414,7 +415,7 @@
   "Runs health checks against all active instances of all services in a loop"
   [id->service-agent port->reservation-atom port-grace-period-ms timeout-ms http-client]
   (log/info "starting update-health")
-  (utils/start-timer-task
+  (du/start-timer-task
     (t/millis timeout-ms)
     (fn []
       (send id->service-agent update-service-health port->reservation-atom port-grace-period-ms http-client))))
@@ -472,7 +473,7 @@
   "Relaunches failed instances in a loop"
   [id->service-agent port->reservation-atom port-range timeout-ms]
   (log/info "starting retry-failed-instances")
-  (utils/start-timer-task
+  (du/start-timer-task
     (t/millis timeout-ms)
     (fn []
       (send id->service-agent maintain-instance-scale port->reservation-atom port-range))))

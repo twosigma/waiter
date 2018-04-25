@@ -19,6 +19,7 @@
             [qbits.jet.client.http :as http]
             [qbits.jet.client.websocket :as ws-client]
             [waiter.util.client-tools :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]
             [waiter.websocket :as websocket])
   (:import (java.net HttpCookie)
@@ -103,7 +104,7 @@
           (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
           _ (assert-response-status canary-response 200)
           first-request-time-header (-> (get headers "x-waiter-request-date")
-                                        (utils/str-to-date utils/formatter-rfc822))
+                                        (du/str-to-date du/formatter-rfc822))
           num-iterations 5]
       (is (pos? metrics-sync-interval-ms))
       (with-service-cleanup

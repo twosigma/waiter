@@ -20,7 +20,7 @@
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
-            [waiter.util.utils :as utils])
+            [waiter.util.date-utils :as du])
   (:import waiter.scheduler.marathon.MarathonScheduler))
 
 (deftest test-response-data->service-instances
@@ -111,7 +111,7 @@
                                                   :port 31045,
                                                   :protocol "https",
                                                   :service-id "test-app-1234",
-                                                  :started-at (utils/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
+                                                  :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
                                                  {:extra-ports [],
                                                   :healthy? true,
@@ -122,7 +122,7 @@
                                                   :port 31234,
                                                   :protocol "https",
                                                   :service-id "test-app-1234",
-                                                  :started-at (utils/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)}),
+                                                  :started-at (du/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
                                                  {:extra-ports [12321 90384 56463],
                                                   :healthy? false,
@@ -133,7 +133,7 @@
                                                   :port 41234,
                                                   :protocol "https",
                                                   :service-id "test-app-1234",
-                                                  :started-at (utils/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
+                                                  :started-at (du/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
                            :failed-instances (list
                                                (scheduler/make-ServiceInstance
                                                  {:extra-ports [],
@@ -145,7 +145,7 @@
                                                   :port 0,
                                                   :protocol "https",
                                                   :service-id "test-app-1234",
-                                                  :started-at (utils/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))
+                                                  :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))
                            :killed-instances []}
                           :service-id->service-description {"test-app-1234" {"backend-proto" "https"}}},
                          {
@@ -209,7 +209,7 @@
                                                   :port 31045,
                                                   :protocol "http",
                                                   :service-id "test-app-1234",
-                                                  :started-at (utils/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
+                                                  :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
                                                  {:extra-ports [],
                                                   :healthy? true,
@@ -220,7 +220,7 @@
                                                   :port 31234,
                                                   :protocol "http",
                                                   :service-id "test-app-1234",
-                                                  :started-at (utils/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}),
+                                                  :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}),
                                                (scheduler/make-ServiceInstance
                                                  {:extra-ports [],
                                                   :healthy? false,
@@ -231,7 +231,7 @@
                                                   :port 41234,
                                                   :protocol "http",
                                                   :service-id "test-app-1234",
-                                                  :started-at (utils/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
+                                                  :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
                            :failed-instances []
                            :killed-instances []}
                           :service-id->service-description {"test-app-1234" {"backend-proto" "http"}}})]
@@ -341,7 +341,7 @@
                          :host "10.141.141.11"
                          :port 31045
                          :protocol "https"
-                         :started-at (utils/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
+                         :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-1234.B"
                          :service-id "test-app-1234"
@@ -349,7 +349,7 @@
                          :host "10.141.141.12"
                          :port 31234
                          :protocol "https"
-                         :started-at (utils/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
+                         :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
                     :failed-instances []
                     :killed-instances []}
                    (scheduler/make-Service {:id "test-app-6789", :instances 3, :task-count 3})
@@ -362,7 +362,7 @@
                          :host "10.141.141.11"
                          :port 31045
                          :protocol "http"
-                         :started-at (utils/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
+                         :started-at (du/str-to-date "2014-09-13T00:24:46.959Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.B"
                          :service-id "test-app-6789"
@@ -370,7 +370,7 @@
                          :host "10.141.141.12"
                          :port 36789
                          :protocol "http"
-                         :started-at (utils/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)})
+                         :started-at (du/str-to-date "2014-09-13T00:24:56.965Z" formatter-marathon)})
                       (scheduler/make-ServiceInstance
                         {:id "test-app-6789.C"
                          :service-id "test-app-6789"
@@ -378,7 +378,7 @@
                          :host "10.141.141.13"
                          :port 46789
                          :protocol "http"
-                         :started-at (utils/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
+                         :started-at (du/str-to-date "2014-09-14T00:24:46.965Z" formatter-marathon)}))
                     :failed-instances
                     (list
                       (scheduler/make-ServiceInstance
@@ -388,7 +388,7 @@
                          :host "10.141.141.10"
                          :port 0
                          :protocol "http"
-                         :started-at (utils/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)
+                         :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)
                          :message "Abnormal executor termination"}))
                     :killed-instances []})
         service-id->failed-instances-transient-store (atom {})
@@ -648,7 +648,7 @@
 
 (deftest test-killed-instances-transient-store
   (let [current-time (t/now)
-        current-time-str (utils/date-to-str current-time)
+        current-time-str (du/date-to-str current-time)
         marathon-api (Object.)
         marathon-scheduler (->MarathonScheduler marathon-api {} (constantly nil) "/home/path/"
                                                 (atom {}) (atom {}) (constantly nil) 60000 (constantly true))
@@ -706,7 +706,7 @@
 
 (deftest test-max-failed-instances-cache
   (let [current-time (t/now)
-        current-time-str (utils/date-to-str current-time formatter-marathon)
+        current-time-str (du/date-to-str current-time formatter-marathon)
         service-id->failed-instances-transient-store (atom {})
         common-extractor-fn (constantly {:service-id "service-1"})]
     (testing "test-max-failed-instances-cache"
@@ -725,7 +725,7 @@
                          (scheduler/make-ServiceInstance
                            {:id (str "service-1." n)
                             :service-id "service-1"
-                            :started-at (utils/str-to-date current-time-str formatter-marathon)
+                            :started-at (du/str-to-date current-time-str formatter-marathon)
                             :healthy? false
                             :port 0}))
               (str "Failed instances does not contain instance service-1." n)))))))

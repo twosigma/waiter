@@ -52,6 +52,7 @@
             [waiter.statsd :as statsd]
             [waiter.token :as token]
             [waiter.util.async-utils :as au]
+            [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
@@ -189,7 +190,7 @@
                                 backend-log-url (when backend-directory
                                                   (generate-log-url-fn instance))
                                 request-date (when request-time
-                                               (utils/date-to-str request-time utils/formatter-rfc822))]
+                                               (du/date-to-str request-time du/formatter-rfc822))]
                             (update response :headers
                                     (fn [headers]
                                       (cond-> headers
@@ -354,7 +355,7 @@
                                             (filter (fn [[service state]]
                                                       (when-let [gc-service (gc-service? service state current-time)]
                                                         (log/info service "with state" (:state state) "and last modified time"
-                                                                  (utils/date-to-str (:last-modified-time state)) "marked for deletion")
+                                                                  (du/date-to-str (:last-modified-time state)) "marked for deletion")
                                                         gc-service))
                                                     service->state'))
                             apps-successfully-gced (filter (fn [service]
@@ -894,7 +895,7 @@
                                  scheduler-state-mult-chan (async/mult scheduler-state-chan)
                                  http-client (http/client {:connect-timeout health-check-timeout-ms
                                                            :idle-timeout health-check-timeout-ms})
-                                 timeout-chan (chime/chime-ch (utils/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))]
+                                 timeout-chan (chime/chime-ch (du/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))]
                              (assoc (scheduler/start-scheduler-syncer
                                       clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
                                       scheduler/available? http-client failed-check-threshold)
