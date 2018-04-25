@@ -94,29 +94,23 @@
    In particular, it resolves all promises for services which have healthy instances.
    It also removes from the interstitial state any resolved promises for services which are no longer available."
   [interstitial-state-atom service-id->service-description current-available-service-ids scheduler-messages]
-  (let [available-service-ids (->> scheduler-messages
-                                   (some (fn [[message-type message-data]]
-                                           (when (= :update-available-services message-type)
-                                             (:available-service-ids message-data))))
-                                   set)
-        healthy-instance-service-ids (->> scheduler-messages
-                                          (keep (fn [[message-type message-data]]
-                                                  (when (and (= :update-service-instances message-type)
-                                                             (seq (:healthy-instances message-data)))
-                                                    (:service-id message-data)))))
+  (let [{:keys [available-service-ids healthy-service-ids]} (some (fn [[message-type message-data]]
+                                                                    (when (= :update-available-services message-type)
+                                                                      message-data))
+                                                                  scheduler-messages)
         service-ids-to-remove (set/difference current-available-service-ids available-service-ids)
         removed-service-ids (remove-resolved-interstitial-promises! interstitial-state-atom service-ids-to-remove)]
     (doseq [service-id available-service-ids]
       (let [{:strs [interstitial-secs]} (service-id->service-description service-id)]
         (when (pos? interstitial-secs)
           (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs))))
-    (doseq [service-id healthy-instance-service-ids]
+    (doseq [service-id healthy-service-ids]
       (when-let [interstitial-promise (service-id->interstitial-promise @interstitial-state-atom service-id)]
         (resolve-promise! service-id interstitial-promise :healthy-instance-found)))
     (-> current-available-service-ids
         (set/difference removed-service-ids)
         (set/union available-service-ids)
-        (set/union healthy-instance-service-ids))))
+        (set/union healthy-service-ids))))
 
 (defn interstitial-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the

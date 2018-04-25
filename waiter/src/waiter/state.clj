@@ -1179,7 +1179,6 @@
                                (case message-type
                                  :update-available-services
                                  (let [{:keys [available-service-ids scheduler-sync-time]} message-data
-                                       available-service-ids (into #{} available-service-ids)
                                        services-without-instances (remove #(contains? service-id->my-instance->slots %) available-service-ids)
                                        service-id->healthy-instances' (select-keys service-id->healthy-instances available-service-ids)
                                        service-id->unhealthy-instances' (select-keys service-id->unhealthy-instances available-service-ids)

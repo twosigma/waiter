@@ -408,7 +408,7 @@
                 service-id->metrics-chan (:service-id->metrics-chan result-chans)]
             (async/thread
               (while (not @exit-flag-atom)
-                (let [available-service-ids (remove #(str/includes? % (str @remove-target-atom)) @available-services-atom)
+                (let [available-service-ids (set (remove #(str/includes? % (str @remove-target-atom)) @available-services-atom))
                       scheduler-messages [[:update-available-services {:available-service-ids available-service-ids}]]]
                   (async/>!! scheduler-state-chan scheduler-messages)))
               (async/close! scheduler-state-chan))
