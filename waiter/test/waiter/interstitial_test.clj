@@ -288,7 +288,7 @@
                      :scheme :https
                      :uri "/test"}
             response ((wrap-interstitial handler interstitial-state-atom) request)]
-        (is (= {:headers {"location" (str "/waiter-interstitial/" service-id "/test")
+        (is (= {:headers {"location" (str "/waiter-interstitial/test")
                           "x-waiter-interstitial" "true"}
                 :status 303}
                response))
@@ -334,7 +334,7 @@
                          :request-time request-time
                          :scheme :http}
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
-            (is (= {:headers {"location" (str "/waiter-interstitial/" service-id "?a=b")
+            (is (= {:headers {"location" (str "/waiter-interstitial?a=b")
                               "x-waiter-interstitial" "true"}
                     :status 303}
                    response)))
@@ -347,7 +347,7 @@
                          :request-time request-time
                          :scheme :http}
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
-            (is (= {:headers {"location" (str "/waiter-interstitial/" service-id "?c=d&x-waiter-bypass-interstitial=1&a=b")
+            (is (= {:headers {"location" (str "/waiter-interstitial?c=d&x-waiter-bypass-interstitial=1&a=b")
                               "x-waiter-interstitial" "true"}
                     :status 303}
                    response)))
@@ -360,7 +360,7 @@
                          :scheme :https
                          :uri "/test"}
                 response ((wrap-interstitial handler interstitial-state-atom) request)]
-            (is (= {:headers {"location" (str "/waiter-interstitial/" service-id "/test")
+            (is (= {:headers {"location" (str "/waiter-interstitial/test")
                               "x-waiter-interstitial" "true"}
                     :status 303}
                    response))))))))
@@ -372,23 +372,24 @@
       (let [service-id "test-service-id"
             service-description {"cmd" "lorem ipsum dolor sit amet"
                                  "interstitial-secs" 10}
-            service-id->service-description-fn (fn [in-service-id]
-                                                 (is (= in-service-id service-id))
-                                                 service-description)]
-        (let [request {:request-time request-time
+            descriptor {:service-description service-description
+                        :service-id service-id}]
+        (let [request {:descriptor descriptor
+                       :request-time request-time
                        :route-params {:path "test"
                                       :service-id service-id}}
-              response (display-interstitial-handler service-id->service-description-fn request)]
+              response (display-interstitial-handler request)]
           (is (= {:body {:service-description service-description
                          :service-id service-id
                          :target-url (str "/test?" (request-time->interstitial-param-string request-time))}
                   :status 200}
                  response)))
-        (let [request {:query-string "a=b&c=d"
+        (let [request {:descriptor descriptor
+                       :query-string "a=b&c=d"
                        :request-time request-time
                        :route-params {:path "test"
                                       :service-id service-id}}
-              response (display-interstitial-handler service-id->service-description-fn request)]
+              response (display-interstitial-handler request)]
           (is (= {:body {:service-description service-description
                          :service-id service-id
                          :target-url (str "/test?a=b&c=d&" (request-time->interstitial-param-string request-time))}

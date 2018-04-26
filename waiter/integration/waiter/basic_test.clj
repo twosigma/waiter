@@ -697,13 +697,13 @@
             (->> [(async/thread ;; check interstitial rendering
                     (let [request-headers (assoc request-headers "host" token)
                           {:keys [body] :as response}
-                          (make-request router-url (str "/waiter-interstitial/" service-id "/some-endpoint")
+                          (make-request router-url "/waiter-interstitial/some-endpoint"
                                         :cookies cookies
                                         :headers request-headers
                                         :query-params {"a" "b"})]
                       (assert-response-status response 200)
                       (is (str/includes? body (str "<title>Waiter - Interstitial for " service-id "</title>")))
-                      (is (str/includes? body "/some-endpoint?a=b&x-waiter-bypass-interstitial="))))
+                      (is (str/includes? body (str "/some-endpoint?a=b&x-waiter-bypass-interstitial=")))))
                   (async/thread ;; GET request inside the interstitial period, using DNS token
                     (let [start-time (t/now)
                           endpoint "/hello"
@@ -715,7 +715,7 @@
                                         :http-method-fn http/get)
                           end-time (t/now)]
                       (assert-response-status response 303)
-                      (is (= (str "/waiter-interstitial/" service-id endpoint) (get headers "location")))
+                      (is (= (str "/waiter-interstitial" endpoint) (get headers "location")))
                       (is (= "true" (get headers "x-waiter-interstitial")))
                       (is (< (t/in-millis (t/interval start-time end-time))
                              (t/in-millis (t/seconds interstitial-secs))))))
@@ -730,7 +730,7 @@
                                         :http-method-fn http/post)
                           end-time (t/now)]
                       (assert-response-status response 303)
-                      (is (= (str "/waiter-interstitial/" service-id endpoint) (get headers "location")))
+                      (is (= (str "/waiter-interstitial" endpoint) (get headers "location")))
                       (is (= "true" (get headers "x-waiter-interstitial")))
                       (is (< (t/in-millis (t/interval start-time end-time))
                              (t/in-millis (t/seconds interstitial-secs))))))

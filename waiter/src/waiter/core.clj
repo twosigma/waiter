@@ -114,7 +114,7 @@
                      "waiter-auth" :waiter-auth-handler-fn
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
-                     "waiter-interstitial" {["/" :service-id "/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
+                     "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
                      "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
                      "work-stealing" :work-stealing-handler-fn}]]
     (or (bidi/match-route routes uri)
@@ -1247,11 +1247,13 @@
                                             (handler/request-consent-handler
                                               token->service-description-template service-description->service-id
                                               consent-expiry-days request))))
-   :waiter-request-interstitial-handler-fn (pc/fnk [[:routines service-id->service-description-fn]
+   :waiter-request-interstitial-handler-fn (pc/fnk [[:routines request->descriptor-fn]
                                                     wrap-secure-request-fn]
-                                             (wrap-secure-request-fn
-                                               (fn waiter-request-interstitial-handler-fn [request]
-                                                 (interstitial/display-interstitial-handler service-id->service-description-fn request))))
+                                             (let [handler (-> interstitial/display-interstitial-handler
+                                                               (pr/wrap-descriptor request->descriptor-fn))]
+                                               (wrap-secure-request-fn
+                                                 (fn waiter-request-interstitial-handler-fn [request]
+                                                   (handler request)))))
    :welcome-handler-fn (pc/fnk [settings]
                          (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]

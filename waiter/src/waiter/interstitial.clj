@@ -241,7 +241,7 @@
              (assoc request :query-string)
              handler)
         ;; redirect to interstitial page
-        (let [location (str "/waiter-interstitial/" service-id uri (when-not (str/blank? query-string) (str "?" query-string)))]
+        (let [location (str "/waiter-interstitial" uri (when-not (str/blank? query-string) (str "?" query-string)))]
           (counters/inc! (metrics/service-counter service-id "request-counts" "interstitial"))
           (meters/mark! (metrics/waiter-meter "interstitial" "redirect"))
           {:headers {"location" location
@@ -249,10 +249,9 @@
            :status 303})))))
 
 (defn display-interstitial-handler
-  "Renders the interstitial page for the specified service."
-  [service-id->service-description-fn {:keys [query-string request-time route-params]}]
-  (let [{:keys [path service-id]} route-params
-        service-description (service-id->service-description-fn service-id)
+  [{:keys [descriptor query-string request-time route-params]}]
+  (let [{:keys [service-description service-id]} descriptor
+        {:keys [path]} route-params
         target-url (str "/" path "?"
                         (when (not (str/blank? query-string))
                           (str query-string "&"))
