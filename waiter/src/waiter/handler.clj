@@ -212,11 +212,11 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
-(defn service-name-handler
-  "Retrieves the app-name of the service specified by the request."
-  [request request->descriptor-fn kv-store store-service-description-fn]
+(defn service-id-handler
+  "Retrieves the service-id of the service specified by the request."
+  [{:keys [descriptor] :as request} kv-store store-service-description-fn]
   (try
-    (let [{:keys [service-id core-service-description]} (request->descriptor-fn request)]
+    (let [{:keys [service-id core-service-description]} descriptor]
       (when (not= core-service-description (sd/fetch-core kv-store service-id))
         ; eagerly store the service description for this service-id
         (store-service-description-fn service-id core-service-description))
