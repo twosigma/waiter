@@ -1066,9 +1066,10 @@
    :service-id-handler-fn (pc/fnk [[:curator kv-store]
                                    [:routines request->descriptor-fn store-service-description-fn]
                                    wrap-secure-request-fn]
-                            (wrap-secure-request-fn
-                              (fn service-name-handler-fn [request]
-                                (handler/service-name-handler request request->descriptor-fn kv-store store-service-description-fn))))
+                            (-> (fn service-id-handler-fn [request]
+                                  (handler/service-id-handler request kv-store store-service-description-fn))
+                                (pr/wrap-descriptor request->descriptor-fn)
+                                wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers service-id->service-description-fn]
                                      [:state entitlement-manager]
