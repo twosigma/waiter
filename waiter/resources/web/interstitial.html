@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
 <head>
-    <title>Waiter - Interstitial for <%= service-id %></title>
+    <title>Waiter - Interstitial</title>
     <meta http-equiv="x-ua-compatible" content="IE=edge" />
     <style type="text/css">
    html {
@@ -13,7 +13,7 @@
      background-color: rgba(0, 0, 0, 0.85);
      height: 100%;
      left: 0;
-     line-height: 1;
+     line-height: 1.2;
      position: fixed;
      text-align: center;
      top: 0;
@@ -78,10 +78,9 @@
                 </svg>
                 <div class="additional-info">
                     <ul>
-                        <li>Service ID: <span class="code"><%= service-id %></span></li>
-                        <li>Name: <span class="code"><%= (get service-description "name") %></span></li>
-                        <li>Version: <span class="code"><%= (get service-description "version") %></span></li>
-                        <li>Command: <span class="code"><%= (get service-description "cmd") %></span></li>
+                        <% (doseq [[name value] display-parameters] %>
+                        <li><%= name %>: <span class="code"><%= value %></span></li>
+                        <% ) %>
                     </ul>
                 </div>
             </div>

@@ -702,7 +702,7 @@
                                         :headers request-headers
                                         :query-params {"a" "b"})]
                       (assert-response-status response 200)
-                      (is (str/includes? body (str "<title>Waiter - Interstitial for " service-id "</title>")))
+                      (is (str/includes? body (str "<title>Waiter - Interstitial</title>")))
                       (is (str/includes? body (str "/some-endpoint?a=b&x-waiter-bypass-interstitial=")))))
                   (async/thread ;; GET request inside the interstitial period, using DNS token
                     (let [start-time (t/now)

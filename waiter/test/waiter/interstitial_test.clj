@@ -372,26 +372,25 @@
       (let [service-id "test-service-id"
             service-description {"cmd" "lorem ipsum dolor sit amet"
                                  "interstitial-secs" 10}
-            descriptor {:service-description service-description
-                        :service-id service-id}]
+            descriptor {:service-id service-id
+                        :sources {:headers service-description}}]
         (let [request {:descriptor descriptor
                        :request-time request-time
                        :route-params {:path "test"
                                       :service-id service-id}}
               response (display-interstitial-handler request)]
-          (is (= {:body {:service-description service-description
-                         :service-id service-id
+          (is (= {:body {:display-parameters []
                          :target-url (str "/test?" (request-time->interstitial-param-string request-time))}
                   :status 200}
                  response)))
-        (let [request {:descriptor descriptor
+        (let [descriptor (assoc-in descriptor [:sources :token-sequence] ["token-1" "token-2"])
+              request {:descriptor descriptor
                        :query-string "a=b&c=d"
                        :request-time request-time
                        :route-params {:path "test"
                                       :service-id service-id}}
               response (display-interstitial-handler request)]
-          (is (= {:body {:service-description service-description
-                         :service-id service-id
+          (is (= {:body {:display-parameters [["Tokens" "token-1, token-2"]]
                          :target-url (str "/test?a=b&c=d&" (request-time->interstitial-param-string request-time))}
                   :status 200}
                  response)))))))
