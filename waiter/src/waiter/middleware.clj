@@ -17,19 +17,21 @@
 (defn wrap-update
   "Wraps a handler, calling update on the request and the response.
   If there was an error, also updates the exception."
-  [handler update-fn]
-  (fn [request]
-    (try
-      (let [response (handler (update-fn request))]
-        (if (au/chan? response)
-          (async/go
-            (try
-              (update-fn (<? response))
-              (catch Exception e
-                (utils/update-exception e update-fn))))
-          (update-fn response)))
-      (catch Exception e
-        (throw (utils/update-exception e update-fn))))))
+  ([handler update-fn]
+   (wrap-update handler update-fn update-fn))
+  ([handler req-update-fn res-update-fn]
+   (fn [request]
+     (try
+       (let [response (handler (req-update-fn request))]
+         (if (au/chan? response)
+           (async/go
+             (try
+               (res-update-fn (<? response))
+               (catch Exception e
+                 (utils/update-exception e res-update-fn))))
+           (res-update-fn response)))
+       (catch Exception e
+         (throw (utils/update-exception e res-update-fn)))))))
 
 (defn wrap-assoc
   "Wraps a handler, calling assoc on the request and the response.
