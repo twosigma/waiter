@@ -451,8 +451,9 @@
   [handler request->descriptor-fn]
   (fn [request]
     (try-let [descriptor (request->descriptor-fn request)]
-      (let [handler (-> handler
-                        (middleware/wrap-assoc :descriptor descriptor))]
+      (let [req-update-fn #(assoc % :descriptor descriptor)
+            res-update-fn #(utils/assoc-if-absent % :descriptor descriptor)
+            handler (middleware/wrap-update handler req-update-fn res-update-fn)]
         (handler request))
       (catch Exception e
         (if (missing-run-as-user? e)
