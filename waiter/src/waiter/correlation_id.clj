@@ -12,10 +12,11 @@
   (:require [clojure.tools.logging :as log]
             [clojure.string :as str])
   (:import (java.util Collections)
-           (org.apache.log4j Appender EnhancedPatternLayout Logger PatternLayout)))
+           (org.apache.log4j MDC)))
 
 ; Use lower-case to preserve consistency with Ring's representation of headers
 (def ^:const HEADER-CORRELATION-ID "x-cid")
+(def ^:const CORRELATION-ID-KEY "waiter.correlation-id")
 
 (defn http-object->correlation-id [http-object]
   (get-in http-object [:headers HEADER-CORRELATION-ID]))
@@ -32,26 +33,22 @@
         (update-in http-object [:headers] #(assoc % HEADER-CORRELATION-ID new-cid)))
       http-object)))
 
-; The value of UNKNOWN should never be used, correlation-id should be dynamically bound in the with-correlation-id body.
-(def default-correlation-id "UNKNOWN")
-(def ^:dynamic dynamic-correlation-id default-correlation-id)
-
 (defmacro with-correlation-id
   "Executes the body with the specified value of correlation-id."
   [correlation-id & body]
-  `(binding [dynamic-correlation-id ~correlation-id]
+  `(do
+     (MDC/put CORRELATION-ID-KEY ~correlation-id)
      ~@body))
+
+(defmacro without-correlation-id
+  "Executes the body without an implicit correlation-id."
+  [& body]
+  `(with-correlation-id nil ~@body))
 
 (defn get-correlation-id
   "Retrieve the value of the current correlation-id."
   []
-  dynamic-correlation-id)
-
-
-(defmacro correlation-id->str
-  "Retrieves the string representation of the correlation-id."
-  [correlation-id]
-  `(str "[CID=" ~correlation-id "]"))
+  (MDC/get CORRELATION-ID-KEY))
 
 (defmacro cloghelper
   [loglevel correlation-id message & args]
@@ -82,29 +79,3 @@
 (defmacro cfatal
   [correlation-id & args]
   `(cloghelper :fatal ~correlation-id ~@args))
-
-(defn- replace-pattern-layout
-  [^Appender appender ^String pattern]
-  (let [new-layout (proxy [EnhancedPatternLayout]
-                          [pattern]
-                     (format [logging-event]
-                       (let [parent-format (proxy-super format logging-event)
-                             correlation-id (get-correlation-id)
-                             display-cid-str (when (not= correlation-id default-correlation-id)
-                                               (correlation-id->str correlation-id))]
-                         (str/replace parent-format "[CID]" (str display-cid-str)))))]
-    (.setLayout appender new-layout)))
-
-(defn replace-pattern-layout-in-log4j-appenders
-  "Replaces instances of `PatternLayout` in appenders with instance of `CidEnhancedPatternLayout`."
-  []
-  (let [logger (Logger/getRootLogger)
-        appenders (.getAllAppenders logger)]
-    (doseq [^Appender appender (seq (Collections/list appenders))]
-      (let [layout (.getLayout ^Appender appender)]
-        (when (instance? PatternLayout layout)
-          (println "Replacing the layout in" (.getName appender) (.getClass appender))
-          (replace-pattern-layout appender (.getConversionPattern ^PatternLayout layout)))
-        (when (instance? EnhancedPatternLayout layout)
-          (println "Replacing the layout in" (.getName appender) (.getClass appender))
-          (replace-pattern-layout appender (.getConversionPattern ^EnhancedPatternLayout layout)))))))
