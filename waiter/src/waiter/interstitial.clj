@@ -165,14 +165,6 @@
     {:exit-chan exit-chan
      :query-chan query-chan}))
 
-(let [interstitial-template-fn (template/fn
-                                 [{:keys [display-parameters target-url]}]
-                                 (slurp (io/resource "web/interstitial.html")))]
-  (defn render-interstitial-template
-    "Renders the interstitial html page."
-    [context]
-    (interstitial-template-fn context)))
-
 (def ^:const interstitial-param-name "x-waiter-bypass-interstitial")
 (def ^:const interstitial-param-name-length (count interstitial-param-name))
 (def ^:const interstitial-bypass-timeout-ms (-> 10 t/seconds t/in-millis))
@@ -248,20 +240,19 @@
                      "x-waiter-interstitial" "true"}
            :status 303})))))
 
+(let [interstitial-template-fn (template/fn [{:keys [target-url]}] (slurp (io/resource "web/interstitial.html")))]
+  (defn render-interstitial-template
+    "Renders the interstitial html page."
+    [context]
+    (interstitial-template-fn context)))
+
 (defn display-interstitial-handler
-  [{:keys [descriptor query-string request-time route-params]}]
+  [{:keys [query-string request-time route-params]}]
   (let [{:keys [path]} route-params
         target-url (str "/" path "?"
                         (when (not (str/blank? query-string))
                           (str query-string "&"))
                         ;; the bypass interstitial should be the last query parameter
-                        (request-time->interstitial-param-string request-time))
-        token-sequence (-> descriptor :sources :token-sequence)
-        display-parameters (cond-> []
-                                   (seq token-sequence)
-                                   (conj [(if (-> token-sequence count (> 1)) "Tokens" "Token")
-                                          (str/join ", " token-sequence)]))]
-    {:body (render-interstitial-template
-             {:display-parameters display-parameters
-              :target-url target-url})
+                        (request-time->interstitial-param-string request-time))]
+    {:body (render-interstitial-template {:target-url target-url})
      :status 200}))

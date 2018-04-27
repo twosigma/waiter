@@ -194,16 +194,16 @@
                             (update response :headers
                                     (fn [headers]
                                       (cond-> headers
-                                        request-time (assoc "x-waiter-request-date" request-date)
-                                        request-id (assoc "x-waiter-request-id" request-id)
-                                        router-id (assoc "x-waiter-router-id" router-id)
-                                        descriptor (assoc "x-waiter-service-id" (:service-id descriptor))
-                                        instance (assoc "x-waiter-backend-id" (:id instance)
-                                                        "x-waiter-backend-host" (:host instance)
-                                                        "x-waiter-backend-port" (str (:port instance))
-                                                        "x-waiter-backend-proto" (:protocol instance))
-                                        backend-directory (assoc "x-waiter-backend-directory" backend-directory
-                                                                 "x-waiter-backend-log-url" backend-log-url))))))]
+                                              request-time (assoc "x-waiter-request-date" request-date)
+                                              request-id (assoc "x-waiter-request-id" request-id)
+                                              router-id (assoc "x-waiter-router-id" router-id)
+                                              descriptor (assoc "x-waiter-service-id" (:service-id descriptor))
+                                              instance (assoc "x-waiter-backend-id" (:id instance)
+                                                              "x-waiter-backend-host" (:host instance)
+                                                              "x-waiter-backend-port" (str (:port instance))
+                                                              "x-waiter-backend-proto" (:protocol instance))
+                                              backend-directory (assoc "x-waiter-backend-directory" backend-directory
+                                                                       "x-waiter-backend-log-url" backend-log-url))))))]
         (ru/update-response response add-headers))
       (handler request))))
 
@@ -605,7 +605,7 @@
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
    :service-id->service-description-fn* (pc/fnk [[:curator kv-store]
-                                                [:settings service-description-defaults metric-group-mappings]]
+                                                 [:settings service-description-defaults metric-group-mappings]]
                                           (fn service-id->service-description
                                             [service-id & {:keys [effective?] :or {effective? true}}]
                                             (sd/service-id->service-description
@@ -1247,13 +1247,10 @@
                                             (handler/request-consent-handler
                                               token->service-description-template service-description->service-id
                                               consent-expiry-days request))))
-   :waiter-request-interstitial-handler-fn (pc/fnk [[:routines request->descriptor-fn]
-                                                    wrap-secure-request-fn]
-                                             (let [handler (-> interstitial/display-interstitial-handler
-                                                               (pr/wrap-descriptor request->descriptor-fn))]
-                                               (wrap-secure-request-fn
-                                                 (fn waiter-request-interstitial-handler-fn [request]
-                                                   (handler request)))))
+   :waiter-request-interstitial-handler-fn (pc/fnk [wrap-secure-request-fn]
+                                             (wrap-secure-request-fn
+                                               (fn waiter-request-interstitial-handler-fn [request]
+                                                 (interstitial/display-interstitial-handler request))))
    :welcome-handler-fn (pc/fnk [settings]
                          (partial handler/welcome-handler settings))
    :work-stealing-handler-fn (pc/fnk [[:state instance-rpc-chan]

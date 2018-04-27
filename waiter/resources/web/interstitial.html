@@ -43,18 +43,6 @@
      padding-top: 1em;
      width: 50em;
    }
-
-   .additional-info li {
-     line-height: 2em;
-     text-align: left;
-   }
-
-   span.code {
-     font-family: "Lucida Console", Monaco, monospace;
-     margin-left: 0em;
-     line-height: 2em;
-   }
-
     </style>
 </head>
 <body>
@@ -76,13 +64,6 @@
                                  values="175.7 75.30000000000001;1 250;175.7 75.30000000000001"></animate>
                     </circle>
                 </svg>
-                <div class="additional-info">
-                    <ul>
-                        <% (doseq [[name value] display-parameters] %>
-                        <li><%= name %>: <span class="code"><%= value %></span></li>
-                        <% ) %>
-                    </ul>
-                </div>
             </div>
         </div>
     </div>
