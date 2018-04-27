@@ -71,20 +71,15 @@
     {:exit-chan exit-chan
      :query-chan query-chan}))
 
-(defn- lookup-helper
-  "Helper method to lookup if a service exists by keyword in the fallback state."
-  [fallback-state service-id lookup-key]
-  (-> fallback-state lookup-key (contains? service-id)))
-
 (defn service-exists?
   "Returns true if the requested service-id exists as per the state in the fallback-state."
   [fallback-state service-id]
-  (lookup-helper fallback-state service-id :available-service-ids))
+  (-> fallback-state :available-service-ids (contains? service-id)))
 
 (defn service-healthy?
   "Returns true if the requested service-id has a healthy instance as per the state in the fallback-state."
   [fallback-state service-id]
-  (lookup-helper fallback-state service-id :healthy-service-ids))
+  (-> fallback-state :healthy-service-ids (contains? service-id)))
 
 (defn descriptor->service-fallback-period-secs
   "Retrieves the service-fallback-period-secs for the given descriptor."
