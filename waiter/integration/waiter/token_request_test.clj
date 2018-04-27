@@ -981,22 +981,39 @@
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token (create-token-name waiter-url service-name)
-          current-user (retrieve-username)
           scheduler-syncer-interval-secs (setting waiter-url [:scheduler-syncer-interval-secs])
-          service-fallback-period-secs (+ 30 scheduler-syncer-interval-secs)
+          service-fallback-period-secs 30
           service-description-1 (-> (kitchen-request-headers :prefix "")
                                     (assoc :name (str service-name "-v1")
                                            :permitted-user "*"
-                                           :run-as-user current-user
+                                           :run-as-user (retrieve-username)
                                            :service-fallback-period-secs service-fallback-period-secs
                                            :version "version-1"))
           request-headers {:x-waiter-token token}
           service-id-headers (assoc request-headers :x-waiter-service-fallback-period-secs 0)
           kitchen-env-service-id (fn []
-                                   (-> (make-request waiter-url "/environment" :headers request-headers)
-                                       :body
-                                       (json/read-str)
-                                       (get "WAITER_SERVICE_ID")))
+                                   (let [kitchen-response (make-request-with-debug-info
+                                                            request-headers
+                                                            #(make-request waiter-url "/environment" :headers %))
+                                         kitchen-service-id (-> kitchen-response
+                                                                :body
+                                                                (json/read-str)
+                                                                (get "WAITER_SERVICE_ID"))]
+                                     (is (= kitchen-service-id (:service-id kitchen-response)))
+                                     kitchen-service-id))
+          waiter-routers (routers waiter-url)
+          {:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          await-service-on-routers (fn [service-id maintainer-chan-available]
+                                     (wait-for (fn []
+                                                 (every? (fn [[_ router-url]]
+                                                           (-> (service-state router-url service-id :cookies cookies)
+                                                               :state
+                                                               :app-maintainer-state
+                                                               :maintainer-chan-available
+                                                               (= maintainer-chan-available)))
+                                                         waiter-routers))
+                                               :interval 1
+                                               :timeout (inc scheduler-syncer-interval-secs)))
           thread-sleep (fn [time-in-secs] (-> time-in-secs inc t/seconds t/in-millis Thread/sleep))]
       (try
         (let [token-description-1 (assoc service-description-1 :token token)
@@ -1008,7 +1025,7 @@
 
             (is (= service-id-1 (kitchen-env-service-id)))
             ;; allow syncer state to get updated
-            (thread-sleep scheduler-syncer-interval-secs)
+            (await-service-on-routers service-id-1 true)
 
             (let [service-description-2 (assoc service-description-1 :name (str service-name "-v2") :version "version-2")
                   token-description-2 (assoc service-description-2 :token token)
@@ -1026,7 +1043,7 @@
                 ;; outside fallback duration
                 (is (= service-id-2 (kitchen-env-service-id)))
                 ;; allow syncer state to get updated
-                (thread-sleep scheduler-syncer-interval-secs)
+                (await-service-on-routers service-id-2 true)
 
                 (let [sleep-duration (* 2 scheduler-syncer-interval-secs)
                       service-description-3 (-> service-description-1
@@ -1050,7 +1067,7 @@
                     ;; delete service-id-3 to trigger fallback logic on next request
                     (delete-service waiter-url service-id-3)
                     ;; allow syncer state to get updated
-                    (thread-sleep scheduler-syncer-interval-secs)
+                    (await-service-on-routers service-id-3 false)
                     ;; outside fallback duration
                     (is (= service-id-3 (kitchen-env-service-id)))))))))
         (finally
