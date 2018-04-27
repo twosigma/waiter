@@ -87,9 +87,8 @@
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "storing service description for token:" token)
-        (let [token-data (merge service-description-template
-                                (select-keys request-parameters sd/request-parameter-keys)
-                                (select-keys token-metadata sd/token-metadata-keys))
+        (let [token-data (-> (merge service-description-template request-parameters token-metadata)
+                             (select-keys sd/token-data-keys))
               {:strs [deleted owner] :as new-token-data} (sd/sanitize-service-description token-data sd/token-data-keys)
               existing-token-data (kv/fetch kv-store token :refresh true)
               existing-token-data (if-not (get existing-token-data "deleted") existing-token-data {})

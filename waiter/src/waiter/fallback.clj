@@ -94,7 +94,7 @@
    Also, the fallback descriptor needs to be inside the fallback period to be returned."
   [descriptor->previous-descriptor search-history-length fallback-state
    request-time descriptor]
-  (when (-> descriptor :sources :token-sequence count pos?)
+  (when (-> descriptor :sources :token-sequence seq)
     (let [{{:keys [token->token-data]} :sources} descriptor
           service-fallback-period-secs (descriptor->service-fallback-period-secs descriptor)]
       (when (and (pos? service-fallback-period-secs)
@@ -113,9 +113,9 @@
                     (log/info (str "iteration-" iteration) (:service-id descriptor) "falling back to" service-id)
                     previous-descriptor)
                   (do
-                    (log/info (str "iteration-" iteration) service-id "does not qualify as a fallback service"
-                              {:available (service-exists? fallback-state service-id)
-                               :healthy (service-healthy? fallback-state service-id)})
+                    (log/debug (str "iteration-" iteration) "skipping" service-id "as the fallback service"
+                               {:available (service-exists? fallback-state service-id)
+                                :healthy (service-healthy? fallback-state service-id)})
                     (recur (inc iteration) previous-descriptor)))))))))))
 
 (defn wrap-fallback
@@ -133,8 +133,7 @@
           (if-let [fallback-descriptor (retrieve-fallback-descriptor
                                          descriptor->previous-descriptor search-history-length fallback-state request-time descriptor)]
             (let [fallback-service-id (:service-id fallback-descriptor)
-                  new-handler (->> {:descriptor fallback-descriptor :fallback-source-id service-id}
-                                   (middleware/wrap-merge handler))]
+                  new-handler (middleware/wrap-merge handler {:descriptor fallback-descriptor :fallback-source-id service-id})]
               (when-not (service-exists? fallback-state service-id)
                 (log/info "starting" service-id "before causing request to fallback to" fallback-service-id)
                 (start-new-service-fn descriptor))
