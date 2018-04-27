@@ -27,9 +27,6 @@
 (def ^:const ANSI-CYAN "\033[36m")
 (def ^:const ANSI-MAGENTA "\033[1m\033[35m")
 
-(defonce ^:private replaced-layout
-         (future (cid/replace-pattern-layout-in-log4j-appenders)))
-
 (defn blue [message] (str ANSI-BLUE message ANSI-RESET))
 (defn magenta [message] (str ANSI-MAGENTA message ANSI-RESET))
 (defn cyan [message] (str ANSI-CYAN message ANSI-RESET))
@@ -65,7 +62,6 @@
 
   (defmethod report :begin-test-var [m]
     (let [test-name (full-test-name m)]
-      @replaced-layout
       (with-test-out
         (println \tab (magenta "START: ") test-name))
       (swap! start-millis #(assoc % test-name (System/currentTimeMillis)))

@@ -97,7 +97,6 @@
 
 (defn start-waiter [config-file]
   (try
-    (cid/replace-pattern-layout-in-log4j-appenders)
     (log/info "starting waiter...")
     (let [async-threads (System/getProperty "clojure.core.async.pool-size")
           settings (assoc (settings/load-settings config-file (retrieve-git-version))

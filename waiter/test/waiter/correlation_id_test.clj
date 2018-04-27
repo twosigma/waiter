@@ -70,7 +70,7 @@
 
 (deftest test-replace-pattern-layout-in-log4j-appenders
   []
-  (let [format "Format String for [CID] testing"
+  (let [format "Format String for [CID=%X{waiter.correlation-id}] testing"
         appender1 (ConsoleAppender. (PatternLayout. format))
         appender2 (ConsoleAppender. (SimpleLayout.))
         appender3 (ConsoleAppender. (EnhancedPatternLayout. format))
@@ -91,12 +91,10 @@
       (is (= format (log appender1)))
       (is (not= format simple-layout-format))
       (is (= format (log appender3))))
-    ; make call
-    (replace-pattern-layout-in-log4j-appenders)
     ; assertions
     (with-correlation-id
       "test-cid"
-      (let [expected-log (str/replace format "CID" "CID=test-cid")]
+      (let [expected-log (str/replace format "%X{waiter.correlation-id}" "test-cid")]
         (is (= expected-log (log appender1)))
         (is (= simple-layout-format (log appender2)))
         (is (= expected-log (log appender3)))))
