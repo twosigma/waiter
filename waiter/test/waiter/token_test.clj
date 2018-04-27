@@ -198,9 +198,9 @@
                    :headers {"x-waiter-token" token}
                    :query-params {"hard-delete" "true"}
                    :request-method :delete})]
-            (is (= 200 status))
-            (is (= {"delete" token "hard-delete" true "success" true} (json/read-str body)))
-            (is (nil? (kv/fetch kv-store token))))
+            (is (= 400 status))
+            (is (str/includes? body "Must specify if-match header for token hard deletes"))
+            (is (kv/fetch kv-store token)))
           (finally
             (kv/delete kv-store token))))
 
