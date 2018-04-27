@@ -556,8 +556,9 @@
 
 (defn- compute-service-description-template-from-tokens
   "Computes the service description, preauthorization and authentication data using the token-sequence and token-data."
-  [token-sequence token->token-data]
-  (let [merged-token-data (token-sequence->merged-data token->token-data token-sequence)
+  [token-defaults token-sequence token->token-data]
+  (let [merged-token-data (->> (token-sequence->merged-data token->token-data token-sequence)
+                               (merge token-defaults))
         service-description-template (select-keys merged-token-data service-description-keys)]
     {:service-description-template service-description-template
      :service-fallback-period-secs (get merged-token-data "service-fallback-period-secs")
@@ -570,12 +571,14 @@
 
 (defn- prepare-service-description-template-from-tokens
   "Prepares the service description using the token(s)."
-  [waiter-headers request-headers kv-store waiter-hostnames]
-  (let [{:keys [token source]} (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostnames)]
+  [waiter-headers request-headers kv-store waiter-hostnames token-defaults]
+  (let [{:keys [token source]}
+        (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostnames)]
     (cond
       (= source :host-header)
       (let [token-data (token->token-data kv-store token false false)]
         (compute-service-description-template-from-tokens
+          token-defaults
           (if (seq token-data) [token] [])
           (if (seq token-data) {token token-data} {})))
 
@@ -586,10 +589,10 @@
           (if loop-token
             (let [token-data (token->token-data kv-store loop-token true false)]
               (recur (assoc loop-token->token-data loop-token token-data) remaining-tokens))
-            (compute-service-description-template-from-tokens token-sequence loop-token->token-data))))
+            (compute-service-description-template-from-tokens token-defaults token-sequence loop-token->token-data))))
 
       :else
-      (compute-service-description-template-from-tokens [] {}))))
+      (compute-service-description-template-from-tokens token-defaults [] {}))))
 
 (let [service-id->key #(str "^SERVICE-ID#" %)]
   (defn store-core
@@ -660,7 +663,7 @@
         (assoc sanitized-service-description "metadata" renamed-metadata-map)))))
 
 (defn prepare-service-description-sources
-  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames service-description-defaults]
+  [{:keys [waiter-headers passthrough-headers]} kv-store waiter-hostnames service-description-defaults token-defaults]
   "Prepare the service description sources from the current request.
    Populates the service description for on-the-fly waiter-specific headers.
    Also populates for the service description for a token (first looked in headers and then using the host name).
@@ -672,14 +675,16 @@
                                                       parse-metadata-headers
                                                       transform-allowed-params-header
                                                       (sanitize-service-description service-description-from-header-keys))]
-    (-> (prepare-service-description-template-from-tokens waiter-headers passthrough-headers kv-store waiter-hostnames)
+    (-> (prepare-service-description-template-from-tokens
+          waiter-headers passthrough-headers kv-store waiter-hostnames token-defaults)
         (assoc :defaults service-description-defaults
                :headers service-description-template-from-headers))))
 
 (defn- merge-service-description-sources
-  [descriptor kv-store waiter-hostnames service-description-defaults]
+  [descriptor kv-store waiter-hostnames service-description-defaults token-defaults]
   "Merges the sources for a service-description into the descriptor."
-  (->> (prepare-service-description-sources descriptor kv-store waiter-hostnames service-description-defaults)
+  (->> (prepare-service-description-sources
+         descriptor kv-store waiter-hostnames service-description-defaults token-defaults)
        (assoc descriptor :sources)))
 
 (defn- sanitize-metadata [{:strs [metadata] :as service-description}]
@@ -742,7 +747,7 @@
                                            contains-service-parameter-header?
                                            ; can only set the permitted-user if some service-description-keys waiter header was provided
                                            (assoc "permitted-user" (or (get headers "permitted-user") username)))]
-      (when (empty? user-service-description)
+      (when-not (seq user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
                         (error-message-map-fn passthrough-headers waiter-headers))))
       (sling/try+
@@ -785,11 +790,11 @@
   "Creates the service descriptor from the request.
    The result map contains the following elements:
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
-  [service-description-defaults service-id-prefix kv-store waiter-hostnames request metric-group-mappings
+  [service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames request metric-group-mappings
    service-description-builder assoc-run-as-user-approved?]
   (let [current-request-user (get request :authorization/user)]
     (-> (headers/split-headers (:headers request))
-        (merge-service-description-sources kv-store waiter-hostnames service-description-defaults)
+        (merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
         (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
                                           service-description-builder assoc-run-as-user-approved?)
         (merge-suspended kv-store))))
@@ -805,7 +810,7 @@
   "Creates the service descriptor from the request.
    The result map contains the following elements:
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
-  [kv-store service-id-prefix metric-group-mappings service-description-builder service-approved? username
+  [kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder service-approved? username
    {:keys [sources] :as descriptor}]
   (when-let [token-sequence (-> sources :token-sequence seq)]
     (let [{:keys [token->token-data]} sources
@@ -815,7 +820,7 @@
           previous-token-data (get-in token->token-data [previous-token "previous"])]
       (when (seq previous-token-data)
         (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
-                               (compute-service-description-template-from-tokens token-sequence)
+                               (compute-service-description-template-from-tokens token-defaults token-sequence)
                                (merge sources))]
           (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
               (assoc :sources new-sources)

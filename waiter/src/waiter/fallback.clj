@@ -83,21 +83,20 @@
 
 (defn descriptor->service-fallback-period-secs
   "Retrieves the service-fallback-period-secs for the given descriptor."
-  [default-service-fallback-period-secs descriptor]
+  [descriptor]
   (or (get-in descriptor [:waiter-headers "x-waiter-service-fallback-period-secs"])
-      (get-in descriptor [:sources :service-fallback-period-secs])
-      default-service-fallback-period-secs))
+      (get-in descriptor [:sources :service-fallback-period-secs] 0)))
 
 (defn retrieve-fallback-descriptor
   "Computes the fallback descriptor with a healthy instance based on the provided descriptor.
    Fallback descriptors can only be computed for token-based descriptors.
    The amount of history lookup for fallback descriptor candidates is limited by search-history-length.
    Also, the fallback descriptor needs to be inside the fallback period to be returned."
-  [descriptor->previous-descriptor default-service-fallback-period-secs search-history-length fallback-state
+  [descriptor->previous-descriptor search-history-length fallback-state
    request-time descriptor]
   (when (-> descriptor :sources :token-sequence count pos?)
     (let [{{:keys [token->token-data]} :sources} descriptor
-          service-fallback-period-secs (descriptor->service-fallback-period-secs default-service-fallback-period-secs descriptor)]
+          service-fallback-period-secs (descriptor->service-fallback-period-secs descriptor)]
       (when (and (pos? service-fallback-period-secs)
                  (let [most-recently-modified-token (sd/retrieve-most-recently-modified-token token->token-data)
                        token-last-update-time (get-in token->token-data [most-recently-modified-token "last-update-time"] 0)]
@@ -122,7 +121,7 @@
 (defn wrap-fallback
   "Redirects users to a healthy fallback service when the current service has not started or does not have healthy instances."
   [handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
-   default-service-fallback-period-secs search-history-length fallback-state-atom]
+   search-history-length fallback-state-atom]
   (fn wrap-fallback-handler [{:keys [descriptor request-time] :as request}]
     (let [{:keys [service-id]} descriptor
           fallback-state @fallback-state-atom]
@@ -132,8 +131,7 @@
               service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
               descriptor->previous-descriptor (fn [descriptor] (descriptor->previous-descriptor-fn service-approved? auth-user descriptor))]
           (if-let [fallback-descriptor (retrieve-fallback-descriptor
-                                         descriptor->previous-descriptor default-service-fallback-period-secs
-                                         search-history-length fallback-state request-time descriptor)]
+                                         descriptor->previous-descriptor search-history-length fallback-state request-time descriptor)]
             (let [fallback-service-id (:service-id fallback-descriptor)
                   new-handler (->> {:descriptor fallback-descriptor :fallback-source-id service-id}
                                    (middleware/wrap-merge handler))]

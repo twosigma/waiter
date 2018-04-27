@@ -56,7 +56,6 @@
                                                   (s/required-key :lingering-request-threshold-ms) schema/positive-int
                                                   (s/required-key :output-buffer-size) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int
-                                                  (s/required-key :service-fallback-period-secs) schema/non-negative-int
                                                   (s/required-key :streaming-timeout-ms) schema/positive-int}
    (s/required-key :kv-config) (s/constrained
                                  {:kind s/Keyword
@@ -134,7 +133,8 @@
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]
-   (s/required-key :token-config) {(s/required-key :history-length) schema/positive-int}
+   (s/required-key :token-config) {(s/required-key :history-length) schema/positive-int
+                                   (s/required-key :token-defaults) {(s/required-key "service-fallback-period-secs") schema/non-negative-int}}
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
    (s/required-key :work-stealing) {(s/required-key :offer-help-interval-ms) schema/positive-int
@@ -226,7 +226,6 @@
                                  :lingering-request-threshold-ms 60000 ; 1 minute
                                  :output-buffer-size 4096
                                  :queue-timeout-ms 300000
-                                 :service-fallback-period-secs (-> 4 t/hours t/in-seconds)
                                  :streaming-timeout-ms 20000}
    :kv-config {:kind :zk
                :zk {:factory-fn 'waiter.kv/new-zk-kv-store
@@ -317,7 +316,8 @@
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
-   :token-config {:history-length 5}
+   :token-config {:history-length 5
+                  :token-defaults {"service-fallback-period-secs" (-> 4 t/hours t/in-seconds)}}
    :websocket-config {:ws-max-binary-message-size (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:offer-help-interval-ms 100

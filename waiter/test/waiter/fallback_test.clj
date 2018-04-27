@@ -61,7 +61,6 @@
         current-time-millis (.getMillis ^DateTime current-time)
         descriptor->previous-descriptor (fn [descriptor] (:previous descriptor))
         service-fallback-period-secs 120
-        default-service-fallback-period-secs (* 4 service-fallback-period-secs)
         search-history-length 5
         time-1 (- current-time-millis (t/in-millis (t/seconds 30)))
         descriptor-1 {:service-id "service-1"
@@ -83,8 +82,7 @@
             fallback-state {:available-service-ids #{"service-1" "service-2"}
                             :healthy-service-ids #{"service-1" "service-2"}}
             result-descriptor (retrieve-fallback-descriptor
-                                descriptor->previous-descriptor default-service-fallback-period-secs search-history-length
-                                fallback-state request-time descriptor-4)]
+                                descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-4)]
         (is (nil? result-descriptor))))
 
     (let [time-3 (- current-time-millis (t/in-millis (t/seconds 10)))
@@ -98,16 +96,14 @@
         (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
                               :healthy-service-ids #{"service-1" "service-2"}}
               result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor default-service-fallback-period-secs search-history-length
-                                  fallback-state request-time descriptor-3)]
+                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
           (is (= descriptor-2 result-descriptor))))
 
       (testing "no healthy fallback service"
         (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
                               :healthy-service-ids #{}}
               result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor default-service-fallback-period-secs search-history-length
-                                  fallback-state request-time descriptor-3)]
+                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
           (is (nil? result-descriptor))))
 
       (testing "no fallback service outside period"
@@ -115,16 +111,14 @@
                               :healthy-service-ids #{"service-1" "service-2"}}
               request-time (t/plus current-time (t/seconds (* 2 service-fallback-period-secs)))
               result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor default-service-fallback-period-secs search-history-length
-                                  fallback-state request-time descriptor-3)]
+                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
           (is (nil? result-descriptor))))
 
       (testing "fallback to 2-level previous healthy instance inside fallback period"
         (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
                               :healthy-service-ids #{"service-1"}}
               result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor default-service-fallback-period-secs search-history-length
-                                  fallback-state request-time descriptor-3)]
+                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
           (is (= descriptor-1 result-descriptor))))
 
       (testing "no fallback for limited history"
@@ -132,8 +126,7 @@
                               :healthy-service-ids #{"service-1"}}
               search-history-length 1
               result-descriptor (retrieve-fallback-descriptor
-                                  descriptor->previous-descriptor default-service-fallback-period-secs search-history-length
-                                  fallback-state request-time descriptor-3)]
+                                  descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
           (is (nil? result-descriptor)))))))
 
 (deftest test-wrap-fallback
@@ -142,7 +135,6 @@
         prev-service-id (str service-id ".prev")
         descriptor-1 {:service-id prev-service-id}
         descriptor-2 {:service-id service-id}
-        default-service-fallback-period-secs 60
         search-history-length 5
         descriptor->previous-descriptor-fn nil
         start-new-service-fn nil
@@ -152,9 +144,8 @@
     (testing "healthy service"
       (let [retrieve-healthy-fallback-promise (promise)]
         (with-redefs [retrieve-fallback-descriptor
-                      (fn [_ in-service-fallback-period-secs in-history-length in-fallback-state in-request-time in-descriptor]
+                      (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
                         (deliver retrieve-healthy-fallback-promise :called)
-                        (is (= default-service-fallback-period-secs in-service-fallback-period-secs))
                         (is (= search-history-length in-history-length))
                         (is in-fallback-state)
                         (is (= request-time in-request-time))
@@ -163,7 +154,7 @@
           (let [fallback-state-atom (atom {:available-service-ids #{service-id}
                                            :healthy-service-ids #{service-id}})
                 fallback-handler (wrap-fallback handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
-                                                default-service-fallback-period-secs search-history-length fallback-state-atom)
+                                                search-history-length fallback-state-atom)
                 request {:descriptor descriptor-2 :request-time request-time}
                 response (fallback-handler request)]
             (is (= :not-called (deref retrieve-healthy-fallback-promise 0 :not-called)))
@@ -172,9 +163,8 @@
     (testing "unhealthy service with healthy fallback"
       (let [retrieve-healthy-fallback-promise (promise)]
         (with-redefs [retrieve-fallback-descriptor
-                      (fn [_ in-service-fallback-period-secs in-history-length in-fallback-state in-request-time in-descriptor]
+                      (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
                         (deliver retrieve-healthy-fallback-promise :called)
-                        (is (= default-service-fallback-period-secs in-service-fallback-period-secs))
                         (is (= search-history-length in-history-length))
                         (is in-fallback-state)
                         (is (= request-time in-request-time))
@@ -183,7 +173,7 @@
           (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id service-id}
                                            :healthy-service-ids #{prev-service-id}})
                 fallback-handler (wrap-fallback handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
-                                                default-service-fallback-period-secs search-history-length fallback-state-atom)
+                                                search-history-length fallback-state-atom)
                 request {:descriptor descriptor-2 :request-time request-time}
                 response (fallback-handler request)]
             (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
@@ -192,9 +182,8 @@
     (testing "unhealthy service with no fallback"
       (let [retrieve-healthy-fallback-promise (promise)]
         (with-redefs [retrieve-fallback-descriptor
-                      (fn [_ in-service-fallback-period-secs in-history-length in-fallback-state in-request-time in-descriptor]
+                      (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
                         (deliver retrieve-healthy-fallback-promise :called)
-                        (is (= default-service-fallback-period-secs in-service-fallback-period-secs))
                         (is (= search-history-length in-history-length))
                         (is in-fallback-state)
                         (is (= request-time in-request-time))
@@ -203,7 +192,7 @@
           (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id service-id}
                                            :healthy-service-ids #{}})
                 fallback-handler (wrap-fallback handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
-                                                default-service-fallback-period-secs search-history-length fallback-state-atom)
+                                                search-history-length fallback-state-atom)
                 request {:descriptor descriptor-2 :request-time request-time}
                 response (fallback-handler request)]
             (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))

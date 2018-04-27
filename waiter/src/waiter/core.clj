@@ -669,12 +669,12 @@
                                             service-id (discovery/router-ids discovery :exclude-set #{router-id})
                                             (partial make-kill-instance-request make-inter-router-requests-sync-fn service-id))))
    :descriptor->previous-descriptor-fn (pc/fnk [[:curator kv-store]
-                                                [:settings metric-group-mappings]
+                                                [:settings [:token-config token-defaults] metric-group-mappings]
                                                 [:state service-description-builder service-id-prefix]]
                                          (fn descriptor->previous-descriptor-fn [service-approved? auth-user descriptor]
                                            (sd/descriptor->previous-descriptor
-                                             kv-store service-id-prefix metric-group-mappings service-description-builder
-                                             service-approved? auth-user descriptor)))
+                                             kv-store service-id-prefix token-defaults metric-group-mappings
+                                             service-description-builder service-approved? auth-user descriptor)))
    :determine-priority-fn (pc/fnk []
                             (let [position-generator-atom (atom 0)]
                               (fn determine-priority-fn [waiter-headers]
@@ -735,13 +735,15 @@
                                endpoint-url
                                (str "http://" hostname ":" port endpoint-url)))))
    :request->descriptor-fn (pc/fnk [[:curator kv-store]
-                                    [:settings metric-group-mappings service-description-defaults]
+                                    [:settings [:token-config token-defaults] metric-group-mappings service-description-defaults]
                                     [:state service-description-builder service-id-prefix waiter-hostnames]
                                     assoc-run-as-user-approved?
                                     can-run-as?-fn]
                              (fn request->descriptor-fn [request]
-                               (pr/request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostnames can-run-as?-fn
-                                                       metric-group-mappings service-description-builder assoc-run-as-user-approved? request)))
+                               (pr/request->descriptor
+                                 service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
+                                 can-run-as?-fn metric-group-mappings service-description-builder assoc-run-as-user-approved?
+                                 request)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]
                                {:decryptor (fn router-metrics-decryptor [data] (utils/compressed-bytes->map data password))
@@ -1310,14 +1312,12 @@
                                   :else
                                   (handler request))))))
    :wrap-fallback-service-fn (pc/fnk [[:routines assoc-run-as-user-approved? descriptor->previous-descriptor-fn start-new-service-fn]
-                                      [:settings
-                                       [:instance-request-properties service-fallback-period-secs]
-                                       [:token-config history-length]]
+                                      [:settings [:token-config history-length]]
                                       [:state fallback-state-atom]]
                                (fn wrap-fallback-service-fn [handler]
                                  (fb/wrap-fallback
                                    handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
-                                   service-fallback-period-secs history-length fallback-state-atom)))
+                                   history-length fallback-state-atom)))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]
