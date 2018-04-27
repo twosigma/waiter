@@ -415,6 +415,7 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -437,6 +438,7 @@
                                                "version" "test-version"
                                                "run-as-user" test-user}
                                      :service-description-template {},
+                                     :service-fallback-period-secs nil
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -461,6 +463,7 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -482,6 +485,7 @@
                                                "version" "test-version"
                                                "run-as-user" test-user}
                                      :service-description-template {},
+                                     :service-fallback-period-secs nil
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -497,6 +501,7 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -512,6 +517,7 @@
                                      :service-description-template {"name" "test-token"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-token" (create-token-data "test-token")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -528,6 +534,7 @@
                                      :service-description-template {"name" "test-token2"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-token" (create-token-data "test-token")
                                                          "test-token2" (create-token-data "test-token2")}
                                      :token-authentication-disabled false
@@ -545,6 +552,7 @@
                                                                     "cpus" "1"
                                                                     "mem" "2"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-mem-token" (create-token-data "test-mem-token")
                                                          "test-token" (create-token-data "test-token")
@@ -562,6 +570,7 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -576,6 +585,7 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -591,6 +601,7 @@
                                                                     "cmd" "token-user"
                                                                     "version" "token"
                                                                     "run-as-user" "ruser"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-token-run" (create-token-data "test-token-run")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -605,6 +616,7 @@
                                      :service-description-template {"name" "test-token-per"
                                                                     "cmd" "token-user"
                                                                     "version" "token" "permitted-user" "puser"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-token-per" (create-token-data "test-token-per")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -621,6 +633,7 @@
                                                                     "version" "token"
                                                                     "run-as-user" "ruser"
                                                                     "permitted-user" "puser"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -638,6 +651,7 @@
                                                                     "cpus" "1"
                                                                     "run-as-user" "ruser"
                                                                     "permitted-user" "puser"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
@@ -654,6 +668,7 @@
                                                            "baz" "quux"}
                                                "cpus" "1"}
                                      :service-description-template {},
+                                     :service-fallback-period-secs nil
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -669,6 +684,7 @@
                                                       "FOO_BAR" "bar"}
                                                "cpus" "1"}
                                      :service-description-template {},
+                                     :service-fallback-period-secs nil
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -689,6 +705,7 @@
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -711,6 +728,7 @@
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -732,6 +750,7 @@
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
                                                                     "version" "token"}
+                                     :service-fallback-period-secs nil
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -747,6 +766,7 @@
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
                                      :service-description-template {},
+                                     :service-fallback-period-secs nil
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -766,6 +786,7 @@
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
                                      :service-description-template {},
+                                     :service-fallback-period-secs nil
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -785,6 +806,7 @@
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar2"}}
                                      :service-description-template {},
+                                     :service-fallback-period-secs nil
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -800,6 +822,7 @@
                                                "env" {"1" "quux"
                                                       "FOO-BAR" "bar"}}
                                      :service-description-template {},
+                                     :service-fallback-period-secs nil
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -837,6 +860,7 @@
                 expected {:defaults {"name" "default-name", "health-check-url" "/ping"}
                           :headers {}
                           :service-description-template (select-keys token-description service-description-keys)
+                          :service-fallback-period-secs nil
                           :token->token-data {test-token token-description}
                           :token-authentication-disabled true
                           :token-preauthorized true
@@ -859,6 +883,7 @@
                 expected {:defaults {"name" "default-name", "health-check-url" "/ping"}
                           :headers {}
                           :service-description-template (select-keys token-description service-description-keys)
+                          :service-fallback-period-secs nil
                           :token->token-data {test-token token-description}
                           :token-authentication-disabled false
                           :token-preauthorized true
@@ -2103,7 +2128,8 @@
                 :service-id (service-description->service-id service-id-prefix service-description-2)
                 :service-preauthorized false
                 :sources (-> sources
-                             (assoc :service-description-template service-description-2)
+                             (assoc :service-description-template service-description-2
+                                    :service-fallback-period-secs nil)
                              (update :token->token-data assoc "token-1" service-description-2))
                 :waiter-headers waiter-headers}
                previous-descriptor))
@@ -2144,7 +2170,8 @@
                                      {"cpus" 20 "permitted-user" username "run-as-user" username}))
                 :service-preauthorized false
                 :sources (-> sources
-                             (assoc :service-description-template service-description-2)
+                             (assoc :service-description-template service-description-2
+                                    :service-fallback-period-secs nil)
                              (update :token->token-data assoc "token-1" service-description-2))
                 :waiter-headers waiter-headers}
                previous-descriptor))))
@@ -2201,7 +2228,8 @@
                 :sources (-> sources
                              (assoc :service-description-template
                                     (-> (merge service-description-1 service-description-2p)
-                                        (select-keys service-description-keys)))
+                                        (select-keys service-description-keys))
+                                    :service-fallback-period-secs nil)
                              (update :token->token-data assoc "token-2" service-description-2p))
                 :waiter-headers waiter-headers}
                previous-descriptor))
@@ -2221,7 +2249,8 @@
                   :sources (-> sources
                                (assoc :service-description-template
                                       (-> (merge service-description-1p service-description-2p)
-                                          (select-keys service-description-keys)))
+                                          (select-keys service-description-keys))
+                                      :service-fallback-period-secs nil)
                                (update :token->token-data assoc "token-2" service-description-2p)
                                (update :token->token-data assoc "token-1" service-description-1p))
                   :waiter-headers waiter-headers}

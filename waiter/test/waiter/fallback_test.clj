@@ -63,18 +63,16 @@
         service-fallback-period-secs 120
         default-service-fallback-period-secs (* 4 service-fallback-period-secs)
         search-history-length 5
+        time-1 (- current-time-millis (t/in-millis (t/seconds 30)))
         descriptor-1 {:service-id "service-1"
-                      :sources {:token->token-data
-                                {"test-token"
-                                 {"service-fallback-period-secs" service-fallback-period-secs
-                                  "last-update-time" (- current-time-millis (t/in-millis (t/seconds 30)))}}
+                      :sources {:service-fallback-period-secs service-fallback-period-secs
+                                :token->token-data {"test-token" {"last-update-time" time-1}}
                                 :token-sequence ["test-token"]}}
+        time-2 (- current-time-millis (t/in-millis (t/seconds 20)))
         descriptor-2 {:previous descriptor-1
                       :service-id "service-2"
-                      :sources {:token->token-data
-                                {"test-token"
-                                 {"service-fallback-period-secs" service-fallback-period-secs
-                                  "last-update-time" (- current-time-millis (t/in-millis (t/seconds 20)))}}
+                      :sources {:service-fallback-period-secs service-fallback-period-secs
+                                :token->token-data {"test-token" {"last-update-time" time-2}}
                                 :token-sequence ["test-token"]}}
         request-time current-time]
 
@@ -89,12 +87,11 @@
                                 fallback-state request-time descriptor-4)]
         (is (nil? result-descriptor))))
 
-    (let [descriptor-3 {:previous descriptor-2
+    (let [time-3 (- current-time-millis (t/in-millis (t/seconds 10)))
+          descriptor-3 {:previous descriptor-2
                         :service-id "service-3"
-                        :sources {:token->token-data
-                                  {"test-token"
-                                   {"service-fallback-period-secs" service-fallback-period-secs
-                                    "last-update-time" (- current-time-millis (t/in-millis (t/seconds 10)))}}
+                        :sources {:service-fallback-period-secs service-fallback-period-secs
+                                  :token->token-data {"test-token" {"last-update-time" time-3}}
                                   :token-sequence ["test-token"]}}]
 
       (testing "fallback to previous healthy instance inside fallback period"

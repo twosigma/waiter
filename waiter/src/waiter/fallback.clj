@@ -84,15 +84,9 @@
 (defn descriptor->service-fallback-period-secs
   "Retrieves the service-fallback-period-secs for the given descriptor."
   [default-service-fallback-period-secs descriptor]
-  (or (-> descriptor
-          :waiter-headers
-          (get "x-waiter-service-fallback-period-secs"))
-      (-> #{"service-fallback-period-secs"}
-          (sd/token-sequence->merged-data
-            (get-in descriptor [:sources :token->token-data])
-            (get-in descriptor [:sources :token-sequence]))
-          (get "service-fallback-period-secs")
-          (or default-service-fallback-period-secs))))
+  (or (get-in descriptor [:waiter-headers "x-waiter-service-fallback-period-secs"])
+      (get-in descriptor [:sources :service-fallback-period-secs])
+      default-service-fallback-period-secs))
 
 (defn retrieve-fallback-descriptor
   "Computes the fallback descriptor with a healthy instance based on the provided descriptor.

@@ -543,24 +543,24 @@
        (-> run-as-user str/blank? not)
        (required-keys-present? description)))
 
-(defn token-sequence->merged-data
+(defn- token-sequence->merged-data
   "Computes the merged token-data using the provided token-sequence and token->token-data mapping.
    It removes the metadata keys from the returned result."
-  [allowed-keys token->token-data token-sequence]
+  [token->token-data token-sequence]
   (loop [loop-token-data {}
          [token & remaining-tokens] token-sequence]
     (if token
-      (recur (merge loop-token-data
-                    (-> (token->token-data token)
-                        (select-keys allowed-keys)))
+      (recur (merge loop-token-data (token->token-data token))
              remaining-tokens)
-      (apply dissoc loop-token-data token-metadata-keys))))
+      loop-token-data)))
 
 (defn- compute-service-description-template-from-tokens
   "Computes the service description, preauthorization and authentication data using the token-sequence and token-data."
   [token-sequence token->token-data]
-  (let [service-description-template (token-sequence->merged-data service-description-keys token->token-data token-sequence)]
+  (let [merged-token-data (token-sequence->merged-data token->token-data token-sequence)
+        service-description-template (select-keys merged-token-data service-description-keys)]
     {:service-description-template service-description-template
+     :service-fallback-period-secs (get merged-token-data "service-fallback-period-secs")
      :token->token-data token->token-data
      :token-authentication-disabled (and (= 1 (count token-sequence))
                                          (token-authentication-disabled? service-description-template))
