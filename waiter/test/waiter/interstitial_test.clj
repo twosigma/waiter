@@ -369,29 +369,16 @@
   (let [request-time (t/now)]
     (with-redefs [render-interstitial-template identity
                   t/now (constantly request-time)]
-      (let [service-id "test-service-id"
-            service-description {"cmd" "lorem ipsum dolor sit amet"
-                                 "interstitial-secs" 10}
-            descriptor {:service-description service-description
-                        :service-id service-id}]
-        (let [request {:descriptor descriptor
-                       :request-time request-time
-                       :route-params {:path "test"
-                                      :service-id service-id}}
-              response (display-interstitial-handler request)]
-          (is (= {:body {:service-description service-description
-                         :service-id service-id
-                         :target-url (str "/test?" (request-time->interstitial-param-string request-time))}
-                  :status 200}
-                 response)))
-        (let [request {:descriptor descriptor
-                       :query-string "a=b&c=d"
-                       :request-time request-time
-                       :route-params {:path "test"
-                                      :service-id service-id}}
-              response (display-interstitial-handler request)]
-          (is (= {:body {:service-description service-description
-                         :service-id service-id
-                         :target-url (str "/test?a=b&c=d&" (request-time->interstitial-param-string request-time))}
-                  :status 200}
-                 response)))))))
+      (let [request {:request-time request-time
+                     :route-params {:path "test"}}
+            response (display-interstitial-handler request)]
+        (is (= {:body {:target-url (str "/test?" (request-time->interstitial-param-string request-time))}
+                :status 200}
+               response)))
+      (let [request {:query-string "a=b&c=d"
+                     :request-time request-time
+                     :route-params {:path "test"}}
+            response (display-interstitial-handler request)]
+        (is (= {:body {:target-url (str "/test?a=b&c=d&" (request-time->interstitial-param-string request-time))}
+                :status 200}
+               response))))))
