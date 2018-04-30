@@ -14,8 +14,12 @@
             [clojure.set :as set]
             [clojure.test :refer :all]
             [waiter.fallback :refer :all]
+            [waiter.kv :as kv]
+            [waiter.service-description :as sd]
+            [waiter.token :as token]
             [waiter.util.async-utils :as au])
-  (:import [org.joda.time DateTime]))
+  (:import (clojure.lang ExceptionInfo)
+           (org.joda.time DateTime)))
 
 (deftest test-fallback-maintainer
   (let [current-healthy-service-ids #{"service-1" "service-3"}
@@ -197,3 +201,118 @@
                 response (fallback-handler request)]
             (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
             (is (= (assoc request :descriptor descriptor-2 :latest-service-id service-id :status 201) response))))))))
+
+(deftest test-request-authorized?
+  (let [test-cases
+        (list
+          {:name "request-authorized?:missing-permission-and-user"
+           :input-data {:user nil, :waiter-headers {"foo" "bar"}}
+           :expected false
+           }
+          {:name "request-authorized?:missing-permitted-but-valid-user"
+           :input-data {:user "test-user", :waiter-headers {"foo" "bar"}}
+           :expected false
+           }
+          {:name "request-authorized?:unauthorized-user"
+           :input-data {:user "test-user", :waiter-headers {"permitted-user" "another-user"}}
+           :expected false
+           }
+          {:name "request-authorized?:authorized-user-match"
+           :input-data {:user "test-user", :waiter-headers {"permitted-user" "test-user"}}
+           :expected true
+           }
+          {:name "request-authorized?:authorized-user-any"
+           :input-data {:user "test-user", :waiter-headers {"permitted-user" token/ANY-USER}}
+           :expected true
+           }
+          {:name "request-authorized?:authorized-user-any-with-missing-user"
+           :input-data {:user nil, :waiter-headers {"permitted-user" token/ANY-USER}}
+           :expected true
+           })]
+    (doseq [test-case test-cases]
+      (testing (str "Test " (:name test-case))
+        (is (= (:expected test-case)
+               (request-authorized?
+                 (get-in test-case [:input-data :user])
+                 (get-in test-case [:input-data :waiter-headers "permitted-user"]))))))))
+
+(deftest test-request->descriptor
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        can-run-as? #(= %1 %2)
+        waiter-hostname "waiter-hostname.app.example.com"
+        assoc-run-as-user-approved? (fn [_ _] false)
+        service-builder (sd/create-default-service-description-builder {})
+        service-description-defaults {}
+        token-defaults {}]
+    (testing "missing user in request"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {}
+                                                      :service-preauthorized false})]
+        (let [service-id-prefix "service-prefix-"
+              request {}]
+          (is (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service"
+                                (request->descriptor
+                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
+                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+    (testing "not preauthorized service and different user"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser"}
+                                                      :service-preauthorized false})]
+        (let [service-id-prefix "service-prefix-"
+              request {:authorization/user "tuser"}]
+          (is (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service"
+                                (request->descriptor
+                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
+                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+    (testing "not permitted to run service"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
+                                                      :service-preauthorized false})]
+        (let [service-id-prefix "service-prefix-"
+              request {:authorization/user "ruser"}]
+          (is (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service"
+                                (request->descriptor
+                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
+                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+    (testing "preauthorized service, not permitted to run service"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
+                                                      :service-preauthorized true})]
+        (let [service-id-prefix "service-prefix-"
+              request {:authorization/user "tuser"}]
+          (is (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service"
+                                (request->descriptor
+                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
+                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+    (testing "preauthorized service, permitted to run service-specific-user"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "tuser"}
+                                                      :service-preauthorized true})]
+        (let [service-id-prefix "service-prefix-"
+              request {:authorization/user "tuser"}]
+          (is (not (nil? (request->descriptor
+                           service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
+                           can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))
+    (testing "authentication-disabled service, allow anonymous"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-authentication-disabled true
+                                                      :service-description {"run-as-user" "ruser", "permitted-user" "*"}})]
+        (let [service-id-prefix "service-prefix-"
+              request {}]
+          (is (not (nil? (request->descriptor
+                           service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
+                           can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))
+
+    (testing "not authentication-disabled service, no anonymous access"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-authentication-disabled false
+                                                      :service-description {"run-as-user" "ruser", "permitted-user" "*"}
+                                                      :service-preauthorized false})]
+        (let [service-id-prefix "service-prefix-"
+              request {}]
+          (is (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service"
+                                (request->descriptor
+                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
+                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+
+    (testing "not pre-authorized service, permitted to run service"
+      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "tuser", "permitted-user" "tuser"}
+                                                      :service-preauthorized false})]
+        (let [service-id-prefix "service-prefix-"
+              request {:authorization/user "tuser"}]
+          (is (not (nil? (request->descriptor
+                           service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
+                           can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))))

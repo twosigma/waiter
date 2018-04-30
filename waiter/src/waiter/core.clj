@@ -740,7 +740,7 @@
                                     assoc-run-as-user-approved?
                                     can-run-as?-fn]
                              (fn request->descriptor-fn [request]
-                               (pr/request->descriptor
+                               (fb/request->descriptor
                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
                                  can-run-as?-fn metric-group-mappings service-description-builder assoc-run-as-user-approved?
                                  request)))

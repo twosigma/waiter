@@ -13,9 +13,11 @@
             [clojure.core.async :as async]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
+            [metrics.timers :as timers]
             [waiter.metrics :as metrics]
             [waiter.middleware :as middleware]
             [waiter.service-description :as sd]
+            [waiter.token :as token]
             [waiter.util.async-utils :as au])
   (:import [org.joda.time DateTime]))
 
@@ -144,3 +146,40 @@
             (do
               (log/info "no fallback service found for" service-id)
               (handler request))))))))
+
+(defn request-authorized?
+  "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "
+  [user permitted-user]
+  (log/debug "validating:" (str "permitted=" permitted-user) (str "actual=" user))
+  (or (= token/ANY-USER permitted-user)
+      (= ":any" (str permitted-user)) ; support ":any" for backwards compatibility
+      (and (not (nil? permitted-user)) (= user permitted-user))))
+
+(let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
+  (defn request->descriptor
+    "Extract the service descriptor from a request.
+     It also performs the necessary authorization."
+    [service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames can-run-as?
+     metric-group-mappings service-description-builder assoc-run-as-user-approved? request]
+    (timers/start-stop-time!
+      request->descriptor-timer
+      (let [auth-user (:authorization/user request)
+            service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
+            {:keys [service-authentication-disabled service-description service-preauthorized] :as descriptor}
+            (sd/request->descriptor
+              service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
+              request metric-group-mappings service-description-builder service-approved?)
+            {:strs [run-as-user permitted-user]} service-description]
+        (when-not (or service-authentication-disabled
+                      service-preauthorized
+                      (and auth-user (can-run-as? auth-user run-as-user)))
+          (throw (ex-info "Authenticated user cannot run service"
+                          {:authenticated-user auth-user
+                           :run-as-user run-as-user
+                           :status 403})))
+        (when-not (request-authorized? auth-user permitted-user)
+          (throw (ex-info "This user isn't allowed to invoke this service"
+                          {:authenticated-user auth-user
+                           :service-description service-description
+                           :status 403})))
+        descriptor))))

@@ -9,8 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.process-request
-  (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
+  (:require [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -35,7 +34,6 @@
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
-            [waiter.token :as token]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
@@ -43,8 +41,7 @@
   (:import (java.io InputStream IOException)
            java.util.concurrent.TimeoutException
            org.eclipse.jetty.io.EofException
-           (org.eclipse.jetty.server HttpChannel HttpOutput)
-           (org.joda.time DateTime)))
+           (org.eclipse.jetty.server HttpChannel HttpOutput)))
 
 (defn check-control [control-chan]
   (let [state (au/poll! control-chan :still-running)]
@@ -603,43 +600,6 @@
           (-> {:details response-map, :message "Max queue length exceeded", :status 503}
               (utils/data->error-response request)))
         (handler request)))))
-
-(defn request-authorized?
-  "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "
-  [user permitted-user]
-  (log/debug "validating:" (str "permitted=" permitted-user) (str "actual=" user))
-  (or (= token/ANY-USER permitted-user)
-      (= ":any" (str permitted-user)) ; support ":any" for backwards compatibility
-      (and (not (nil? permitted-user)) (= user permitted-user))))
-
-(let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
-  (defn request->descriptor
-    "Extract the service descriptor from a request.
-     It also performs the necessary authorization."
-    [service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames can-run-as?
-     metric-group-mappings service-description-builder assoc-run-as-user-approved? request]
-    (timers/start-stop-time!
-      request->descriptor-timer
-      (let [auth-user (:authorization/user request)
-            service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
-            {:keys [service-authentication-disabled service-description service-preauthorized] :as descriptor}
-            (sd/request->descriptor
-              service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
-              request metric-group-mappings service-description-builder service-approved?)
-            {:strs [run-as-user permitted-user]} service-description]
-        (when-not (or service-authentication-disabled
-                      service-preauthorized
-                      (and auth-user (can-run-as? auth-user run-as-user)))
-          (throw (ex-info "Authenticated user cannot run service"
-                          {:authenticated-user auth-user
-                           :run-as-user run-as-user
-                           :status 403})))
-        (when-not (request-authorized? auth-user permitted-user)
-          (throw (ex-info "This user isn't allowed to invoke this service"
-                          {:authenticated-user auth-user
-                           :service-description service-description
-                           :status 403})))
-        descriptor))))
 
 (defn determine-priority
   "Retrieves the priority Waiter should use to service this request.
