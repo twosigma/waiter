@@ -158,7 +158,7 @@
                 request {:descriptor descriptor-2 :request-time request-time}
                 response (fallback-handler request)]
             (is (= :not-called (deref retrieve-healthy-fallback-promise 0 :not-called)))
-            (is (= (assoc request :status 201) response))))))
+            (is (= (assoc request :latest-service-id service-id :status 201) response))))))
 
     (testing "unhealthy service with healthy fallback"
       (let [retrieve-healthy-fallback-promise (promise)]
@@ -196,4 +196,4 @@
                 request {:descriptor descriptor-2 :request-time request-time}
                 response (fallback-handler request)]
             (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
-            (is (= (assoc request :descriptor descriptor-2 :status 201) response))))))))
+            (is (= (assoc request :descriptor descriptor-2 :latest-service-id service-id :status 201) response))))))))

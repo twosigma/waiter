@@ -34,10 +34,12 @@
          (throw (utils/update-exception e res-update-fn)))))))
 
 (defn wrap-assoc
-  "Wraps a handler, calling assoc on the request and the response.
+  "Wraps a handler, calling assoc on the request and assoc-if-absent on the response.
   If there was an error, also calls assoc on the exception."
   [handler k v]
-  (wrap-update handler #(assoc % k v)))
+  (let [req-update-fn #(assoc % k v)
+        res-update-fn #(utils/assoc-if-absent % k v)]
+    (wrap-update handler req-update-fn res-update-fn)))
 
 (defn wrap-merge
   "Wraps a handler, calling merge on the request and the response.

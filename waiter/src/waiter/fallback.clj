@@ -124,7 +124,8 @@
    search-history-length fallback-state-atom]
   (fn wrap-fallback-handler [{:keys [descriptor request-time] :as request}]
     (let [{:keys [service-id]} descriptor
-          fallback-state @fallback-state-atom]
+          fallback-state @fallback-state-atom
+          handler (middleware/wrap-assoc handler :latest-service-id service-id)]
       (if (service-healthy? fallback-state service-id)
         (handler request)
         (let [auth-user (:authorization/user request)
