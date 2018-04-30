@@ -1982,10 +1982,8 @@
   (is (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
 
 (deftest test-no-intersection-in-token-request-scope-and-service-description-and-metadata
-  (is (empty? (set/intersection request-parameter-keys service-description-keys))
-      "We found common elements in request-parameter-keys and service-description-keys!")
-  (is (empty? (set/intersection request-parameter-keys token-metadata-keys))
-      "We found common elements in request-parameter-keys and token-metadata-keys!")
+  (is (empty? (set/intersection system-metadata-keys user-metadata-keys))
+      "We found common elements in system-metadata-keys and user-metadata-keys!")
   (is (empty? (set/intersection service-description-keys token-metadata-keys))
       "We found common elements in service-description-keys and token-metadata-keys!"))
 

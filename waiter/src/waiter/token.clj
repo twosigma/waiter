@@ -81,13 +81,13 @@
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
-    [synchronize-fn kv-store history-length ^String token request-parameters service-description-template token-metadata &
+    [synchronize-fn kv-store history-length ^String token service-description-template token-metadata &
      {:keys [version-hash]}]
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "storing service description for token:" token)
-        (let [token-data (-> (merge service-description-template request-parameters token-metadata)
+        (let [token-data (-> (merge service-description-template token-metadata)
                              (select-keys sd/token-data-keys))
               {:strs [deleted owner] :as new-token-data} (sd/sanitize-service-description token-data sd/token-data-keys)
               existing-token-data (kv/fetch kv-store token :refresh true)
@@ -276,15 +276,14 @@
         token (or (get request-params "token")
                   (:token (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)))
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
-        {:keys [request-parameters service-description-template token-metadata]} token-description
-        parameters-to-display (merge request-parameters service-description-template)
+        {:keys [service-description-template token-metadata]} token-description
         token-hash (token-description->token-hash token-description)]
-    (if (seq parameters-to-display)
+    (if (seq service-description-template)
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
         (log/info "successfully retrieved token " token)
         (utils/map->json-response
-          (cond-> parameters-to-display
+          (cond-> service-description-template
                   show-metadata
                   (merge (cond-> (loop [loop-token-metadata token-metadata
                                         nested-last-update-time-path ["last-update-time"]]
@@ -313,7 +312,7 @@
                                                :body
                                                sd/transform-allowed-params-token-entry)
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
-        new-request-parameters (select-keys new-token-data sd/request-parameter-keys)
+        new-user-metadata (select-keys new-token-metadata sd/user-metadata-keys)
         {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-description-template}
         (select-keys new-token-data sd/service-description-keys)
         existing-token-metadata (sd/token->token-metadata kv-store token :error-on-missing false)
@@ -329,9 +328,9 @@
       (throw (ex-info "Token must match pattern"
                       {:status 400 :token token :pattern (str valid-token-re)})))
     (validate-service-description-fn new-service-description-template)
-    (when-let [request-parameter-check (s/check sd/request-parameter-schema new-request-parameters)]
-      (throw (ex-info "Request parameter validation failed"
-                      {:failed-check request-parameter-check :status 400 :token token})))
+    (when-let [user-metadata-check (s/check sd/user-metadata-schema new-user-metadata)]
+      (throw (ex-info "User metadata validation failed"
+                      {:failed-check user-metadata-check :status 400 :token token})))
     (let [unknown-keys (-> new-token-data
                            keys
                            set
@@ -420,17 +419,14 @@
                                      "root" (or (get existing-token-metadata "root") token-root)}
                                     new-token-metadata)]
       (store-service-description-for-token
-        synchronize-fn kv-store history-length token new-request-parameters new-service-description-template
-        new-token-metadata :version-hash version-hash)
+        synchronize-fn kv-store history-length token new-service-description-template new-token-metadata
+        :version-hash version-hash)
       ; notify peers of token update
       (make-peer-requests-fn "tokens/refresh"
                              :method :post
                              :body (json/write-str {:token token, :owner owner}))
-      (utils/map->json-response (cond-> {:message (str "Successfully created " token)}
-                                        (seq new-request-parameters)
-                                        (assoc :request-parameters new-request-parameters)
-                                        (seq new-service-description-template)
-                                        (assoc :service-description new-service-description-template))
+      (utils/map->json-response {:message (str "Successfully created " token)
+                                 :service-description new-service-description-template}
                                 :headers {"etag" (-> {:service-description-template new-service-description-template
                                                       :token-metadata new-token-metadata}
                                                      token-description->token-hash)}))))

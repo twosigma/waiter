@@ -89,7 +89,7 @@
    (s/optional-key "max-queue-length") schema/positive-int
    s/Str s/Any})
 
-(def request-parameter-schema
+(def user-metadata-schema
   {(s/optional-key "service-fallback-period-secs") schema/non-negative-int
    s/Str s/Any})
 
@@ -116,14 +116,17 @@
 ; keys allowed in a service description for on-the-fly requests
 (def ^:const on-the-fly-service-description-keys (set/union service-description-keys #{"token"}))
 
-; keys allowed in metadata for tokens, these need to be distinct from service description keys
-(def ^:const token-metadata-keys #{"deleted" "last-update-time" "last-update-user" "owner" "previous" "root"})
+; keys allowed in system metadata for tokens, these need to be distinct from service description keys
+(def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "owner" "previous" "root"})
 
-; keys allowed in request-scope for tokens, these need to be distinct from service description keys
-(def ^:const request-parameter-keys #{"service-fallback-period-secs"})
+; keys allowed in user metadata for tokens, these need to be distinct from service description keys
+(def ^:const user-metadata-keys #{"service-fallback-period-secs"})
+
+; keys allowed in metadata for tokens, these need to be distinct from service description keys
+(def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
 
 ; keys allowed in the token data
-(def ^:const token-data-keys (set/union request-parameter-keys service-description-keys token-metadata-keys))
+(def ^:const token-data-keys (set/union service-description-keys token-metadata-keys))
 
 (defn transform-allowed-params-header
   "Converts allowed-params comma-separated string in the service-description to a set."
@@ -486,8 +489,7 @@
    parameters and metadata) is provided.
    The token-description consists of the following keys: :service-description-template and :token-metadata"
   [config]
-  {:request-parameters (select-keys config request-parameter-keys)
-   :service-description-template (select-keys config service-description-keys)
+  {:service-description-template (select-keys config service-description-keys)
    :token-metadata (select-keys config token-metadata-keys)})
 
 (defn token->token-description
