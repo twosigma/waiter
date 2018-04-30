@@ -33,6 +33,12 @@
        (catch Exception e
          (throw (utils/update-exception e res-update-fn)))))))
 
+(defn wrap-assoc
+  "Wraps a handler, calling assoc on the request and the response.
+  If there was an error, also calls assoc on the exception."
+  [handler k v]
+  (wrap-update handler #(assoc % k v)))
+
 (defn wrap-merge
   "Wraps a handler, calling merge on the request and the response.
   If there was an error, also calls merge on the exception."

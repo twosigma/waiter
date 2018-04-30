@@ -18,19 +18,19 @@
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
                         {:status 200})
-                      (wrap-merge {:key :value}))]
+                      (wrap-assoc :key :value))]
       (is (= :value (-> {} handler :key)))))
   (testing "async"
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
                         (async/go {:status 200}))
-                      (wrap-merge {:key :value}))]
+                      (wrap-assoc :key :value))]
       (is (= :value (-> {} handler async/<!! :key)))))
   (testing "sync w/ exception"
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
                         (throw (ex-data "test" {})))
-                      (wrap-merge {:key :value}))]
+                      (wrap-assoc :key :value))]
       (try
         (handler {})
         (catch Exception e
@@ -39,5 +39,5 @@
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
                         (async/go (ex-info "test" {})))
-                      (wrap-merge {:key :value}))]
+                      (wrap-assoc :key :value))]
       (is (= :value (-> {} handler async/<!! ex-data :key))))))
