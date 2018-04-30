@@ -186,9 +186,9 @@
   (defn request->descriptor
     "Extract the service descriptor from a request.
      It also performs the necessary authorization."
-    [assoc-run-as-user-approved? can-run-as? descriptor->previous-descriptor-fn metric-group-mappings start-new-service-fn
-     fallback-state-atom kv-store search-history-length service-description-defaults token-defaults service-id-prefix
-     waiter-hostnames service-description-builder {:keys [request-time] :as request}]
+    [assoc-run-as-user-approved? can-run-as? start-new-service-fn fallback-state-atom kv-store metric-group-mappings
+     search-history-length service-description-builder service-description-defaults service-id-prefix token-defaults
+     waiter-hostnames {:keys [request-time] :as request}]
     (timers/start-stop-time!
       request->descriptor-timer
       (let [auth-user (:authorization/user request)
@@ -197,7 +197,12 @@
                                 service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
                                 request metric-group-mappings service-description-builder service-approved?)
             latest-service-id (:service-id latest-descriptor)
-            descriptor->previous-descriptor (fn [d] (descriptor->previous-descriptor-fn service-approved? auth-user d))
+            descriptor->previous-descriptor
+            (fn descriptor->previous-descriptor-fn
+              [descriptor]
+              (sd/descriptor->previous-descriptor
+                kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder
+                service-approved? auth-user descriptor))
             fallback-state @fallback-state-atom
             descriptor (resolve-descriptor
                          descriptor->previous-descriptor search-history-length request-time fallback-state latest-descriptor)

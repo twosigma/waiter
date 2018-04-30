@@ -174,12 +174,11 @@
         run-request->descriptor
         (fn run-request->descriptor
           [request &
-           {:keys [assoc-run-as-user-approved? can-run-as? descriptor->previous-descriptor-fn fallback-state-atom
-                   kv-store metric-group-mappings search-history-length service-description-builder service-description-defaults
-                   service-id-prefix start-new-service-fn token-defaults waiter-hostnames]
+           {:keys [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings search-history-length
+                   service-description-builder service-description-defaults service-id-prefix start-new-service-fn token-defaults
+                   waiter-hostnames]
             :or {assoc-run-as-user-approved? (fn [_ _] false)
                  can-run-as? #(= %1 %2)
-                 descriptor->previous-descriptor-fn (constantly nil)
                  fallback-state-atom (atom {})
                  kv-store (kv/->LocalKeyValueStore (atom {}))
                  metric-group-mappings []
@@ -191,9 +190,9 @@
                  token-defaults {}
                  waiter-hostnames ["waiter-hostname.app.example.com"]}}]
           (request->descriptor
-            assoc-run-as-user-approved? can-run-as? descriptor->previous-descriptor-fn metric-group-mappings start-new-service-fn
-            fallback-state-atom kv-store search-history-length service-description-defaults token-defaults service-id-prefix
-            waiter-hostnames service-description-builder request))]
+            assoc-run-as-user-approved? can-run-as? start-new-service-fn fallback-state-atom kv-store metric-group-mappings
+            search-history-length service-description-builder service-description-defaults service-id-prefix token-defaults
+            waiter-hostnames request))]
 
     (testing "missing user in request"
       (let [request {}

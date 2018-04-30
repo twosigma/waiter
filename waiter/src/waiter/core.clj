@@ -668,13 +668,6 @@
                                           (delegate-instance-kill-request
                                             service-id (discovery/router-ids discovery :exclude-set #{router-id})
                                             (partial make-kill-instance-request make-inter-router-requests-sync-fn service-id))))
-   :descriptor->previous-descriptor-fn (pc/fnk [[:curator kv-store]
-                                                [:settings [:token-config token-defaults] metric-group-mappings]
-                                                [:state service-description-builder service-id-prefix]]
-                                         (fn descriptor->previous-descriptor-fn [service-approved? auth-user descriptor]
-                                           (sd/descriptor->previous-descriptor
-                                             kv-store service-id-prefix token-defaults metric-group-mappings
-                                             service-description-builder service-approved? auth-user descriptor)))
    :determine-priority-fn (pc/fnk []
                             (let [position-generator-atom (atom 0)]
                               (fn determine-priority-fn [waiter-headers]
@@ -737,12 +730,12 @@
    :request->descriptor-fn (pc/fnk [[:curator kv-store]
                                     [:settings [:token-config history-length token-defaults]  metric-group-mappings service-description-defaults]
                                     [:state fallback-state-atom service-description-builder service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? can-run-as?-fn descriptor->previous-descriptor-fn start-new-service-fn]
+                                    assoc-run-as-user-approved? can-run-as?-fn start-new-service-fn]
                              (fn request->descriptor-fn [request]
                                (descriptor/request->descriptor
-                                 assoc-run-as-user-approved? can-run-as?-fn descriptor->previous-descriptor-fn metric-group-mappings
-                                 start-new-service-fn fallback-state-atom kv-store history-length service-description-defaults
-                                 token-defaults service-id-prefix waiter-hostnames service-description-builder request)))
+                                 assoc-run-as-user-approved? can-run-as?-fn start-new-service-fn fallback-state-atom kv-store
+                                 metric-group-mappings history-length service-description-builder service-description-defaults
+                                 service-id-prefix token-defaults waiter-hostnames request)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]
                                {:decryptor (fn router-metrics-decryptor [data] (utils/compressed-bytes->map data password))
