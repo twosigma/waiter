@@ -96,7 +96,7 @@
                    :details {:cluster description
                              :latest latest-token-description}}
 
-                  (not= latest-token-description (get-in cluster-url->token-data [cluster-url :description]))
+                  (not= latest-token-description description)
                   (let [token-etag (:token-etag token-data)
                         {:keys [headers status] :as response} (store-token cluster-url token token-etag latest-token-description)]
                     {:code (if (get latest-token-description "deleted")

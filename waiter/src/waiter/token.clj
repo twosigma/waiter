@@ -237,7 +237,7 @@
                 version-hash (get headers "if-match")]
             (if hard-delete
               (do
-                (when-not version-hash
+                (when-not (or (get token-metadata "deleted") version-hash)
                   (throw (ex-info "Must specify if-match header for token hard deletes"
                                   {:request-headers headers, :status 400})))
                 (when-not (authz/administer-token? entitlement-manager authenticated-user token token-metadata)

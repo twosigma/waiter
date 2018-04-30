@@ -200,7 +200,7 @@
                    :request-method :delete})]
             (is (= 400 status))
             (is (str/includes? body "Must specify if-match header for token hard deletes"))
-            (is (kv/fetch kv-store token) "Entry deleted from kv-store!"))
+            (is (kv/fetch kv-store token)))
           (finally
             (kv/delete kv-store token))))
 
