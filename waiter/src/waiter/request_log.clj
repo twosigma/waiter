@@ -40,7 +40,7 @@
 
 (defn response->context
   "Convert a response into a context suitable for logging."
-  [{:keys [authorization/principal backend-response-latency-ns descriptor fallback-source-id get-instance-latency-ns
+  [{:keys [authorization/principal backend-response-latency-ns descriptor latest-service-id get-instance-latency-ns
            handle-request-latency-ns instance status] :as response}]
   (let [{:keys [service-id service-description]} descriptor]
     (cond-> {:status (or status 200)}
@@ -49,12 +49,12 @@
                         :service-id service-id
                         :service-name (get service-description "name")
                         :service-version (get service-description "version"))
-      fallback-source-id (assoc :fallback-source-id fallback-source-id)
       instance (assoc :instance-host (:host instance)
                       :instance-id (:id instance)
                       :instance-port (:port instance)
                       :instance-proto (:protocol instance)
                       :get-instance-latency-ns get-instance-latency-ns)
+      latest-service-id (assoc :latest-service-id latest-service-id)
       principal (assoc :principal principal)
       handle-request-latency-ns (assoc :handle-request-latency-ns handle-request-latency-ns))))
 

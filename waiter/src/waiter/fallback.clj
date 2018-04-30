@@ -133,7 +133,7 @@
           (if-let [fallback-descriptor (retrieve-fallback-descriptor
                                          descriptor->previous-descriptor search-history-length fallback-state request-time descriptor)]
             (let [fallback-service-id (:service-id fallback-descriptor)
-                  new-handler (middleware/wrap-merge handler {:descriptor fallback-descriptor :fallback-source-id service-id})]
+                  new-handler (middleware/wrap-merge handler {:descriptor fallback-descriptor :latest-service-id service-id})]
               (when-not (service-exists? fallback-state service-id)
                 (log/info "starting" service-id "before causing request to fallback to" fallback-service-id)
                 (start-new-service-fn descriptor))
