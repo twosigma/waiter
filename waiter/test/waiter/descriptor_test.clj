@@ -8,12 +8,12 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.fallback-test
+(ns waiter.descriptor-test
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.test :refer :all]
-            [waiter.fallback :refer :all]
+            [waiter.descriptor :refer :all]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
             [waiter.token :as token]

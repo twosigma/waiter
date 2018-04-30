@@ -33,8 +33,8 @@
             [waiter.correlation-id :as cid]
             [waiter.cors :as cors]
             [waiter.curator :as curator]
+            [waiter.descriptor :as descriptor]
             [waiter.discovery :as discovery]
-            [waiter.fallback :as fb]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
             [waiter.interstitial :as interstitial]
@@ -740,7 +740,7 @@
                                     assoc-run-as-user-approved?
                                     can-run-as?-fn]
                              (fn request->descriptor-fn [request]
-                               (fb/request->descriptor
+                               (descriptor/request->descriptor
                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
                                  can-run-as?-fn metric-group-mappings service-description-builder assoc-run-as-user-approved?
                                  request)))
@@ -840,7 +840,7 @@
                                  scheduler-maintainer]
                           (let [scheduler-state-mult-chan (:scheduler-state-mult-chan scheduler-maintainer)
                                 scheduler-state-chan (async/tap scheduler-state-mult-chan (au/latest-chan))]
-                            (fb/fallback-maintainer scheduler-state-chan fallback-state-atom)))
+                            (descriptor/fallback-maintainer scheduler-state-chan fallback-state-atom)))
    :gc-for-transient-metrics (pc/fnk [[:routines router-metrics-helpers]
                                       [:settings metrics-config]
                                       [:state clock local-usage-agent]
@@ -1315,7 +1315,7 @@
                                       [:settings [:token-config history-length]]
                                       [:state fallback-state-atom]]
                                (fn wrap-fallback-service-fn [handler]
-                                 (fb/wrap-fallback
+                                 (descriptor/wrap-fallback
                                    handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
                                    history-length fallback-state-atom)))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
