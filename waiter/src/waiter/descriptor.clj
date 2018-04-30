@@ -133,8 +133,7 @@
    Fallback descriptors can only be computed for token-based descriptors.
    The amount of history lookup for fallback descriptor candidates is limited by search-history-length.
    Also, the fallback descriptor needs to be inside the fallback period to be returned."
-  [descriptor->previous-descriptor search-history-length fallback-state
-   request-time descriptor]
+  [descriptor->previous-descriptor search-history-length fallback-state request-time descriptor]
   (when (-> descriptor :sources :token-sequence seq)
     (let [{{:keys [token->token-data]} :sources} descriptor
           service-fallback-period-secs (descriptor->service-fallback-period-secs descriptor)]
