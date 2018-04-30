@@ -10,7 +10,6 @@
 ;;
 (ns waiter.process-request
   (:require [clojure.core.async :as async]
-            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
@@ -22,17 +21,14 @@
             [qbits.jet.client.http :as http]
             [qbits.jet.servlet :as servlet]
             [slingshot.slingshot :refer [try+]]
-            [try-let :refer [try-let]]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
-            [waiter.middleware :as middleware]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
-            [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -420,19 +416,6 @@
         (update-in [:headers] (fn update-response-headers [headers]
                                 (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers))))))
 
-(defn missing-run-as-user?
-  "Returns true if the exception is due to a missing run-as-user validation on the service description."
-  [exception]
-  (let [{:keys [issue type x-waiter-headers]} (ex-data exception)]
-    (and (= :service-description-error type)
-         (map? issue)
-         (= 1 (count issue))
-         (= "missing-required-key" (str (get issue "run-as-user")))
-         (-> (keys x-waiter-headers)
-             (set)
-             (set/intersection sd/on-the-fly-service-description-keys)
-             (empty?)))))
-
 (defn track-process-error-metrics
   "Updates metrics for process errors."
   [descriptor]
@@ -441,28 +424,6 @@
         {:strs [metric-group]} service-description]
     (meters/mark! (metrics/service-meter service-id "process-error"))
     (statsd/inc! metric-group "process_error")))
-
-;; TODO shams move to descriptor.clj
-(defn wrap-descriptor
-  "Adds the descriptor to the request/response.
-  Redirects users in the case of missing user/run-as-requestor."
-  [handler request->descriptor-fn]
-  (fn [request]
-    (try-let [request-descriptor (request->descriptor-fn request)]
-      (let [{:keys [descriptor latest-service-id]} request-descriptor
-            handler (middleware/wrap-merge handler {:descriptor descriptor :latest-service-id latest-service-id})]
-        (handler request))
-      (catch Exception e
-        (if (missing-run-as-user? e)
-          (let [{:keys [query-string uri]} request
-                location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
-            (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
-            (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
-            {:headers {"location" location} :status 303})
-          (do
-            ; For consistency with historical data, count errors looking up the descriptor as a "process error"
-            (meters/mark! (metrics/waiter-meter "core" "process-errors"))
-            (utils/exception->response e request)))))))
 
 (defn handle-process-exception
   "Handles an error during process."

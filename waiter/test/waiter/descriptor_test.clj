@@ -334,3 +334,32 @@
                            :fallback-state-atom fallback-state-atom)]
               (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
               (is (= {:descriptor descriptor-2 :latest-service-id curr-service-id} result)))))))))
+
+(deftest test-missing-run-as-user?
+  (let [exception (ex-info "Test exception" {})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:issue {"run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {}})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"cmd" "missing-required-key"
+                                                     "run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {}})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"run-as-user" "invalid-length"}
+                                             :x-waiter-headers {}})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {"token" "www.example.com"}})]
+    (is (not (missing-run-as-user? exception))))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {}})]
+    (is (missing-run-as-user? exception)))
+  (let [exception (ex-info "Test exception" {:type :service-description-error
+                                             :issue {"run-as-user" "missing-required-key"}
+                                             :x-waiter-headers {"queue-length" 100}})]
+    (is (missing-run-as-user? exception))))
+

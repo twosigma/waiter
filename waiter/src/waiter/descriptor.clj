@@ -11,15 +11,54 @@
 (ns waiter.descriptor
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [metrics.timers :as timers]
+            [try-let :as tl]
             [waiter.metrics :as metrics]
             [waiter.middleware :as middleware]
             [waiter.service-description :as sd]
             [waiter.token :as token]
-            [waiter.util.async-utils :as au])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils]
+            [metrics.meters :as meters])
   (:import [org.joda.time DateTime]))
+
+(defn missing-run-as-user?
+  "Returns true if the exception is due to a missing run-as-user validation on the service description."
+  [exception]
+  (let [{:keys [issue type x-waiter-headers]} (ex-data exception)]
+    (and (= :service-description-error type)
+         (map? issue)
+         (= 1 (count issue))
+         (= "missing-required-key" (str (get issue "run-as-user")))
+         (-> (keys x-waiter-headers)
+             (set)
+             (set/intersection sd/on-the-fly-service-description-keys)
+             (empty?)))))
+
+(defn wrap-descriptor
+  "Adds the descriptor to the request/response.
+  Redirects users in the case of missing user/run-as-requestor."
+  [handler request->descriptor-fn]
+  (fn [request]
+    (tl/try-let [request-descriptor (request->descriptor-fn request)]
+                (let [{:keys [descriptor latest-service-id]} request-descriptor
+                      handler (middleware/wrap-merge handler {:descriptor descriptor :latest-service-id latest-service-id})]
+                  (handler request))
+                (catch Exception e
+                  (if (missing-run-as-user? e)
+                    (let [{:keys [query-string uri]} request
+                          location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
+                      (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
+                      (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
+                      {:headers {"location" location} :status 303})
+                    (do
+                      ; For consistency with historical data, count errors looking up the descriptor as a "process error"
+                      (meters/mark! (metrics/waiter-meter "core" "process-errors"))
+                      (utils/exception->response e request)))))))
 
 (defn fallback-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the

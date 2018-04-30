@@ -1020,7 +1020,7 @@
                                                                             ws/abort-request-callback-factory local-usage-agent request))
                                            handler (-> process-request-fn
                                                        (ws/wrap-ws-close-on-error)
-                                                       (pr/wrap-descriptor request->descriptor-fn))]
+                                                       (descriptor/wrap-descriptor request->descriptor-fn))]
                                        (ws/request-handler password handler request))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
@@ -1060,7 +1060,7 @@
                                pr/wrap-suspended-service
                                pr/wrap-response-status-metrics
                                (interstitial/wrap-interstitial interstitial-state-atom)
-                               (pr/wrap-descriptor request->descriptor-fn)
+                               (descriptor/wrap-descriptor request->descriptor-fn)
                                wrap-secure-request-fn
                                wrap-auth-bypass-fn)))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
@@ -1084,7 +1084,7 @@
                                    wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                                (pr/wrap-descriptor request->descriptor-fn)
+                                (descriptor/wrap-descriptor request->descriptor-fn)
                                 wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers service-id->service-description-fn]
