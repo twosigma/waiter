@@ -469,7 +469,7 @@
 
 (defn- token->token-data
   "Retrieves the data stored against the token in the kv-store."
-  [kv-store ^String token error-on-missing include-deleted]
+  [kv-store ^String token allowed-keys error-on-missing include-deleted]
   (let [{:strs [deleted run-as-user] :as token-data} (when token (kv/fetch kv-store token))
         token-data (when (seq token-data) ; populate token owner for backwards compatibility
                      (-> token-data
@@ -479,7 +479,7 @@
       (throw (ex-info (str "Token not found: " token) {:status 400})))
     (log/debug "Extracted data for" token "is" token-data)
     (when (or (not deleted) include-deleted)
-      token-data)))
+      (select-keys token-data allowed-keys))))
 
 (defn token-data->token-description
   "Retrieves the token description for the given token when the raw kv data (merged value of service
@@ -493,25 +493,18 @@
 (defn token->token-description
   "Retrieves the token description for the given token."
   [kv-store ^String token & {:keys [include-deleted] :or {include-deleted false}}]
-  (let [config (token->token-data kv-store token false include-deleted)]
-    (token-data->token-description config)))
-
-(defn- token->sanitized-map
-  "Retrieves the service description template for the given token."
-  [kv-store ^String token allowed-keys error-on-missing]
-  (-> (token->token-data kv-store token error-on-missing false)
-      (or {})
-      (select-keys allowed-keys)))
+  (-> (token->token-data kv-store token token-data-keys false include-deleted)
+      token-data->token-description))
 
 (defn token->service-description-template
   "Retrieves the service description template for the given token."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (token->sanitized-map kv-store token service-description-keys error-on-missing))
+  (token->token-data kv-store token service-description-keys error-on-missing false))
 
 (defn token->token-metadata
   "Retrieves the token metadata for the given token."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (token->sanitized-map kv-store token token-metadata-keys error-on-missing))
+  (token->token-data kv-store token token-metadata-keys error-on-missing false))
 
 (defn retrieve-token-from-service-description-or-hostname
   "Retrieve the token name from the service description map using the x-waiter-token key.
@@ -576,7 +569,7 @@
         (retrieve-token-from-service-description-or-hostname waiter-headers request-headers waiter-hostnames)]
     (cond
       (= source :host-header)
-      (let [token-data (token->token-data kv-store token false false)]
+      (let [token-data (token->token-data kv-store token token-data-keys false false)]
         (compute-service-description-template-from-tokens
           token-defaults
           (if (seq token-data) [token] [])
@@ -587,7 +580,7 @@
         (loop [loop-token->token-data {}
                [loop-token & remaining-tokens] token-sequence]
           (if loop-token
-            (let [token-data (token->token-data kv-store loop-token true false)]
+            (let [token-data (token->token-data kv-store loop-token token-data-keys true false)]
               (recur (assoc loop-token->token-data loop-token token-data) remaining-tokens))
             (compute-service-description-template-from-tokens token-defaults token-sequence loop-token->token-data))))
 
