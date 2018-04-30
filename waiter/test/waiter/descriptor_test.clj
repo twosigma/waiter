@@ -133,75 +133,6 @@
                                   descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
           (is (nil? result-descriptor)))))))
 
-(deftest test-wrap-fallback
-  (let [handler (fn [request] (assoc request :status 201))
-        service-id (str "test-service-id-" (rand-int 100000))
-        prev-service-id (str service-id ".prev")
-        descriptor-1 {:service-id prev-service-id}
-        descriptor-2 {:service-id service-id}
-        search-history-length 5
-        descriptor->previous-descriptor-fn nil
-        start-new-service-fn nil
-        assoc-run-as-user-approved? nil
-        request-time (t/now)]
-
-    (testing "healthy service"
-      (let [retrieve-healthy-fallback-promise (promise)]
-        (with-redefs [retrieve-fallback-descriptor
-                      (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
-                        (deliver retrieve-healthy-fallback-promise :called)
-                        (is (= search-history-length in-history-length))
-                        (is in-fallback-state)
-                        (is (= request-time in-request-time))
-                        (is (= descriptor-2 in-descriptor))
-                        (throw (IllegalStateException. "Unexpected call to retrieve-fallback-descriptor")))]
-          (let [fallback-state-atom (atom {:available-service-ids #{service-id}
-                                           :healthy-service-ids #{service-id}})
-                fallback-handler (wrap-fallback handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
-                                                search-history-length fallback-state-atom)
-                request {:descriptor descriptor-2 :request-time request-time}
-                response (fallback-handler request)]
-            (is (= :not-called (deref retrieve-healthy-fallback-promise 0 :not-called)))
-            (is (= (assoc request :latest-service-id service-id :status 201) response))))))
-
-    (testing "unhealthy service with healthy fallback"
-      (let [retrieve-healthy-fallback-promise (promise)]
-        (with-redefs [retrieve-fallback-descriptor
-                      (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
-                        (deliver retrieve-healthy-fallback-promise :called)
-                        (is (= search-history-length in-history-length))
-                        (is in-fallback-state)
-                        (is (= request-time in-request-time))
-                        (is (= descriptor-2 in-descriptor))
-                        descriptor-1)]
-          (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id service-id}
-                                           :healthy-service-ids #{prev-service-id}})
-                fallback-handler (wrap-fallback handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
-                                                search-history-length fallback-state-atom)
-                request {:descriptor descriptor-2 :request-time request-time}
-                response (fallback-handler request)]
-            (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
-            (is (= (assoc request :descriptor descriptor-1 :latest-service-id service-id :status 201) response))))))
-
-    (testing "unhealthy service with no fallback"
-      (let [retrieve-healthy-fallback-promise (promise)]
-        (with-redefs [retrieve-fallback-descriptor
-                      (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
-                        (deliver retrieve-healthy-fallback-promise :called)
-                        (is (= search-history-length in-history-length))
-                        (is in-fallback-state)
-                        (is (= request-time in-request-time))
-                        (is (= descriptor-2 in-descriptor))
-                        nil)]
-          (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id service-id}
-                                           :healthy-service-ids #{}})
-                fallback-handler (wrap-fallback handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
-                                                search-history-length fallback-state-atom)
-                request {:descriptor descriptor-2 :request-time request-time}
-                response (fallback-handler request)]
-            (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
-            (is (= (assoc request :descriptor descriptor-2 :latest-service-id service-id :status 201) response))))))))
-
 (deftest test-request-authorized?
   (let [test-cases
         (list
@@ -236,83 +167,170 @@
                  (get-in test-case [:input-data :user])
                  (get-in test-case [:input-data :waiter-headers "permitted-user"]))))))))
 
+(declare thrown-with-msg?)
+
 (deftest test-request->descriptor
-  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-        can-run-as? #(= %1 %2)
-        waiter-hostname "waiter-hostname.app.example.com"
-        assoc-run-as-user-approved? (fn [_ _] false)
-        service-builder (sd/create-default-service-description-builder {})
-        service-description-defaults {}
-        token-defaults {}]
+  (let [default-search-history-length 5
+        run-request->descriptor
+        (fn run-request->descriptor
+          [request &
+           {:keys [assoc-run-as-user-approved? can-run-as? descriptor->previous-descriptor-fn fallback-state-atom
+                   kv-store metric-group-mappings search-history-length service-description-builder service-description-defaults
+                   service-id-prefix start-new-service-fn token-defaults waiter-hostnames]
+            :or {assoc-run-as-user-approved? (fn [_ _] false)
+                 can-run-as? #(= %1 %2)
+                 descriptor->previous-descriptor-fn (constantly nil)
+                 fallback-state-atom (atom {})
+                 kv-store (kv/->LocalKeyValueStore (atom {}))
+                 metric-group-mappings []
+                 search-history-length default-search-history-length
+                 service-description-builder (sd/create-default-service-description-builder {})
+                 service-description-defaults {}
+                 service-id-prefix "service-prefix-"
+                 start-new-service-fn (constantly nil)
+                 token-defaults {}
+                 waiter-hostnames ["waiter-hostname.app.example.com"]}}]
+          (request->descriptor
+            assoc-run-as-user-approved? can-run-as? descriptor->previous-descriptor-fn metric-group-mappings start-new-service-fn
+            fallback-state-atom kv-store search-history-length service-description-defaults token-defaults service-id-prefix
+            waiter-hostnames service-description-builder request))]
+
     (testing "missing user in request"
-      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {}
-                                                      :service-preauthorized false})]
-        (let [service-id-prefix "service-prefix-"
-              request {}]
-          (is (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service"
-                                (request->descriptor
-                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
-                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+      (let [request {}
+            descriptor {:service-description {}
+                        :service-preauthorized false}]
+        (with-redefs [sd/request->descriptor (constantly descriptor)]
+          (->> (run-request->descriptor request)
+               (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service")
+               is))))
+
     (testing "not preauthorized service and different user"
-      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser"}
-                                                      :service-preauthorized false})]
-        (let [service-id-prefix "service-prefix-"
-              request {:authorization/user "tuser"}]
-          (is (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service"
-                                (request->descriptor
-                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
-                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+      (let [request {:authorization/user "tuser"}
+            descriptor {:service-description {"run-as-user" "ruser"}
+                        :service-preauthorized false}]
+        (with-redefs [sd/request->descriptor (constantly descriptor)]
+          (->> (run-request->descriptor request)
+               (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service")
+               is))))
+
     (testing "not permitted to run service"
-      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
-                                                      :service-preauthorized false})]
-        (let [service-id-prefix "service-prefix-"
-              request {:authorization/user "ruser"}]
-          (is (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service"
-                                (request->descriptor
-                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
-                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+      (let [request {:authorization/user "ruser"}
+            descriptor {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
+                        :service-preauthorized false}]
+        (with-redefs [sd/request->descriptor (constantly descriptor)]
+          (->> (run-request->descriptor request)
+               (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service")
+               is))))
+
     (testing "preauthorized service, not permitted to run service"
-      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
-                                                      :service-preauthorized true})]
-        (let [service-id-prefix "service-prefix-"
-              request {:authorization/user "tuser"}]
-          (is (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service"
-                                (request->descriptor
-                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
-                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+      (let [request {:authorization/user "tuser"}
+            descriptor {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
+                        :service-preauthorized true}]
+        (with-redefs [sd/request->descriptor (constantly descriptor)]
+          (->> (run-request->descriptor request)
+               (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service")
+               is))))
+
     (testing "preauthorized service, permitted to run service-specific-user"
-      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "ruser", "permitted-user" "tuser"}
-                                                      :service-preauthorized true})]
-        (let [service-id-prefix "service-prefix-"
-              request {:authorization/user "tuser"}]
-          (is (not (nil? (request->descriptor
-                           service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
-                           can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))
+      (let [request {:authorization/user "tuser"}
+            service-id "test-service-id"
+            descriptor {:service-description {"run-as-user" "ruser", "permitted-user" "tuser"}
+                        :service-id "test-service-id"
+                        :service-preauthorized true}]
+        (with-redefs [sd/request->descriptor (constantly descriptor)]
+          (->> (run-request->descriptor request)
+               (= {:descriptor descriptor :latest-service-id service-id})
+               is))))
+
     (testing "authentication-disabled service, allow anonymous"
-      (with-redefs [sd/request->descriptor (fn [& _] {:service-authentication-disabled true
-                                                      :service-description {"run-as-user" "ruser", "permitted-user" "*"}})]
-        (let [service-id-prefix "service-prefix-"
-              request {}]
-          (is (not (nil? (request->descriptor
-                           service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
-                           can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))
+      (let [request {}
+            service-id "test-service-id"
+            descriptor {:service-authentication-disabled true
+                        :service-id "test-service-id"
+                        :service-description {"run-as-user" "ruser", "permitted-user" "*"}}]
+        (with-redefs [sd/request->descriptor (constantly descriptor)]
+          (->> (run-request->descriptor request)
+               (= {:descriptor descriptor :latest-service-id service-id})
+               is))))
 
     (testing "not authentication-disabled service, no anonymous access"
-      (with-redefs [sd/request->descriptor (fn [& _] {:service-authentication-disabled false
-                                                      :service-description {"run-as-user" "ruser", "permitted-user" "*"}
-                                                      :service-preauthorized false})]
-        (let [service-id-prefix "service-prefix-"
-              request {}]
-          (is (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service"
-                                (request->descriptor
-                                  service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
-                                  can-run-as? [] service-builder assoc-run-as-user-approved? request))))))
+      (let [request {}
+            descriptor {:service-authentication-disabled false
+                        :service-description {"run-as-user" "ruser", "permitted-user" "*"}
+                        :service-preauthorized false}]
+        (with-redefs [sd/request->descriptor (constantly descriptor)]
+          (->> (run-request->descriptor request)
+               (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service")
+               is))))
 
     (testing "not pre-authorized service, permitted to run service"
-      (with-redefs [sd/request->descriptor (fn [& _] {:service-description {"run-as-user" "tuser", "permitted-user" "tuser"}
-                                                      :service-preauthorized false})]
-        (let [service-id-prefix "service-prefix-"
-              request {:authorization/user "tuser"}]
-          (is (not (nil? (request->descriptor
-                           service-description-defaults token-defaults service-id-prefix kv-store waiter-hostname
-                           can-run-as? [] service-builder assoc-run-as-user-approved? request)))))))))
+      (let [request {:authorization/user "tuser"}
+            service-id "test-service-id"
+            descriptor {:service-description {"run-as-user" "tuser", "permitted-user" "tuser"}
+                        :service-id "test-service-id"
+                        :service-preauthorized false}]
+        (with-redefs [sd/request->descriptor (constantly descriptor)]
+          (->> (run-request->descriptor request)
+               (= {:descriptor descriptor :latest-service-id service-id})
+               is))))
+
+    (let [curr-service-id (str "test-service-id-" (rand-int 100000))
+          prev-service-id (str curr-service-id ".prev")
+          descriptor-1 {:service-description {"permitted-user" "*"} :service-id prev-service-id :service-preauthorized true}
+          descriptor-2 {:service-description {"permitted-user" "*"} :service-id curr-service-id :service-preauthorized true}
+          request-time (t/now)]
+
+      (testing "healthy service"
+        (let [retrieve-healthy-fallback-promise (promise)]
+          (with-redefs [retrieve-fallback-descriptor
+                        (fn [& _]
+                          (throw (IllegalStateException. "Unexpected call to retrieve-fallback-descriptor")))
+                        sd/request->descriptor (constantly descriptor-2)]
+            (let [fallback-state-atom (atom {:available-service-ids #{curr-service-id}
+                                             :healthy-service-ids #{curr-service-id}})
+                  request {:request-time request-time}
+                  result (run-request->descriptor
+                           request
+                           :fallback-state-atom fallback-state-atom)]
+              (is (= :not-called (deref retrieve-healthy-fallback-promise 0 :not-called)))
+              (is (= {:descriptor descriptor-2 :latest-service-id curr-service-id} result))))))
+
+      (testing "unhealthy service with healthy fallback"
+        (let [retrieve-healthy-fallback-promise (promise)]
+          (with-redefs [retrieve-fallback-descriptor
+                        (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
+                          (deliver retrieve-healthy-fallback-promise :called)
+                          (is (= default-search-history-length in-history-length))
+                          (is in-fallback-state)
+                          (is (= request-time in-request-time))
+                          (is (= descriptor-2 in-descriptor))
+                          descriptor-1)
+                        sd/request->descriptor (constantly descriptor-2)]
+            (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id curr-service-id}
+                                             :healthy-service-ids #{prev-service-id}})
+                  request {:request-time request-time}
+                  result (run-request->descriptor
+                           request
+                           :fallback-state-atom fallback-state-atom)]
+              (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
+              (is (= {:descriptor descriptor-1 :latest-service-id curr-service-id} result))))))
+
+      (testing "unhealthy service with no fallback"
+        (let [retrieve-healthy-fallback-promise (promise)]
+          (with-redefs [retrieve-fallback-descriptor
+                        (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
+                          (deliver retrieve-healthy-fallback-promise :called)
+                          (is (= default-search-history-length in-history-length))
+                          (is in-fallback-state)
+                          (is (= request-time in-request-time))
+                          (is (= descriptor-2 in-descriptor))
+                          nil)
+                        sd/request->descriptor (constantly descriptor-2)]
+            (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id curr-service-id}
+                                             :healthy-service-ids #{}})
+                  request {:request-time request-time}
+                  result (run-request->descriptor
+                           request
+                           :fallback-state-atom fallback-state-atom)]
+              (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
+              (is (= {:descriptor descriptor-2 :latest-service-id curr-service-id} result)))))))))

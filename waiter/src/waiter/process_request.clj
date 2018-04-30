@@ -442,13 +442,15 @@
     (meters/mark! (metrics/service-meter service-id "process-error"))
     (statsd/inc! metric-group "process_error")))
 
+;; TODO shams move to descriptor.clj
 (defn wrap-descriptor
   "Adds the descriptor to the request/response.
   Redirects users in the case of missing user/run-as-requestor."
   [handler request->descriptor-fn]
   (fn [request]
-    (try-let [descriptor (request->descriptor-fn request)]
-      (let [handler (middleware/wrap-assoc handler :descriptor descriptor)]
+    (try-let [request-descriptor (request->descriptor-fn request)]
+      (let [{:keys [descriptor latest-service-id]} request-descriptor
+            handler (middleware/wrap-merge handler {:descriptor descriptor :latest-service-id latest-service-id})]
         (handler request))
       (catch Exception e
         (if (missing-run-as-user? e)

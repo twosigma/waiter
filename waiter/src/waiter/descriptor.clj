@@ -120,32 +120,21 @@
                                 :healthy (service-healthy? fallback-state service-id)})
                     (recur (inc iteration) previous-descriptor)))))))))))
 
-(defn wrap-fallback
-  "Redirects users to a healthy fallback service when the current service has not started or does not have healthy instances."
-  [handler descriptor->previous-descriptor-fn start-new-service-fn assoc-run-as-user-approved?
-   search-history-length fallback-state-atom]
-  (fn wrap-fallback-handler [{:keys [descriptor request-time] :as request}]
-    (let [{:keys [service-id]} descriptor
-          fallback-state @fallback-state-atom
-          handler (middleware/wrap-assoc handler :latest-service-id service-id)]
-      (if (service-healthy? fallback-state service-id)
-        (handler request)
-        (let [auth-user (:authorization/user request)
-              service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
-              descriptor->previous-descriptor (fn [descriptor] (descriptor->previous-descriptor-fn service-approved? auth-user descriptor))]
-          (if-let [fallback-descriptor (retrieve-fallback-descriptor
-                                         descriptor->previous-descriptor search-history-length fallback-state request-time descriptor)]
-            (let [fallback-service-id (:service-id fallback-descriptor)
-                  new-handler (middleware/wrap-merge handler {:descriptor fallback-descriptor :latest-service-id service-id})]
-              (when-not (service-exists? fallback-state service-id)
-                (log/info "starting" service-id "before causing request to fallback to" fallback-service-id)
-                (start-new-service-fn descriptor))
-              (counters/inc! (metrics/service-counter service-id "request-counts" "fallback" "source"))
-              (counters/inc! (metrics/service-counter fallback-service-id "request-counts" "fallback" "target"))
-              (new-handler request))
-            (do
-              (log/info "no fallback service found for" service-id)
-              (handler request))))))))
+(defn resolve-descriptor
+  "Resolves the descriptor that should be used based on available healthy services.
+   Returns the provided latest-descriptor if it references a service with healthy instances or no valid fallback
+   descriptor can be found (i.e. no descriptor in the search history which has healthy instances).
+   Resolves to a different fallback descriptor which describes a services with healthy instances when the latest descriptor
+   represents a service that has not started or does not have healthy instances."
+  [descriptor->previous-descriptor search-history-length request-time fallback-state latest-descriptor]
+  (let [{:keys [service-id]} latest-descriptor]
+    (if (service-healthy? fallback-state service-id)
+      latest-descriptor
+      (or (retrieve-fallback-descriptor
+            descriptor->previous-descriptor search-history-length fallback-state request-time latest-descriptor)
+          (do
+            (log/info "no fallback service found for" (:service-id latest-descriptor))
+            latest-descriptor)))))
 
 (defn request-authorized?
   "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "
@@ -159,16 +148,22 @@
   (defn request->descriptor
     "Extract the service descriptor from a request.
      It also performs the necessary authorization."
-    [service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames can-run-as?
-     metric-group-mappings service-description-builder assoc-run-as-user-approved? request]
+    [assoc-run-as-user-approved? can-run-as? descriptor->previous-descriptor-fn metric-group-mappings start-new-service-fn
+     fallback-state-atom kv-store search-history-length service-description-defaults token-defaults service-id-prefix
+     waiter-hostnames service-description-builder {:keys [request-time] :as request}]
     (timers/start-stop-time!
       request->descriptor-timer
       (let [auth-user (:authorization/user request)
             service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
-            {:keys [service-authentication-disabled service-description service-preauthorized] :as descriptor}
-            (sd/request->descriptor
-              service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
-              request metric-group-mappings service-description-builder service-approved?)
+            latest-descriptor (sd/request->descriptor
+                                service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
+                                request metric-group-mappings service-description-builder service-approved?)
+            latest-service-id (:service-id latest-descriptor)
+            descriptor->previous-descriptor (fn [d] (descriptor->previous-descriptor-fn service-approved? auth-user d))
+            fallback-state @fallback-state-atom
+            descriptor (resolve-descriptor
+                         descriptor->previous-descriptor search-history-length request-time fallback-state latest-descriptor)
+            {:keys [service-authentication-disabled service-description service-preauthorized]} descriptor
             {:strs [run-as-user permitted-user]} service-description]
         (when-not (or service-authentication-disabled
                       service-preauthorized
@@ -182,4 +177,12 @@
                           {:authenticated-user auth-user
                            :service-description service-description
                            :status 403})))
-        descriptor))))
+        (let [fallback-service-id (:service-id descriptor)]
+          (when (not= latest-service-id fallback-service-id)
+            (counters/inc! (metrics/service-counter latest-service-id "request-counts" "fallback" "source"))
+            (counters/inc! (metrics/service-counter fallback-service-id "request-counts" "fallback" "target"))
+            (when-not (service-exists? fallback-state latest-service-id)
+              (log/info "starting" latest-service-id "before causing request to fallback to" fallback-service-id)
+              (start-new-service-fn descriptor))))
+        {:descriptor descriptor
+         :latest-service-id latest-service-id}))))
