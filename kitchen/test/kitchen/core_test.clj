@@ -178,7 +178,8 @@
         request {:headers {"foo" "bar", "lorem" "ipsum"}
                  :in in
                  :out out
-                 :request-method :get}
+                 :request-method :get
+                 :uri "/uri"}
         websocket-handler (websocket-handler-factory {:ws-max-binary-message-size 32768
                                                       :ws-max-text-message-size 32768})]
     (reset! async-requests {})
@@ -198,7 +199,8 @@
       (async/>!! in "request-info")
       (let [response (-> (async/<!! out) json/read-str)]
         (is (= {"headers" {"foo" "bar", "lorem" "ipsum"}
-                "request-method" "get"}
+                "request-method" "get"
+                "uri" "/uri"}
                response))))
 
     (testing "kitchen-state"

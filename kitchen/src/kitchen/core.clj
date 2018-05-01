@@ -320,13 +320,15 @@
 
 (defn- request-info-handler
   "Returns the info received in the request."
-  [{:keys [body headers request-method] :as request}]
+  [{:keys [body headers query-string request-method uri]}]
   (when (instance? InputStream body)
     (slurp body))
   {:status 200
    :headers {"Content-Type" "application/json"}
-   :body (json/write-str {:headers headers
-                          :request-method request-method})})
+   :body (json/write-str (cond-> {:request-method request-method
+                                  :uri uri}
+                                 (seq headers) (assoc :headers headers)
+                                 query-string (assoc :query-string query-string)))})
 
 (defn- unchunked-handler
   "Handles requests that may potentially fail, uses unchunked response."
