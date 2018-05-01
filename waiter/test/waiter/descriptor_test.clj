@@ -202,8 +202,8 @@
                is))))
 
     (testing "not preauthorized service and different user"
-      (let [request {:authorization/user "tuser"}
-            descriptor {:service-description {"run-as-user" "ruser"}
+      (let [request {:authorization/user "ru"}
+            descriptor {:service-description {"run-as-user" "su"}
                         :service-preauthorized false}]
         (with-redefs [sd/request->descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
@@ -211,8 +211,8 @@
                is))))
 
     (testing "not permitted to run service"
-      (let [request {:authorization/user "ruser"}
-            descriptor {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
+      (let [request {:authorization/user "su"}
+            descriptor {:service-description {"run-as-user" "su", "permitted-user" "puser"}
                         :service-preauthorized false}]
         (with-redefs [sd/request->descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
@@ -220,8 +220,8 @@
                is))))
 
     (testing "preauthorized service, not permitted to run service"
-      (let [request {:authorization/user "tuser"}
-            descriptor {:service-description {"run-as-user" "ruser", "permitted-user" "puser"}
+      (let [request {:authorization/user "ru"}
+            descriptor {:service-description {"run-as-user" "su", "permitted-user" "puser"}
                         :service-preauthorized true}]
         (with-redefs [sd/request->descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
@@ -229,9 +229,9 @@
                is))))
 
     (testing "preauthorized service, permitted to run service-specific-user"
-      (let [request {:authorization/user "tuser"}
+      (let [request {:authorization/user "ru"}
             service-id "test-service-id"
-            descriptor {:service-description {"run-as-user" "ruser", "permitted-user" "tuser"}
+            descriptor {:service-description {"run-as-user" "su", "permitted-user" "ru"}
                         :service-id "test-service-id"
                         :service-preauthorized true}]
         (with-redefs [sd/request->descriptor (constantly descriptor)]
@@ -244,7 +244,7 @@
             service-id "test-service-id"
             descriptor {:service-authentication-disabled true
                         :service-id "test-service-id"
-                        :service-description {"run-as-user" "ruser", "permitted-user" "*"}}]
+                        :service-description {"run-as-user" "su", "permitted-user" "*"}}]
         (with-redefs [sd/request->descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
                (= {:descriptor descriptor :latest-service-id service-id})
@@ -253,7 +253,7 @@
     (testing "not authentication-disabled service, no anonymous access"
       (let [request {}
             descriptor {:service-authentication-disabled false
-                        :service-description {"run-as-user" "ruser", "permitted-user" "*"}
+                        :service-description {"run-as-user" "su", "permitted-user" "*"}
                         :service-preauthorized false}]
         (with-redefs [sd/request->descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
@@ -261,9 +261,9 @@
                is))))
 
     (testing "not pre-authorized service, permitted to run service"
-      (let [request {:authorization/user "tuser"}
+      (let [request {:authorization/user "ru"}
             service-id "test-service-id"
-            descriptor {:service-description {"run-as-user" "tuser", "permitted-user" "tuser"}
+            descriptor {:service-description {"run-as-user" "ru", "permitted-user" "ru"}
                         :service-id "test-service-id"
                         :service-preauthorized false}]
         (with-redefs [sd/request->descriptor (constantly descriptor)]
@@ -273,7 +273,9 @@
 
     (let [curr-service-id (str "test-service-id-" (rand-int 100000))
           prev-service-id (str curr-service-id ".prev")
-          descriptor-1 {:service-description {"permitted-user" "*"} :service-id prev-service-id :service-preauthorized true}
+          descriptor-1a {:service-description {"permitted-user" "*"} :service-id prev-service-id :service-preauthorized true}
+          descriptor-1b {:service-description {"permitted-user" "*"} :service-id prev-service-id :service-preauthorized false}
+          descriptor-1c {:service-description {"permitted-user" "pu"} :service-id prev-service-id :service-preauthorized true}
           descriptor-2 {:service-description {"permitted-user" "*"} :service-id curr-service-id :service-preauthorized true}
           request-time (t/now)]
 
@@ -301,7 +303,7 @@
                           (is in-fallback-state)
                           (is (= request-time in-request-time))
                           (is (= descriptor-2 in-descriptor))
-                          descriptor-1)
+                          descriptor-1a)
                         sd/request->descriptor (constantly descriptor-2)]
             (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id curr-service-id}
                                              :healthy-service-ids #{prev-service-id}})
@@ -310,7 +312,45 @@
                            request
                            :fallback-state-atom fallback-state-atom)]
               (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
-              (is (= {:descriptor descriptor-1 :latest-service-id curr-service-id} result))))))
+              (is (= {:descriptor descriptor-1a :latest-service-id curr-service-id} result))))))
+
+      (testing "unhealthy service with healthy fallback - unauthorized to run"
+        (let [retrieve-healthy-fallback-promise (promise)]
+          (with-redefs [retrieve-fallback-descriptor
+                        (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
+                          (deliver retrieve-healthy-fallback-promise :called)
+                          (is (= default-search-history-length in-history-length))
+                          (is in-fallback-state)
+                          (is (= request-time in-request-time))
+                          (is (= descriptor-2 in-descriptor))
+                          descriptor-1b)
+                        sd/request->descriptor (constantly descriptor-2)]
+            (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id curr-service-id}
+                                             :healthy-service-ids #{prev-service-id}})
+                  request {:authorization/user "ru" :request-time request-time}]
+              (->> (run-request->descriptor request :fallback-state-atom fallback-state-atom)
+                   (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service")
+                   is)
+              (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))))))
+
+      (testing "unhealthy service with healthy fallback - not permitted"
+        (let [retrieve-healthy-fallback-promise (promise)]
+          (with-redefs [retrieve-fallback-descriptor
+                        (fn [_ in-history-length in-fallback-state in-request-time in-descriptor]
+                          (deliver retrieve-healthy-fallback-promise :called)
+                          (is (= default-search-history-length in-history-length))
+                          (is in-fallback-state)
+                          (is (= request-time in-request-time))
+                          (is (= descriptor-2 in-descriptor))
+                          descriptor-1c)
+                        sd/request->descriptor (constantly descriptor-2)]
+            (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id curr-service-id}
+                                             :healthy-service-ids #{prev-service-id}})
+                  request {:authorization/user "ru" :request-time request-time}]
+              (->> (run-request->descriptor request :fallback-state-atom fallback-state-atom)
+                   (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service")
+                   is)
+              (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))))))
 
       (testing "unhealthy service with no fallback"
         (let [retrieve-healthy-fallback-promise (promise)]
