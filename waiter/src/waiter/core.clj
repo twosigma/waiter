@@ -683,8 +683,8 @@
                          (->> (kv/zk-keys curator (str base-path "/" relative-path))
                               (filter (fn [k] (not (str/starts-with? k "^"))))))))
    :make-basic-auth-fn (pc/fnk []
-                         (fn make-basic-auth-fn [endpoint username password]
-                           (BasicAuthentication$BasicResult. (URI. endpoint) username password)))
+                         (fn make-basic-auth-fn [uri username password]
+                           (BasicAuthentication$BasicResult. (URI. uri) username password)))
    :make-http-request-fn (pc/fnk [[:settings instance-request-properties]
                                   [:state http-client]
                                   make-basic-auth-fn service-id->password-fn]

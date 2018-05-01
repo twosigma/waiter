@@ -92,7 +92,7 @@
     (doseq [item test-endpoints]
       (testing (str "Test retrieve endpoint with headers and query string: " item)
         (let [dummy-request (assoc (request item :post {:a 1 :b 2}) :query-string "foo=bar&baz=1234")
-              expected-endpoint (if (contains? legacy-endpoints item) custom-legacy-endpoint (str item "?foo=bar&baz=1234"))]
+              expected-endpoint (if (contains? legacy-endpoints item) custom-legacy-endpoint item)]
           (is (= expected-endpoint
                  (request->endpoint dummy-request waiter-headers))))))))
 
