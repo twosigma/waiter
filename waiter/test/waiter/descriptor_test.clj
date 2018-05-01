@@ -167,8 +167,6 @@
                  (get-in test-case [:input-data :user])
                  (get-in test-case [:input-data :waiter-headers "permitted-user"]))))))))
 
-(declare thrown-with-msg?)
-
 (deftest test-request->descriptor
   (let [default-search-history-length 5
         run-request->descriptor
