@@ -12,8 +12,8 @@
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.util.client-tools :refer :all])
-  (:import (java.net HttpURLConnection URL)
-           (java.io IOException)))
+  (:import (java.io IOException)
+           (java.net HttpURLConnection)))
 
 (deftest ^:parallel ^:integration-fast test-streaming
   (testing-using-waiter-url
@@ -63,7 +63,6 @@
         request-url (str HTTP-SCHEME waiter-url path)
         correlation-id (rand-name)
         _ (log/info "request-url =" request-url ", correlation-id =" correlation-id)
-        ^HttpURLConnection url-connection (-> request-url (URL.) (.openConnection))
         streaming-timeout-ms (get-in (waiter-settings waiter-url) [:instance-request-properties :streaming-timeout-ms])
         streaming-timeout-limit-ms (streaming-timeout-limit-fn streaming-timeout-ms)
         kitchen-request-headers (merge (kitchen-request-headers)
@@ -72,14 +71,8 @@
                                         :x-kitchen-chunk-size (chunk-size-fn data-size-in-bytes)
                                         :x-kitchen-chunk-delay (chunk-delay-fn streaming-timeout-ms)
                                         :x-waiter-debug true
-                                        :x-waiter-name service-name})]
-    (doto url-connection
-      (.setRequestMethod "POST")
-      (.setUseCaches false)
-      (.setDoInput true)
-      (.setDoOutput true))
-    (doseq [[key value] kitchen-request-headers]
-      (.setRequestProperty url-connection (name key) (str value)))
+                                        :x-waiter-name service-name})
+        ^HttpURLConnection url-connection (open-url-connection request-url :post kitchen-request-headers)]
     (when-let [request-streaming-timeout (streaming-timeout-fn streaming-timeout-ms)]
       (.setRequestProperty url-connection "x-waiter-streaming-timeout" (str request-streaming-timeout)))
     (let [service-id (-> url-connection

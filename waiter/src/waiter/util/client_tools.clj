@@ -26,7 +26,7 @@
             [waiter.statsd :as statsd]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
-  (:import (java.net HttpCookie URI)
+  (:import (java.net HttpCookie HttpURLConnection URI URL)
            (java.util.concurrent Callable Future Executors)
            (org.eclipse.jetty.util HttpCookieStore$Empty)
            (org.joda.time Period)
@@ -150,6 +150,19 @@
   [name & body]
   `(using-waiter-url
      (time-it ~name ~@body)))
+
+(defn open-url-connection
+  "Opens a HttpURLConnection with the specified request url (query string in the url), method and headers."
+  [request-url request-method request-headers]
+  (let [^HttpURLConnection url-connection (-> request-url (URL.) (.openConnection))]
+    (doto url-connection
+      (.setRequestMethod (str/upper-case (name request-method)))
+      (.setUseCaches false)
+      (.setDoInput true)
+      (.setDoOutput true))
+    (doseq [[key value] request-headers]
+      (.setRequestProperty url-connection (name key) (str value)))
+    url-connection))
 
 (defn make-http-client
   "Instantiates and returns a new HttpClient without a cookie store"
@@ -313,8 +326,8 @@
 
 (defn make-light-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path]
-    :or {body nil cookies {} debug true method :post path "/endpoint"}}]
+   {:keys [body cookies debug method path query-params]
+    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
                        :x-waiter-mem 256
@@ -329,12 +342,13 @@
                   :body body
                   :cookies cookies
                   :headers headers
-                  :method method)))
+                  :method method
+                  :query-params query-params)))
 
 (defn make-shell-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path]
-    :or {body nil cookies {} debug true method :post path "/endpoint"}}]
+   {:keys [body cookies debug method path query-params]
+    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (make-light-request
     waiter-url
     (assoc
@@ -345,13 +359,14 @@
     :cookies cookies
     :debug debug
     :method method
-    :path path))
+    :path path
+    :query-params query-params))
 
 (defn make-kitchen-request
   "Makes an on-the-fly request to the Kitchen test app."
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path]
-    :or {body nil cookies {} debug true method :post path "/endpoint"}}]
+   {:keys [body cookies debug method path query-params]
+    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   {:pre [(not (str/blank? waiter-url))]}
   (make-shell-request
     waiter-url
@@ -363,7 +378,8 @@
     :cookies cookies
     :debug debug
     :method method
-    :path path))
+    :path path
+    :query-params query-params))
 
 (defn retrieve-service-id [waiter-url waiter-headers & {:keys [verbose] :or {verbose false}}]
   (let [service-id-result (make-request waiter-url "/service-id" :headers waiter-headers)
