@@ -21,7 +21,9 @@
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du])
-  (:import java.io.ByteArrayInputStream))
+  (:import (java.io ByteArrayInputStream)
+           (org.eclipse.jetty.util UrlEncoded)
+           [java.net HttpURLConnection]))
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality
   (testing-using-waiter-url
@@ -41,8 +43,7 @@
         (log/info "Basic test for empty body in request")
         (let [{:keys [body]} (make-kitchen-request
                                waiter-url
-                               (assoc request-headers
-                                 :accept "text/plain")
+                               (assoc request-headers :accept "text/plain")
                                :path "/request-info")
               body-json (json/read-str (str body))]
           (is (get-in body-json ["headers" "authorization"]) (str body))
@@ -51,6 +52,35 @@
           (is (str/blank? (get-in body-json ["headers" "content-type"])) (str body))
           (is (= "0" (get-in body-json ["headers" "content-length"])) (str body))
           (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body))))
+
+      (testing "query-string with special characters"
+        (log/info "Basic test for query-string with special characters")
+        (let [{:keys [body] :as response} (make-kitchen-request
+                                            waiter-url
+                                            (assoc request-headers :accept "application/json")
+                                            :path "/request-info" ;; library does not allow us to use request-info?q=a|b
+                                            :query-params {"q" "a|b"})
+              {:strs [query-string uri]} (json/read-str body)]
+          (assert-response-status response 200)
+          (is (= "/request-info" uri) body)
+          (is (= (str "q=" (UrlEncoded/encodeString "a|b")) query-string) body))
+
+        (log/info "using HttpURLConnection and query-string with special characters")
+        (try
+          (let [request-url (str "http://" waiter-url "/request-info?q=a|b")
+                token (str "^SERVICE-ID#" service-id)
+                ^HttpURLConnection url-connection (open-url-connection request-url :get {:x-waiter-token token})
+                input-stream (.getInputStream url-connection)]
+            (try
+              (is (= 200 (.getResponseCode url-connection)))
+              (let [body (slurp input-stream)
+                    {:strs [query-string uri]} (json/read-str body)]
+                (is (= "/request-info" uri) body)
+                (is (= (str "q=" (UrlEncoded/encodeString "a|b")) query-string) body))
+              (finally
+                (.close input-stream))))
+          (catch Exception ex
+            (is false (.getMessage ex)))))
 
       (testing "http methods"
         (log/info "Basic test for empty body in request")
