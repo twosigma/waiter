@@ -189,9 +189,7 @@
   [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body app-password
    {:keys [username principal]} idle-timeout output-buffer-size]
   (let [auth (make-basic-auth-fn endpoint "waiter" app-password)
-        headers (headers/assoc-auth-headers headers username principal)
-        query-params (when-not (str/blank? query-string)
-                       (ring-codec/form-decode query-string))]
+        headers (headers/assoc-auth-headers headers username principal)]
     (http/request
       http-client
       {:as :bytes
@@ -203,7 +201,7 @@
        :follow-redirects? false
        :idle-timeout idle-timeout
        :method request-method
-       :query-string query-params
+       :query-string query-string
        :url endpoint})))
 
 (defn make-request
