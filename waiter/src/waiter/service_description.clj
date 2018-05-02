@@ -90,7 +90,7 @@
    s/Str s/Any})
 
 (def user-metadata-schema
-  {(s/optional-key "service-fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 300))) 'at-most-300-minutes))
+  {(s/optional-key "service-fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/hours 1))) 'at-most-1-hour))
    s/Str s/Any})
 
 (def ^:const service-required-keys (->> (keys service-description-schema)
