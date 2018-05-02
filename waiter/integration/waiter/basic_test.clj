@@ -59,7 +59,7 @@
                                             waiter-url
                                             (assoc request-headers :accept "application/json")
                                             :path "/request-info"
-                                            :query-string bad-query-string)]
+                                            :query-params bad-query-string)]
           (assert-response-status response 200)
           (is (= bad-query-string (get (json/read-str body) "query-string"))))
 
@@ -69,7 +69,7 @@
                                             waiter-url
                                             (assoc request-headers :accept "application/json")
                                             :path "/request-info"
-                                            :query-string bad-query-string)]
+                                            :query-params bad-query-string)]
           (assert-response-status response 200)
           (is (= bad-query-string (get (json/read-str body) "query-string")))))
 

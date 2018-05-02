@@ -225,7 +225,7 @@
 (defn make-request
   ([waiter-url path &
     {:keys [body client cookies content-type disable-auth form-params headers
-            method multipart query-params query-string verbose]
+            method multipart query-params verbose]
      :or {body nil
           client http-client
           cookies []
@@ -233,7 +233,6 @@
           headers {}
           method :get
           query-params {}
-          query-string nil
           verbose false}}]
    (let [request-url (str
                        (when-not (str/starts-with? waiter-url HTTP-SCHEME) HTTP-SCHEME)
@@ -253,7 +252,7 @@
                                    :follow-redirects? false
                                    :headers request-headers
                                    :method method
-                                   :query-string (or query-string query-params)
+                                   :query-string query-params
                                    :url request-url}
                                   multipart (assoc :multipart multipart)
                                   add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
@@ -314,8 +313,8 @@
 
 (defn make-light-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params query-string]
-    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {} query-string nil}}]
+   {:keys [body cookies debug method path query-params]
+    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
                        :x-waiter-mem 256
@@ -331,13 +330,12 @@
                   :cookies cookies
                   :headers headers
                   :method method
-                  :query-params query-params
-                  :query-string query-string)))
+                  :query-params query-params)))
 
 (defn make-shell-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params query-string]
-    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {} query-string nil}}]
+   {:keys [body cookies debug method path query-params]
+    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (make-light-request
     waiter-url
     (assoc
@@ -349,14 +347,13 @@
     :debug debug
     :method method
     :path path
-    :query-string query-string
     :query-params query-params))
 
 (defn make-kitchen-request
   "Makes an on-the-fly request to the Kitchen test app."
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params query-string]
-    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {} query-string nil}}]
+   {:keys [body cookies debug method path query-params]
+    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   {:pre [(not (str/blank? waiter-url))]}
   (make-shell-request
     waiter-url
@@ -369,8 +366,7 @@
     :debug debug
     :method method
     :path path
-    :query-params query-params
-    :query-string query-string))
+    :query-params query-params))
 
 (defn retrieve-service-id [waiter-url waiter-headers & {:keys [verbose] :or {verbose false}}]
   (let [service-id-result (make-request waiter-url "/service-id" :headers waiter-headers)
