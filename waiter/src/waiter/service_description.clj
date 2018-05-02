@@ -675,7 +675,7 @@
         (assoc :defaults service-description-defaults
                :headers service-description-template-from-headers))))
 
-(defn- merge-service-description-sources
+(defn merge-service-description-sources
   [descriptor kv-store waiter-hostnames service-description-defaults token-defaults]
   "Merges the sources for a service-description into the descriptor."
   (->> (prepare-service-description-sources
@@ -780,19 +780,6 @@
   (->> (compute-service-description sources waiter-headers passthrough-headers kv-store service-id-prefix username
                                     metric-group-mappings service-description-builder assoc-run-as-user-approved?)
        (merge descriptor)))
-
-(defn request->descriptor
-  "Creates the service descriptor from the request.
-   The result map contains the following elements:
-   {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
-  [service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames request metric-group-mappings
-   service-description-builder assoc-run-as-user-approved?]
-  (let [current-request-user (get request :authorization/user)]
-    (-> (headers/split-headers (:headers request))
-        (merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
-        (merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
-                                          service-description-builder assoc-run-as-user-approved?)
-        (merge-suspended kv-store))))
 
 (defn retrieve-most-recently-modified-token
   "Computes the most recently modified token from the token->token-data map."

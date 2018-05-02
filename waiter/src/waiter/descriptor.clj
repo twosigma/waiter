@@ -19,6 +19,7 @@
             [metrics.meters :as meters]
             [metrics.timers :as timers]
             [try-let :as tl]
+            [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.middleware :as middleware]
             [waiter.service-description :as sd]
@@ -182,6 +183,19 @@
       (= ":any" (str permitted-user)) ; support ":any" for backwards compatibility
       (and (not (nil? permitted-user)) (= user permitted-user))))
 
+(defn compute-descriptor
+  "Creates the service descriptor from the request.
+   The result map contains the following elements:
+   {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
+  [service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames request metric-group-mappings
+   service-description-builder assoc-run-as-user-approved?]
+  (let [current-request-user (get request :authorization/user)]
+    (-> (headers/split-headers (:headers request))
+        (sd/merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
+        (sd/merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
+                                          service-description-builder assoc-run-as-user-approved?)
+        (sd/merge-suspended kv-store))))
+
 (let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
   (defn request->descriptor
     "Extract the service descriptor from a request.
@@ -193,7 +207,7 @@
       request->descriptor-timer
       (let [auth-user (:authorization/user request)
             service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
-            latest-descriptor (sd/request->descriptor
+            latest-descriptor (compute-descriptor
                                 service-description-defaults token-defaults service-id-prefix kv-store waiter-hostnames
                                 request metric-group-mappings service-description-builder service-approved?)
             latest-service-id (:service-id latest-descriptor)

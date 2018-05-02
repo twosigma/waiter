@@ -196,7 +196,7 @@
       (let [request {}
             descriptor {:service-description {}
                         :service-preauthorized false}]
-        (with-redefs [sd/request->descriptor (constantly descriptor)]
+        (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
                (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service")
                is))))
@@ -205,7 +205,7 @@
       (let [request {:authorization/user "ru"}
             descriptor {:service-description {"run-as-user" "su"}
                         :service-preauthorized false}]
-        (with-redefs [sd/request->descriptor (constantly descriptor)]
+        (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
                (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service")
                is))))
@@ -214,7 +214,7 @@
       (let [request {:authorization/user "su"}
             descriptor {:service-description {"run-as-user" "su", "permitted-user" "puser"}
                         :service-preauthorized false}]
-        (with-redefs [sd/request->descriptor (constantly descriptor)]
+        (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
                (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service")
                is))))
@@ -223,7 +223,7 @@
       (let [request {:authorization/user "ru"}
             descriptor {:service-description {"run-as-user" "su", "permitted-user" "puser"}
                         :service-preauthorized true}]
-        (with-redefs [sd/request->descriptor (constantly descriptor)]
+        (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
                (thrown-with-msg? ExceptionInfo #"This user isn't allowed to invoke this service")
                is))))
@@ -234,7 +234,7 @@
             descriptor {:service-description {"run-as-user" "su", "permitted-user" "ru"}
                         :service-id "test-service-id"
                         :service-preauthorized true}]
-        (with-redefs [sd/request->descriptor (constantly descriptor)]
+        (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
                (= {:descriptor descriptor :latest-service-id service-id})
                is))))
@@ -245,7 +245,7 @@
             descriptor {:service-authentication-disabled true
                         :service-id "test-service-id"
                         :service-description {"run-as-user" "su", "permitted-user" "*"}}]
-        (with-redefs [sd/request->descriptor (constantly descriptor)]
+        (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
                (= {:descriptor descriptor :latest-service-id service-id})
                is))))
@@ -255,7 +255,7 @@
             descriptor {:service-authentication-disabled false
                         :service-description {"run-as-user" "su", "permitted-user" "*"}
                         :service-preauthorized false}]
-        (with-redefs [sd/request->descriptor (constantly descriptor)]
+        (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
                (thrown-with-msg? ExceptionInfo #"Authenticated user cannot run service")
                is))))
@@ -266,7 +266,7 @@
             descriptor {:service-description {"run-as-user" "ru", "permitted-user" "ru"}
                         :service-id "test-service-id"
                         :service-preauthorized false}]
-        (with-redefs [sd/request->descriptor (constantly descriptor)]
+        (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
                (= {:descriptor descriptor :latest-service-id service-id})
                is))))
@@ -284,7 +284,7 @@
           (with-redefs [retrieve-fallback-descriptor
                         (fn [& _]
                           (throw (IllegalStateException. "Unexpected call to retrieve-fallback-descriptor")))
-                        sd/request->descriptor (constantly descriptor-2)]
+                        compute-descriptor (constantly descriptor-2)]
             (let [fallback-state-atom (atom {:available-service-ids #{curr-service-id}
                                              :healthy-service-ids #{curr-service-id}})
                   request {:request-time request-time}
@@ -304,7 +304,7 @@
                           (is (= request-time in-request-time))
                           (is (= descriptor-2 in-descriptor))
                           descriptor-1a)
-                        sd/request->descriptor (constantly descriptor-2)]
+                        compute-descriptor (constantly descriptor-2)]
             (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id curr-service-id}
                                              :healthy-service-ids #{prev-service-id}})
                   request {:request-time request-time}
@@ -324,7 +324,7 @@
                           (is (= request-time in-request-time))
                           (is (= descriptor-2 in-descriptor))
                           descriptor-1b)
-                        sd/request->descriptor (constantly descriptor-2)]
+                        compute-descriptor (constantly descriptor-2)]
             (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id curr-service-id}
                                              :healthy-service-ids #{prev-service-id}})
                   request {:authorization/user "ru" :request-time request-time}]
@@ -343,7 +343,7 @@
                           (is (= request-time in-request-time))
                           (is (= descriptor-2 in-descriptor))
                           descriptor-1c)
-                        sd/request->descriptor (constantly descriptor-2)]
+                        compute-descriptor (constantly descriptor-2)]
             (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id curr-service-id}
                                              :healthy-service-ids #{prev-service-id}})
                   request {:authorization/user "ru" :request-time request-time}]
@@ -362,7 +362,7 @@
                           (is (= request-time in-request-time))
                           (is (= descriptor-2 in-descriptor))
                           nil)
-                        sd/request->descriptor (constantly descriptor-2)]
+                        compute-descriptor (constantly descriptor-2)]
             (let [fallback-state-atom (atom {:available-service-ids #{prev-service-id curr-service-id}
                                              :healthy-service-ids #{}})
                   request {:request-time request-time}
