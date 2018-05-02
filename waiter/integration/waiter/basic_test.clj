@@ -22,8 +22,8 @@
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du])
   (:import (java.io ByteArrayInputStream)
-           (org.eclipse.jetty.util UrlEncoded)
-           [java.net HttpURLConnection]))
+           (java.net HttpURLConnection)
+           (org.eclipse.jetty.util UrlEncoded)))
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality
   (testing-using-waiter-url
