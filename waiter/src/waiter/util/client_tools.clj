@@ -26,7 +26,7 @@
             [waiter.statsd :as statsd]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
-  (:import (java.net HttpCookie HttpURLConnection URI URL)
+  (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
            (org.eclipse.jetty.util HttpCookieStore$Empty)
            (org.joda.time Period)
@@ -150,19 +150,6 @@
   [name & body]
   `(using-waiter-url
      (time-it ~name ~@body)))
-
-(defn open-url-connection
-  "Opens a HttpURLConnection with the specified request url (query string in the url), method and headers."
-  [request-url request-method request-headers]
-  (let [^HttpURLConnection url-connection (-> request-url (URL.) (.openConnection))]
-    (doto url-connection
-      (.setRequestMethod (str/upper-case (name request-method)))
-      (.setUseCaches false)
-      (.setDoInput true)
-      (.setDoOutput true))
-    (doseq [[key value] request-headers]
-      (.setRequestProperty url-connection (name key) (str value)))
-    url-connection))
 
 (defn make-http-client
   "Instantiates and returns a new HttpClient without a cookie store"
