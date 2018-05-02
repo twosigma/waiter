@@ -28,36 +28,6 @@
   [resource request-method & params]
   {:request-method request-method :uri resource :params (first params)})
 
-(deftest test-http-request-method-get
-  (testing "Test request method: get"
-    (let [dummy-request (request "/run" :get {:a 1 :b 2})]
-      (is (= http/get
-             (request->http-method-fn dummy-request))))))
-
-(deftest test-http-request-method-post
-  (testing "Test request method: post"
-    (let [dummy-request (request "/run" :post {:a 1 :b 2})]
-      (is (= http/post
-             (request->http-method-fn dummy-request))))))
-
-(deftest test-http-request-method-put
-  (testing "Test request method: put"
-    (let [dummy-request (request "/run" :put {:a 1 :b 2})]
-      (is (= http/put
-             (request->http-method-fn dummy-request))))))
-
-(deftest test-http-request-method-delete
-  (testing "Test request method: delete"
-    (let [dummy-request (request "/run" :delete {:a 1 :b 2})]
-      (is (= http/delete
-             (request->http-method-fn dummy-request))))))
-
-(deftest test-http-request-method-head
-  (testing "Test request method: head"
-    (let [dummy-request (request "/run" :head {:a 1 :b 2})]
-      (is (= http/head
-             (request->http-method-fn dummy-request))))))
-
 (deftest test-request->endpoint-without-headers
   (let [legacy-endpoints #{"/secrun"}
         passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
@@ -365,21 +335,20 @@
                                       app-password)
             http-client (http/client)
             request-method-fn-call-counter (atom 0)]
-        (with-redefs [http-method-fn
-                      (fn [_]
-                        (fn [^HttpClient _ endpoint request-config]
-                          (swap! request-method-fn-call-counter inc)
-                          (is (= expected-endpoint endpoint))
-                          (is (= :bytes (:as request-config)))
-                          (is (:auth request-config))
-                          (is (= "body" (:body request-config)))
-                          (is (= 654321 (:idle-timeout request-config)))
-                          (is (= (-> (dissoc passthrough-headers "expect" "authorization"
-                                             "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                                             "te" "trailers" "transfer-encoding" "upgrade")
-                                     (merge {"x-waiter-auth-principal" "test-user"
-                                             "x-waiter-authenticated-principal" "test-user@test.com"}))
-                                 (:headers request-config)))))]
+        (with-redefs [http/request
+                      (fn [^HttpClient _ request-config]
+                        (swap! request-method-fn-call-counter inc)
+                        (is (= expected-endpoint (:url request-config)))
+                        (is (= :bytes (:as request-config)))
+                        (is (:auth request-config))
+                        (is (= "body" (:body request-config)))
+                        (is (= 654321 (:idle-timeout request-config)))
+                        (is (= (-> (dissoc passthrough-headers "expect" "authorization"
+                                           "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
+                                           "te" "trailers" "transfer-encoding" "upgrade")
+                                   (merge {"x-waiter-auth-principal" "test-user"
+                                           "x-waiter-authenticated-principal" "test-user@test.com"}))
+                               (:headers request-config))))]
           (make-request http-client make-basic-auth-fn service-id->password-fn instance request request-properties passthrough-headers end-route nil)
           (is (= 1 @request-method-fn-call-counter)))))))
 

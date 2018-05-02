@@ -37,8 +37,9 @@
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (java.io InputStream IOException)
-           java.util.concurrent.TimeoutException
-           org.eclipse.jetty.io.EofException
+           (java.util.concurrent TimeoutException)
+           (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput)))
 
 (defn check-control [control-chan]
@@ -183,42 +184,16 @@
     (-> (ex-info message (assoc metrics-map :status status) error)
         (utils/exception->response request))))
 
-(defn http-method-fn
-  "Retrieves the qbits.jet.client.http client function that corresponds to the http method."
-  [request-method]
-  (let [default-http-method http/post
-        http-method-helper (fn http-method-helper [http-method]
-                             (fn inner-http-method-helper [client url request-map]
-                               (http/request client (into {:method http-method :url url} request-map))))]
-    (case request-method
-      :copy (http-method-helper :copy)
-      :delete http/delete
-      :get http/get
-      :head http/head
-      :move (http-method-helper :move)
-      :patch (http-method-helper :patch)
-      :post http/post
-      :put http/put
-      :trace http/trace
-      default-http-method)))
-
-(defn request->http-method-fn
-  "Retrieves the qbits.jet.client.http client function that corresponds to the http method used in the request."
-  [{:keys [request-method]}]
-  (http-method-fn request-method))
-
 (defn- make-http-request
   "Makes an asynchronous request to the endpoint using Basic authentication."
-  [http-client make-basic-auth-fn request-method uri query-string headers body app-password {:keys [username principal]}
-   idle-timeout output-buffer-size]
-  (let [auth (make-basic-auth-fn uri "waiter" app-password)
+  [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body app-password
+   {:keys [username principal]} idle-timeout output-buffer-size]
+  (let [auth (make-basic-auth-fn endpoint "waiter" app-password)
         headers (headers/assoc-auth-headers headers username principal)
-        http-method (http-method-fn request-method)
-        endpoint uri
         query-params (when-not (str/blank? query-string)
                        (ring-codec/form-decode query-string))]
-    (http-method
-      http-client endpoint
+    (http/request
+      http-client
       {:as :bytes
        :auth auth
        :body body
@@ -227,7 +202,9 @@
        :fold-chunked-response-buffer-size output-buffer-size
        :follow-redirects? false
        :idle-timeout idle-timeout
-       :query-string query-params})))
+       :method request-method
+       :query-string query-params
+       :url endpoint})))
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
