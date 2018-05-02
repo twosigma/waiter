@@ -15,7 +15,6 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [qbits.jet.client.http :as http]
             [waiter.util.client-tools :refer :all])
   (:import java.util.concurrent.CountDownLatch))
 
@@ -37,9 +36,9 @@
   "Makes a request with the provided headers and cookies, and with verbose logging"
   [waiter-url request-headers cookies]
   (let [response (make-request waiter-url "/secrun"
-                               :http-method-fn http/post
-                               :headers request-headers
                                :cookies cookies
+                               :headers request-headers
+                               :method :post
                                :verbose true)
         service-name (str (get-in response [:request-headers :x-waiter-name]))]
     (log/info "response:" (:body response))
@@ -56,9 +55,9 @@
   (let [response (make-request-with-debug-info
                    request-headers
                    #(make-request waiter-url endpoint
-                                  :http-method-fn http/post
-                                  :headers %
                                   :cookies cookies
+                                  :headers %
+                                  :method :post
                                   :verbose true))]
     (log/info "response: " (:body response))
     response))

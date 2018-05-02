@@ -16,7 +16,6 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [plumbing.core :as pc]
-            [qbits.jet.client.http :as http]
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du])
@@ -431,7 +430,7 @@
               (testing "hard-delete without etag"
                 (let [{:keys [body] :as response} (make-request waiter-url "/token"
                                                                 :headers {"host" token}
-                                                                :http-method-fn http/delete
+                                                                :method :delete
                                                                 :query-params {"hard-delete" true})]
                   (assert-response-status response 400)
                   (is (str/includes? (str body) "Must specify if-match header for token hard deletes"))))
@@ -440,7 +439,7 @@
                 (let [{:keys [body] :as response} (make-request waiter-url "/token"
                                                                 :headers {"host" token
                                                                           "if-match" "1010"}
-                                                                :http-method-fn http/delete
+                                                                :method :delete
                                                                 :query-params {"hard-delete" true})]
                   (assert-response-status response 412)
                   (is (str/includes? (str body) "Cannot modify stale token"))))
@@ -669,7 +668,7 @@
     (let [{:keys [status]} (make-request waiter-url "/token"
                                          :body "i'm bad at json"
                                          :headers {"host" "test-token"}
-                                         :http-method-fn http/post)]
+                                         :method :post)]
       (is (= 400 status)))))
 
 (deftest ^:parallel ^:integration-fast test-token-environment-variables
@@ -846,7 +845,7 @@
                                               "referer" (str "http://" host-header)
                                               "origin" (str "http://" host-header)
                                               "x-requested-with" "XMLHttpRequest"}
-                                    :http-method-fn http/post
+                                    :method :post
                                     :multipart {"mode" "service"
                                                 "service-id" service-id})]
                   (reset! cookies-atom cookies)
@@ -898,7 +897,7 @@
                                               "referer" (str "http://" host-header)
                                               "origin" (str "http://" host-header)
                                               "x-requested-with" "XMLHttpRequest"}
-                                    :http-method-fn http/post
+                                    :method :post
                                     :multipart {"mode" "token"})]
                   (reset! cookies-atom cookies)
                   (is (= "Added cookie x-waiter-consent" body))
