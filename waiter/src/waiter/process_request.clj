@@ -21,7 +21,6 @@
             [metrics.timers :as timers]
             [qbits.jet.client.http :as http]
             [qbits.jet.servlet :as servlet]
-            [ring.util.codec :as ring-codec]
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
