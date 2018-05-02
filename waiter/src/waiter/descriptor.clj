@@ -18,6 +18,7 @@
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
+            [plumbing.core :as pc]
             [try-let :as tl]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
@@ -196,6 +197,28 @@
                                           service-description-builder assoc-run-as-user-approved?)
         (sd/merge-suspended kv-store))))
 
+(defn descriptor->previous-descriptor
+  "Creates the service descriptor from the request.
+   The result map contains the following elements:
+   {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
+  [kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder service-approved? username
+   {:keys [sources] :as descriptor}]
+  (when-let [token-sequence (-> sources :token-sequence seq)]
+    (let [{:keys [token->token-data]} sources
+          previous-token (->> token->token-data
+                              (pc/map-vals (fn [token-data] (get token-data "previous")))
+                              sd/retrieve-most-recently-modified-token)
+          previous-token-data (get-in token->token-data [previous-token "previous"])]
+      (when (seq previous-token-data)
+        (let [new-sources (->> (assoc token->token-data previous-token previous-token-data)
+                               (sd/compute-service-description-template-from-tokens token-defaults token-sequence)
+                               (merge sources))]
+          (-> (select-keys descriptor [:passthrough-headers :waiter-headers])
+              (assoc :sources new-sources)
+              (sd/merge-service-description-and-id
+                kv-store service-id-prefix username metric-group-mappings service-description-builder service-approved?)
+              (sd/merge-suspended kv-store)))))))
+
 (let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
   (defn request->descriptor
     "Extract the service descriptor from a request.
@@ -214,7 +237,7 @@
             descriptor->previous-descriptor
             (fn descriptor->previous-descriptor-fn
               [descriptor]
-              (sd/descriptor->previous-descriptor
+              (descriptor->previous-descriptor
                 kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder
                 service-approved? auth-user descriptor))
             fallback-state @fallback-state-atom
