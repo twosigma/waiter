@@ -225,13 +225,13 @@
 (defn make-request
   ([waiter-url path &
     {:keys [body client cookies content-type disable-auth form-params headers
-            http-method-fn multipart query-params verbose]
+            method multipart query-params verbose]
      :or {body nil
           client http-client
           cookies []
           disable-auth false
           headers {}
-          http-method-fn http/get
+          method :get
           query-params {}
           verbose false}}]
    (let [request-url (str
@@ -246,13 +246,14 @@
        (let [waiter-auth-cookie (some #(= authentication/AUTH-COOKIE-NAME (:name %)) cookies)
              add-spnego-auth (and (not disable-auth) use-spnego (not waiter-auth-cookie))
              {:keys [body headers status]}
-             (async/<!! (http-method-fn
+             (async/<!! (http/request
                           client
-                          request-url
-                          (cond-> {:follow-redirects? false
+                          (cond-> {:body body
+                                   :follow-redirects? false
                                    :headers request-headers
+                                   :method method
                                    :query-string query-params
-                                   :body body}
+                                   :url request-url}
                                   multipart (assoc :multipart multipart)
                                   add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
                                   form-params (assoc :form-params form-params)
@@ -261,11 +262,11 @@
              response-body (if body (async/<!! body) nil)]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
-         {:request-headers request-headers
+         {:body response-body
           :cookies (parse-cookies (get headers "set-cookie"))
-          :status status
           :headers headers
-          :body response-body})
+          :request-headers request-headers
+          :status status})
        (catch Exception e
          (when verbose
            (log/info (get request-headers "x-cid") "error in obtaining response" (.getMessage e)))
@@ -312,12 +313,8 @@
 
 (defn make-light-request
   [waiter-url custom-headers &
-   {:keys [cookies path http-method-fn body debug]
-    :or {cookies {}
-         path "/endpoint"
-         http-method-fn http/post
-         body nil
-         debug true}}]
+   {:keys [body cookies debug method path]
+    :or {body nil cookies {} debug true method :post path "/endpoint"}}]
   (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
                        :x-waiter-mem 256
@@ -332,29 +329,29 @@
                   :body body
                   :cookies cookies
                   :headers headers
-                  :http-method-fn http-method-fn)))
+                  :method method)))
 
 (defn make-shell-request
   [waiter-url custom-headers &
-   {:keys [cookies path http-method-fn body debug]
-    :or {cookies {}, path "/endpoint", http-method-fn http/post, body nil, debug true}}]
+   {:keys [body cookies debug method path]
+    :or {body nil cookies {} debug true method :post path "/endpoint"}}]
   (make-light-request
     waiter-url
     (assoc
       custom-headers
       :x-waiter-cmd-type "shell"
       :x-waiter-version "version-does-not-matter")
-    :cookies cookies
-    :path path
-    :http-method-fn http-method-fn
     :body body
-    :debug debug))
+    :cookies cookies
+    :debug debug
+    :method method
+    :path path))
 
 (defn make-kitchen-request
   "Makes an on-the-fly request to the Kitchen test app."
   [waiter-url custom-headers &
-   {:keys [cookies path http-method-fn body debug]
-    :or {cookies {}, path "/endpoint", http-method-fn http/post, body nil, debug true}}]
+   {:keys [body cookies debug method path]
+    :or {body nil cookies {} debug true method :post path "/endpoint"}}]
   {:pre [(not (str/blank? waiter-url))]}
   (make-shell-request
     waiter-url
@@ -362,11 +359,11 @@
       {:x-waiter-cmd (kitchen-cmd "-p $PORT0")
        :x-waiter-metric-group "waiter_kitchen"}
       custom-headers)
-    :path path
-    :cookies cookies
-    :http-method-fn http-method-fn
     :body body
-    :debug debug))
+    :cookies cookies
+    :debug debug
+    :method method
+    :path path))
 
 (defn retrieve-service-id [waiter-url waiter-headers & {:keys [verbose] :or {verbose false}}]
   (let [service-id-result (make-request waiter-url "/service-id" :headers waiter-headers)
@@ -494,7 +491,7 @@
        ((utils/retry-strategy {:delay-multiplier 1.2, :inital-delay-ms 250, :max-retries limit})
          (fn []
            (let [app-delete-path (str "/apps/" service-id "?force=true")
-                 delete-response (make-request waiter-url app-delete-path :http-method-fn http/delete)
+                 delete-response (make-request waiter-url app-delete-path :method :delete)
                  delete-json (try-parse-json (:body delete-response))
                  delete-success (true? (get delete-json "success"))
                  no-such-service (= "no-such-service-exists" (get delete-json "result"))]
@@ -619,7 +616,7 @@
                          (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
         response (make-request waiter-url "/token"
                                :headers (assoc headers "host" token)
-                               :http-method-fn http/delete
+                               :method :delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response 200)))
 
@@ -855,7 +852,7 @@
   (make-request waiter-url "/token"
                 :body (json/write-str token-map)
                 :headers (assoc headers "host" token)
-                :http-method-fn http/post
+                :method :post
                 :query-params query-params))
 
 (defn get-token

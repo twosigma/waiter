@@ -16,7 +16,6 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [qbits.jet.client.http :as http]
             [qbits.jet.client.websocket :as ws-client]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
@@ -99,9 +98,9 @@
           waiter-headers (assoc (kitchen-request-headers)
                            :x-waiter-metric-group "test-ws-support"
                            :x-waiter-name (rand-name))
-          _ (make-kitchen-request waiter-url waiter-headers :http-method-fn http/get)
+          _ (make-kitchen-request waiter-url waiter-headers :method :get)
           {:keys [headers service-id] :as canary-response}
-          (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
+          (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :method :get))
           _ (assert-response-status canary-response 200)
           first-request-time-header (-> (get headers "x-waiter-request-date")
                                         (du/str-to-date du/formatter-rfc822))

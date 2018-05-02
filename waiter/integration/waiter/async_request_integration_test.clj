@@ -13,7 +13,6 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
-            [qbits.jet.client.http :as http]
             [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-fast test-202-response-without-location-header
@@ -25,7 +24,7 @@
                                  :x-kitchen-store-async-response-ms 40000}
           {:keys [headers service-id] :as response}
           (make-request-with-debug-info async-request-headers
-                                        #(make-kitchen-request waiter-url % :http-method-fn http/get :path "/async/request"))
+                                        #(make-kitchen-request waiter-url % :method :get :path "/async/request"))
           status-location (get (pc/map-keys str/lower-case headers) "location")]
       (assert-response-status response 202)
       (is (str/blank? status-location))
@@ -49,7 +48,7 @@
         async-request-headers
         (assoc request-headers :x-kitchen-delay-ms request-processing-time-ms :x-kitchen-store-async-response-ms 40000)
         {:keys [headers] :as response}
-        (make-kitchen-request waiter-url async-request-headers :http-method-fn http/get :body "" :path "/async/request")
+        (make-kitchen-request waiter-url async-request-headers :body "" :method :get :path "/async/request")
         status-location (get (pc/map-keys str/lower-case headers) "location")]
     {:cookies cookies
      :request-headers request-headers
@@ -68,9 +67,9 @@
 (defn- cancel-async-request
   [waiter-url status-location allow-cancel cookies]
   (make-request waiter-url status-location
-                :http-method-fn http/delete
+                :cookies cookies
                 :headers {:x-kitchen-allow-async-cancel allow-cancel}
-                :cookies cookies))
+                :method :delete))
 
 ; Marked explicit due to:
 ; FAIL in (test-simple-async-request)
@@ -207,7 +206,7 @@
                               (let [async-request-headers
                                     (assoc request-headers :x-kitchen-delay-ms (int (* (max 0.5 (double (rand))) request-processing-time-ms))
                                                            :x-kitchen-store-async-response-ms 600000)]
-                                (make-kitchen-request waiter-url async-request-headers :http-method-fn http/get :body "" :path "/async/request")))
+                                (make-kitchen-request waiter-url async-request-headers :body "" :method :get :path "/async/request")))
                             :verbose true)
           status-locations (for [{:keys [headers] :as response} async-responses]
                              (let [status-location (get (pc/map-keys str/lower-case headers) "location")]
@@ -228,8 +227,10 @@
       (testing "delete-arbitrary-requests"
         (let [kitchen-delete-headers {:x-kitchen-allow-async-cancel true, :x-kitchen-204-on-async-cancel false}]
           (doseq [status-location (take num-requests-to-delete status-locations)]
-            (let [{:keys [body] :as response} (make-request waiter-url status-location :http-method-fn http/delete
-                                                            :headers kitchen-delete-headers :cookies cookies)]
+            (let [{:keys [body] :as response} (make-request waiter-url status-location
+                                                            :cookies cookies
+                                                            :headers kitchen-delete-headers
+                                                            :method :delete)]
               (assert-response-status response 200)
               (is (str/includes? body "Deleted request-id")))))
         (Thread/sleep inter-router-metrics-interval-ms) ;; allow routers to sync metrics
@@ -257,7 +258,7 @@
                 (is (str/starts-with? (str result-location) "/waiter-async/result/") (str result-location))
                 (is (str/includes? (str result-location) service-id) (str result-location))
                 (log/info "validating async result via router" router-id "at" endpoint-url)
-                (let [response (make-request endpoint-url result-location http/get {} {} "" :cookies cookies)]
+                (let [response (make-request endpoint-url result-location :cookies cookies :method :get)]
                   (assert-response-status response 200))))))
 
         (testing "validate-completed-request-counters"

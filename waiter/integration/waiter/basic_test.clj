@@ -17,7 +17,6 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
-            [qbits.jet.client.http :as http]
             [waiter.interstitial :as interstitial]
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
@@ -55,23 +54,17 @@
 
       (testing "http methods"
         (log/info "Basic test for empty body in request")
-        (let [http-method-helper (fn http-method-helper [http-method]
-                                   (fn inner-http-method-helper [client url & [req]]
-                                     (http/request client (merge req {:method http-method :url url}))))]
-          (testing "http method: HEAD"
-            (let [response (make-kitchen-request waiter-url request-headers
-                                                 :http-method-fn (http-method-helper :head)
-                                                 :path "/request-info")]
+        (testing "http method: HEAD"
+          (let [response (make-kitchen-request waiter-url request-headers :method :head :path "/request-info")]
+            (assert-response-status response 200)
+            (is (str/blank? (:body response)))))
+        (doseq [request-method [:delete :copy :get :move :patch :post :put]]
+          (testing (str "http method: " (-> request-method name str/upper-case))
+            (let [{:keys [body] :as response}
+                  (make-kitchen-request waiter-url request-headers :method request-method :path "/request-info")
+                  body-json (json/read-str (str body))]
               (assert-response-status response 200)
-              (is (str/blank? (:body response)))))
-          (doseq [request-method [:delete :copy :get :move :patch :post :put]]
-            (testing (str "http method: " (-> request-method name str/upper-case))
-              (let [{:keys [body] :as response} (make-kitchen-request waiter-url request-headers
-                                                                      :http-method-fn (http-method-helper request-method)
-                                                                      :path "/request-info")
-                    body-json (json/read-str (str body))]
-                (assert-response-status response 200)
-                (is (= (name request-method) (get body-json "request-method"))))))))
+              (is (= (name request-method) (get body-json "request-method")))))))
 
       (testing "content headers"
         (let [request-length 100000
@@ -260,7 +253,7 @@
                    :x-waiter-name service-name
                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
           {:keys [headers request-headers service-id] :as first-response}
-          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :http-method-fn http/get))
+          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :get))
           _ (assert-response-status first-response 200)
           canary-request-time-from-header (-> (get headers "x-waiter-request-date")
                                               (du/str-to-date du/formatter-rfc822))]
@@ -271,7 +264,7 @@
           (is (pos? (.getMillis canary-request-time-from-header)))
           (is (pos? (.getMillis service-last-request-time)))
           (is (zero? (t/in-seconds (t/interval canary-request-time-from-header service-last-request-time)))))
-        (make-kitchen-request waiter-url request-headers :http-method-fn http/get)
+        (make-kitchen-request waiter-url request-headers :method :get)
         (let [service-last-request-time (service-id->last-request-time waiter-url service-id)]
           (is (pos? (.getMillis service-last-request-time)))
           (is (t/before? canary-request-time-from-header service-last-request-time)))))))
@@ -369,7 +362,7 @@
               (str "Cannot find service: " service-id " in at least one router."))))
 
       (testing "service-deleted-from-all-routers"
-        (let [{:keys [body] :as response} (make-request waiter-url (str "/apps/" service-id) :http-method-fn http/delete)]
+        (let [{:keys [body] :as response} (make-request waiter-url (str "/apps/" service-id) :method :delete)]
           (assert-response-status response 200)
           (is body)
           (is (loop [routers (routers waiter-url)
@@ -423,11 +416,10 @@
           override-endpoint (str "/apps/" service-id "/override")]
       (with-service-cleanup
         service-id
-        (-> (make-request waiter-url override-endpoint :http-method-fn http/post :body (json/write-str overrides))
+        (-> (make-request waiter-url override-endpoint :body (json/write-str overrides) :method :post)
             (assert-response-status 200))
-        (let [{:keys [body] :as response} (make-request waiter-url override-endpoint
-                                                        :http-method-fn http/get
-                                                        :body (json/write-str overrides))]
+        (let [{:keys [body] :as response}
+              (make-request waiter-url override-endpoint :body (json/write-str overrides) :method :get)]
           (assert-response-status response 200)
           (let [response-data (-> body str json/read-str walk/keywordize-keys)]
             (is (= (retrieve-username) (:last-updated-by response-data)))
@@ -437,7 +429,7 @@
         (let [service-settings (service-settings waiter-url service-id)
               service-description-overrides (-> service-settings :service-description-overrides :overrides)]
           (is (= overrides service-description-overrides)))
-        (-> (make-request waiter-url override-endpoint :http-method-fn http/delete)
+        (-> (make-request waiter-url override-endpoint :method :delete)
             (assert-response-status 200))
         (let [service-settings (service-settings waiter-url service-id)
               service-description-overrides (-> service-settings :service-description-overrides :overrides)]
@@ -567,21 +559,14 @@
                                                             :headers {"origin" "example.com"})]
             (is (= 200 status) response)))
         (testing "cors not allowed"
-          (let [{:keys [status] :as response} (make-request waiter-url "/state"
-                                                            :http-method-fn http/get
-                                                            :headers {"origin" "badorigin.com"})]
+          (let [{:keys [status] :as response}
+                (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :get)]
             (is (= 403 status) response))
-          (let [{:keys [status] :as response} (make-request waiter-url "/state"
-                                                            :http-method-fn http/post
-                                                            :headers {"origin" "badorigin.com"})]
+          (let [{:keys [status] :as response}
+                (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :post)]
             (is (= 403 status) response))
-          (let [options (fn ([client url request-map]
-                             (http/request client
-                                           (into {:method :options :url url}
-                                                 request-map))))
-                {:keys [status] :as response} (make-request waiter-url "/state"
-                                                            :http-method-fn options
-                                                            :headers {"origin" "badorigin.com"})]
+          (let [{:keys [status] :as response}
+                (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :options )]
             (is (= 403 status) response)))))))
 
 (deftest ^:parallel ^:integration-fast test-error-handling
@@ -666,7 +651,7 @@
         (is (= "application/json" (get headers "content-type")))
         (is (= "Welcome to Waiter" (get json-data "message")))))
     (testing "only GET"
-      (let [{:keys [body status]} (make-request waiter-url "/" :http-method-fn http/post)]
+      (let [{:keys [body status]} (make-request waiter-url "/" :method :post)]
         (is (= 405 status))
         (is (str/includes? body "Only GET supported"))))))
 
@@ -712,7 +697,7 @@
                           (make-request router-url endpoint
                                         :cookies cookies
                                         :headers request-headers
-                                        :http-method-fn http/get)
+                                        :method :get)
                           end-time (t/now)]
                       (assert-response-status response 303)
                       (is (= (str "/waiter-interstitial" endpoint) (get headers "location")))
@@ -727,7 +712,7 @@
                           (make-request router-url endpoint
                                         :cookies cookies
                                         :headers request-headers
-                                        :http-method-fn http/post)
+                                        :method :post)
                           end-time (t/now)]
                       (assert-response-status response 303)
                       (is (= (str "/waiter-interstitial" endpoint) (get headers "location")))
