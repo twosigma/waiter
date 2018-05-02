@@ -515,8 +515,12 @@
           (add-cid-into-response [request response]
             (update-in response [:headers "x-cid"] (fn [cid] (or cid (get-in request [:headers "x-cid"])))))]
     (fn correlation-id-middleware-fn [request]
-      (let [{:keys [headers request-method uri] :as request} (-> request add-cid-into-request add-request-id-into-request)]
-        (printlog request (str "request received uri:" uri ", method" request-method ", headers:" (into (sorted-map) headers)))
+      (let [{:keys [headers query-string request-method uri] :as request}
+            (-> request add-cid-into-request add-request-id-into-request)]
+        (printlog request (str "request received uri:" uri
+                               ", method:" request-method
+                               (when query-string (str ", query-string:" query-string))
+                               (when (seq headers) (str ", headers:" (into (sorted-map) headers)))))
         (let [response (handler request)]
           (if (map? response)
             (add-cid-into-response request response)
