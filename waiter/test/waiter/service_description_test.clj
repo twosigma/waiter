@@ -386,16 +386,16 @@
                                        "version" "token"}
                                       (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
                                       (str/includes? token "cpus") (assoc "cpus" "1")
+                                      (str/includes? token "fall") (assoc "fallback-period-secs" 600)
                                       (str/includes? token "mem") (assoc "mem" "2")
                                       (str/includes? token "per") (assoc "permitted-user" "puser")
-                                      (str/includes? token "run") (assoc "run-as-user" "ruser")
-                                      (str/includes? token "serfall") (assoc "service-fallback-period-secs" 600))
+                                      (str/includes? token "run") (assoc "run-as-user" "ruser"))
                               {}))]
     (with-redefs [kv/fetch (fn [in-kv-store token]
                              (is (= kv-store in-kv-store))
                              (create-token-data token))]
       (let [service-description-defaults {"name" "default-name" "health-check-url" "/ping"}
-            token-defaults {"service-fallback-period-secs" 300}
+            token-defaults {"fallback-period-secs" 300}
             test-cases (list
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers except run-as-user"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
@@ -409,6 +409,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" 1
                                                "mem" 1024
                                                "cmd" "test-cmd"
@@ -417,7 +418,6 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -434,13 +434,13 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" 1
                                                "mem" 1024
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
                                      :service-description-template {},
-                                     :service-fallback-period-secs 300
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -457,6 +457,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" 1
                                                "mem" 1024
                                                "cmd" "test-cmd"
@@ -465,7 +466,6 @@
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -481,13 +481,13 @@
                           :passthrough-headers {"host" "test-host-no-token" "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" 1
                                                "mem" 1024
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
                                      :service-description-template {},
-                                     :service-fallback-period-secs 300
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -499,11 +499,11 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -515,11 +515,11 @@
                           :passthrough-headers {"host" "test-host" "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-token"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-token" (create-token-data "test-token")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -532,11 +532,11 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-token2"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-token" (create-token-data "test-token")
                                                          "test-token2" (create-token-data "test-token2")}
                                      :token-authentication-disabled false
@@ -548,13 +548,13 @@
                                            "x-waiter-token" "test-token,test-token2,test-cpus-token,test-mem-token"}
                           :passthrough-headers {"host" "test-host" "fee" "foe"}
                           :expected {:defaults {"name" "default-name" "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-mem-token"
                                                                     "cmd" "token-user"
                                                                     "cpus" "1"
                                                                     "mem" "2"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-mem-token" (create-token-data "test-mem-token")
                                                          "test-token" (create-token-data "test-token")
@@ -568,11 +568,11 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -583,11 +583,11 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -598,44 +598,44 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-token-run"
                                                                     "cmd" "token-user"
                                                                     "version" "token"
                                                                     "run-as-user" "ruser"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-token-run" (create-token-data "test-token-run")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence ["test-token-run"]}}
                          {:name "prepare-service-description-sources:Using Token with permitted-user"
-                          :waiter-headers {"x-waiter-token" "test-token-per-serfall"}
+                          :waiter-headers {"x-waiter-token" "test-token-per-fall"}
                           :passthrough-headers {"host" "test-host:1234"
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 600
                                      :headers {}
-                                     :service-description-template {"name" "test-token-per-serfall"
+                                     :service-description-template {"name" "test-token-per-fall"
                                                                     "cmd" "token-user"
                                                                     "version" "token" "permitted-user" "puser"}
-                                     :service-fallback-period-secs 600
-                                     :token->token-data {"test-token-per-serfall" (create-token-data "test-token-per-serfall")}
+                                     :token->token-data {"test-token-per-fall" (create-token-data "test-token-per-fall")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence ["test-token-per-serfall"]}}
+                                     :token-sequence ["test-token-per-fall"]}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user and another token"
                           :waiter-headers {"x-waiter-token" "test-token-per-run"}
                           :passthrough-headers {"host" "test-host:1234"
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-token-per-run"
                                                                     "cmd" "token-user"
                                                                     "version" "token"
                                                                     "run-as-user" "ruser"
                                                                     "permitted-user" "puser"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -646,6 +646,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-cpus-token"
                                                                     "cmd" "token-user"
@@ -653,7 +654,6 @@
                                                                     "cpus" "1"
                                                                     "run-as-user" "ruser"
                                                                     "permitted-user" "puser"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
@@ -666,11 +666,11 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"metadata" {"foo" "bar"
                                                            "baz" "quux"}
                                                "cpus" "1"}
                                      :service-description-template {},
-                                     :service-fallback-period-secs 300
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -682,11 +682,11 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar"}
                                                "cpus" "1"}
                                      :service-description-template {},
-                                     :service-fallback-period-secs 300
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -697,6 +697,7 @@
                           :passthrough-headers {"host" "test-host-allowed-cpus-mem-per-run:1234"}
                           :expected {:defaults {"health-check-url" "/ping"
                                                 "name" "default-name"}
+                                     :fallback-period-secs 300
                                      :headers {"param" {"BAR" "bar-value"
                                                         "FOO" "foo-value"}}
                                      :service-description-template {"allowed-params" #{"BAR" "FOO"}
@@ -707,7 +708,6 @@
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -719,6 +719,7 @@
                           :passthrough-headers {"host" "test-host-allowed-cpus-mem-per-run:1234"}
                           :expected {:defaults {"health-check-url" "/ping"
                                                 "name" "default-name"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "20"
                                                "param" {"BAR" "bar-value"
                                                         "FOO" "foo-value"}}
@@ -730,7 +731,6 @@
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -742,6 +742,7 @@
                           :passthrough-headers {}
                           :expected {:defaults {"health-check-url" "/ping"
                                                 "name" "default-name"}
+                                     :fallback-period-secs 300
                                      :headers {"param" {"BAR" "bar-value"
                                                         "FOO" "foo-value"}}
                                      :service-description-template {"allowed-params" #{"BAR" "FOO"}
@@ -752,7 +753,6 @@
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
                                                                     "version" "token"}
-                                     :service-fallback-period-secs 300
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -764,11 +764,11 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "1"
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
                                      :service-description-template {},
-                                     :service-fallback-period-secs 300
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -782,13 +782,13 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "1"
                                                "env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar"}
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
                                      :service-description-template {},
-                                     :service-fallback-period-secs 300
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -802,13 +802,13 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "1"
                                                "env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar1"}
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar2"}}
                                      :service-description-template {},
-                                     :service-fallback-period-secs 300
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -820,11 +820,11 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "1"
                                                "env" {"1" "quux"
                                                       "FOO-BAR" "bar"}}
                                      :service-description-template {},
-                                     :service-fallback-period-secs 300
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -847,7 +847,7 @@
         waiter-hostname "waiter-hostname.app.example.com"
         test-token "test-token-name"
         service-description-defaults {"name" "default-name" "health-check-url" "/ping"}
-        token-defaults {"service-fallback-period-secs" 300}]
+        token-defaults {"fallback-period-secs" 300}]
     (testing "authentication-disabled token"
       (let [token-description {"authentication" "disabled", "cmd" "a-command", "cpus" "1", "mem" "2", "name" test-token
                                "owner" "token-owner", "permitted-user" "*", "previous" {}, "run-as-user" "ruser", "version" "token"}]
@@ -862,9 +862,9 @@
                           :passthrough-headers passthrough-headers}
                          kv-store waiter-hostname service-description-defaults token-defaults)
                 expected {:defaults service-description-defaults
+                          :fallback-period-secs 300
                           :headers {}
                           :service-description-template (select-keys token-description service-description-keys)
-                          :service-fallback-period-secs 300
                           :token->token-data {test-token token-description}
                           :token-authentication-disabled true
                           :token-preauthorized true
@@ -885,9 +885,9 @@
                           :passthrough-headers passthrough-headers}
                          kv-store waiter-hostname service-description-defaults token-defaults)
                 expected {:defaults service-description-defaults
+                          :fallback-period-secs 300
                           :headers {}
                           :service-description-template (select-keys token-description service-description-keys)
-                          :service-fallback-period-secs 300
                           :token->token-data {test-token token-description}
                           :token-authentication-disabled false
                           :token-preauthorized true

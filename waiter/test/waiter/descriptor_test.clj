@@ -64,17 +64,17 @@
   (let [current-time (t/now)
         current-time-millis (.getMillis ^DateTime current-time)
         descriptor->previous-descriptor (fn [descriptor] (:previous descriptor))
-        service-fallback-period-secs 120
+        fallback-period-secs 120
         search-history-length 5
         time-1 (- current-time-millis (t/in-millis (t/seconds 30)))
         descriptor-1 {:service-id "service-1"
-                      :sources {:service-fallback-period-secs service-fallback-period-secs
+                      :sources {:fallback-period-secs fallback-period-secs
                                 :token->token-data {"test-token" {"last-update-time" time-1}}
                                 :token-sequence ["test-token"]}}
         time-2 (- current-time-millis (t/in-millis (t/seconds 20)))
         descriptor-2 {:previous descriptor-1
                       :service-id "service-2"
-                      :sources {:service-fallback-period-secs service-fallback-period-secs
+                      :sources {:fallback-period-secs fallback-period-secs
                                 :token->token-data {"test-token" {"last-update-time" time-2}}
                                 :token-sequence ["test-token"]}}
         request-time current-time]
@@ -92,7 +92,7 @@
     (let [time-3 (- current-time-millis (t/in-millis (t/seconds 10)))
           descriptor-3 {:previous descriptor-2
                         :service-id "service-3"
-                        :sources {:service-fallback-period-secs service-fallback-period-secs
+                        :sources {:fallback-period-secs fallback-period-secs
                                   :token->token-data {"test-token" {"last-update-time" time-3}}
                                   :token-sequence ["test-token"]}}]
 
@@ -113,7 +113,7 @@
       (testing "no fallback service outside period"
         (let [fallback-state {:available-service-ids #{"service-1" "service-2"}
                               :healthy-service-ids #{"service-1" "service-2"}}
-              request-time (t/plus current-time (t/seconds (* 2 service-fallback-period-secs)))
+              request-time (t/plus current-time (t/seconds (* 2 fallback-period-secs)))
               result-descriptor (retrieve-fallback-descriptor
                                   descriptor->previous-descriptor search-history-length fallback-state request-time descriptor-3)]
           (is (nil? result-descriptor))))
@@ -403,7 +403,7 @@
 (deftest test-descriptor->previous-descriptor
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-id-prefix "service-prefix-"
-        token-defaults {"service-fallback-period-secs" 300}
+        token-defaults {"fallback-period-secs" 300}
         username "test-user"
         metric-group-mappings []
         constraints {"cpus" {:max 100} "mem" {:max 1024}}
@@ -469,8 +469,8 @@
                 :service-id (sd/service-description->service-id service-id-prefix service-description-2)
                 :service-preauthorized false
                 :sources (-> sources
-                             (assoc :service-description-template service-description-2
-                                    :service-fallback-period-secs 300)
+                             (assoc :fallback-period-secs 300
+                                    :service-description-template service-description-2)
                              (update :token->token-data assoc "token-1" service-description-2))
                 :waiter-headers waiter-headers}
                previous-descriptor))
@@ -511,8 +511,8 @@
                                      {"cpus" 20 "permitted-user" username "run-as-user" username}))
                 :service-preauthorized false
                 :sources (-> sources
-                             (assoc :service-description-template service-description-2
-                                    :service-fallback-period-secs 300)
+                             (assoc :fallback-period-secs 300
+                                    :service-description-template service-description-2)
                              (update :token->token-data assoc "token-1" service-description-2))
                 :waiter-headers waiter-headers}
                previous-descriptor))))
@@ -567,10 +567,10 @@
                                  (sd/service-description->service-id service-id-prefix))
                 :service-preauthorized false
                 :sources (-> sources
-                             (assoc :service-description-template
+                             (assoc :fallback-period-secs 300
+                                    :service-description-template
                                     (-> (merge service-description-1 service-description-2p)
-                                        (select-keys sd/service-description-keys))
-                                    :service-fallback-period-secs 300)
+                                        (select-keys sd/service-description-keys)))
                              (update :token->token-data assoc "token-2" service-description-2p))
                 :waiter-headers waiter-headers}
                previous-descriptor))
@@ -588,10 +588,10 @@
                                    (sd/service-description->service-id service-id-prefix))
                   :service-preauthorized false
                   :sources (-> sources
-                               (assoc :service-description-template
+                               (assoc :fallback-period-secs 300
+                                      :service-description-template
                                       (-> (merge service-description-1p service-description-2p)
-                                          (select-keys sd/service-description-keys))
-                                      :service-fallback-period-secs 300)
+                                          (select-keys sd/service-description-keys)))
                                (update :token->token-data assoc "token-2" service-description-2p)
                                (update :token->token-data assoc "token-1" service-description-1p))
                   :waiter-headers waiter-headers}

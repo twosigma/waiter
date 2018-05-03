@@ -912,7 +912,7 @@
                     (let [previous-service-id service-id
                           {:keys [body cookies service-id] :as response}
                           (make-request-with-debug-info
-                            {"host" host-header "x-waiter-service-fallback-period-secs" 0}
+                            {"host" host-header "x-waiter-fallback-period-secs" 0}
                             #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))]
                       (reset! service-id-atom service-id)
                       (is (= "Hello World" body))
@@ -982,15 +982,15 @@
     (let [service-name (rand-name)
           token (create-token-name waiter-url service-name)
           scheduler-syncer-interval-secs (setting waiter-url [:scheduler-syncer-interval-secs])
-          service-fallback-period-secs 30
+          fallback-period-secs 30
           service-description-1 (-> (kitchen-request-headers :prefix "")
-                                    (assoc :name (str service-name "-v1")
+                                    (assoc :fallback-period-secs fallback-period-secs
+                                           :name (str service-name "-v1")
                                            :permitted-user "*"
                                            :run-as-user (retrieve-username)
-                                           :service-fallback-period-secs service-fallback-period-secs
                                            :version "version-1"))
           request-headers {:x-waiter-token token}
-          service-id-headers (assoc request-headers :x-waiter-service-fallback-period-secs 0)
+          service-id-headers (assoc request-headers :x-waiter-fallback-period-secs 0)
           kitchen-env-service-id (fn []
                                    (let [kitchen-response (make-request-with-debug-info
                                                             request-headers
@@ -1039,7 +1039,7 @@
                 ;; fallback to service-id-1
                 (is (= service-id-1 (retrieve-service-id waiter-url request-headers)))
                 (is (= service-id-1 (kitchen-env-service-id)))
-                (thread-sleep service-fallback-period-secs)
+                (thread-sleep fallback-period-secs)
                 ;; outside fallback duration
                 (is (= service-id-2 (kitchen-env-service-id)))
                 ;; allow syncer state to get updated
@@ -1061,7 +1061,7 @@
                     ;; fallback to service-id-2
                     (is (= service-id-2 (retrieve-service-id waiter-url request-headers)))
                     (is (= service-id-2 (kitchen-env-service-id)))
-                    (thread-sleep service-fallback-period-secs)
+                    (thread-sleep fallback-period-secs)
                     ;; outside fallback duration
                     (is (= service-id-3 (kitchen-env-service-id)))
                     ;; delete service-id-3 to trigger fallback logic on next request

@@ -592,12 +592,13 @@
                             "root" token-root))
                  (kv/fetch kv-store token)))))
 
-      (testing "post:new-user-metadata:service-fallback-period-secs"
+      (testing "post:new-user-metadata:fallback-period-secs"
         (let [token (str token (rand-int 100000))
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:service-fallback-period-secs 120
-                                     :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*" :token token})
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
+                                     :fallback-period-secs 120
+                                     :token token})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
@@ -618,17 +619,17 @@
                             "root" token-root))
                  (kv/fetch kv-store token)))))
 
-      (testing "post:edit-user-metadata:service-fallback-period-secs"
+      (testing "post:edit-user-metadata:fallback-period-secs"
         (let [token (str token (rand-int 100000))
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description-1 (walk/stringify-keys
                                       {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
-                                       :service-fallback-period-secs 120
+                                       :fallback-period-secs 120
                                        :last-update-time (- (clock-millis) 1000) :owner auth-user
                                        :token token})
               _ (kv/store kv-store token service-description-1)
               service-description-2 (-> service-description-1
-                                        (assoc "service-fallback-period-secs" 120)
+                                        (assoc "fallback-period-secs" 120)
                                         (dissoc "last-update-time" "owner"))
               {:keys [body status]}
               (run-handle-token-request
@@ -1270,10 +1271,10 @@
              "Individual params must be made up of letters, numbers, and underscores and must start with a letter."
              "Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."])))
 
-      (testing "post:new-user-metadata:bad-service-fallback-period-secs"
+      (testing "post:new-user-metadata:bad-fallback-period-secs"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:service-fallback-period-secs "bad" :token "abcdefgh"})
+                                    {:fallback-period-secs "bad" :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
@@ -1284,7 +1285,7 @@
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
-          (is (str/includes? (str details) "service-fallback-period-secs") body)
+          (is (str/includes? (str details) "fallback-period-secs") body)
           (is (str/includes? message "User metadata validation failed") body))))))
 
 (deftest test-store-service-description

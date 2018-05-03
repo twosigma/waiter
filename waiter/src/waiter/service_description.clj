@@ -90,7 +90,7 @@
    s/Str s/Any})
 
 (def user-metadata-schema
-  {(s/optional-key "service-fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/hours 1))) 'at-most-1-hour))
+  {(s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/hours 1))) 'at-most-1-hour))
    s/Str s/Any})
 
 (def ^:const service-required-keys (->> (keys service-description-schema)
@@ -120,7 +120,7 @@
 (def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "owner" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
-(def ^:const user-metadata-keys #{"service-fallback-period-secs"})
+(def ^:const user-metadata-keys #{"fallback-period-secs"})
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
@@ -555,8 +555,8 @@
   (let [merged-token-data (->> (token-sequence->merged-data token->token-data token-sequence)
                                (merge token-defaults))
         service-description-template (select-keys merged-token-data service-description-keys)]
-    {:service-description-template service-description-template
-     :service-fallback-period-secs (get merged-token-data "service-fallback-period-secs")
+    {:fallback-period-secs (get merged-token-data "fallback-period-secs")
+     :service-description-template service-description-template
      :token->token-data token->token-data
      :token-authentication-disabled (and (= 1 (count token-sequence))
                                          (token-authentication-disabled? service-description-template))

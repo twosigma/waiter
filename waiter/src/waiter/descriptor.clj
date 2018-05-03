@@ -124,11 +124,11 @@
   [fallback-state service-id]
   (-> fallback-state :healthy-service-ids (contains? service-id)))
 
-(defn descriptor->service-fallback-period-secs
-  "Retrieves the service-fallback-period-secs for the given descriptor."
+(defn descriptor->fallback-period-secs
+  "Retrieves the fallback-period-secs for the given descriptor."
   [descriptor]
-  (or (get-in descriptor [:waiter-headers "x-waiter-service-fallback-period-secs"])
-      (get-in descriptor [:sources :service-fallback-period-secs] 0)))
+  (or (get-in descriptor [:waiter-headers "x-waiter-fallback-period-secs"])
+      (get-in descriptor [:sources :fallback-period-secs] 0)))
 
 (defn retrieve-fallback-descriptor
   "Computes the fallback descriptor with a healthy instance based on the provided descriptor.
@@ -138,11 +138,11 @@
   [descriptor->previous-descriptor search-history-length fallback-state request-time descriptor]
   (when (-> descriptor :sources :token-sequence seq)
     (let [{{:keys [token->token-data]} :sources} descriptor
-          service-fallback-period-secs (descriptor->service-fallback-period-secs descriptor)]
-      (when (and (pos? service-fallback-period-secs)
+          fallback-period-secs (descriptor->fallback-period-secs descriptor)]
+      (when (and (pos? fallback-period-secs)
                  (let [most-recently-modified-token (sd/retrieve-most-recently-modified-token token->token-data)
                        token-last-update-time (get-in token->token-data [most-recently-modified-token "last-update-time"] 0)]
-                   (->> (t/seconds service-fallback-period-secs)
+                   (->> (t/seconds fallback-period-secs)
                         (t/plus (tc/from-long token-last-update-time))
                         (t/before? request-time))))
         (loop [iteration 1

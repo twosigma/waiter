@@ -533,7 +533,7 @@
                 ;; Default values associated with tokens while resolving the service description
                 :token-defaults {
                                  ;; The default period (minutes) for which an instance from a fallback service can be requested:
-                                 "service-fallback-period-secs" 300}}
+                                 "fallback-period-secs" 300}}
 
  ;; Waiter supports making websocket connections to backends.
  ;; The maximum binary and text message sizes in the websocket request or response can be configured
