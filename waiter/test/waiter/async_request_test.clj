@@ -311,7 +311,7 @@
                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
                                 service-id metric-group instance reason-map request-properties location query-string)]
         (is (get @async-request-store-atom request-id))
-        (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location)
+        (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location "?" query-string)
                (get headers "location")))
         (let [complete-async-request-fn @complete-async-request-atom]
           (is complete-async-request-fn)

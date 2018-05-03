@@ -237,15 +237,18 @@
 (defn inspect-for-202-async-request-response
   "Helper function that inspects the response and triggers async-request post processing."
   [{:keys [headers status] :as response} post-process-async-request-response-fn instance-request-properties
-   service-id metric-group instance endpoint {:keys [query-string] :as request} reason-map reservation-status-promise]
+   service-id metric-group instance endpoint request reason-map reservation-status-promise]
   (let [location-header (str (get headers "location"))
+        [endpoint _] (str/split endpoint #"\?" 2)
+        [location-header query-string] (str/split location-header #"\?" 2)
         location (async-req/normalize-location-header endpoint location-header)]
     (if (= status 202)
       (if (str/starts-with? location "/")
         (let [auth-user-map (handler/make-auth-user-map request)]
           (deliver reservation-status-promise :success-async) ;; backend is processing as an asynchronous request
           (post-process-async-request-response-fn
-            response service-id metric-group instance auth-user-map reason-map instance-request-properties location query-string))
+            response service-id metric-group instance auth-user-map reason-map instance-request-properties
+            location query-string))
         (do
           (log/info "response status 202, not treating as an async request as location is" location)
           response))

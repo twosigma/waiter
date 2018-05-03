@@ -259,11 +259,11 @@
                {:authorization/user "test-user"}
                {:status 202 :headers {"location" "result/location"}}))))
     (testing "202-relative-location-two-levels"
-      (is (= {:auth-user "test-user" :location "/result/location" :query-string "a=b&c=d|e" :result :success-async}
+      (is (= {:auth-user "test-user" :location "/result/location" :query-string "p=q&r=s|t" :result :success-async}
              (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
+               "http://www.example.com:1234/query/for/status?u=v&w=x|y|z"
                {:authorization/user "test-user" :query-string "a=b&c=d|e"}
-               {:status 202 :headers {"location" "../../result/location"}}))))
+               {:status 202 :headers {"location" "../../result/location?p=q&r=s|t"}}))))
     (testing "202-absolute-url-same-host-port"
       (is (= {:auth-user "test-user" :location "/retrieve/result/location" :query-string nil :result :success-async}
              (execute-inspect-for-202-async-request-response
