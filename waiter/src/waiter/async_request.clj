@@ -141,7 +141,7 @@
    It also modifies the status check endpoint in the response header."
   [router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
    service-id metric-group {:keys [host port] :as instance}
-   {:keys [request-id] :as reason-map} request-properties location]
+   {:keys [request-id] :as reason-map} request-properties location query-string]
   (let [correlation-id (cid/get-correlation-id)
         status-endpoint (scheduler/end-point-url instance location)
         _ (log/info "status endpoint for async request is" status-endpoint)
@@ -153,7 +153,7 @@
     ;; trigger execution of monitoring system
     (letfn [(make-get-request-fn []
               (counters/inc! (metrics/service-counter service-id "request-counts" "async-monitor"))
-              (let [request-stub {:body nil, :headers {}, :request-method :get}]
+              (let [request-stub {:body nil :headers {} :query-string query-string :request-method :get}]
                 (make-http-request-fn instance request-stub location metric-group)))
             (release-instance-fn [status]
               (log/info "decrementing outstanding requests as an async request has completed:" status)

@@ -688,8 +688,9 @@
    :make-http-request-fn (pc/fnk [[:settings instance-request-properties]
                                   [:state http-client]
                                   make-basic-auth-fn service-id->password-fn]
-                           (handler/async-make-request-helper http-client instance-request-properties make-basic-auth-fn service-id->password-fn
-                                                              pr/prepare-request-properties pr/make-request))
+                           (handler/async-make-request-helper
+                             http-client instance-request-properties make-basic-auth-fn service-id->password-fn
+                             pr/prepare-request-properties pr/make-request))
    :make-inter-router-requests-async-fn (pc/fnk [[:curator discovery]
                                                  [:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state http-client passwords router-id]
@@ -719,10 +720,11 @@
    :post-process-async-request-response-fn (pc/fnk [[:state async-request-store-atom instance-rpc-chan router-id]
                                                     make-http-request-fn]
                                              (fn post-process-async-request-response-wrapper
-                                               [response service-id metric-group instance _ reason-map request-properties location]
+                                               [response service-id metric-group instance _ reason-map request-properties
+                                                location query-string]
                                                (async-req/post-process-async-request-response
                                                  router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
-                                                 service-id metric-group instance reason-map request-properties location)))
+                                                 service-id metric-group instance reason-map request-properties location query-string)))
    :prepend-waiter-url (pc/fnk [[:settings port hostname]]
                          (let [hostname (if (sequential? hostname) (first hostname) hostname)]
                            (fn [endpoint-url]

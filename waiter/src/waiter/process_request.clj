@@ -234,26 +234,18 @@
       http-client make-basic-auth-fn request-method instance-endpoint query-string headers body service-password
       (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size)))
 
-(defn- append-query-string
-  "Appends the query string (when not blank) to the endpoint."
-  [endpoint query-string]
-  (cond-> endpoint
-          (not (str/blank? query-string)) (str "?" query-string)))
-
 (defn inspect-for-202-async-request-response
   "Helper function that inspects the response and triggers async-request post processing."
   [{:keys [headers status] :as response} post-process-async-request-response-fn instance-request-properties
    service-id metric-group instance endpoint {:keys [query-string] :as request} reason-map reservation-status-promise]
   (let [location-header (str (get headers "location"))
-        instance-endpoint (append-query-string endpoint query-string)
-        location (async-req/normalize-location-header instance-endpoint location-header)]
+        location (async-req/normalize-location-header endpoint location-header)]
     (if (= status 202)
       (if (str/starts-with? location "/")
-        (do
+        (let [auth-user-map (handler/make-auth-user-map request)]
           (deliver reservation-status-promise :success-async) ;; backend is processing as an asynchronous request
-          (post-process-async-request-response-fn response service-id metric-group instance
-                                                  (handler/make-auth-user-map request) reason-map
-                                                  instance-request-properties location))
+          (post-process-async-request-response-fn
+            response service-id metric-group instance auth-user-map reason-map instance-request-properties location query-string))
         (do
           (log/info "response status 202, not treating as an async request as location is" location)
           response))

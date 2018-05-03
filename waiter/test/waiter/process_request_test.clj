@@ -208,8 +208,9 @@
             (let [reservation-status-promise (promise)
                   post-process-data (atom {})
                   post-process-async-request-response-fn
-                  (fn [_ _ _ _ auth-user _ _ location]
-                    (reset! post-process-data {:auth-user (:username auth-user), :location location}))]
+                  (fn [_ _ _ _ auth-user _ _ location query-string]
+                    (reset! post-process-data
+                            {:auth-user (:username auth-user) :location location :query-string query-string}))]
               (inspect-for-202-async-request-response
                 response post-process-async-request-response-fn {} "service-id" "metric-group" {}
                 endpoint request {} reservation-status-promise)
@@ -220,7 +221,7 @@
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {}}))))
+               {:status 202 :headers {}}))))
     (testing "200-not-async"
       (is (= {:result :not-async}
              (execute-inspect-for-202-async-request-response
@@ -240,47 +241,47 @@
                {:authorization/user "test-user"}
                {:status 404, :headers {"location" "/result/location"}}))))
     (testing "202-absolute-location"
-      (is (= {:auth-user "test-user", :location "/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/result/location" :query-string nil :result :success-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "/result/location"}}))))
+               {:status 202 :headers {"location" "/result/location"}}))))
     (testing "202-relative-location-1"
-      (is (= {:auth-user "test-user", :location "/query/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/query/result/location" :query-string nil :result :success-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "../result/location"}}))))
+               {:status 202 :headers {"location" "../result/location"}}))))
     (testing "202-relative-location-2"
-      (is (= {:auth-user "test-user", :location "/query/for/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/query/for/result/location" :query-string nil :result :success-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "result/location"}}))))
+               {:status 202 :headers {"location" "result/location"}}))))
     (testing "202-relative-location-two-levels"
-      (is (= {:auth-user "test-user", :location "/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/result/location" :query-string "a=b&c=d|e" :result :success-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "../../result/location"}}))))
+               {:authorization/user "test-user" :query-string "a=b&c=d|e"}
+               {:status 202 :headers {"location" "../../result/location"}}))))
     (testing "202-absolute-url-same-host-port"
-      (is (= {:auth-user "test-user", :location "/retrieve/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/retrieve/result/location" :query-string nil :result :success-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "http://www.example.com:1234/retrieve/result/location"}}))))
+               {:status 202 :headers {"location" "http://www.example.com:1234/retrieve/result/location"}}))))
     (testing "202-absolute-url-different-host"
       (is (= {:result :not-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "http://www.example2.com:1234/retrieve/result/location"}}))))
+               {:status 202 :headers {"location" "http://www.example2.com:1234/retrieve/result/location"}}))))
     (testing "202-absolute-url-different-port"
       (is (= {:result :not-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}))))))
+               {:status 202 :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}))))))
 
 (deftest test-make-request
   (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "proto"}
