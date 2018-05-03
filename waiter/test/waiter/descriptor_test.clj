@@ -21,6 +21,61 @@
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
 
+(deftest test-wrap-descriptor
+  (let [latest-service-id "latest-service-id"
+        fallback-service-id "fallback-service-id"
+        default-handler (fn [_] {:status 200})
+        latest-descriptor {:service-id latest-service-id}]
+    (testing "latest-service-request"
+      (let [request {:request-id (str "req-" (rand-int 1000))}
+            descriptor {:service-id latest-service-id}
+            request->descriptor-fn (fn [in-request]
+                                     (is (= request in-request))
+                                     {:descriptor descriptor :latest-descriptor latest-descriptor})
+            started-service-id-promise (promise)
+            start-new-service-fn (fn [in-descriptor]
+                                   (is (= latest-descriptor in-descriptor))
+                                   (deliver started-service-id-promise (:service-id in-descriptor))
+                                   (throw (UnsupportedOperationException. "Not expecting call in test")))
+            fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
+            handler (wrap-descriptor default-handler request->descriptor-fn start-new-service-fn fallback-state-atom)
+            response (handler request)]
+        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status 200} response))
+        (is (= :no-service (deref started-service-id-promise 0 :no-service)))))
+
+    (testing "fallback-with-latest-service-exists"
+      (let [request {:request-id (str "req-" (rand-int 1000))}
+            descriptor {:service-id fallback-service-id}
+            request->descriptor-fn (fn [in-request]
+                                     (is (= request in-request))
+                                     {:descriptor descriptor :latest-descriptor latest-descriptor})
+            started-service-id-promise (promise)
+            start-new-service-fn (fn [in-descriptor]
+                                   (is (= latest-descriptor in-descriptor))
+                                   (deliver started-service-id-promise (:service-id in-descriptor))
+                                   (throw (UnsupportedOperationException. "Not expecting call in test")))
+            fallback-state-atom (atom {:available-service-ids #{latest-service-id} :healthy-service-ids #{}})
+            handler (wrap-descriptor default-handler request->descriptor-fn start-new-service-fn fallback-state-atom)
+            response (handler request)]
+        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status 200} response))
+        (is (= :no-service (deref started-service-id-promise 0 :no-service)))))
+
+    (testing "fallback-with-latest-service-does-not-exist"
+      (let [request {:request-id (str "req-" (rand-int 1000))}
+            descriptor {:service-id fallback-service-id}
+            request->descriptor-fn (fn [in-request]
+                                     (is (= request in-request))
+                                     {:descriptor descriptor :latest-descriptor latest-descriptor})
+            started-service-id-promise (promise)
+            start-new-service-fn (fn [in-descriptor]
+                                   (is (= latest-descriptor in-descriptor))
+                                   (deliver started-service-id-promise (:service-id in-descriptor)))
+            fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
+            handler (wrap-descriptor default-handler request->descriptor-fn start-new-service-fn fallback-state-atom)
+            response (handler request)]
+        (is (= {:descriptor descriptor :latest-service-id latest-service-id :status 200} response))
+        (is (= latest-service-id (deref started-service-id-promise 0 :no-service)))))))
+
 (deftest test-fallback-maintainer
   (let [current-healthy-service-ids #{"service-1" "service-3"}
         current-available-service-ids (set/union current-healthy-service-ids #{"service-5" "service-7"})
@@ -173,8 +228,7 @@
         (fn run-request->descriptor
           [request &
            {:keys [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings search-history-length
-                   service-description-builder service-description-defaults service-id-prefix start-new-service-fn token-defaults
-                   waiter-hostnames]
+                   service-description-builder service-description-defaults service-id-prefix token-defaults waiter-hostnames]
             :or {assoc-run-as-user-approved? (fn [_ _] false)
                  can-run-as? #(= %1 %2)
                  fallback-state-atom (atom {})
@@ -184,11 +238,10 @@
                  service-description-builder (sd/create-default-service-description-builder {})
                  service-description-defaults {}
                  service-id-prefix "service-prefix-"
-                 start-new-service-fn (constantly nil)
                  token-defaults {}
                  waiter-hostnames ["waiter-hostname.app.example.com"]}}]
           (request->descriptor
-            assoc-run-as-user-approved? can-run-as? start-new-service-fn fallback-state-atom kv-store metric-group-mappings
+            assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings
             search-history-length service-description-builder service-description-defaults service-id-prefix token-defaults
             waiter-hostnames request))]
 
@@ -230,24 +283,22 @@
 
     (testing "preauthorized service, permitted to run service-specific-user"
       (let [request {:authorization/user "ru"}
-            service-id "test-service-id"
             descriptor {:service-description {"run-as-user" "su", "permitted-user" "ru"}
                         :service-id "test-service-id"
                         :service-preauthorized true}]
         (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
-               (= {:descriptor descriptor :latest-service-id service-id})
+               (= {:descriptor descriptor :latest-descriptor descriptor})
                is))))
 
     (testing "authentication-disabled service, allow anonymous"
       (let [request {}
-            service-id "test-service-id"
             descriptor {:service-authentication-disabled true
                         :service-id "test-service-id"
                         :service-description {"run-as-user" "su", "permitted-user" "*"}}]
         (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
-               (= {:descriptor descriptor :latest-service-id service-id})
+               (= {:descriptor descriptor :latest-descriptor descriptor})
                is))))
 
     (testing "not authentication-disabled service, no anonymous access"
@@ -262,13 +313,12 @@
 
     (testing "not pre-authorized service, permitted to run service"
       (let [request {:authorization/user "ru"}
-            service-id "test-service-id"
             descriptor {:service-description {"run-as-user" "ru", "permitted-user" "ru"}
                         :service-id "test-service-id"
                         :service-preauthorized false}]
         (with-redefs [compute-descriptor (constantly descriptor)]
           (->> (run-request->descriptor request)
-               (= {:descriptor descriptor :latest-service-id service-id})
+               (= {:descriptor descriptor :latest-descriptor descriptor})
                is))))
 
     (let [curr-service-id (str "test-service-id-" (rand-int 100000))
@@ -292,7 +342,7 @@
                            request
                            :fallback-state-atom fallback-state-atom)]
               (is (= :not-called (deref retrieve-healthy-fallback-promise 0 :not-called)))
-              (is (= {:descriptor descriptor-2 :latest-service-id curr-service-id} result))))))
+              (is (= {:descriptor descriptor-2 :latest-descriptor descriptor-2} result))))))
 
       (testing "unhealthy service with healthy fallback"
         (let [retrieve-healthy-fallback-promise (promise)]
@@ -312,7 +362,7 @@
                            request
                            :fallback-state-atom fallback-state-atom)]
               (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
-              (is (= {:descriptor descriptor-1a :latest-service-id curr-service-id} result))))))
+              (is (= {:descriptor descriptor-1a :latest-descriptor descriptor-2} result))))))
 
       (testing "unhealthy service with healthy fallback - unauthorized to run"
         (let [retrieve-healthy-fallback-promise (promise)]
@@ -370,7 +420,7 @@
                            request
                            :fallback-state-atom fallback-state-atom)]
               (is (= :called (deref retrieve-healthy-fallback-promise 0 :not-called)))
-              (is (= {:descriptor descriptor-2 :latest-service-id curr-service-id} result)))))))))
+              (is (= {:descriptor descriptor-2 :latest-descriptor descriptor-2} result)))))))))
 
 (deftest test-missing-run-as-user?
   (let [exception (ex-info "Test exception" {})]

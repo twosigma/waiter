@@ -435,7 +435,10 @@
                                    (ex-info "Test exception" {:type :service-description-error
                                                               :issue {"run-as-user" "missing-required-key"}
                                                               :x-waiter-headers {"queue-length" 100}})))
-        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn)]
+        start-new-service-fn (constantly nil)
+        fallback-state-atom (atom {})
+        handler (-> (fn [_] {:status 200})
+                    (descriptor/wrap-descriptor request->descriptor-fn start-new-service-fn fallback-state-atom))]
     (testing "with-query-params"
       (let [request {:headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
             {:keys [headers status]} (handler request)]
@@ -456,8 +459,11 @@
 
 (deftest test-no-redirect-on-process-error
   (let [request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
+        start-new-service-fn (constantly nil)
+        fallback-state-atom (atom {})
+        handler (-> (fn [_] {:status 200})
+                    (descriptor/wrap-descriptor request->descriptor-fn start-new-service-fn fallback-state-atom))
         request {}
-        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn)
         {:keys [body headers status]} (handler request)]
     (is (= 500 status))
     (is (nil? (get headers "location")))
@@ -466,8 +472,11 @@
 
 (deftest test-message-reaches-user-on-process-error
   (let [request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status 404})))
+        start-new-service-fn (constantly nil)
+        fallback-state-atom (atom {})
+        handler (-> (fn [_] {:status 200})
+                    (descriptor/wrap-descriptor request->descriptor-fn start-new-service-fn fallback-state-atom))
         request {}
-        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn)
         {:keys [body headers status]} (handler request)]
     (is (= 404 status))
     (is (= "text/plain" (get headers "content-type")))
