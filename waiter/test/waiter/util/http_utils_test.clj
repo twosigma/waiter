@@ -8,12 +8,12 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.mesos.utils-test
+(ns waiter.util.http-utils-test
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.test :refer :all]
             [qbits.jet.client.http :as http]
-            [waiter.mesos.utils :refer :all])
+            [waiter.util.http-utils :refer :all])
   (:import clojure.lang.ExceptionInfo))
 
 (deftest test-http-request

@@ -19,7 +19,7 @@
             [slingshot.slingshot :as ss]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
-            [waiter.mesos.utils :as mesos-utils]
+            [waiter.util.http-utils :as http-utils]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
@@ -418,7 +418,7 @@
          (not (str/blank? home-path-prefix))]}
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
-  (let [http-client (mesos-utils/http-client-factory http-options)
+  (let [http-client (http-utils/http-client-factory http-options)
         marathon-api (marathon/api-factory http-client http-options url)
         mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})
