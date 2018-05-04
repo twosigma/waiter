@@ -8,7 +8,7 @@
 ;;       The copyright notice above does not evidence any
 ;;       actual or intended publication of such source code.
 ;;
-(ns waiter.mesos.utils
+(ns waiter.util.http-utils
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.walk :as walk]

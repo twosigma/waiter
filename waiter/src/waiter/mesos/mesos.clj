@@ -9,7 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.mesos.mesos
-  (:require [waiter.mesos.utils :as mesos-utils])
+  (:require [waiter.util.http-utils :as http-utils])
   (:import org.eclipse.jetty.client.HttpClient))
 
 (defrecord MesosApi [^HttpClient http-client spnego-auth slave-port slave-directory])
@@ -29,7 +29,7 @@
 (defn list-directory-content
   "Lists files and directories contained in the path."
   [{:keys [http-client slave-port spnego-auth]} host directory]
-  (mesos-utils/http-request http-client (str "http://" host ":" slave-port "/files/browse")
+  (http-utils/http-request http-client (str "http://" host ":" slave-port "/files/browse")
                             :query-string {"path" directory}
                             :request-method :get
                             :spnego-auth spnego-auth
@@ -45,7 +45,7 @@
   "Returns information about the frameworks, executors and the agent’s master."
   [{:keys [http-client slave-port spnego-auth]} host]
   (when (and slave-port host)
-    (mesos-utils/http-request http-client (str "http://" host ":" slave-port "/state.json")
+    (http-utils/http-request http-client (str "http://" host ":" slave-port "/state.json")
                               :request-method :get
                               :spnego-auth spnego-auth
                               :throw-exceptions false)))
