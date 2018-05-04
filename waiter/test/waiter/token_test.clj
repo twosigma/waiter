@@ -381,7 +381,7 @@
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
-          (is (str/includes? body (str "Successfully created " token)))
+          (is (str/includes? body (str "Successfully updated " token)))
           (is (= (select-keys service-description-2 sd/token-data-keys)
                  (sd/token->service-description-template kv-store token)))
           (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
@@ -405,7 +405,7 @@
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
-          (is (str/includes? body (str "Successfully created " token)))
+          (is (str/includes? body (str "Successfully updated " token)))
           (is (= (select-keys service-description-2 sd/token-data-keys)
                  (sd/token->service-description-template kv-store token)))
           (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
@@ -430,7 +430,7 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
-          (is (str/includes? body (str "Successfully created " token)))
+          (is (str/includes? body (str "Successfully updated " token)))
           (is (= (select-keys service-description-2 sd/token-data-keys)
                  (sd/token->service-description-template kv-store token)))
           (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
@@ -639,7 +639,7 @@
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
-          (is (str/includes? body (str "Successfully created " token)))
+          (is (str/includes? body (str "Successfully updated " token)))
           (is (= (-> service-description-2 (select-keys sd/service-description-keys) sd/transform-allowed-params-token-entry)
                  (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
           (is (= (-> service-description-2
@@ -667,7 +667,7 @@
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 200 status))
-          (is (str/includes? body "Successfully created test-token"))
+          (is (str/includes? body "Successfully updated test-token"))
           (is (= (-> service-description
                      (dissoc "token")
                      (assoc "last-update-time" (clock-millis)
@@ -692,7 +692,7 @@
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 200 status))
-          (is (str/includes? body "Successfully created test-token"))
+          (is (str/includes? body "Successfully updated test-token"))
           (is (= (-> service-description
                      (dissoc "token")
                      (assoc "last-update-time" (clock-millis)
@@ -777,7 +777,7 @@
                      :headers {"x-waiter-token" token}
                      :request-method :post})]
               (is (= 200 status))
-              (is (str/includes? body "Successfully created test-token"))
+              (is (str/includes? body "Successfully updated test-token"))
               (is (= (-> service-description
                          (dissoc "token")
                          (assoc "cpus" iteration

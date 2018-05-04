@@ -425,11 +425,15 @@
       (make-peer-requests-fn "tokens/refresh"
                              :method :post
                              :body (json/write-str {:token token, :owner owner}))
-      (utils/map->json-response {:message (str "Successfully created " token)
-                                 :service-description new-service-description-template}
-                                :headers {"etag" (-> {:service-description-template new-service-description-template
-                                                      :token-metadata new-token-metadata}
-                                                     token-description->token-hash)}))))
+      (let [creation-mode (if (and (seq existing-token-metadata)
+                                   (not (get existing-token-metadata "deleted")))
+                            "updated "
+                            "created ")]
+        (utils/map->json-response {:message (str "Successfully " creation-mode token)
+                                   :service-description new-service-description-template}
+                                  :headers {"etag" (-> {:service-description-template new-service-description-template
+                                                        :token-metadata new-token-metadata}
+                                                       token-description->token-hash)})))))
 
 (defn handle-token-request
   "Ring handler for dealing with tokens.
