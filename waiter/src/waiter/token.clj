@@ -47,7 +47,7 @@
   "Validates whether the token modification should be allowed on based on the provided token version-hash."
   [{:keys [token-metadata] :as token-description} version-hash]
   (when version-hash
-    (when (not= (token-description->token-hash token-description) (str version-hash))
+    (when (not= (str (token-description->token-hash token-description)) (str version-hash))
       (throw (ex-info "Cannot modify stale token"
                       {:provided-version version-hash
                        :status 412
