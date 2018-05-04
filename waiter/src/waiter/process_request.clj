@@ -10,7 +10,6 @@
 ;;
 (ns waiter.process-request
   (:require [clojure.core.async :as async]
-            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
