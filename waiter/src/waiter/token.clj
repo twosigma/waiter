@@ -14,6 +14,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [schema.core :as s]
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
@@ -80,12 +81,14 @@
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
-    [synchronize-fn kv-store history-length ^String token service-description-template token-metadata & {:keys [version-hash]}]
+    [synchronize-fn kv-store history-length ^String token service-description-template token-metadata &
+     {:keys [version-hash]}]
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "storing service description for token:" token)
-        (let [token-data (merge service-description-template (select-keys token-metadata sd/token-metadata-keys))
+        (let [token-data (-> (merge service-description-template token-metadata)
+                             (select-keys sd/token-data-keys))
               {:strs [deleted owner] :as new-token-data} (sd/sanitize-service-description token-data sd/token-data-keys)
               existing-token-data (kv/fetch kv-store token :refresh true)
               existing-token-data (if-not (get existing-token-data "deleted") existing-token-data {})
@@ -275,7 +278,7 @@
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
         {:keys [service-description-template token-metadata]} token-description
         token-hash (token-description->token-hash token-description)]
-    (if (and service-description-template (not-empty service-description-template))
+    (if (seq service-description-template)
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
         (log/info "successfully retrieved token " token)
@@ -309,9 +312,10 @@
                                                :body
                                                sd/transform-allowed-params-token-entry)
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
+        new-user-metadata (select-keys new-token-metadata sd/user-metadata-keys)
         {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-description-template}
         (select-keys new-token-data sd/service-description-keys)
-        {existing-token-metadata :token-metadata} (sd/token->token-description kv-store token)
+        existing-token-metadata (sd/token->token-metadata kv-store token :error-on-missing false)
         owner (or (get new-token-metadata "owner")
                   (get existing-token-metadata "owner")
                   authenticated-user)
@@ -324,6 +328,9 @@
       (throw (ex-info "Token must match pattern"
                       {:status 400 :token token :pattern (str valid-token-re)})))
     (validate-service-description-fn new-service-description-template)
+    (when-let [user-metadata-check (s/check sd/user-metadata-schema new-user-metadata)]
+      (throw (ex-info "User metadata validation failed"
+                      {:failed-check user-metadata-check :status 400 :token token})))
     (let [unknown-keys (-> new-token-data
                            keys
                            set

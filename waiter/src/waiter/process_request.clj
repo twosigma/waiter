@@ -9,9 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.process-request
-  (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
-            [clojure.set :as set]
+  (:require [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
@@ -23,19 +21,15 @@
             [qbits.jet.client.http :as http]
             [qbits.jet.servlet :as servlet]
             [slingshot.slingshot :refer [try+]]
-            [try-let :refer [try-let]]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
-            [waiter.middleware :as middleware]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
-            [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
-            [waiter.token :as token]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
@@ -43,8 +37,7 @@
   (:import (java.io InputStream IOException)
            java.util.concurrent.TimeoutException
            org.eclipse.jetty.io.EofException
-           (org.eclipse.jetty.server HttpChannel HttpOutput)
-           (org.joda.time DateTime)))
+           (org.eclipse.jetty.server HttpChannel HttpOutput)))
 
 (defn check-control [control-chan]
   (let [state (au/poll! control-chan :still-running)]
@@ -423,19 +416,6 @@
         (update-in [:headers] (fn update-response-headers [headers]
                                 (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers))))))
 
-(defn missing-run-as-user?
-  "Returns true if the exception is due to a missing run-as-user validation on the service description."
-  [exception]
-  (let [{:keys [issue type x-waiter-headers]} (ex-data exception)]
-    (and (= :service-description-error type)
-         (map? issue)
-         (= 1 (count issue))
-         (= "missing-required-key" (str (get issue "run-as-user")))
-         (-> (keys x-waiter-headers)
-             (set)
-             (set/intersection sd/on-the-fly-service-description-keys)
-             (empty?)))))
-
 (defn track-process-error-metrics
   "Updates metrics for process errors."
   [descriptor]
@@ -444,28 +424,6 @@
         {:strs [metric-group]} service-description]
     (meters/mark! (metrics/service-meter service-id "process-error"))
     (statsd/inc! metric-group "process_error")))
-
-(defn wrap-descriptor
-  "Adds the descriptor to the request/response.
-  Redirects users in the case of missing user/run-as-requestor."
-  [handler request->descriptor-fn]
-  (fn [request]
-    (try-let [descriptor (request->descriptor-fn request)]
-      (let [req-update-fn #(assoc % :descriptor descriptor)
-            res-update-fn #(utils/assoc-if-absent % :descriptor descriptor)
-            handler (middleware/wrap-update handler req-update-fn res-update-fn)]
-        (handler request))
-      (catch Exception e
-        (if (missing-run-as-user? e)
-          (let [{:keys [query-string uri]} request
-                location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
-            (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
-            (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
-            {:headers {"location" location} :status 303})
-          (do
-            ; For consistency with historical data, count errors looking up the descriptor as a "process error"
-            (meters/mark! (metrics/waiter-meter "core" "process-errors"))
-            (utils/exception->response e request)))))))
 
 (defn handle-process-exception
   "Handles an error during process."
@@ -605,42 +563,6 @@
           (-> {:details response-map, :message "Max queue length exceeded", :status 503}
               (utils/data->error-response request)))
         (handler request)))))
-
-(defn request-authorized?
-  "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "
-  [user permitted-user]
-  (log/debug "validating:" (str "permitted=" permitted-user) (str "actual=" user))
-  (or (= token/ANY-USER permitted-user)
-      (= ":any" (str permitted-user)) ; support ":any" for backwards compatibility
-      (and (not (nil? permitted-user)) (= user permitted-user))))
-
-(let [request->descriptor-timer (metrics/waiter-timer "core" "request->descriptor")]
-  (defn request->descriptor
-    "Extract the service descriptor from a request.
-     It also performs the necessary authorization."
-    [service-description-defaults service-id-prefix kv-store waiter-hostnames can-run-as? metric-group-mappings
-     service-description-builder assoc-run-as-user-approved? request]
-    (timers/start-stop-time!
-      request->descriptor-timer
-      (let [auth-user (:authorization/user request)
-            service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
-            {:keys [service-authentication-disabled service-description service-preauthorized] :as descriptor}
-            (sd/request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostnames
-                                    request metric-group-mappings service-description-builder service-approved?)
-            {:strs [run-as-user permitted-user]} service-description]
-        (when-not (or service-authentication-disabled
-                      service-preauthorized
-                      (and auth-user (can-run-as? auth-user run-as-user)))
-          (throw (ex-info "Authenticated user cannot run service"
-                          {:authenticated-user auth-user
-                           :run-as-user run-as-user
-                           :status 403})))
-        (when-not (request-authorized? auth-user permitted-user)
-          (throw (ex-info "This user isn't allowed to invoke this service"
-                          {:authenticated-user auth-user
-                           :service-description service-description
-                           :status 403})))
-        descriptor))))
 
 (defn determine-priority
   "Retrieves the priority Waiter should use to service this request.

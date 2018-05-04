@@ -528,7 +528,12 @@
  :token-config {
                 ;; Configures the amount of history we store for a token.
                 ;; It must be a positive integer.
-                :history-length 5}
+                :history-length 5
+
+                ;; Default values associated with tokens while resolving the service description
+                :token-defaults {
+                                 ;; The default period (minutes) for which an instance from a fallback service can be requested:
+                                 "fallback-period-secs" 300}}
 
  ;; Waiter supports making websocket connections to backends.
  ;; The maximum binary and text message sizes in the websocket request or response can be configured

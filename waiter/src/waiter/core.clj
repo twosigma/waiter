@@ -33,6 +33,7 @@
             [waiter.correlation-id :as cid]
             [waiter.cors :as cors]
             [waiter.curator :as curator]
+            [waiter.descriptor :as descriptor]
             [waiter.discovery :as discovery]
             [waiter.handler :as handler]
             [waiter.headers :as headers]
@@ -481,6 +482,8 @@
                      (utils/create-component cors-config))
    :entitlement-manager (pc/fnk [[:settings entitlement-config]]
                           (utils/create-component entitlement-config))
+   :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
+                                          :healthy-service-ids #{}}))
    :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
                   (http-client-factory connection-timeout-ms))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
@@ -725,13 +728,14 @@
                                endpoint-url
                                (str "http://" hostname ":" port endpoint-url)))))
    :request->descriptor-fn (pc/fnk [[:curator kv-store]
-                                    [:settings metric-group-mappings service-description-defaults]
-                                    [:state service-description-builder service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved?
-                                    can-run-as?-fn]
+                                    [:settings [:token-config history-length token-defaults]  metric-group-mappings service-description-defaults]
+                                    [:state fallback-state-atom service-description-builder service-id-prefix waiter-hostnames]
+                                    assoc-run-as-user-approved? can-run-as?-fn start-new-service-fn]
                              (fn request->descriptor-fn [request]
-                               (pr/request->descriptor service-description-defaults service-id-prefix kv-store waiter-hostnames can-run-as?-fn
-                                                       metric-group-mappings service-description-builder assoc-run-as-user-approved? request)))
+                               (descriptor/request->descriptor
+                                 assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store metric-group-mappings
+                                 history-length service-description-builder service-description-defaults service-id-prefix
+                                 token-defaults waiter-hostnames request)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]
                                {:decryptor (fn router-metrics-decryptor [data] (utils/compressed-bytes->map data password))
@@ -824,6 +828,11 @@
                                     service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
                                     delegate-instance-kill-request-fn scaling-timeout-config))
                                 {}))
+   :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
+                                 scheduler-maintainer]
+                          (let [scheduler-state-mult-chan (:scheduler-state-mult-chan scheduler-maintainer)
+                                scheduler-state-chan (async/tap scheduler-state-mult-chan (au/latest-chan))]
+                            (descriptor/fallback-maintainer scheduler-state-chan fallback-state-atom)))
    :gc-for-transient-metrics (pc/fnk [[:routines router-metrics-helpers]
                                       [:settings metrics-config]
                                       [:state clock local-usage-agent]
@@ -989,23 +998,24 @@
    :blacklisted-instances-list-handler-fn (pc/fnk [[:state instance-rpc-chan]]
                                             (fn blacklisted-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                               (handler/get-blacklisted-instances instance-rpc-chan service-id request)))
-   :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn request->descriptor-fn service-id->password-fn start-new-service-fn]
+   :default-websocket-handler-fn (pc/fnk [[:routines determine-priority-fn service-id->password-fn start-new-service-fn]
                                           [:settings instance-request-properties]
-                                          [:state instance-rpc-chan local-usage-agent passwords websocket-client]]
+                                          [:state instance-rpc-chan local-usage-agent passwords websocket-client]
+                                          wrap-descriptor-fn]
                                    (fn default-websocket-handler-fn [request]
                                      (let [password (first passwords)
                                            make-request-fn (fn make-ws-request
                                                              [instance request request-properties passthrough-headers end-route metric-group]
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
-                                                                              passthrough-headers end-route metric-group))]
-                                       (let [process-request-fn (fn process-request-fn [request]
-                                                                  (pr/process make-request-fn instance-rpc-chan start-new-service-fn
-                                                                              instance-request-properties determine-priority-fn ws/process-response!
-                                                                              ws/abort-request-callback-factory local-usage-agent request))
-                                             handler (-> process-request-fn
-                                                         (ws/wrap-ws-close-on-error)
-                                                         (pr/wrap-descriptor request->descriptor-fn))]
-                                         (ws/request-handler password handler request)))))
+                                                                              passthrough-headers end-route metric-group))
+                                           process-request-fn (fn process-request-fn [request]
+                                                                (pr/process make-request-fn instance-rpc-chan start-new-service-fn
+                                                                            instance-request-properties determine-priority-fn ws/process-response!
+                                                                            ws/abort-request-callback-factory local-usage-agent request))
+                                           handler (-> process-request-fn
+                                                       (ws/wrap-ws-close-on-error)
+                                                       wrap-descriptor-fn)]
+                                       (ws/request-handler password handler request))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
@@ -1027,10 +1037,10 @@
                                    (handler/metrics-request-handler request)))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :process-request-fn (pc/fnk [[:routines determine-priority-fn make-basic-auth-fn post-process-async-request-response-fn
-                                 request->descriptor-fn service-id->password-fn start-new-service-fn]
+                                 service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
                                 [:state http-client instance-rpc-chan local-usage-agent interstitial-state-atom]
-                                wrap-auth-bypass-fn wrap-secure-request-fn]
+                                wrap-auth-bypass-fn wrap-descriptor-fn wrap-secure-request-fn]
                          (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
                                                  (pr/make-request http-client make-basic-auth-fn service-id->password-fn
                                                                   instance request request-properties passthrough-headers end-route metric-group))
@@ -1044,7 +1054,7 @@
                                pr/wrap-suspended-service
                                pr/wrap-response-status-metrics
                                (interstitial/wrap-interstitial interstitial-state-atom)
-                               (pr/wrap-descriptor request->descriptor-fn)
+                               wrap-descriptor-fn
                                wrap-secure-request-fn
                                wrap-auth-bypass-fn)))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
@@ -1064,11 +1074,11 @@
                              (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
                                                       generate-log-url-fn make-inter-router-requests-sync-fn request))))
    :service-id-handler-fn (pc/fnk [[:curator kv-store]
-                                   [:routines request->descriptor-fn store-service-description-fn]
-                                   wrap-secure-request-fn]
+                                   [:routines store-service-description-fn]
+                                   wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                                (pr/wrap-descriptor request->descriptor-fn)
+                                wrap-descriptor-fn
                                 wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                      [:routines prepend-waiter-url router-metrics-helpers service-id->service-description-fn]
@@ -1290,6 +1300,10 @@
 
                                   :else
                                   (handler request))))))
+   :wrap-descriptor-fn (pc/fnk [[:routines request->descriptor-fn start-new-service-fn]
+                                [:state fallback-state-atom]]
+                         (fn wrap-descriptor-fn [handler]
+                           (descriptor/wrap-descriptor handler request->descriptor-fn start-new-service-fn fallback-state-atom)))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]

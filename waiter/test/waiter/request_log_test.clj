@@ -49,6 +49,7 @@
                              :id "instance-id"
                              :port 123
                              :protocol "instance-proto"}
+                  :latest-service-id "latest-service-id"
                   :status 200}]
     (is (= {:backend-response-latency-ns 1000
             :get-instance-latency-ns 500
@@ -57,12 +58,13 @@
             :instance-id "instance-id"
             :instance-port 123
             :instance-proto "instance-proto"
-            :status 200
+            :latest-service-id "latest-service-id"
+            :metric-group "service-metric-group"
             :principal "principal@DOMAIN.COM"
             :service-id "service-id"
             :service-name "service-name"
             :service-version "service-version"
-            :metric-group "service-metric-group" }
+            :status 200}
            (response->context response)))))
 
 (deftest test-wrap-log

@@ -386,6 +386,7 @@
                                        "version" "token"}
                                       (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
                                       (str/includes? token "cpus") (assoc "cpus" "1")
+                                      (str/includes? token "fall") (assoc "fallback-period-secs" 600)
                                       (str/includes? token "mem") (assoc "mem" "2")
                                       (str/includes? token "per") (assoc "permitted-user" "puser")
                                       (str/includes? token "run") (assoc "run-as-user" "ruser"))
@@ -394,6 +395,7 @@
                              (is (= kv-store in-kv-store))
                              (create-token-data token))]
       (let [service-description-defaults {"name" "default-name" "health-check-url" "/ping"}
+            token-defaults {"fallback-period-secs" 300}
             test-cases (list
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers except run-as-user"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
@@ -407,6 +409,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" 1
                                                "mem" 1024
                                                "cmd" "test-cmd"
@@ -431,6 +434,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" 1
                                                "mem" 1024
                                                "cmd" "test-cmd"
@@ -453,6 +457,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" 1
                                                "mem" 1024
                                                "cmd" "test-cmd"
@@ -476,6 +481,7 @@
                           :passthrough-headers {"host" "test-host-no-token" "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" 1
                                                "mem" 1024
                                                "cmd" "test-cmd"
@@ -493,6 +499,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
@@ -508,6 +515,7 @@
                           :passthrough-headers {"host" "test-host" "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-token"
                                                                     "cmd" "token-user"
@@ -524,6 +532,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-token2"
                                                                     "cmd" "token-user"
@@ -539,6 +548,7 @@
                                            "x-waiter-token" "test-token,test-token2,test-cpus-token,test-mem-token"}
                           :passthrough-headers {"host" "test-host" "fee" "foe"}
                           :expected {:defaults {"name" "default-name" "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-mem-token"
                                                                     "cmd" "token-user"
@@ -558,6 +568,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
@@ -572,6 +583,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-host"
                                                                     "cmd" "token-user"
@@ -586,6 +598,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-token-run"
                                                                     "cmd" "token-user"
@@ -596,25 +609,27 @@
                                      :token-preauthorized false,
                                      :token-sequence ["test-token-run"]}}
                          {:name "prepare-service-description-sources:Using Token with permitted-user"
-                          :waiter-headers {"x-waiter-token" "test-token-per"}
+                          :waiter-headers {"x-waiter-token" "test-token-per-fall"}
                           :passthrough-headers {"host" "test-host:1234"
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 600
                                      :headers {}
-                                     :service-description-template {"name" "test-token-per"
+                                     :service-description-template {"name" "test-token-per-fall"
                                                                     "cmd" "token-user"
                                                                     "version" "token" "permitted-user" "puser"}
-                                     :token->token-data {"test-token-per" (create-token-data "test-token-per")}
+                                     :token->token-data {"test-token-per-fall" (create-token-data "test-token-per-fall")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence ["test-token-per"]}}
+                                     :token-sequence ["test-token-per-fall"]}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user and another token"
                           :waiter-headers {"x-waiter-token" "test-token-per-run"}
                           :passthrough-headers {"host" "test-host:1234"
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-token-per-run"
                                                                     "cmd" "token-user"
@@ -631,6 +646,7 @@
                                                 "fee" "foe"}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"name" "test-cpus-token"
                                                                     "cmd" "token-user"
@@ -650,6 +666,7 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"metadata" {"foo" "bar"
                                                            "baz" "quux"}
                                                "cpus" "1"}
@@ -665,6 +682,7 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar"}
                                                "cpus" "1"}
@@ -679,6 +697,7 @@
                           :passthrough-headers {"host" "test-host-allowed-cpus-mem-per-run:1234"}
                           :expected {:defaults {"health-check-url" "/ping"
                                                 "name" "default-name"}
+                                     :fallback-period-secs 300
                                      :headers {"param" {"BAR" "bar-value"
                                                         "FOO" "foo-value"}}
                                      :service-description-template {"allowed-params" #{"BAR" "FOO"}
@@ -700,6 +719,7 @@
                           :passthrough-headers {"host" "test-host-allowed-cpus-mem-per-run:1234"}
                           :expected {:defaults {"health-check-url" "/ping"
                                                 "name" "default-name"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "20"
                                                "param" {"BAR" "bar-value"
                                                         "FOO" "foo-value"}}
@@ -722,6 +742,7 @@
                           :passthrough-headers {}
                           :expected {:defaults {"health-check-url" "/ping"
                                                 "name" "default-name"}
+                                     :fallback-period-secs 300
                                      :headers {"param" {"BAR" "bar-value"
                                                         "FOO" "foo-value"}}
                                      :service-description-template {"allowed-params" #{"BAR" "FOO"}
@@ -743,6 +764,7 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "1"
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
@@ -760,6 +782,7 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "1"
                                                "env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar"}
@@ -779,6 +802,7 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "1"
                                                "env" {"BAZ" "quux"
                                                       "FOO_BAR" "bar1"}
@@ -796,6 +820,7 @@
                           :passthrough-headers {}
                           :expected {:defaults {"name" "default-name"
                                                 "health-check-url" "/ping"}
+                                     :fallback-period-secs 300
                                      :headers {"cpus" "1"
                                                "env" {"1" "quux"
                                                       "FOO-BAR" "bar"}}
@@ -810,7 +835,7 @@
             (let [actual (prepare-service-description-sources
                            {:passthrough-headers passthrough-headers
                             :waiter-headers waiter-headers}
-                           kv-store waiter-hostnames service-description-defaults)]
+                           kv-store waiter-hostnames service-description-defaults token-defaults)]
               (when (not= expected actual)
                 (println name)
                 (println "Expected: " (into (sorted-map) expected))
@@ -820,7 +845,9 @@
 (deftest test-prepare-service-description-sources-with-authentication-disabled
   (let [kv-store (Object.)
         waiter-hostname "waiter-hostname.app.example.com"
-        test-token "test-token-name"]
+        test-token "test-token-name"
+        service-description-defaults {"name" "default-name" "health-check-url" "/ping"}
+        token-defaults {"fallback-period-secs" 300}]
     (testing "authentication-disabled token"
       (let [token-description {"authentication" "disabled", "cmd" "a-command", "cpus" "1", "mem" "2", "name" test-token
                                "owner" "token-owner", "permitted-user" "*", "previous" {}, "run-as-user" "ruser", "version" "token"}]
@@ -833,8 +860,9 @@
                 actual (prepare-service-description-sources
                          {:waiter-headers waiter-headers
                           :passthrough-headers passthrough-headers}
-                         kv-store waiter-hostname {"name" "default-name" "health-check-url" "/ping"})
-                expected {:defaults {"name" "default-name", "health-check-url" "/ping"}
+                         kv-store waiter-hostname service-description-defaults token-defaults)
+                expected {:defaults service-description-defaults
+                          :fallback-period-secs 300
                           :headers {}
                           :service-description-template (select-keys token-description service-description-keys)
                           :token->token-data {test-token token-description}
@@ -855,8 +883,9 @@
                 actual (prepare-service-description-sources
                          {:waiter-headers waiter-headers
                           :passthrough-headers passthrough-headers}
-                         kv-store waiter-hostname {"name" "default-name" "health-check-url" "/ping"})
-                expected {:defaults {"name" "default-name", "health-check-url" "/ping"}
+                         kv-store waiter-hostname service-description-defaults token-defaults)
+                expected {:defaults service-description-defaults
+                          :fallback-period-secs 300
                           :headers {}
                           :service-description-template (select-keys token-description service-description-keys)
                           :token->token-data {test-token token-description}
@@ -1952,7 +1981,9 @@
   (is (not (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
   (is (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
 
-(deftest test-no-intersection-in-token-service-description-and-metadata
+(deftest test-no-intersection-in-token-request-scope-and-service-description-and-metadata
+  (is (empty? (set/intersection system-metadata-keys user-metadata-keys))
+      "We found common elements in system-metadata-keys and user-metadata-keys!")
   (is (empty? (set/intersection service-description-keys token-metadata-keys))
       "We found common elements in service-description-keys and token-metadata-keys!"))
 
@@ -2002,234 +2033,31 @@
                     :type :service-description-error}
                    (select-keys (ex-data ex) [:friendly-error-message :status :type])))))))))
 
-(deftest test-retrieve-previous-token
-  (testing "all tokens have previous"
-    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
-          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-2-A" "last-update-time" 1200}}
-          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
-                        "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
+(deftest test-retrieve-most-recently-modified-token
+  (testing "all tokens have last-update-time"
+    (let [token-data-1 {"cmd" "c-1-A" "last-update-time" 1100}
+          token-data-2 {"cmd" "c-2-A" "last-update-time" 1200}
+          token-data-3 {"cmd" "c-3-A" "last-update-time" 1000}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-2" (retrieve-previous-token token->token-data)))))
+      (is (= "token-2" (retrieve-most-recently-modified-token token->token-data)))))
 
-  (testing "some tokens have previous"
-    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
-          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500}
-          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
-                        "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
+  (testing "some tokens have last-update-time"
+    (let [token-data-1 {"cmd" "c-1-A" "last-update-time" 1100}
+          token-data-2 {"cmd" "c-2-A"}
+          token-data-3 {"cmd" "c-3-A" "last-update-time" 1000}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-1" (retrieve-previous-token token->token-data)))))
+      (is (= "token-1" (retrieve-most-recently-modified-token token->token-data)))))
 
-  (testing "tokens tied for previous"
-    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-1-A" "last-update-time" 1100}}
-          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500
-                        "previous" {"cmd" "c-2-A" "last-update-time" 1100}}
-          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100
-                        "previous" {"cmd" "c-3-A" "last-update-time" 1000}}
+  (testing "tokens tied for last-update-time"
+    (let [token-data-1 {"cmd" "c-1-A" "last-update-time" 1100}
+          token-data-2 {"cmd" "c-2-A" "last-update-time" 1100}
+          token-data-3 {"cmd" "c-3-A" "last-update-time" 1000}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-2" (retrieve-previous-token (into (sorted-map) token->token-data))))))
+      (is (= "token-2" (retrieve-most-recently-modified-token (into (sorted-map) token->token-data))))))
 
-  (testing "no tokens have previous"
-    (let [token-data-1 {"cmd" "c-1-B" "last-update-time" 1500}
-          token-data-2 {"cmd" "c-2-B" "last-update-time" 1500}
-          token-data-3 {"cmd" "c-3-B" "last-update-time" 1100}
+  (testing "no tokens have last-update-time"
+    (let [token-data-1 {"cmd" "c-1-B"}
+          token-data-2 {"cmd" "c-2-B"}
+          token-data-3 {"cmd" "c-3-B"}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
-      (is (= "token-3" (retrieve-previous-token (into (sorted-map) token->token-data)))))))
-
-(deftest test-descriptor->previous-descriptor
-  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-        service-id-prefix "service-prefix-"
-        username "test-user"
-        metric-group-mappings []
-        constraints {"cpus" {:max 100} "mem" {:max 1024}}
-        builder (create-default-service-description-builder {:constraints constraints})
-        assoc-run-as-user-approved? (constantly false)]
-
-    (testing "no token"
-      (let [sources {:defaults {"permitted-user" "*"}
-                     :headers {}
-                     :service-description-template {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}
-                     :token->token-data {}
-                     :token-authentication-disabled false
-                     :token-preauthorized false
-                     :token-sequence []}
-            passthrough-headers {}
-            waiter-headers {}]
-        (is (nil? (descriptor->previous-descriptor
-                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
-                    {:passthrough-headers passthrough-headers
-                     :sources sources
-                     :waiter-headers waiter-headers})))))
-
-    (testing "single token without previous"
-      (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}
-            sources {:defaults {"permitted-user" "*"}
-                     :headers {}
-                     :service-description-template service-description-1
-                     :token->token-data {"token-1" {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"}}
-                     :token-authentication-disabled false
-                     :token-preauthorized false
-                     :token-sequence ["token-1"]}
-            passthrough-headers {}
-            waiter-headers {}]
-        (is (nil? (descriptor->previous-descriptor
-                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
-                    {:passthrough-headers passthrough-headers
-                     :sources sources
-                     :waiter-headers waiter-headers})))))
-
-    (testing "single token with previous"
-      (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru1" "version" "foo1"}
-            service-description-2 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru2" "version" "foo2"}
-            sources {:defaults {"metric-group" "other" "permitted-user" "*"}
-                     :headers {}
-                     :service-description-template service-description-1
-                     :token->token-data {"token-1" {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"
-                                                    "previous" service-description-2}}
-                     :token-authentication-disabled false
-                     :token-preauthorized false
-                     :token-sequence ["token-1"]}
-            passthrough-headers {}
-            waiter-headers {}
-            previous-descriptor (descriptor->previous-descriptor
-                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
-                                  {:passthrough-headers passthrough-headers
-                                   :sources sources
-                                   :waiter-headers waiter-headers})]
-        (is (= {:core-service-description service-description-2
-                :on-the-fly? nil
-                :passthrough-headers passthrough-headers
-                :service-authentication-disabled false
-                :service-description (merge (:defaults sources) service-description-2)
-                :service-id (service-description->service-id service-id-prefix service-description-2)
-                :service-preauthorized false
-                :sources (-> sources
-                             (assoc :service-description-template service-description-2)
-                             (update :token->token-data assoc "token-1" service-description-2))
-                :waiter-headers waiter-headers}
-               previous-descriptor))
-        (is (nil? (descriptor->previous-descriptor
-                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
-                    previous-descriptor)))))
-
-    (testing "single on-the-fly+token with previous"
-      (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru1" "version" "foo1"}
-            service-description-2 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru2" "version" "foo2"}
-            sources {:defaults {"metric-group" "other" "permitted-user" "*"}
-                     :headers {"cpus" 20}
-                     :on-the-fly? nil ;; invalid value to check if it is ignored and generated in the fallback
-                     :service-description-template service-description-1
-                     :token->token-data {"token-1" {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo"
-                                                    "previous" service-description-2}}
-                     :token-authentication-disabled false
-                     :token-preauthorized false
-                     :token-sequence ["token-1"]}
-            passthrough-headers {}
-            waiter-headers {"x-waiter-cpus" 20}
-            previous-descriptor (descriptor->previous-descriptor
-                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
-                                  {:passthrough-headers passthrough-headers
-                                   :sources sources
-                                   :waiter-headers waiter-headers})]
-        (is (= {:core-service-description (merge service-description-2
-                                                 {"cpus" 20 "permitted-user" username "run-as-user" username})
-                :on-the-fly? true
-                :passthrough-headers passthrough-headers
-                :service-authentication-disabled false
-                :service-description (merge (:defaults sources)
-                                            service-description-2
-                                            {"cpus" 20 "permitted-user" username "run-as-user" username})
-                :service-id (service-description->service-id
-                              service-id-prefix
-                              (merge service-description-2
-                                     {"cpus" 20 "permitted-user" username "run-as-user" username}))
-                :service-preauthorized false
-                :sources (-> sources
-                             (assoc :service-description-template service-description-2)
-                             (update :token->token-data assoc "token-1" service-description-2))
-                :waiter-headers waiter-headers}
-               previous-descriptor))))
-
-    (testing "multiple tokens without previous"
-      (let [service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32}
-            service-description-2 {"run-as-user" "ru" "version" "foo"}
-            sources {:defaults {"permitted-user" "*"}
-                     :headers {}
-                     :service-description-template (merge service-description-1 service-description-2)
-                     :token->token-data {"token-1" service-description-1
-                                         "token-2" service-description-2}
-                     :token-authentication-disabled false
-                     :token-preauthorized false
-                     :token-sequence ["token-1" "token-2"]}
-            passthrough-headers {}
-            waiter-headers {}]
-        (is (nil? (descriptor->previous-descriptor
-                    kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
-                    {:passthrough-headers passthrough-headers
-                     :sources sources
-                     :waiter-headers waiter-headers})))))
-
-    (testing "multiple tokens with previous"
-      (let [service-description-1p {"cmd" "lsp" "cpus" 1 "last-update-time" 1000 "mem" 32}
-            service-description-1 {"cmd" "ls" "cpus" 1 "mem" 32 "previous" service-description-1p}
-            service-description-2p {"last-update-time" 2000 "run-as-user" "rup" "version" "foo"}
-            service-description-2 {"previous" service-description-2p "run-as-user" "ru" "version" "foo"}
-            sources {:defaults {"metric-group" "other" "permitted-user" "*"}
-                     :headers {}
-                     :service-description-template (merge service-description-1 service-description-2)
-                     :token->token-data {"token-1" service-description-1
-                                         "token-2" service-description-2}
-                     :token-authentication-disabled false
-                     :token-preauthorized false
-                     :token-sequence ["token-1" "token-2"]}
-            passthrough-headers {}
-            waiter-headers {}
-            previous-descriptor (descriptor->previous-descriptor
-                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
-                                  {:passthrough-headers passthrough-headers
-                                   :sources sources
-                                   :waiter-headers waiter-headers})]
-        (is (= {:core-service-description (-> (merge service-description-1 service-description-2p)
-                                              (select-keys service-description-keys))
-                :on-the-fly? nil
-                :passthrough-headers passthrough-headers
-                :service-authentication-disabled false
-                :service-description (-> (merge (:defaults sources) service-description-1 service-description-2p)
-                                         (select-keys service-description-keys))
-                :service-id (->> (dissoc (merge service-description-1 service-description-2p) "previous")
-                                 (service-description->service-id service-id-prefix))
-                :service-preauthorized false
-                :sources (-> sources
-                             (assoc :service-description-template
-                                    (-> (merge service-description-1 service-description-2p)
-                                        (select-keys service-description-keys)))
-                             (update :token->token-data assoc "token-2" service-description-2p))
-                :waiter-headers waiter-headers}
-               previous-descriptor))
-        (let [prev-descriptor-2 (descriptor->previous-descriptor
-                                  kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
-                                  previous-descriptor)]
-          (is (= {:core-service-description (-> (merge service-description-1p service-description-2p)
-                                                (select-keys service-description-keys))
-                  :on-the-fly? nil
-                  :passthrough-headers passthrough-headers
-                  :service-authentication-disabled false
-                  :service-description (-> (merge (:defaults sources) service-description-1p service-description-2p)
-                                           (select-keys service-description-keys))
-                  :service-id (->> (dissoc (merge service-description-1p service-description-2p) "previous")
-                                   (service-description->service-id service-id-prefix))
-                  :service-preauthorized false
-                  :sources (-> sources
-                               (assoc :service-description-template
-                                      (-> (merge service-description-1p service-description-2p)
-                                          (select-keys service-description-keys)))
-                               (update :token->token-data assoc "token-2" service-description-2p)
-                               (update :token->token-data assoc "token-1" service-description-1p))
-                  :waiter-headers waiter-headers}
-                 (dissoc prev-descriptor-2 :retrieve-fallback-service-description)))
-          (is (nil? (descriptor->previous-descriptor
-                      kv-store service-id-prefix username metric-group-mappings builder assoc-run-as-user-approved?
-                      prev-descriptor-2))))))))
+      (is (= "token-3" (retrieve-most-recently-modified-token (into (sorted-map) token->token-data)))))))

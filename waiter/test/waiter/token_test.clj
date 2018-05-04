@@ -457,8 +457,10 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-description-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key (disj sd/token-metadata-keys "deleted")]
+            (doseq [key (disj sd/system-metadata-keys "deleted")]
               (is (contains? body-map key) (str "Missing entry for " key)))
+            (doseq [key sd/user-metadata-keys]
+              (is (not (contains? body-map key)) (str "Existing entry for " key)))
             (is (not (contains? body-map "deleted"))))))
 
       (testing "get:updated-service-description:include-foo"
@@ -490,8 +492,10 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-description-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key (disj sd/token-metadata-keys "deleted")]
+            (doseq [key (disj sd/system-metadata-keys "deleted")]
               (is (contains? body-map key) (str "Missing entry for " key)))
+            (doseq [key sd/user-metadata-keys]
+              (is (not (contains? body-map key)) (str "Existing entry for " key)))
             (is (not (contains? body-map "deleted"))))))
 
       (testing "get:updated-service-description:exclude-metadata"
@@ -585,6 +589,66 @@
                      (assoc "last-update-time" (clock-millis)
                             "last-update-user" auth-user
                             "owner" "tu1"
+                            "root" token-root))
+                 (kv/fetch kv-store token)))))
+
+      (testing "post:new-user-metadata:fallback-period-secs"
+        (let [token (str token (rand-int 100000))
+              kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
+                                     :fallback-period-secs 120
+                                     :token token})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :headers {}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (str/includes? body (str "Successfully created " token)))
+          (is (= (-> service-description (select-keys sd/service-description-keys) sd/transform-allowed-params-token-entry)
+                 (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
+          (is (= (-> service-description
+                     sd/transform-allowed-params-token-entry
+                     (dissoc "token")
+                     (assoc "last-update-time" (clock-millis)
+                            "last-update-user" auth-user
+                            "owner" "tu1"
+                            "root" token-root))
+                 (kv/fetch kv-store token)))))
+
+      (testing "post:edit-user-metadata:fallback-period-secs"
+        (let [token (str token (rand-int 100000))
+              kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description-1 (walk/stringify-keys
+                                      {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
+                                       :fallback-period-secs 120
+                                       :last-update-time (- (clock-millis) 1000) :owner auth-user
+                                       :token token})
+              _ (kv/store kv-store token service-description-1)
+              service-description-2 (-> service-description-1
+                                        (assoc "fallback-period-secs" 120)
+                                        (dissoc "last-update-time" "owner"))
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str service-description-2))
+                 :headers {}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (str/includes? body (str "Successfully created " token)))
+          (is (= (-> service-description-2 (select-keys sd/service-description-keys) sd/transform-allowed-params-token-entry)
+                 (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
+          (is (= (-> service-description-2
+                     sd/transform-allowed-params-token-entry
+                     (dissoc "token")
+                     (assoc "last-update-time" (clock-millis)
+                            "last-update-user" auth-user
+                            "owner" "tu1"
+                            "previous" service-description-1
                             "root" token-root))
                  (kv/fetch kv-store token)))))
 
@@ -1205,7 +1269,24 @@
             ["" "HOME" "VAR.1"]
             ["Individual params may not be empty."
              "Individual params must be made up of letters, numbers, and underscores and must start with a letter."
-             "Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."]))))))
+             "Individual params cannot start with MESOS_, MARATHON_, PORT, or WAITER_ and cannot be HOME, USER, LOGNAME."])))
+
+      (testing "post:new-user-metadata:bad-fallback-period-secs"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:fallback-period-secs "bad" :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")))
+          (is (str/includes? (str details) "fallback-period-secs") body)
+          (is (str/includes? message "User metadata validation failed") body))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
