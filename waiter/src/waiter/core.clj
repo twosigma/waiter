@@ -92,6 +92,7 @@
                      "settings" :display-settings-handler-fn
                      "sim" :sim-request-handler
                      "state" [["" :state-all-handler-fn]
+                              ["/fallback" :state-fallback-handler-fn]
                               ["/interstitial" :state-interstitial-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
                               ["/leader" :state-leader-handler-fn]
@@ -1140,6 +1141,13 @@
                                (fn state-all-handler-fn [request]
                                  (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn
                                                            kv-store leader?-fn local-usage-agent request)))))
+   :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
+                                       [:state router-id]
+                                       wrap-secure-request-fn]
+                                (let [fallback-query-chan (:query-chan fallback-maintainer)]
+                                  (wrap-secure-request-fn
+                                    (fn state-fallback-handler-fn [request]
+                                      (handler/get-fallback-state router-id fallback-query-chan request)))))
    :state-interstitial-handler-fn (pc/fnk [[:daemons interstitial-maintainer]
                                            [:state router-id]
                                            wrap-secure-request-fn]

@@ -536,6 +536,23 @@
       (catch Exception ex
         (utils/exception->response ex request)))))
 
+(defn get-fallback-state
+  "Outputs the fallback maintainer state."
+  [router-id fallback-query-chan request]
+  (async/go
+    (try
+      (let [timeout-ms 30000
+            state (let [response-chan (async/promise-chan)]
+                    (async/>! fallback-query-chan {:cid (cid/get-correlation-id) :response-chan response-chan})
+                    (log/info (str "Waiting for response from fallback query channel"))
+                    (async/alt!
+                      response-chan ([state] state)
+                      (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
+        (-> {:router-id router-id :state state}
+            (utils/map->streaming-json-response)))
+      (catch Exception ex
+        (utils/exception->response ex request)))))
+
 (defn get-interstitial-state
   "Outputs the interstitial-store state."
   [router-id interstitial-query-chan request]
