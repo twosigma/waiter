@@ -1003,17 +1003,28 @@
                                      kitchen-service-id))
           waiter-routers (routers waiter-url)
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")
-          await-service-on-routers (fn [service-id maintainer-chan-available]
-                                     (wait-for (fn []
-                                                 (every? (fn [[_ router-url]]
-                                                           (-> (service-state router-url service-id :cookies cookies)
-                                                               :state
-                                                               :app-maintainer-state
-                                                               :maintainer-chan-available
-                                                               (= maintainer-chan-available)))
-                                                         waiter-routers))
-                                               :interval 1
-                                               :timeout (inc scheduler-syncer-interval-secs)))
+          await-healthy-service-on-routers (fn await-healthy-service-on-routers [service-id]
+                                             (wait-for (fn []
+                                                         (every? (fn [[_ router-url]]
+                                                                   (-> (fallback-state router-url :cookies cookies)
+                                                                       :state
+                                                                       :healthy-service-ids
+                                                                       set
+                                                                       (contains? service-id)))
+                                                                 waiter-routers))
+                                                       :interval 1
+                                                       :timeout (inc scheduler-syncer-interval-secs)))
+          await-service-deletion-on-routers (fn await-service-deletion-on-routers [service-id]
+                                              (wait-for (fn []
+                                                          (every? (fn [[_ router-url]]
+                                                                    (-> (service-state router-url service-id :cookies cookies)
+                                                                        :state
+                                                                        :app-maintainer-state
+                                                                        :maintainer-chan-available
+                                                                        false?))
+                                                                  waiter-routers))
+                                                        :interval 1
+                                                        :timeout (inc scheduler-syncer-interval-secs)))
           thread-sleep (fn [time-in-secs] (-> time-in-secs inc t/seconds t/in-millis Thread/sleep))]
       (try
         (let [token-description-1 (assoc service-description-1 :token token)
@@ -1025,7 +1036,7 @@
 
             (is (= service-id-1 (kitchen-env-service-id)))
             ;; allow syncer state to get updated
-            (await-service-on-routers service-id-1 true)
+            (await-healthy-service-on-routers service-id-1)
 
             (let [service-description-2 (assoc service-description-1 :name (str service-name "-v2") :version "version-2")
                   token-description-2 (assoc service-description-2 :token token)
@@ -1043,7 +1054,7 @@
                 ;; outside fallback duration
                 (is (= service-id-2 (kitchen-env-service-id)))
                 ;; allow syncer state to get updated
-                (await-service-on-routers service-id-2 true)
+                (await-healthy-service-on-routers service-id-2)
 
                 (let [sleep-duration (* 2 scheduler-syncer-interval-secs)
                       service-description-3 (-> service-description-1
@@ -1067,7 +1078,7 @@
                     ;; delete service-id-3 to trigger fallback logic on next request
                     (delete-service waiter-url service-id-3)
                     ;; allow syncer state to get updated
-                    (await-service-on-routers service-id-3 false)
+                    (await-service-deletion-on-routers service-id-3)
                     ;; outside fallback duration
                     (is (= service-id-3 (kitchen-env-service-id)))))))))
         (finally

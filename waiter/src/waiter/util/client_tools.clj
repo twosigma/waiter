@@ -399,6 +399,11 @@
     (log/debug endpoint "body:" state-body)
     (try-parse-json state-body)))
 
+(defn fallback-state
+  "Fetches and returns the statsd state."
+  [waiter-url & {:keys [cookies] :or {cookies {}}}]
+  (retrieve-state-helper waiter-url "/state/fallback" :cookies cookies))
+
 (defn interstitial-state
   "Fetches and returns the interstitial state."
   [waiter-url & {:keys [cookies] :or {cookies {}}}]
