@@ -246,7 +246,7 @@
 
 (defn exception->response
   "Converts an exception into a ring response."
-  [^Exception ex {:keys [] :as request}]
+  [^Exception ex request]
   (let [wrapped-ex (wrap-unhandled-exception ex)
         {:keys [friendly-error-message headers message status suppress-logging] :as data} (ex-data wrapped-ex)
         response-msg (or friendly-error-message message (.getMessage wrapped-ex))
