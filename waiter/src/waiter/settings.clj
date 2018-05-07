@@ -317,7 +317,7 @@
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
    :token-config {:history-length 5
-                  :token-defaults {"fallback-period-secs" (-> 4 t/hours t/in-seconds)}}
+                  :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)}}
    :websocket-config {:ws-max-binary-message-size (* 1024 1024 40)
                       :ws-max-text-message-size (* 1024 1024 40)}
    :work-stealing {:offer-help-interval-ms 100
