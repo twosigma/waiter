@@ -750,9 +750,9 @@
         (is (= 500 status))
         (is (str/includes? body "Waiter Error 500"))))))
 
-(deftest test-get-maintainer-state
+(deftest test-get-chan-latest-state-handler
   (let [router-id "test-router-id"
-        test-fn (wrap-async-handler-json-response get-maintainer-state)]
+        test-fn (wrap-async-handler-json-response get-chan-latest-state-handler)]
     (testing "successful response"
       (let [state-chan (async/promise-chan)
             state {"foo" "bar"}
@@ -769,7 +769,8 @@
             router-metrics-state-fn (constantly state)
             {:keys [body status]} (test-fn router-id router-metrics-state-fn {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+        (is (= {"router-id" router-id "state" state}
+               (-> body json/read-str)))))
 
     (testing "exception response"
       (let [router-metrics-state-fn (fn [] (throw (Exception. "Test Exception")))
@@ -777,9 +778,9 @@
         (is (= 500 status))
         (is (str/includes? body "Waiter Error 500"))))))
 
-(deftest test-get-scheduler-state
+(deftest test-get-query-chan-state-handler
   (let [router-id "test-router-id"
-        test-fn (wrap-async-handler-json-response get-scheduler-state)]
+        test-fn (wrap-async-handler-json-response get-query-chan-state-handler)]
     (testing "successful response"
       (let [scheduler-chan (async/promise-chan)
             state {"foo" "bar"}
