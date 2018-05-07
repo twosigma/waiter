@@ -15,6 +15,7 @@
 
 (deftest test-request->context
   (let [request {:headers {"host" "host"
+                           "origin" "www.origin.org"
                            "user-agent" "test-user-agent"
                            "x-cid" "123"}
                  :request-method :post
@@ -27,6 +28,7 @@
     (is (= {:cid "123"
             :host "host"
             :method "POST"
+            :origin "www.origin.org"
             :path "/"
             :query-string "a=1"
             :remote-addr "127.0.0.1"
