@@ -10,7 +10,6 @@
 ;;
 (ns waiter.cookie-support
   (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
             [clojure.core.cache :as cache]
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as str]

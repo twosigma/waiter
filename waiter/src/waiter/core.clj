@@ -732,7 +732,7 @@
    :request->descriptor-fn (pc/fnk [[:curator kv-store]
                                     [:settings [:token-config history-length token-defaults]  metric-group-mappings service-description-defaults]
                                     [:state fallback-state-atom service-description-builder service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? can-run-as?-fn start-new-service-fn]
+                                    assoc-run-as-user-approved? can-run-as?-fn]
                              (fn request->descriptor-fn [request]
                                (descriptor/request->descriptor
                                  assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store metric-group-mappings
