@@ -75,10 +75,11 @@
   (defmethod report :end-test-var [m]
     (let [test-name (full-test-name m)
           elapsed-millis (- (System/currentTimeMillis) (get @start-millis test-name))]
-      (with-test-out
-        (println \tab (blue "FINISH:") test-name (cyan (format-duration elapsed-millis)) @*report-counters*))
       (swap! test-durations #(assoc % test-name elapsed-millis))
       (swap! running-tests #(dissoc % test-name))
+      (with-test-out
+        (println \tab (blue "FINISH:") test-name (cyan (format-duration elapsed-millis))
+                 (assoc @*report-counters* :running (count @running-tests))))
       (log-running-tests)))
 
   (defmethod report :summary [m]
