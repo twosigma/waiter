@@ -48,7 +48,7 @@
           (is (get-in body-json ["headers" "authorization"]) (str body))
           (is (get-in body-json ["headers" "x-waiter-auth-principal"]) (str body))
           (is (get-in body-json ["headers" "x-cid"]) (str body))
-          (is (nil? (get-in body-json ["headers" "content-type"])) (str body))
+          (is (str/blank? (get-in body-json ["headers" "content-type"])) (str body))
           (is (= "0" (get-in body-json ["headers" "content-length"])) (str body))
           (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body))))
 

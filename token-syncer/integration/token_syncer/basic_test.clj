@@ -86,7 +86,7 @@
               ;; ASSERT
               (let [waiter-sync-result (constantly
                                          {:code :success/hard-delete
-                                          :details {:etag token-etag
+                                          :details {:etag (str token-etag)
                                                     :status 200}})
                     expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
                                                                     :description token-description

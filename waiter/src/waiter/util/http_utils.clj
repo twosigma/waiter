@@ -11,6 +11,7 @@
 (ns waiter.util.http-utils
   (:require [clojure.core.async :as async]
             [clojure.data.json :as json]
+            [clojure.string :as str]
             [clojure.walk :as walk]
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
@@ -33,7 +34,7 @@
                             spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
                             accept (assoc :accept accept)
                             body (assoc :body body)
-                            content-type (assoc :content-type content-type)
+                            (not (str/blank? content-type)) (assoc :content-type content-type)
                             (seq headers) (assoc :headers headers)
                             query-string (assoc :query-string query-string))
         raw-response (http/request http-client request-map)
