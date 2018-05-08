@@ -499,146 +499,98 @@
       (catch Exception ex
         (utils/exception->response ex request)))))
 
-(defn- retrieve-maintainer-state
-  "Retrieves the maintainer state"
-  [state-chan timeout-ms]
+(defn- retrieve-channel-state
+  "Retrieves the state reported on the channel."
+  [state-chan]
   (async/go
-    (async/alt!
-      state-chan ([state-data] state-data)
-      (async/timeout timeout-ms) ([_] {:message "Query for router state timed out"})
-      :priority true)))
-
-(defn- retrieve-scheduler-state
-  "Retrieves the scheduler state"
-  [scheduler-chan timeout-ms]
-  (async/go
-    (let [response-chan (async/promise-chan)]
-      (async/>! scheduler-chan {:response-chan response-chan})
-      (async/alt!
-        response-chan ([state] state)
-        (async/timeout timeout-ms) ([_] {:message "Query for scheduler state timed out"})
-        :priority true))))
+    (let [timeout-chan (-> 30 t/seconds t/in-millis async/timeout)]
+      (first (async/alts! [state-chan timeout-chan] :priority true)))))
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [state-chan scheduler-chan router-metrics-state-fn kv-store leader?-fn local-usage-agent request]
+  [router-id state-chan request]
   (async/go
     (try
-      (let [timeout-ms 30000]
-        (-> (async/<! (retrieve-maintainer-state state-chan timeout-ms))
-            (assoc :kv-store (kv/state kv-store)
-                   :leader (leader?-fn)
-                   :local-usage @local-usage-agent
-                   :router-metrics-state (router-metrics-state-fn)
-                   :scheduler (async/<! (retrieve-scheduler-state scheduler-chan timeout-ms))
-                   :statsd (statsd/state))
+      (let [routers (-> state-chan retrieve-channel-state async/<! :routers)
+            host (get-in request [:headers "host"])
+            scheme (some-> request utils/request->scheme name)
+            make-url (fn make-url [path]
+                       (str (when scheme (str scheme "://")) host "/state/" path))]
+        (-> {:details (->> ["fallback" "interstitial" "kv-store" "leader" "local-usage" "maintainer"
+                            "router-metrics" "scheduler" "statsd"]
+                           (pc/map-from-keys make-url))
+             :router-id router-id
+             :routers routers}
             (utils/map->streaming-json-response)))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
-(defn get-fallback-state
-  "Outputs the fallback maintainer state."
-  [router-id fallback-query-chan request]
+(defn get-chan-latest-state-handler
+  "Outputs the latest state of the channel."
+  [router-id state-chan request]
   (async/go
     (try
-      (let [timeout-ms 30000
-            state (let [response-chan (async/promise-chan)]
-                    (async/>! fallback-query-chan {:cid (cid/get-correlation-id) :response-chan response-chan})
-                    (log/info (str "Waiting for response from fallback query channel"))
-                    (async/alt!
-                      response-chan ([state] state)
-                      (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
+      (log/info (str "Waiting for response from state channel"))
+      (let [data (-> state-chan retrieve-channel-state async/<!)
+            state (or data {:message "Request timeout"})]
         (-> {:router-id router-id :state state}
             (utils/map->streaming-json-response)))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
-(defn get-interstitial-state
-  "Outputs the interstitial-store state."
-  [router-id interstitial-query-chan request]
+(defn get-query-chan-state-handler
+  "Outputs the state by sending a standard query to the channel."
+  [router-id query-chan request]
   (async/go
     (try
-      (let [timeout-ms 30000
-            state (let [response-chan (async/promise-chan)]
-                    (async/>! interstitial-query-chan {:cid (cid/get-correlation-id) :response-chan response-chan})
-                    (log/info (str "Waiting for response from interstitial query channel"))
-                    (async/alt!
-                      response-chan ([state] state)
-                      (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
-        (-> {:router-id router-id :state state}
-            (utils/map->streaming-json-response)))
+      (let [timeout-chan (-> 30 t/seconds t/in-millis async/timeout)
+            response-chan (async/promise-chan)]
+        (async/>! query-chan {:cid (cid/get-correlation-id) :response-chan response-chan})
+        (log/info (str "Waiting for response from query channel"))
+        (let [[data _] (async/alts! [response-chan timeout-chan] :priority true)
+              state (or data {:message "Request timeout"})]
+          (-> {:router-id router-id :state state}
+              (utils/map->streaming-json-response))))
       (catch Exception ex
         (utils/exception->response ex request)))))
+
+(defn- get-function-state
+  "Outputs the state obtained by invoking `retrieve-state-fn`."
+  [retrieve-state-fn router-id request]
+  (try
+    (-> {:router-id router-id
+         :state (retrieve-state-fn)}
+        (utils/map->streaming-json-response))
+    (catch Exception ex
+      (utils/exception->response ex request))))
 
 (defn get-kv-store-state
   "Outputs the kv-store state."
   [router-id kv-store request]
-  (try
-    (-> {:router-id router-id
-         :state (kv/state kv-store)}
-        (utils/map->streaming-json-response))
-    (catch Exception ex
-      (utils/exception->response ex request))))
+  (get-function-state #(kv/state kv-store) router-id request))
 
 (defn get-local-usage-state
   "Outputs the local metrics agent state."
-  [router-id local-usage-agent _]
-  (-> {:router-id router-id
-       :state @local-usage-agent}
-      (utils/map->streaming-json-response)))
+  [router-id local-usage-agent request]
+  (get-function-state #(identity @local-usage-agent) router-id request))
 
 (defn get-leader-state
   "Outputs the leader state."
   [router-id leader?-fn leader-id-fn request]
-  (try
-    (-> {:router-id router-id
-         :state {:leader? (leader?-fn)
-                 :leader-id (leader-id-fn)}}
-        (utils/map->streaming-json-response))
-    (catch Exception ex
-      (utils/exception->response ex request))))
-
-(defn get-maintainer-state
-  "Outputs the maintainer state."
-  [router-id state-chan request]
-  (async/go
-    (try
-      (-> {:router-id router-id
-           :state (async/<! (retrieve-maintainer-state state-chan 30000))}
-          (utils/map->streaming-json-response))
-      (catch Exception ex
-        (utils/exception->response ex request)))))
+  (-> (fn leader-state-fn []
+        {:leader? (leader?-fn)
+         :leader-id (leader-id-fn)})
+      (get-function-state router-id request)))
 
 (defn get-router-metrics-state
   "Outputs the router metrics state."
   [router-id router-metrics-state-fn request]
-  (try
-    (-> {:router-id router-id
-         :state (router-metrics-state-fn)}
-        (utils/map->streaming-json-response))
-    (catch Exception ex
-      (utils/exception->response ex request))))
-
-(defn get-scheduler-state
-  "Outputs the scheduler state."
-  [router-id scheduler-chan request]
-  (async/go
-    (try
-      (-> {:router-id router-id
-           :state (async/<! (retrieve-scheduler-state scheduler-chan 30000))}
-          (utils/map->streaming-json-response))
-      (catch Exception ex
-        (utils/exception->response ex request)))))
+  (get-function-state router-metrics-state-fn router-id request))
 
 (defn get-statsd-state
   "Outputs the statsd state."
   [router-id request]
-  (try
-    (-> {:router-id router-id
-         :state (statsd/state)}
-        (utils/map->streaming-json-response))
-    (catch Exception ex
-      (utils/exception->response ex request))))
+  (get-function-state statsd/state router-id request))
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."

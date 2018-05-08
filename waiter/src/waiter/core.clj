@@ -1130,32 +1130,27 @@
                                      (fn service-view-logs-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                        (handler/service-view-logs-handler scheduler service-id generate-log-url-fn request))))
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
-   :state-all-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
-                                  [:daemons router-state-maintainer scheduler-maintainer]
-                                  [:routines router-metrics-helpers]
-                                  [:state local-usage-agent]
+   :state-all-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                  [:state router-id]
                                   wrap-secure-request-fn]
-                           (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
-                                 scheduler-query-chan (:query-chan scheduler-maintainer)
-                                 router-metrics-state-fn (:router-metrics-state-fn router-metrics-helpers)]
+                           (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
                              (wrap-secure-request-fn
                                (fn state-all-handler-fn [request]
-                                 (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn
-                                                           kv-store leader?-fn local-usage-agent request)))))
+                                 (handler/get-router-state router-id state-chan request)))))
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]
                                 (let [fallback-query-chan (:query-chan fallback-maintainer)]
                                   (wrap-secure-request-fn
                                     (fn state-fallback-handler-fn [request]
-                                      (handler/get-fallback-state router-id fallback-query-chan request)))))
+                                      (handler/get-query-chan-state-handler router-id fallback-query-chan request)))))
    :state-interstitial-handler-fn (pc/fnk [[:daemons interstitial-maintainer]
                                            [:state router-id]
                                            wrap-secure-request-fn]
                                     (let [interstitial-query-chan (:query-chan interstitial-maintainer)]
                                       (wrap-secure-request-fn
                                         (fn state-interstitial-handler-fn [request]
-                                          (handler/get-interstitial-state router-id interstitial-query-chan request)))))
+                                          (handler/get-query-chan-state-handler router-id interstitial-query-chan request)))))
    :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
                                        [:state router-id]
                                        wrap-secure-request-fn]
@@ -1179,7 +1174,7 @@
                                   (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
                                     (wrap-secure-request-fn
                                       (fn maintainer-state-handler-fn [request]
-                                        (handler/get-maintainer-state router-id state-chan request)))))
+                                        (handler/get-chan-latest-state-handler router-id state-chan request)))))
    :state-router-metrics-handler-fn (pc/fnk [[:routines router-metrics-helpers]
                                              [:state router-id]
                                              wrap-secure-request-fn]
@@ -1193,7 +1188,7 @@
                                  (let [scheduler-query-chan (:query-chan scheduler-maintainer)]
                                    (wrap-secure-request-fn
                                      (fn scheduler-state-handler-fn [request]
-                                       (handler/get-scheduler-state router-id scheduler-query-chan request)))))
+                                       (handler/get-query-chan-state-handler router-id scheduler-query-chan request)))))
    :state-service-handler-fn (pc/fnk [[:daemons state-query-chans]
                                       [:state instance-rpc-chan local-usage-agent router-id]
                                       wrap-secure-request-fn]

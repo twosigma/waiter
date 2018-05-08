@@ -653,16 +653,12 @@
       (is (= 500 status)))))
 
 (deftest test-get-router-state
-  (let [test-fn (fn [state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-usage-agent request]
+  (let [test-fn (fn [router-id state-chan request]
                   (let [handler (wrap-async-handler-json-response get-router-state)]
-                    (-> (handler state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-usage-agent request)
+                    (-> (handler router-id state-chan request)
                         async/<!!)))
-        kv-store (kv/new-local-kv-store {})
-        leader?-fn (constantly true)
-        local-usage-agent (agent {})
-        router-metrics-fn (fn [] {})
+        router-id "test-router-id"
         state-chan (au/latest-chan)
-        scheduler-chan (au/latest-chan)
         test-complete (atom false)]
 
     (async/go-loop []
@@ -671,30 +667,19 @@
         (async/close! state-chan)
         (recur)))
 
-    (async/go-loop []
-      (let [{:keys [response-chan]} (async/<! scheduler-chan)]
-        (when response-chan
-          (async/>! response-chan {:scheduler-data []})))
-      (if @test-complete
-        (async/close! scheduler-chan)
-        (recur)))
-
     (try
       (testing "Getting router state"
         (testing "should handle exceptions gracefully"
-          (let [state-chan (async/chan)]
-            (async/put! state-chan []) ; vector instead of a map to trigger an error
-            (let [{:keys [status body]}
-                  (->> {}
-                       (test-fn state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-usage-agent))]
-              (is (str/includes? (str body) "Internal error"))
-              (is (= 500 status)))))
+          (let [bad-request {:scheme 1} ;; integer scheme will throw error
+                {:keys [status body]} (test-fn router-id state-chan bad-request)]
+            (is (str/includes? (str body) "Internal error"))
+            (is (= 500 status))))
 
         (testing "display router state"
-          (let [{:keys [status body]}
-                (->> {}
-                     (test-fn state-chan scheduler-chan router-metrics-fn kv-store leader?-fn local-usage-agent))]
-            (is (every? #(str/includes? (str body) %1) ["kv-store", "leader", "router-metrics-state", "scheduler", "state-data", "statsd"])
+          (let [{:keys [status body]} (test-fn router-id state-chan {})]
+            (is (every? #(str/includes? (str body) %1)
+                        ["fallback" "interstitial" "kv-store" "leader" "local-usage" "maintainer" "router-metrics"
+                         "scheduler" "statsd"])
                 (str "Body did not include necessary JSON keys:\n" body))
             (is (= 200 status)))))
 
@@ -750,9 +735,9 @@
         (is (= 500 status))
         (is (str/includes? body "Waiter Error 500"))))))
 
-(deftest test-get-maintainer-state
+(deftest test-get-chan-latest-state-handler
   (let [router-id "test-router-id"
-        test-fn (wrap-async-handler-json-response get-maintainer-state)]
+        test-fn (wrap-async-handler-json-response get-chan-latest-state-handler)]
     (testing "successful response"
       (let [state-chan (async/promise-chan)
             state {"foo" "bar"}
@@ -769,7 +754,8 @@
             router-metrics-state-fn (constantly state)
             {:keys [body status]} (test-fn router-id router-metrics-state-fn {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+        (is (= {"router-id" router-id "state" state}
+               (-> body json/read-str)))))
 
     (testing "exception response"
       (let [router-metrics-state-fn (fn [] (throw (Exception. "Test Exception")))
@@ -777,9 +763,9 @@
         (is (= 500 status))
         (is (str/includes? body "Waiter Error 500"))))))
 
-(deftest test-get-scheduler-state
+(deftest test-get-query-chan-state-handler
   (let [router-id "test-router-id"
-        test-fn (wrap-async-handler-json-response get-scheduler-state)]
+        test-fn (wrap-async-handler-json-response get-query-chan-state-handler)]
     (testing "successful response"
       (let [scheduler-chan (async/promise-chan)
             state {"foo" "bar"}
