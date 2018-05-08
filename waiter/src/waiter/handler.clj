@@ -554,16 +554,6 @@
       (catch Exception ex
         (utils/exception->response ex request)))))
 
-(defn get-kv-store-state
-  "Outputs the kv-store state."
-  [router-id kv-store request]
-  (try
-    (-> {:router-id router-id
-         :state (kv/state kv-store)}
-        (utils/map->streaming-json-response))
-    (catch Exception ex
-      (utils/exception->response ex request))))
-
 (defn- get-function-state
   "Outputs the state obtained by invoking `retrieve-state-fn`."
   [retrieve-state-fn router-id request]
@@ -574,12 +564,15 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
+(defn get-kv-store-state
+  "Outputs the kv-store state."
+  [router-id kv-store request]
+  (get-function-state #(kv/state kv-store) router-id request))
+
 (defn get-local-usage-state
   "Outputs the local metrics agent state."
   [router-id local-usage-agent request]
-  (-> (fn local-usage-state-fn []
-        @local-usage-agent)
-      (get-function-state router-id request)))
+  (get-function-state #(identity @local-usage-agent) router-id request))
 
 (defn get-leader-state
   "Outputs the leader state."
