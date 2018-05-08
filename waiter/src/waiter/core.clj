@@ -1130,18 +1130,13 @@
                                      (fn service-view-logs-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                        (handler/service-view-logs-handler scheduler service-id generate-log-url-fn request))))
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
-   :state-all-handler-fn (pc/fnk [[:curator leader?-fn kv-store]
-                                  [:daemons router-state-maintainer scheduler-maintainer]
-                                  [:routines router-metrics-helpers]
-                                  [:state local-usage-agent]
+   :state-all-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                  [:state router-id]
                                   wrap-secure-request-fn]
-                           (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
-                                 scheduler-query-chan (:query-chan scheduler-maintainer)
-                                 router-metrics-state-fn (:router-metrics-state-fn router-metrics-helpers)]
+                           (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
                              (wrap-secure-request-fn
                                (fn state-all-handler-fn [request]
-                                 (handler/get-router-state state-chan scheduler-query-chan router-metrics-state-fn
-                                                           kv-store leader?-fn local-usage-agent request)))))
+                                 (handler/get-router-state router-id state-chan request)))))
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]
