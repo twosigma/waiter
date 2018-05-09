@@ -652,7 +652,7 @@
 
 (defn shell-scheduler
   "Creates and starts shell scheduler with loops"
-  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range work-directory] :as config}]
+  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range] :as config}]
   (let [{:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler config)
         http-client (http/client {:connect-timeout health-check-timeout-ms
                                   :idle-timeout health-check-timeout-ms})]

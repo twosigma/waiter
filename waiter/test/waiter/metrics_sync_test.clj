@@ -332,10 +332,7 @@
       (is (= (encrypt {:message "Missing source router!", :data {}}) (async/<!! (:out ws-request))))
       (is (nil? (async/<!! (:out ws-request)))))))
 
-; Marked explicit due to:
-; - https://github.com/twosigma/waiter/issues/45
-; - https://travis-ci.org/twosigma/waiter/jobs/250454964#L8663-L8698
-(deftest ^:explicit test-incoming-router-metrics-handler-valid-handshake
+(deftest test-incoming-router-metrics-handler-valid-handshake
   (testing "incoming-router-metrics-handler:valid-handshake"
     (let [decrypt-call-counter (atom 0)
           encrypt (fn [data] {:data data})
@@ -366,7 +363,7 @@
             #(let [out-router-metrics-state @router-metrics-agent]
                (log/debug "router-metrics-state:" out-router-metrics-state)
                (= (str "time-" iteration-limit) (get-in out-router-metrics-state [:last-update-times source-router-id])))
-            :interval 1000, :unit-multiplier 1))
+            :interval 100 :timeout 2000 :unit-multiplier 1))
       (let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)]
         (is (< 1 @decrypt-call-counter iteration-limit)) ; expect throttling
         (is (= {"s1" {:iteration iteration-limit}, "s2" {:iteration iteration-limit}}
@@ -428,7 +425,7 @@
         (let [router-metrics-agent (agent {:router-id "router-0", :version 1})
               encrypt identity
               local-usage-agent (agent {"s1" {"last-request-time" (DateTime. 1000)}
-                                          "s2" {"last-request-time" (DateTime. 2000)}})
+                                        "s2" {"last-request-time" (DateTime. 2000)}})
               {:keys [exit-chan]} (setup-metrics-syncer router-metrics-agent local-usage-agent 10 encrypt)]
           (let [response-chan (async/promise-chan)]
             (reset! response-chan-atom response-chan)

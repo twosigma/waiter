@@ -10,7 +10,6 @@
 ;;
 (ns waiter.scheduler.shell-test
   (:require [clj-time.core :as t]
-            [clj-time.format :as f]
             [clojure.core.async :as async]
             [clojure.java.io :as io]
             [clojure.java.shell :as sh]
@@ -38,6 +37,7 @@
                                                   "cmd" "ls"
                                                   "cpus" 2
                                                   "grace-period-secs" 10
+                                                  "health-check-url" "/health-check-url"
                                                   "mem" 32
                                                   "ports" 1}
                                                  custom-service-description)
@@ -398,6 +398,7 @@
                                         "cmd" "sleep 10000"
                                         "cpus" 2
                                         "grace-period-secs" 10
+                                        "health-check-url" "/health-check-url"
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}
@@ -417,6 +418,7 @@
                                         "cmd" "sleep 10000"
                                         "cpus" 2
                                         "grace-period-secs" 10
+                                        "health-check-url" "/health-check-url"
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}
@@ -436,6 +438,7 @@
                                         "cmd" "sleep 10000"
                                         "cpus" 2
                                         "grace-period-secs" 10
+                                        "health-check-url" "/health-check-url"
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}])
@@ -476,6 +479,7 @@
                                                           "cmd" "ls"
                                                           "cpus" 2
                                                           "grace-period-secs" 10
+                                                          "health-check-url" "/health-check-url"
                                                           "mem" 32
                                                           "ports" 1}
                                     :shell-scheduler/mem 32})
@@ -537,18 +541,16 @@
             (is (= {:num-reserved-ports 11} ex-data))
             (is (= "Unable to reserve 20 ports" (.getMessage ex)))))))))
 
-; Marked explicit due to:
-; - https://github.com/twosigma/waiter/issues/235
-(deftest ^:explicit test-retry-failed-instances
-  (let [scheduler-config {:health-check-timeout-ms 1
+(deftest test-retry-failed-instances
+  (let [scheduler-config {:failed-instance-retry-interval-ms 500
+                          :health-check-interval-ms 500
+                          :health-check-timeout-ms 1
                           :port-grace-period-ms 1
                           :port-range [10000 11000]
-                          :failed-instance-retry-interval-ms 500
-                          :health-check-interval-ms 500
                           :work-directory (work-dir)}
         scheduler (create-shell-scheduler scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
-           (create-test-service scheduler "foo" {"cmd" "sleep 10000" "mem" 0.1})))
+           (create-test-service scheduler "foo" {"cmd" "exit 1" "mem" 0.1})))
     ;; Instance should get marked as failed
     (force-update-service-health scheduler scheduler-config)
     (let [instances (scheduler/get-instances scheduler "foo")]
