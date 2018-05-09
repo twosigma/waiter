@@ -398,6 +398,7 @@
                                         "cmd" "sleep 10000"
                                         "cpus" 2
                                         "grace-period-secs" 10
+                                        "health-check-url" "/health-check-url"
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}
@@ -417,6 +418,7 @@
                                         "cmd" "sleep 10000"
                                         "cpus" 2
                                         "grace-period-secs" 10
+                                        "health-check-url" "/health-check-url"
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}
@@ -436,6 +438,7 @@
                                         "cmd" "sleep 10000"
                                         "cpus" 2
                                         "grace-period-secs" 10
+                                        "health-check-url" "/health-check-url"
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}])
@@ -476,6 +479,7 @@
                                                           "cmd" "ls"
                                                           "cpus" 2
                                                           "grace-period-secs" 10
+                                                          "health-check-url" "/health-check-url"
                                                           "mem" 32
                                                           "ports" 1}
                                     :shell-scheduler/mem 32})
