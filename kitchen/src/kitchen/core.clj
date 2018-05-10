@@ -320,13 +320,15 @@
 
 (defn- request-info-handler
   "Returns the info received in the request."
-  [{:keys [body headers request-method] :as request}]
+  [{:keys [body headers query-string request-method uri]}]
   (when (instance? InputStream body)
     (slurp body))
   {:status 200
    :headers {"Content-Type" "application/json"}
-   :body (json/write-str {:headers headers
-                          :request-method request-method})})
+   :body (json/write-str (cond-> {:request-method request-method
+                                  :uri uri}
+                                 (seq headers) (assoc :headers headers)
+                                 query-string (assoc :query-string query-string)))})
 
 (defn- unchunked-handler
   "Handles requests that may potentially fail, uses unchunked response."
@@ -513,8 +515,12 @@
           (add-cid-into-response [request response]
             (update-in response [:headers "x-cid"] (fn [cid] (or cid (get-in request [:headers "x-cid"])))))]
     (fn correlation-id-middleware-fn [request]
-      (let [{:keys [headers request-method uri] :as request} (-> request add-cid-into-request add-request-id-into-request)]
-        (printlog request (str "request received uri:" uri ", method" request-method ", headers:" (into (sorted-map) headers)))
+      (let [{:keys [headers query-string request-method uri] :as request}
+            (-> request add-cid-into-request add-request-id-into-request)]
+        (printlog request (str "request received uri:" uri
+                               ", method:" request-method
+                               (when query-string (str ", query-string:" query-string))
+                               (when (seq headers) (str ", headers:" (into (sorted-map) headers)))))
         (let [response (handler request)]
           (if (map? response)
             (add-cid-into-response request response)

@@ -28,36 +28,6 @@
   [resource request-method & params]
   {:request-method request-method :uri resource :params (first params)})
 
-(deftest test-http-request-method-get
-  (testing "Test request method: get"
-    (let [dummy-request (request "/run" :get {:a 1 :b 2})]
-      (is (= http/get
-             (request->http-method-fn dummy-request))))))
-
-(deftest test-http-request-method-post
-  (testing "Test request method: post"
-    (let [dummy-request (request "/run" :post {:a 1 :b 2})]
-      (is (= http/post
-             (request->http-method-fn dummy-request))))))
-
-(deftest test-http-request-method-put
-  (testing "Test request method: put"
-    (let [dummy-request (request "/run" :put {:a 1 :b 2})]
-      (is (= http/put
-             (request->http-method-fn dummy-request))))))
-
-(deftest test-http-request-method-delete
-  (testing "Test request method: delete"
-    (let [dummy-request (request "/run" :delete {:a 1 :b 2})]
-      (is (= http/delete
-             (request->http-method-fn dummy-request))))))
-
-(deftest test-http-request-method-head
-  (testing "Test request method: head"
-    (let [dummy-request (request "/run" :head {:a 1 :b 2})]
-      (is (= http/head
-             (request->http-method-fn dummy-request))))))
-
 (deftest test-request->endpoint-without-headers
   (let [legacy-endpoints #{"/secrun"}
         passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
@@ -92,7 +62,7 @@
     (doseq [item test-endpoints]
       (testing (str "Test retrieve endpoint with headers and query string: " item)
         (let [dummy-request (assoc (request item :post {:a 1 :b 2}) :query-string "foo=bar&baz=1234")
-              expected-endpoint (if (contains? legacy-endpoints item) custom-legacy-endpoint (str item "?foo=bar&baz=1234"))]
+              expected-endpoint (if (contains? legacy-endpoints item) custom-legacy-endpoint item)]
           (is (= expected-endpoint
                  (request->endpoint dummy-request waiter-headers))))))))
 
@@ -238,8 +208,9 @@
             (let [reservation-status-promise (promise)
                   post-process-data (atom {})
                   post-process-async-request-response-fn
-                  (fn [_ _ _ _ auth-user _ _ location]
-                    (reset! post-process-data {:auth-user (:username auth-user), :location location}))]
+                  (fn [_ _ _ _ auth-user _ _ location query-string]
+                    (reset! post-process-data
+                            {:auth-user (:username auth-user) :location location :query-string query-string}))]
               (inspect-for-202-async-request-response
                 response post-process-async-request-response-fn {} "service-id" "metric-group" {}
                 endpoint request {} reservation-status-promise)
@@ -250,7 +221,7 @@
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {}}))))
+               {:status 202 :headers {}}))))
     (testing "200-not-async"
       (is (= {:result :not-async}
              (execute-inspect-for-202-async-request-response
@@ -270,47 +241,47 @@
                {:authorization/user "test-user"}
                {:status 404, :headers {"location" "/result/location"}}))))
     (testing "202-absolute-location"
-      (is (= {:auth-user "test-user", :location "/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/result/location" :query-string nil :result :success-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "/result/location"}}))))
+               {:status 202 :headers {"location" "/result/location"}}))))
     (testing "202-relative-location-1"
-      (is (= {:auth-user "test-user", :location "/query/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/query/result/location" :query-string nil :result :success-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "../result/location"}}))))
+               {:status 202 :headers {"location" "../result/location"}}))))
     (testing "202-relative-location-2"
-      (is (= {:auth-user "test-user", :location "/query/for/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/query/for/result/location" :query-string nil :result :success-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "result/location"}}))))
+               {:status 202 :headers {"location" "result/location"}}))))
     (testing "202-relative-location-two-levels"
-      (is (= {:auth-user "test-user", :location "/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/result/location" :query-string "p=q&r=s|t" :result :success-async}
              (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "../../result/location"}}))))
+               "http://www.example.com:1234/query/for/status?u=v&w=x|y|z"
+               {:authorization/user "test-user" :query-string "a=b&c=d|e"}
+               {:status 202 :headers {"location" "../../result/location?p=q&r=s|t"}}))))
     (testing "202-absolute-url-same-host-port"
-      (is (= {:auth-user "test-user", :location "/retrieve/result/location", :result :success-async}
+      (is (= {:auth-user "test-user" :location "/retrieve/result/location" :query-string nil :result :success-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "http://www.example.com:1234/retrieve/result/location"}}))))
+               {:status 202 :headers {"location" "http://www.example.com:1234/retrieve/result/location"}}))))
     (testing "202-absolute-url-different-host"
       (is (= {:result :not-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "http://www.example2.com:1234/retrieve/result/location"}}))))
+               {:status 202 :headers {"location" "http://www.example2.com:1234/retrieve/result/location"}}))))
     (testing "202-absolute-url-different-port"
       (is (= {:result :not-async}
              (execute-inspect-for-202-async-request-response
                "http://www.example.com:1234/query/for/status"
                {:authorization/user "test-user"}
-               {:status 202, :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}))))))
+               {:status 202 :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}))))))
 
 (deftest test-make-request
   (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "proto"}
@@ -365,21 +336,20 @@
                                       app-password)
             http-client (http/client)
             request-method-fn-call-counter (atom 0)]
-        (with-redefs [http-method-fn
-                      (fn [_]
-                        (fn [^HttpClient _ endpoint request-config]
-                          (swap! request-method-fn-call-counter inc)
-                          (is (= expected-endpoint endpoint))
-                          (is (= :bytes (:as request-config)))
-                          (is (:auth request-config))
-                          (is (= "body" (:body request-config)))
-                          (is (= 654321 (:idle-timeout request-config)))
-                          (is (= (-> (dissoc passthrough-headers "expect" "authorization"
-                                             "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                                             "te" "trailers" "transfer-encoding" "upgrade")
-                                     (merge {"x-waiter-auth-principal" "test-user"
-                                             "x-waiter-authenticated-principal" "test-user@test.com"}))
-                                 (:headers request-config)))))]
+        (with-redefs [http/request
+                      (fn [^HttpClient _ request-config]
+                        (swap! request-method-fn-call-counter inc)
+                        (is (= expected-endpoint (:url request-config)))
+                        (is (= :bytes (:as request-config)))
+                        (is (:auth request-config))
+                        (is (= "body" (:body request-config)))
+                        (is (= 654321 (:idle-timeout request-config)))
+                        (is (= (-> (dissoc passthrough-headers "expect" "authorization"
+                                           "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
+                                           "te" "trailers" "transfer-encoding" "upgrade")
+                                   (merge {"x-waiter-auth-principal" "test-user"
+                                           "x-waiter-authenticated-principal" "test-user@test.com"}))
+                               (:headers request-config))))]
           (make-request http-client make-basic-auth-fn service-id->password-fn instance request request-properties passthrough-headers end-route nil)
           (is (= 1 @request-method-fn-call-counter)))))))
 

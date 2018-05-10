@@ -21,7 +21,8 @@
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du])
-  (:import java.io.ByteArrayInputStream))
+  (:import (java.io ByteArrayInputStream)
+           (java.net URLEncoder)))
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality
   (testing-using-waiter-url
@@ -41,8 +42,7 @@
         (log/info "Basic test for empty body in request")
         (let [{:keys [body]} (make-kitchen-request
                                waiter-url
-                               (assoc request-headers
-                                 :accept "text/plain")
+                               (assoc request-headers :accept "text/plain")
                                :path "/request-info")
               body-json (json/read-str (str body))]
           (is (get-in body-json ["headers" "authorization"]) (str body))
@@ -51,6 +51,27 @@
           (is (str/blank? (get-in body-json ["headers" "content-type"])) (str body))
           (is (= "0" (get-in body-json ["headers" "content-length"])) (str body))
           (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body))))
+
+      (testing "query-string with special characters"
+        (log/info "Basic test for query-string with special characters")
+        (let [bad-query-string "q=~`!@$%^&*()_-+={}[]|:;'<>,.?&foo=%12jhsdf"
+              {:keys [body] :as response} (make-kitchen-request
+                                            waiter-url
+                                            (assoc request-headers :accept "application/json")
+                                            :path "/request-info"
+                                            :query-params bad-query-string)]
+          (assert-response-status response 200)
+          (is (= bad-query-string (get (json/read-str body) "query-string"))))
+
+        (log/info "Basic test for query-string with encoded characters")
+        (let [bad-query-string (str "q=" (URLEncoder/encode "~`!@$%^&*()_-+={}[]|:;'<>,.?&foo=%12jhsdf"))
+              {:keys [body] :as response} (make-kitchen-request
+                                            waiter-url
+                                            (assoc request-headers :accept "application/json")
+                                            :path "/request-info"
+                                            :query-params bad-query-string)]
+          (assert-response-status response 200)
+          (is (= bad-query-string (get (json/read-str body) "query-string")))))
 
       (testing "http methods"
         (log/info "Basic test for empty body in request")

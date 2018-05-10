@@ -313,8 +313,8 @@
 
 (defn make-light-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path]
-    :or {body nil cookies {} debug true method :post path "/endpoint"}}]
+   {:keys [body cookies debug method path query-params]
+    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
                        :x-waiter-mem 256
@@ -329,12 +329,13 @@
                   :body body
                   :cookies cookies
                   :headers headers
-                  :method method)))
+                  :method method
+                  :query-params query-params)))
 
 (defn make-shell-request
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path]
-    :or {body nil cookies {} debug true method :post path "/endpoint"}}]
+   {:keys [body cookies debug method path query-params]
+    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (make-light-request
     waiter-url
     (assoc
@@ -345,13 +346,14 @@
     :cookies cookies
     :debug debug
     :method method
-    :path path))
+    :path path
+    :query-params query-params))
 
 (defn make-kitchen-request
   "Makes an on-the-fly request to the Kitchen test app."
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path]
-    :or {body nil cookies {} debug true method :post path "/endpoint"}}]
+   {:keys [body cookies debug method path query-params]
+    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   {:pre [(not (str/blank? waiter-url))]}
   (make-shell-request
     waiter-url
@@ -363,7 +365,8 @@
     :cookies cookies
     :debug debug
     :method method
-    :path path))
+    :path path
+    :query-params query-params))
 
 (defn retrieve-service-id [waiter-url waiter-headers & {:keys [verbose] :or {verbose false}}]
   (let [service-id-result (make-request waiter-url "/service-id" :headers waiter-headers)

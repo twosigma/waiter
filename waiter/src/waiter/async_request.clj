@@ -141,10 +141,10 @@
    It also modifies the status check endpoint in the response header."
   [router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
    service-id metric-group {:keys [host port] :as instance}
-   {:keys [request-id] :as reason-map} request-properties location]
+   {:keys [request-id] :as reason-map} request-properties location query-string]
   (let [correlation-id (cid/get-correlation-id)
         status-endpoint (scheduler/end-point-url instance location)
-        _ (log/info "status endpoint for async request is" status-endpoint)
+        _ (log/info "status endpoint for async request is" status-endpoint query-string)
         {:keys [async-check-interval-ms async-request-timeout-ms]} request-properties
         exit-chan (async/chan 1)]
     ;; register async request
@@ -153,7 +153,7 @@
     ;; trigger execution of monitoring system
     (letfn [(make-get-request-fn []
               (counters/inc! (metrics/service-counter service-id "request-counts" "async-monitor"))
-              (let [request-stub {:body nil, :headers {}, :request-method :get}]
+              (let [request-stub {:body nil :headers {} :query-string query-string :request-method :get}]
                 (make-http-request-fn instance request-stub location metric-group)))
             (release-instance-fn [status]
               (log/info "decrementing outstanding requests as an async request has completed:" status)
@@ -171,7 +171,9 @@
                              async-check-interval-ms async-request-timeout-ms correlation-id exit-chan))
     ;; modify the location header in the response
     (let [param-map {:host host, :location location, :port port, :request-id request-id, :router-id router-id, :service-id service-id}
-          status-location (route-params->uri "/waiter-async/status/" param-map)]
-      (log/info "updating status location to" status-location "from" location)
+          status-location (route-params->uri "/waiter-async/status/" param-map)
+          status-url (cond-> status-location
+                             query-string (str "?" query-string))]
+      (log/info "updating status location to" status-location "from" location "with query string" query-string)
       (-> response
-          (assoc-in [:headers "location"] status-location)))))
+          (assoc-in [:headers "location"] status-url)))))

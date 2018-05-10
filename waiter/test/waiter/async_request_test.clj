@@ -287,9 +287,10 @@
         reason-map {:request-id request-id}
         request-properties {:async-check-interval-ms 100, :async-request-timeout-ms 200}
         location (str "/location/" request-id)
+        query-string "a=b&c=d|e"
         make-http-request-fn (fn [in-instance in-request end-route metric-group]
                                (is (= instance in-instance))
-                               (is (= {:body nil, :headers {}, :request-method :get} in-request))
+                               (is (= {:body nil :headers {} :query-string "a=b&c=d|e" :request-method :get} in-request))
                                (is (= "/location/request-2394613984619" end-route))
                                (is (= "test-metric-group" metric-group)))
         instance-rpc-chan (async/chan 1)
@@ -308,9 +309,9 @@
                     (reset! complete-async-request-atom complete-async-request-fn))]
       (let [{:keys [headers]} (post-process-async-request-response
                                 router-id async-request-store-atom make-http-request-fn instance-rpc-chan response
-                                service-id metric-group instance reason-map request-properties location)]
+                                service-id metric-group instance reason-map request-properties location query-string)]
         (is (get @async-request-store-atom request-id))
-        (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location)
+        (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location "?" query-string)
                (get headers "location")))
         (let [complete-async-request-fn @complete-async-request-atom]
           (is complete-async-request-fn)

@@ -35,8 +35,9 @@
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (java.io InputStream IOException)
-           java.util.concurrent.TimeoutException
-           org.eclipse.jetty.io.EofException
+           (java.util.concurrent TimeoutException)
+           (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput)))
 
 (defn check-control [control-chan]
@@ -161,11 +162,10 @@
 
 (defn request->endpoint
   "Retrieves the relative url Waiter should use to forward requests to service instances."
-  [{:keys [query-string uri]} waiter-headers]
+  [{:keys [uri]} waiter-headers]
   (if (= "/secrun" uri)
     (headers/get-waiter-header waiter-headers "endpoint-path" "/req")
-    (cond-> uri
-            (not (str/blank? query-string)) (str "?" query-string))))
+    uri))
 
 (defn- handle-response-error
   "Handles error responses from the backend."
@@ -182,39 +182,14 @@
     (-> (ex-info message (assoc metrics-map :status status) error)
         (utils/exception->response request))))
 
-(defn http-method-fn
-  "Retrieves the qbits.jet.client.http client function that corresponds to the http method."
-  [request-method]
-  (let [default-http-method http/post
-        http-method-helper (fn http-method-helper [http-method]
-                             (fn inner-http-method-helper [client url request-map]
-                               (http/request client (into {:method http-method :url url} request-map))))]
-    (case request-method
-      :copy (http-method-helper :copy)
-      :delete http/delete
-      :get http/get
-      :head http/head
-      :move (http-method-helper :move)
-      :patch (http-method-helper :patch)
-      :post http/post
-      :put http/put
-      :trace http/trace
-      default-http-method)))
-
-(defn request->http-method-fn
-  "Retrieves the qbits.jet.client.http client function that corresponds to the http method used in the request."
-  [{:keys [request-method]}]
-  (http-method-fn request-method))
-
-(defn make-http-request
+(defn- make-http-request
   "Makes an asynchronous request to the endpoint using Basic authentication."
-  [http-client make-basic-auth-fn request-method endpoint headers body app-password {:keys [username principal]}
-   idle-timeout output-buffer-size]
+  [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body app-password
+   {:keys [username principal]} idle-timeout output-buffer-size]
   (let [auth (make-basic-auth-fn endpoint "waiter" app-password)
-        headers (headers/assoc-auth-headers headers username principal)
-        http-method (http-method-fn request-method)]
-    (http-method
-      http-client endpoint
+        headers (headers/assoc-auth-headers headers username principal)]
+    (http/request
+      http-client
       {:as :bytes
        :auth auth
        :body body
@@ -222,11 +197,14 @@
        :fold-chunked-response? true
        :fold-chunked-response-buffer-size output-buffer-size
        :follow-redirects? false
-       :idle-timeout idle-timeout})))
+       :idle-timeout idle-timeout
+       :method request-method
+       :query-string query-string
+       :url endpoint})))
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
-  [http-client make-basic-auth-fn service-id->password-fn instance {:keys [body request-method] :as request}
+  [http-client make-basic-auth-fn service-id->password-fn instance {:keys [body query-string request-method] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group]
   (let [instance-endpoint (scheduler/end-point-url instance end-route)
         service-id (scheduler/instance->service-id instance)
@@ -251,22 +229,25 @@
         (log/error e "Unable to track content-length on request")))
     (when waiter-debug-enabled?
       (log/info "connecting to" instance-endpoint))
-    (make-http-request http-client make-basic-auth-fn request-method instance-endpoint headers body service-password
-                       (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size)))
+    (make-http-request
+      http-client make-basic-auth-fn request-method instance-endpoint query-string headers body service-password
+      (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size)))
 
 (defn inspect-for-202-async-request-response
   "Helper function that inspects the response and triggers async-request post processing."
   [{:keys [headers status] :as response} post-process-async-request-response-fn instance-request-properties
    service-id metric-group instance endpoint request reason-map reservation-status-promise]
   (let [location-header (str (get headers "location"))
+        [endpoint _] (str/split endpoint #"\?" 2)
+        [location-header query-string] (str/split location-header #"\?" 2)
         location (async-req/normalize-location-header endpoint location-header)]
     (if (= status 202)
       (if (str/starts-with? location "/")
-        (do
+        (let [auth-user-map (handler/make-auth-user-map request)]
           (deliver reservation-status-promise :success-async) ;; backend is processing as an asynchronous request
-          (post-process-async-request-response-fn response service-id metric-group instance
-                                                  (handler/make-auth-user-map request) reason-map
-                                                  instance-request-properties location))
+          (post-process-async-request-response-fn
+            response service-id metric-group instance auth-user-map reason-map instance-request-properties
+            location query-string))
         (do
           (log/info "response status 202, not treating as an async request as location is" location)
           response))

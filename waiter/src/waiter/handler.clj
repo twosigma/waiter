@@ -55,17 +55,16 @@
 (defn- async-make-http-request
   "Helper function for async status/result handlers."
   [counter-name make-http-request-fn service-id->service-description-fn
-   {:keys [query-string route-params uri] :as request}]
+   {:keys [route-params uri] :as request}]
   (let [{:keys [host location port request-id router-id service-id]} route-params]
     (when-not (and host location port request-id router-id service-id)
       (throw (ex-info "Missing host, location, port, request-id, router-id or service-id in uri"
                       {:route-params route-params, :uri uri, :status 400})))
     (counters/inc! (metrics/service-counter service-id "request-counts" counter-name))
     (let [{:strs [backend-proto metric-group]} (service-id->service-description-fn service-id)
-          end-route (cond-> location (not (str/blank? query-string)) (str "?" query-string))
           instance (scheduler/make-ServiceInstance {:host host :port port :protocol backend-proto :service-id service-id})
-          _ (log/info request-id counter-name "relative location is" end-route)]
-      (make-http-request-fn instance request end-route metric-group))))
+          _ (log/info request-id counter-name "relative location is" location)]
+      (make-http-request-fn instance request location metric-group))))
 
 (defn complete-async-handler
   "Completes execution of an async request by propagating a termination message to the request monitor system."
