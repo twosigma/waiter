@@ -26,34 +26,12 @@ install:
 
 matrix:
   include:
-    - env: NAME='Kitchen tests'
-      before_script: cd kitchen && voom-build
-      script: lein test
-
-    - env: NAME='Token syncer tests'
-      before_script: cd token-syncer && voom-build
-      script: ./bin/ci/run-all-tests.sh
-
-    - env: NAME='Waiter unit tests'
-      before_script: cd waiter && voom-build
-      script: ./bin/ci/run-unit-tests.sh
-
-    - env: "NAME='Waiter integration tests: marathon-fast'"
+    - env: "NAME='Waiter integration tests: marathon-dev'"
       services: docker
       before_script: cd waiter && voom-build
-      script: ./bin/ci/run-integration-tests.sh parallel-test integration-fast
+      script: ./bin/ci/run-integration-tests.sh parallel-test dev
 
-    - env: "NAME='Waiter integration tests: marathon-slow'"
+    - env: "NAME='Waiter integration tests: shell-dev'"
       services: docker
       before_script: cd waiter && voom-build
-      script: ./bin/ci/run-integration-tests.sh parallel-test integration-slow
-
-    - env: "NAME='Waiter integration tests: shell-fast'"
-      services: docker
-      before_script: cd waiter && voom-build
-      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-fast
-
-    - env: "NAME='Waiter integration tests: shell-slow'"
-      services: docker
-      before_script: cd waiter && voom-build
-      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-slow
+      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test dev
