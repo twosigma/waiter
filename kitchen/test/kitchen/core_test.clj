@@ -232,7 +232,6 @@
 
     (testing "exit"
       (async/>!! in "exit")
-      (is (= "bye" (async/<!! out)))
       (is (nil? (async/<!! out))))
 
     (async/close! in)

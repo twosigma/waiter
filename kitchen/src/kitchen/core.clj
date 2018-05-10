@@ -443,7 +443,6 @@
           (printlog request "received data on websocket:" in-data)
           (if (or (str/blank? (str in-data)) (= "exit" in-data))
             (do
-              (async/>! out "bye")
               (printlog request "closing connection.")
               (async/close! out)
               (swap! pending-ws-requests dec))
