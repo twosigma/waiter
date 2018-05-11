@@ -382,11 +382,10 @@
 
 (defn service-settings [waiter-url service-id & {:keys [keywordize-keys] :or {keywordize-keys true}}]
   (let [settings-path (str "/apps/" service-id)
-        settings-result (make-request waiter-url settings-path)
-        settings-body (:body settings-result)
-        _ (log/debug "service" service-id ":" settings-body)
-        settings-json (try-parse-json settings-body)]
-    (cond-> settings-json keywordize-keys walk/keywordize-keys)))
+        settings-result (make-request waiter-url settings-path)]
+    (log/debug "service" service-id ":" settings-result)
+    (cond-> (some-> settings-result :body try-parse-json)
+            keywordize-keys walk/keywordize-keys)))
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
   (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies)
