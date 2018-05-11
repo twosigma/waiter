@@ -11,82 +11,89 @@
 (ns waiter.instance-reservation-test
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [waiter.util.client-tools :refer :all]
-            [waiter.util.date-utils :as du])
-  (:import (java.util.concurrent Semaphore)))
+            [waiter.util.client-tools :refer :all])
+  (:import (java.util.concurrent CountDownLatch)))
 
-; Marked explicit due to:
-;  FAIL in (test-instance-reservation) (instance_reservation_test.clj:81)
-;  test-instance-reservation
-;     expected: (not (contains? (clojure.core/deref other-request-instances) (clojure.core/deref first-request-instance)))
-;     actual: (not (not true))
-
-(deftest ^:parallel ^:integration-slow ^:explicit test-instance-reservation
+(deftest ^:parallel ^:integration-slow test-instance-reservation
   (testing-using-waiter-url
-    (log/info (str "Testing instance allocation for each request"))
-    (let [cookies-atom (atom {})
-          extra-headers {:x-waiter-name (rand-name)
-                         :x-waiter-scale-up-factor 0.99
-                         :x-waiter-debug "true"}
-          request-fn (fn [delay-ms & {:keys [cookies] :or {cookies {}}}]
-                       (let [{:keys [headers] :as response}
-                             (make-kitchen-request waiter-url
-                                                   (assoc extra-headers :x-kitchen-delay-ms delay-ms)
-                                                   :cookies cookies)
-                             router-id (get headers "X-Waiter-Router-Id")
-                             backend-id (get headers "X-Waiter-Backend-Id")]
-                         (when-not (seq @cookies-atom)
-                           (reset! cookies-atom (:cookies response)))
-                         (str router-id ":" backend-id)))
-          _ (log/info (str "Making canary request..."))
-          canary-request (make-kitchen-request waiter-url extra-headers)
-          service-id (retrieve-service-id waiter-url (:request-headers canary-request))
-          long-request-time-ms (t/in-millis (t/seconds 90))
-          small-request-time-ms (t/in-millis (t/seconds 1))
-          ; scale up to avoid sharing of instances among routers
-          _ (parallelize-requests
-              8
-              40
-              #(request-fn small-request-time-ms :cookies @cookies-atom))
-          other-requests-end-time (t/plus (t/now) (t/millis (- long-request-time-ms (t/in-millis (t/seconds 15)))))
-          first-request-instance (atom nil)
-          other-request-instances (atom {})
-          exec-order-semaphore (Semaphore. 1 true)
-          _ (.acquire exec-order-semaphore) ; acquire before launching thread
-          request-thread-done-atom (atom false)
-          first-request-thread (launch-thread
-                                 (log/info (str "Making initial request at "
-                                                (du/date-to-str (t/now))
-                                                " (will take "
-                                                (colored-time (str ">" (t/in-minutes (t/millis long-request-time-ms)) "minutes"))
-                                                " to complete)."))
-                                 (.release exec-order-semaphore)
-                                 (let [router-backend-id (request-fn long-request-time-ms)]
-                                   (reset! first-request-instance router-backend-id)
-                                   (reset! request-thread-done-atom true)
-                                   (log/info "Initial request completed.")))]
-      (Thread/sleep (t/in-millis (t/seconds 5)))
-      (log/info "Waiting for initial request to start.")
-      (.acquire exec-order-semaphore)
-      (log/info "Sending additional requests.")
-      (time-it
-        "additional-requests"
-        (parallelize-requests
-          8
-          100
-          #(when (t/after? other-requests-end-time (t/now))
-            (let [router-backend-id (request-fn small-request-time-ms :cookies @cookies-atom)]
-              (swap! other-request-instances assoc router-backend-id true)))))
-      (is (not @request-thread-done-atom) "first-request-thread completed before additional requests threads")
-      (log/info "Awaiting first request to complete...")
-      (async/<!! first-request-thread)
-      (is @request-thread-done-atom)
-      (log/info "First request was processed by" (str @first-request-instance))
-      (is (not (contains? @other-request-instances @first-request-instance)))
-      (delete-service waiter-url service-id)
-      (log/info (str "Instance reservation test completed.")))))
+    (log/info "Testing instance allocation for each request")
+    (log/info "Making canary request...")
+    (let [router-id->router-url (routers waiter-url)
+          num-routers (count router-id->router-url)
+          extra-headers {:x-waiter-concurrency-level num-routers
+                         :x-waiter-name (rand-name)
+                         :x-waiter-scale-up-factor 0.99}
+          {:keys [cookies request-headers service-id]}
+          (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))]
+      (with-service-cleanup
+        service-id
+        (log/info "service id is" service-id)
+        (log/info "ensuring every router knows about an instance of the service")
+        (is (wait-for (fn []
+                        (every? (fn [[_ router-url]]
+                                  (let [service-state (service-state router-url service-id :cookies cookies)]
+                                    (->> (get-in service-state [:state :responder-state :instance-id->state])
+                                         vals
+                                         (filter (fn [instance-state]
+                                                   (contains? (:status-tags instance-state) :healthy)))
+                                         (every? #(pos? (:slots-assigned %))))))
+                                router-id->router-url))
+                      :interval 3 :timeout 30))
+        (let [long-request-time-ms (t/in-millis (t/seconds 90))
+              small-request-time-ms (t/in-millis (t/seconds 5))
+              long-request-instance-ids (atom #{})
+              small-request-instance-ids (atom #{})
+              long-requests-started-latch (CountDownLatch. num-routers)
+              long-requests-ended-latch (CountDownLatch. num-routers)
+              small-batch-cancellation-token (atom false)
+              request-fn (fn [target-url delay-ms]
+                           (->> #(make-kitchen-request target-url % :cookies cookies)
+                                (make-request-with-debug-info (assoc request-headers :x-kitchen-delay-ms delay-ms))
+                                :instance-id))]
+          (log/info "starting long requests...")
+          (async/go ;; trigger cancellation if time is close to long request completing
+            (-> long-request-time-ms (- 1000) async/timeout async/<!)
+            (reset! small-batch-cancellation-token true))
+          (doseq [[_ router-url] router-id->router-url]
+            (launch-thread ;; make each router's slot busy to avoid work-stealing interference
+              (.countDown long-requests-started-latch)
+              (try
+                (->> (request-fn router-url long-request-time-ms)
+                     (swap! long-request-instance-ids conj))
+                (finally
+                  (.countDown long-requests-ended-latch)))))
+          (.await long-requests-started-latch)
+          (log/info "long requests have started.")
+
+          ;; allow time for long requests to be processed
+          (is (wait-for
+                (fn []
+                  (let [service-data (service-settings waiter-url service-id)
+                        request-counts (get-in service-data [:metrics :aggregate :counters :request-counts])]
+                    (= num-routers (get request-counts :outstanding))))
+                :interval 200 :timeout 2000 :unit-multiplier 1))
+
+          (log/info "starting small requests...")
+          (parallelize-requests
+            (* 2 num-routers) ;; num threads
+            (/ long-request-time-ms small-request-time-ms) ;; num iterations
+            (fn small-request-fn []
+              (let [instance-id (request-fn waiter-url small-request-time-ms)]
+                (when-not @small-batch-cancellation-token
+                  (swap! small-request-instance-ids conj instance-id))))
+            :canceled? (fn [] @small-batch-cancellation-token))
+          (log/info "small requests have completed.")
+          (when-not (seq @small-request-instance-ids)
+            (log/warn "no small requests completed before long requests!"))
+          (.await long-requests-ended-latch)
+          (log/info "long requests have completed.")
+          (is (= 1 (count @long-request-instance-ids)) (str @long-request-instance-ids))
+          (is (empty? (set/intersection @small-request-instance-ids @long-request-instance-ids))
+              (str {:long-request-instance-ids @long-request-instance-ids
+                    :small-request-instance-ids @small-request-instance-ids})))))))
 
 (deftest ^:parallel ^:integration-slow test-instance-reservation-for-concurrent-service
   (testing-using-waiter-url
@@ -110,8 +117,8 @@
           8
           100
           #(let [response (request-fn 100 :cookies cookies)]
-            ; all requests should be served by the same instance
-            (is (= instance-id (:instance-id response))))))
+             ; all requests should be served by the same instance
+             (is (= instance-id (:instance-id response))))))
       (let [service-state (service-state waiter-url service-id)
             responder-state (get-in service-state [:state :responder-state])]
         (is (= 1 (count (:id->instance responder-state))))
