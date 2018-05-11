@@ -14,35 +14,13 @@
 ;; limitations under the License.
 ;;
 (ns waiter.killed-instance-test
-  (:require [clojure.core.async :as async]
-            [clojure.data.json :as json]
-            [clojure.string :as str]
+  (:require [clj-time.core :as t]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
-            [waiter.util.client-tools :refer :all]))
-
-(defn- trigger-killing-of-instance [waiter-url request-headers]
-  (log/info "requesting killing of instance")
-  (let [request-headers (assoc (pc/keywordize-map request-headers)
-                          :x-kitchen-delay-ms 10000 ;; delay-ms must be greater than die-after-ms
-                          :x-kitchen-die-after-ms 1000)
-        {:keys [headers]} (make-request waiter-url "/die" :headers request-headers :verbose true)
-        instance-id (get (pc/map-keys str/lower-case headers) "x-waiter-backend-id")]
-    (log/info "triggered killing of instance" instance-id)
-    instance-id))
-
-(defn- assert-killed-instance-blacklisted-by-routers [waiter-url killed-instance-id]
-  (let [service-id (subs killed-instance-id 0 (str/index-of killed-instance-id "."))
-        router->endpoint (routers waiter-url)
-        blacklisted-instances-fn (fn [router-id]
-                                   (let [router-url (str (get router->endpoint router-id))
-                                         blacklisted-instances-response (make-request router-url (str "/blacklist/" service-id))
-                                         blacklisted-instances (set (get (json/read-str (:body blacklisted-instances-response))
-                                                                         "blacklisted-instances"))]
-                                     (contains? blacklisted-instances killed-instance-id)))]
-    (is (some #(blacklisted-instances-fn %) (keys router->endpoint))
-        (str "No router has blacklisted " killed-instance-id ", routers: " (keys router->endpoint)))))
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.date-utils :as du]
+            [clojure.core.async :as async]))
 
 (deftest ^:parallel ^:integration-slow test-delegate-kill-instance
   (testing-using-waiter-url
@@ -70,50 +48,69 @@
         (deliver canceled :canceled)
         (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180)))))
 
-; Marked explicit due to:
-; FAIL in (test-blacklisted-instance-not-reserved) (killed_instance_test.clj)
-; expected: (not (contains? (clojure.core/deref other-request-instances) killed-instance-id2))
-;   actual: (not (not true))
-(deftest ^:parallel ^:integration-slow ^:explicit test-blacklisted-instance-not-reserved
+(defn- trigger-blacklisting-of-instance [target-url request-headers cookies]
+  (log/info "requesting killing of instance")
+  (let [{:keys [instance-id] :as response}
+        (make-request-with-debug-info
+          request-headers
+          #(make-kitchen-request target-url % :cookies cookies :path "/bad-status" :query-params {"status" 503}))]
+    (log/info "triggered blacklisting of instance" instance-id "on" target-url)
+    (assert-response-status response 503)
+    instance-id))
+
+(defn- instance-blacklisted-by-router? [router-url service-id instance-id cookies]
+  (let [service-state (service-state router-url service-id :cookies cookies)
+        responder-state (get-in service-state [:state :responder-state])
+        instance-keyword (keyword instance-id)
+        instance-state (get-in responder-state [:instance-id->state instance-keyword])]
+    (when (some #(= "blacklisted" %) (:status-tags instance-state))
+      (get-in responder-state [:instance-id->blacklist-expiry-time instance-keyword]))))
+
+(deftest ^:parallel ^:integration-slow ^:dev test-blacklisted-instance-not-reserved
   (testing-using-waiter-url
-    (log/info (str "Testing blacklisted instance is not reserved (should take " (colored-time "~2 minutes") ")"))
-    (let [num-requests-per-thread 20
-          extra-headers {:x-waiter-name (rand-name)
-                         :x-waiter-debug "true"}
-          request-fn (fn [time instance-map-atom & {:keys [cookies] :or {cookies {}}}]
-                       (let [{:keys [headers] :as response}
-                             (make-kitchen-request waiter-url (assoc extra-headers :x-kitchen-delay-ms time) :cookies cookies)
-                             response-headers (pc/map-keys str/lower-case headers)
-                             instance-id (get response-headers "x-waiter-backend-id")
-                             correlation-id (get response-headers "x-cid")]
-                         (when instance-map-atom (swap! instance-map-atom #(update-in %1 [instance-id] conj correlation-id)))
-                         response))
-          _ (log/info "making canary request...")
-          {:keys [cookies request-headers]} (request-fn 400 nil)
-          service-id (retrieve-service-id waiter-url request-headers)
-          bombard-with-requests-fn (fn [parallelism time instance-map-atom]
-                                     (log/info "making" (str parallelism "x" num-requests-per-thread) "requests to" service-id)
-                                     (time-it (str service-id ":" parallelism "x" num-requests-per-thread)
-                                              (parallelize-requests
-                                                parallelism num-requests-per-thread
-                                                #(request-fn time instance-map-atom :cookies cookies))))]
-      (log/info "making concurrent requests to scale up service.")
-      (bombard-with-requests-fn 5 1000 nil)
-      (let [num-tasks-running (num-tasks-running waiter-url service-id)]
-        (if (> num-tasks-running 2)
-          (let [killed-instance-id1 (trigger-killing-of-instance waiter-url request-headers)
-                killed-instance-id2 (trigger-killing-of-instance waiter-url request-headers)
-                blacklist-check-chan (async/thread
-                                       (assert-killed-instance-blacklisted-by-routers waiter-url killed-instance-id1)
-                                       (assert-killed-instance-blacklisted-by-routers waiter-url killed-instance-id2))
-                other-request-instances (atom {})]
-            (bombard-with-requests-fn 20 400 other-request-instances)
-            (log/info "checking whether killed instance was subsequently reserved.")
-            (is (not (contains? @other-request-instances killed-instance-id1))
-                (str killed-instance-id1 "was used to service requests" (get @other-request-instances killed-instance-id1)))
-            (is (not (contains? @other-request-instances killed-instance-id2))
-                (str killed-instance-id2 "was used to service requests" (get @other-request-instances killed-instance-id2)))
-            (async/<!! blacklist-check-chan))
-          (log/warn "skipping assertions as only" num-tasks-running "instances running for" service-id)))
-      (delete-service waiter-url service-id)
-      (log/info "testing blacklisted instance reservation avoided completed."))))
+    (log/info "Testing blacklisted instance is not reserved")
+    (let [router-id->router-url (routers waiter-url)
+          num-routers (count router-id->router-url)
+          extra-headers {:x-waiter-blacklist-on-503 true
+                         :x-waiter-concurrency-level (inc num-routers)
+                         :x-waiter-name (rand-name)
+                         :x-waiter-scale-up-factor 0.99}
+          make-request-fn (fn make-request-fn []
+                            (make-request-with-debug-info
+                              extra-headers #(make-kitchen-request waiter-url %)))
+          {:keys [cookies request-headers instance-id service-id] :as response} (make-request-fn)]
+      (assert-response-status response 200)
+      (log/info "canary instance-id:" instance-id)
+      (with-service-cleanup
+        service-id
+        (dotimes [_ 4] ;; incrementally cause longer blacklist duration for instance
+          (->> router-id->router-url
+               (map (fn [[_ router-url]]
+                      (launch-thread
+                        (trigger-blacklisting-of-instance router-url request-headers cookies))))
+               (map async/<!!)
+               doall))
+
+        (let [router-id->blacklist-time
+              (pc/map-from-keys
+                (fn [router-id]
+                  (let [router-url (router-id->router-url router-id)]
+                    (-> #(instance-blacklisted-by-router? router-url service-id instance-id cookies)
+                        (wait-for :interval 5 :timeout 10))))
+                (keys router-id->router-url))]
+          (doseq [[router-id _] router-id->router-url]
+            (is (router-id->blacklist-time router-id)
+                (str "instance not blacklisted " {:instance-id instance-id :router-id router-id})))
+
+          (let [new-request-instance-ids-atom (atom #{})]
+            (parallelize-requests
+              10 1
+              #(let [{:keys [instance-id router-id]} (make-request-fn)]
+                 (if (t/before? (t/now) (du/str-to-date (router-id->blacklist-time router-id)))
+                   (swap! new-request-instance-ids-atom conj instance-id)
+                   (log/warn "request responded after blacklist period, not including instance" instance-id))))
+            (log/info "new-request-instance-ids:" @new-request-instance-ids-atom)
+            (if-not (seq @new-request-instance-ids-atom)
+              (log/warn "no requests completed after blacklist expiry time of" instance-id)
+              (is (not (contains? @new-request-instance-ids-atom instance-id))
+                  (str {:instance-id instance-id :new-request-instance-ids @new-request-instance-ids-atom})))))))))
