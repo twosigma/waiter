@@ -357,9 +357,9 @@
     (let [{:keys [service-id] {:strs [metric-group]} :service-description} descriptor
           response (handler request)
           update! (fn [{:keys [status] :as response}]
-                   (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
-                   (statsd/inc! metric-group (str "response_status_" status))
-                   response)]
+                    (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
+                    (statsd/inc! metric-group (str "response_status_" status))
+                    response)]
       (ru/update-response response update!))))
 
 (defn abort-http-request-callback-factory
@@ -389,18 +389,19 @@
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
-    (let [request-abort-callback (abort-http-request-callback-factory response)]
+    ;; the inspection needs to happen before streaming to handle the write to the reservation-status-promise
+    (let [response' (inspect-for-202-async-request-response
+                      response post-process-async-request-response-fn instance-request-properties service-id
+                      metric-group instance endpoint request reason-map reservation-status-promise)
+          request-abort-callback (abort-http-request-callback-factory response)]
       (stream-http-response response confirm-live-connection-with-abort request-abort-callback
                             resp-chan instance-request-properties reservation-status-promise
                             request-state-chan metric-group waiter-debug-enabled?
-                            (metrics/stream-metric-map service-id)))
-    (-> response
-        (inspect-for-202-async-request-response
-          post-process-async-request-response-fn instance-request-properties service-id metric-group
-          instance endpoint request reason-map reservation-status-promise)
-        (assoc :body resp-chan)
-        (update-in [:headers] (fn update-response-headers [headers]
-                                (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers))))))
+                            (metrics/stream-metric-map service-id))
+      (-> response'
+          (assoc :body resp-chan)
+          (update-in [:headers] (fn update-response-headers [headers]
+                                  (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."
@@ -464,7 +465,7 @@
                                             :time request-time
                                             :cid (cid/get-correlation-id)
                                             :request-id request-id}
-                                     priority (assoc :priority priority))
+                                           priority (assoc :priority priority))
                         ; pass false to keep request-state-chan open after control-mult is closed
                         ; request-state-chan should be explicitly closed after the request finishes processing
                         request-state-chan (async/tap control-mult (au/latest-chan) false)
@@ -524,8 +525,8 @@
     (if (get suspended-state :suspended false)
       (let [{:keys [last-updated-by time]} suspended-state
             response-map (cond-> {:service-id service-id}
-                           time (assoc :suspended-at (du/date-to-str time))
-                           (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
+                                 time (assoc :suspended-at (du/date-to-str time))
+                                 (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "Service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
         (-> {:details response-map, :message "Service has been suspended", :status 503}
