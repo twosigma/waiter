@@ -520,7 +520,7 @@
                                   (when-let [unknown-keys (-> service-description-constraints
                                                               keys
                                                               set
-                                                              (set/difference sd/service-description-keys)
+                                                              (set/difference sd/service-parameter-keys)
                                                               seq)]
                                     (throw (ex-info "Unsupported keys present in the service description constraints"
                                                     {:service-description-constraints service-description-constraints
@@ -797,6 +797,9 @@
    :token->service-description-template (pc/fnk [[:curator kv-store]]
                                           (fn token->service-description-template [token]
                                             (sd/token->service-description-template kv-store token :error-on-missing false)))
+   :token->token-hash (pc/fnk [[:curator kv-store]]
+                        (fn token->token-hash [token]
+                          (sd/token->token-hash kv-store token :error-on-missing false)))
    :token->token-metadata (pc/fnk [[:curator kv-store]]
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
@@ -1247,7 +1250,7 @@
                                (fn waiter-auth-handler-fn [request]
                                  {:body (str (:authorization/user request)), :status 200})))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
-                                                    token->token-metadata]
+                                                    token->token-hash token->token-metadata]
                                                    [:settings consent-expiry-days]
                                                    [:state clock passwords]
                                                    wrap-secure-request-fn]
@@ -1259,17 +1262,18 @@
                                                 (wrap-secure-request-fn
                                                   (fn inner-waiter-acknowledge-consent-handler-fn [request]
                                                     (handler/acknowledge-consent-handler
-                                                      token->service-description-template token->token-metadata
+                                                      token->service-description-template token->token-metadata token->token-hash
                                                       service-description->service-id consent-cookie-value add-encoded-cookie
                                                       consent-expiry-days request))))))
-   :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
+   :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
+                                                token->token-hash]
                                                [:settings consent-expiry-days]
                                                wrap-secure-request-fn]
                                         (wrap-secure-request-fn
                                           (fn waiter-request-consent-handler-fn [request]
                                             (handler/request-consent-handler
-                                              token->service-description-template service-description->service-id
-                                              consent-expiry-days request))))
+                                              token->service-description-template token->token-hash
+                                              service-description->service-id consent-expiry-days request))))
    :waiter-request-interstitial-handler-fn (pc/fnk [wrap-secure-request-fn]
                                              (wrap-secure-request-fn
                                                (fn waiter-request-interstitial-handler-fn [request]
@@ -1299,7 +1303,7 @@
                                                               :status 400))
 
                                   ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
-                                  (and authentication-disabled? (some sd/service-description-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
+                                  (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
                                   (do
                                     (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
                                               {:service-description service-description, :token token})

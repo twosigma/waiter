@@ -56,7 +56,7 @@
                         make-peer-requests-fn validate-service-description-fn request))
 
 (deftest test-handle-token-request
-  (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
+  (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-parameter-keys))))]
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
           service-id-prefix "test#"
           entitlement-manager (authz/->SimpleEntitlementManager nil)
@@ -296,7 +296,9 @@
           (is (= 200 status))
           (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store token))))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (select-keys service-description-1 sd/token-data-keys)
+          (is (= (-> service-description-1
+                     (assoc "source-tokens" [token])
+                     (select-keys sd/token-data-keys))
                  (sd/token->service-description-template kv-store token)))
           (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-1 "token") service-description-template))
@@ -333,7 +335,9 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (select-keys service-description-1 sd/token-data-keys)
+          (is (= (-> service-description-1
+                     (assoc "source-tokens" [token])
+                     (select-keys sd/token-data-keys))
                  (sd/token->service-description-template kv-store token)))
           (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-1 "token") service-description-template))
@@ -355,7 +359,7 @@
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
-          (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-description-keys) json-keys))]
+          (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
             (is (str/includes? body (str (get service-description-1 key)))))
           (doseq [key json-keys]
             (is (str/includes? body (json/write-str (get service-description-1 key)))))))
@@ -371,7 +375,7 @@
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
-          (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-description-keys) json-keys))]
+          (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
             (is (str/includes? body (str (get service-description-1 key)))))
           (doseq [key json-keys]
             (is (str/includes? body (json/write-str (get service-description-1 key)))))))
@@ -387,7 +391,9 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully updated " token)))
-          (is (= (select-keys service-description-2 sd/token-data-keys)
+          (is (= (-> service-description-2
+                     (assoc "source-tokens" [token])
+                     (select-keys sd/token-data-keys))
                  (sd/token->service-description-template kv-store token)))
           (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-2 "token") service-description-template))
@@ -411,7 +417,9 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully updated " token)))
-          (is (= (select-keys service-description-2 sd/token-data-keys)
+          (is (= (-> service-description-2
+                     (assoc "source-tokens" [token])
+                     (select-keys sd/token-data-keys))
                  (sd/token->service-description-template kv-store token)))
           (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-2 "token") service-description-template))
@@ -436,7 +444,9 @@
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (str/includes? body (str "Successfully updated " token)))
-          (is (= (select-keys service-description-2 sd/token-data-keys)
+          (is (= (-> service-description-2
+                     (assoc "source-tokens" [token])
+                     (select-keys sd/token-data-keys))
                  (sd/token->service-description-template kv-store token)))
           (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-2 "token") service-description-template))
@@ -460,7 +470,7 @@
           (is (= "application/json" (get headers "content-type")))
           (is (-> body json/read-str (get "last-update-time") du/str-to-date))
           (let [body-map (-> body str json/read-str)]
-            (doseq [key sd/service-description-keys]
+            (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
             (doseq [key (disj sd/system-metadata-keys "deleted")]
               (is (contains? body-map key) (str "Missing entry for " key)))
@@ -479,7 +489,7 @@
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
           (let [body-map (-> body str json/read-str)]
-            (doseq [key sd/service-description-keys]
+            (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
             (doseq [key sd/token-metadata-keys]
               (is (not (contains? body-map key)))))))
@@ -495,7 +505,7 @@
           (is (= "application/json" (get headers "content-type")))
           (is (-> body json/read-str (get "last-update-time") du/str-to-date))
           (let [body-map (-> body str json/read-str)]
-            (doseq [key sd/service-description-keys]
+            (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
             (doseq [key (disj sd/system-metadata-keys "deleted")]
               (is (contains? body-map key) (str "Missing entry for " key)))
@@ -513,7 +523,7 @@
           (is (= "application/json" (get headers "content-type")))
           (is (not (str/includes? body "last-update-time")))
           (let [body-map (-> body str json/read-str)]
-            (doseq [key sd/service-description-keys]
+            (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
             (doseq [key sd/token-metadata-keys]
               (is (not (contains? body-map key)))))))
@@ -613,7 +623,7 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (-> service-description (select-keys sd/service-description-keys) sd/transform-allowed-params-token-entry)
+          (is (= (-> service-description (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
                  (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
           (is (= (-> service-description
                      sd/transform-allowed-params-token-entry
@@ -645,7 +655,7 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully updated " token)))
-          (is (= (-> service-description-2 (select-keys sd/service-description-keys) sd/transform-allowed-params-token-entry)
+          (is (= (-> service-description-2 (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
                  (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
           (is (= (-> service-description-2
                      sd/transform-allowed-params-token-entry
@@ -794,7 +804,7 @@
                      (kv/fetch kv-store token))))))))))
 
 (deftest test-post-failure-in-handle-token-request
-  (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-description-keys))))]
+  (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-parameter-keys))))]
     (let [entitlement-manager (authz/->SimpleEntitlementManager nil)
           make-peer-requests-fn (fn [endpoint & _]
                                   (and (str/starts-with? endpoint "token/")
@@ -1308,7 +1318,7 @@
     (testing "basic creation"
       (store-service-description-for-token synchronize-fn kv-store history-length token service-description-1 token-metadata-1)
       (let [token-description (kv/fetch kv-store token)]
-        (is (= service-description-1 (select-keys token-description sd/service-description-keys)))
+        (is (= service-description-1 (select-keys token-description sd/service-parameter-keys)))
         (is (= token-metadata-1 (select-keys token-description sd/token-metadata-keys)))
         (is (= (merge service-description-1 token-metadata-1) token-description))))
 
@@ -1321,7 +1331,7 @@
           (store-service-description-for-token synchronize-fn kv-store history-length token service-description-2 token-metadata-2
                                                :version-hash token-hash)
           (let [token-description (kv/fetch kv-store token)]
-            (is (= service-description-2 (select-keys token-description sd/service-description-keys)))
+            (is (= service-description-2 (select-keys token-description sd/service-parameter-keys)))
             (is (= token-metadata-2 (select-keys token-description sd/token-metadata-keys)))
             (is (= (merge service-description-2 token-metadata-2) token-description)))))
 
@@ -1332,7 +1342,7 @@
                 (store-service-description-for-token synchronize-fn kv-store history-length token service-description-3 token-metadata-1
                                                      :version-hash (- last-update-time 1000))))
           (let [token-description (kv/fetch kv-store token)]
-            (is (= service-description-2 (select-keys token-description sd/service-description-keys)))
+            (is (= service-description-2 (select-keys token-description sd/service-parameter-keys)))
             (is (= token-metadata-2 (select-keys token-description sd/token-metadata-keys)))
             (is (= (merge service-description-2 token-metadata-2) token-description))))))))
 

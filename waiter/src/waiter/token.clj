@@ -319,7 +319,7 @@
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
         new-user-metadata (select-keys new-token-metadata sd/user-metadata-keys)
         {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-description-template}
-        (select-keys new-token-data sd/service-description-keys)
+        (select-keys new-token-data sd/service-parameter-keys)
         existing-token-metadata (sd/token->token-metadata kv-store token :error-on-missing false)
         owner (or (get new-token-metadata "owner")
                   (get existing-token-metadata "owner")
@@ -434,11 +434,12 @@
                                    (not (get existing-token-metadata "deleted")))
                             "updated "
                             "created ")]
-        (utils/map->json-response {:message (str "Successfully " creation-mode token)
-                                   :service-description new-service-description-template}
-                                  :headers {"etag" (-> {:service-description-template new-service-description-template
-                                                        :token-metadata new-token-metadata}
-                                                       token-description->token-hash)})))))
+        (utils/map->json-response
+          {:message (str "Successfully " creation-mode token)
+           :service-description new-service-description-template}
+          :headers {"etag" (token-description->token-hash
+                             {:service-description-template new-service-description-template
+                              :token-metadata new-token-metadata})})))))
 
 (defn handle-token-request
   "Ring handler for dealing with tokens.

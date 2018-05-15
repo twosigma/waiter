@@ -841,12 +841,14 @@
         test-service-description {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
         token->service-description-template (fn [token] (when (= token test-token) test-service-description))
         token->token-metadata (fn [token] (when (= token test-token) {"owner" "user"}))
+        token->token-hash (fn [token] (when (= token test-token) (hash test-service-description)))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
         test-user "test-user"
         test-service-id (-> test-service-description
                             (assoc "permitted-user" test-user
-                                   "run-as-user" test-user)
+                                   "run-as-user" test-user
+                                   "source-tokens" {test-token (token->token-hash test-token)})
                             service-description->service-id)
         add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
                              (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-days}))
@@ -865,7 +867,7 @@
                                                             (update :request-method #(or %1 :post))
                                                             (update :scheme #(or %1 :http)))]
                                            (acknowledge-consent-handler
-                                             token->service-description-template token->token-metadata
+                                             token->service-description-template token->token-metadata token->token-hash
                                              service-description->service-id consent-cookie-value add-encoded-cookie
                                              consent-expiry-days request')))]
     (testing "unsupported request method"
@@ -1040,6 +1042,7 @@
                                                 "www.example-i0.com" (assoc basic-service-description "interstitial-secs" 0)
                                                 "www.example-i10.com" (assoc basic-service-description "interstitial-secs" 10)
                                                 nil))
+        token->token-hash (fn [token] (hash (token->service-description-template token)))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
         consent-expiry-days 1
@@ -1048,19 +1051,21 @@
                                      (let [request' (-> request
                                                         (update :authorization/user #(or %1 test-user))
                                                         (update :request-method #(or %1 :get)))]
-                                       (request-consent-handler
-                                         token->service-description-template service-description->service-id
-                                         consent-expiry-days request')))
+                                       (request-consent-handler token->service-description-template token->token-hash
+                                                                service-description->service-id consent-expiry-days request')))
         io-resource-fn (fn [file-path]
                          (is (= "web/consent.html" file-path))
                          (StringReader. "some-content"))
         expected-service-id (fn [token]
                               (-> (token->service-description-template token)
-                                  (assoc "permitted-user" test-user "run-as-user" test-user)
+                                  (assoc "permitted-user" test-user
+                                         "run-as-user" test-user
+                                         "source-tokens" {token (token->token-hash token)})
                                   service-description->service-id))
         template-eval-factory (fn [scheme]
                                 (fn [{:keys [token] :as data}]
-                                  (let [service-description-template (token->service-description-template token)]
+                                  (let [service-description-template (-> (token->service-description-template token)
+                                                                         (assoc "source-tokens" {token (token->token-hash token)}))]
                                     (is (= {:auth-user test-user
                                             :consent-expiry-days 1
                                             :service-description-template service-description-template
