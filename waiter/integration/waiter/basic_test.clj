@@ -17,6 +17,7 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [plumbing.core :as pc]
             [waiter.interstitial :as interstitial]
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
@@ -344,62 +345,56 @@
           (is (pos? (get-in service ["service-description" "cpus"])) service)))
       (delete-service waiter-url service-id))))
 
-; Marked explicit due to:
-;   FAIL in (test-delete-app) (basic_test.clj:251)
-; test-delete-app service-deleted-from-all-routers
-; [CID=unknown] Expected status: 200, actual: 400
-; Body:{"exception":["Read timed out",
-; "java.net.SocketInputStream.socketRead0(Native Method)",
-; "java.net.SocketInputStream.socketRead(SocketInputStream.java:116)"
-; ...
-; "marathonclj.rest.apps$delete_app.invoke(apps.clj:17)",
-; "waiter.scheduler.marathon.MarathonScheduler$fn__18236.invoke(marathon.clj:260)",
-; "waiter.scheduler$retry_on_transient_server_exceptions_fn$fn__17306.invoke(scheduler.clj:91)"
-; ...
-; "waiter.scheduler.marathon.MarathonScheduler.delete_app(marathon.clj:257)",
-; "waiter.core$delete_app_handler.invokeStatic(core.clj:410)"
-; ...
-(deftest ^:parallel ^:integration-fast ^:explicit test-delete-app
+(deftest ^:parallel ^:integration-fast test-delete-service
   (testing-using-waiter-url
-    "test-delete-app"
-    (let [{:keys [service-id cookies]} (make-request-with-debug-info
-                                         {:x-waiter-name (rand-name)}
-                                         #(make-kitchen-request waiter-url %))]
-      (testing "service-known-on-all-routers"
-        (let [services (loop [routers (routers waiter-url)
-                              services []]
-                         (if-let [[_ router-url] (first routers)]
-                           (recur (rest routers)
-                                  (conj services
-                                        (wait-for
-                                          (fn []
-                                            (let [{:keys [body]} (make-request router-url "/apps" :cookies cookies)
-                                                  parsed-body (json/read-str body)]
-                                              (first (filter #(= service-id (get % "service-id")) parsed-body))))
-                                          :interval 2
-                                          :timeout 30)))
-                           services))]
-          (is (every? #(and % (pos? (get-in % ["service-description" "cpus"]))) services)
-              (str "Cannot find service: " service-id " in at least one router."))))
+    "test-delete-service"
+    (let [{:keys [service-id cookies]}
+          (make-request-with-debug-info {:x-waiter-name (rand-name)} #(make-kitchen-request waiter-url %))
+          router-id->router-url (routers waiter-url)]
+      (with-service-cleanup
+        service-id
+        (testing "service-known-on-all-routers"
+          (let [router-id->service-id
+                (pc/map-from-keys
+                  (fn [router-id]
+                    (wait-for
+                      (fn []
+                        (let [router-url (router-id->router-url router-id)
+                              {:keys [body]} (make-request router-url "/apps" :cookies cookies)]
+                          (->> (json/read-str (str body))
+                               (filter #(= service-id (get % "service-id")))
+                               first
+                               walk/keywordize-keys
+                               :service-id)))
+                      :interval 2 :timeout 30))
+                  (keys router-id->router-url))]
+            (is (every? #(= service-id (val %)) router-id->service-id)
+                (str "Cannot find service: " service-id " in at least one router: " router-id->service-id))))
 
-      (testing "service-deleted-from-all-routers"
-        (let [{:keys [body] :as response} (make-request waiter-url (str "/apps/" service-id) :method :delete)]
-          (assert-response-status response 200)
-          (is body)
-          (is (loop [routers (routers waiter-url)
-                     result true]
-                (if-let [[_ router-url] (first routers)]
-                  (recur (rest routers)
-                         (and result
-                              (wait-for
-                                (fn []
-                                  (let [{:keys [body]} (make-request router-url "/apps" :cookies cookies)
-                                        parsed-body (json/read-str body)]
-                                    (empty? (filter #(= service-id (get % "service-id")) parsed-body))))
-                                :interval 2
-                                :timeout 30)))
-                  result))
-              (str "Service was not successfully deleted from the scheduler.")))))))
+        (testing "delete service"
+          (is (wait-for
+                (fn []
+                  (-> (make-request waiter-url (str "/apps/" service-id) :method :delete)
+                      :status
+                      (= 200)))
+                :interval 5 :timeout 60)))
+
+        (testing "service-deleted-from-all-routers"
+          (let [router-id->service-id-deleted
+                (pc/map-from-keys
+                  (fn [router-id]
+                    (wait-for
+                      (fn []
+                        (let [router-url (router-id->router-url router-id)
+                              {:keys [body]} (make-request router-url "/apps" :cookies cookies)]
+                          (->> (json/read-str (str body))
+                               (filter #(= service-id (get % "service-id")))
+                               seq
+                               not)))
+                      :interval 2 :timeout 30))
+                  (keys router-id->router-url))]
+            (is (every? #(true? (val %)) router-id->service-id-deleted)
+                (str service-id " present in at least one router: " router-id->service-id-deleted))))))))
 
 (deftest ^:parallel ^:integration-fast test-suspend-resume
   (testing-using-waiter-url
@@ -468,43 +463,38 @@
       (is (str/includes? set-cookie "HttpOnly=true"))
       (is (= (System/getProperty "user.name") (str body))))))
 
-; Marked explicit due to:
-;   FAIL in (test-killed-instances)
-;   Not intersection between used and killed instances!
-;   expected: (not-empty (set/intersection all-instance-ids killed-instance-ids))
-;     actual: (not (not-empty #{}))
-(deftest ^:parallel ^:integration-slow ^:explicit test-killed-instances
+(deftest ^:parallel ^:integration-slow test-killed-instances
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
-                   :x-waiter-max-instances 6
+                   :x-waiter-max-instances 5
                    :x-waiter-scale-up-factor 0.99
-                   :x-waiter-scale-down-factor 0.85
+                   :x-waiter-scale-down-factor 0.99
                    :x-kitchen-delay-ms 5000}
           _ (log/info "making canary request...")
           {:keys [service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
           request-fn (fn [] (->> #(make-kitchen-request waiter-url %)
                                  (make-request-with-debug-info headers)
-                                 (:instance-id)))
-          _ (log/info "starting parallel requests")
-          all-instance-ids (->> request-fn
-                                (parallelize-requests 12 5)
-                                (set))
-          _ (parallelize-requests 1 5 request-fn)]
-      (log/info "waiting for at least one instance to get killed")
-      (is (wait-for #(let [service-settings (service-settings waiter-url service-id)
-                           killed-instance-ids (->> (get-in service-settings [:instances :killed-instances])
-                                                    (map :id)
-                                                    (set))]
-                       (pos? (count killed-instance-ids)))
-                    :interval 2 :timeout 30)
-          (str "No killed instances found for " service-id))
-      (let [service-settings (service-settings waiter-url service-id)
-            killed-instance-ids (->> (get-in service-settings [:instances :killed-instances]) (map :id) (set))]
-        (log/info "used instances (" (count all-instance-ids) "):" all-instance-ids)
-        (log/info "killed instances (" (count killed-instance-ids) "):" killed-instance-ids)
-        (is (not-empty (set/intersection all-instance-ids killed-instance-ids))
-            "Not intersection between used and killed instances!"))
-      (delete-service waiter-url service-id))))
+                                 :instance-id))]
+      (with-service-cleanup
+        service-id
+        (log/info "starting parallel requests")
+        (let [instance-ids-atom (atom #{})
+              instance-request-fn (fn []
+                                    (let [instance-id (request-fn)]
+                                      (swap! instance-ids-atom conj instance-id)))
+              instance-ids (->> (parallelize-requests 4 25 instance-request-fn
+                                                      :canceled? (fn [] (> (count @instance-ids-atom) 2))
+                                                      :service-id service-id)
+                                (reduce set/union))]
+          (is (> (count instance-ids) 1) (str instance-ids)))
+
+        (log/info "waiting for at least one instance to get killed")
+        (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
+                            (map :id)
+                            set
+                            seq)
+                      :interval 2 :timeout 45)
+            (str "No killed instances found for " service-id))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-priority-support
   (testing-using-waiter-url
@@ -587,7 +577,7 @@
                 (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :post)]
             (is (= 403 status) response))
           (let [{:keys [status] :as response}
-                (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :options )]
+                (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :options)]
             (is (= 403 status) response)))))))
 
 (deftest ^:parallel ^:integration-fast test-error-handling
