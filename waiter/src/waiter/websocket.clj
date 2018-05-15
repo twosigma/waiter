@@ -207,9 +207,7 @@
                   (meters/mark! stream-back-pressure-meter)
                   (deliver reservation-status-promise stream-error-type)
                   (async/>! request-close-chan stream-error-type))))
-            (do
-              (deliver reservation-status-promise :success)
-              (log/info src-name "input channel has been closed, bytes streamed:" bytes-streamed))))
+            (log/info src-name "input channel has been closed, bytes streamed:" bytes-streamed)))
         (catch Exception e
           (log/error e "error in streaming data from" src-name "to" dest-name)
           (deliver reservation-status-promise :generic-error)
@@ -260,10 +258,9 @@
                       1003 "unsupported input data"
                       1006 "closed abnormally"
                       (str "status code " return-code-or-exception))))
-        (when on-close-callback
-          (if (integer? return-code-or-exception)
-            (on-close-callback return-code-or-exception)
-            (on-close-callback server-termination-on-unexpected-condition)))
+        (if (integer? return-code-or-exception)
+          (on-close-callback return-code-or-exception)
+          (on-close-callback server-termination-on-unexpected-condition))
         (let [close-code (condp = ctrl-code
                            nil :connection-closed
                            :qbits.jet.websocket/close :success
@@ -289,6 +286,11 @@
           (.close client-session status-code close-message))))
     (catch Exception e
       (log/error e "error in explicitly closing client websocket using" status-code close-message))))
+
+(defn- successful?
+  "Returns whether the status represents a successful status code."
+  [status]
+  (= 1000 status))
 
 (defn process-response!
   "Processes a response resulting from a websocket request.
@@ -329,11 +331,15 @@
               (close-requests! request response request-state-chan))))))
 
     ;; watch for ctrl-chan events
-    (watch-ctrl-chan :client (-> request :ctrl-mult) reservation-status-promise request-close-promise-chan nil)
-    (let [on-close-callback (fn instance-on-close-callback [status]
-                              (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
-                              (statsd/inc! metric-group (str "response_status_" status)))]
-      (watch-ctrl-chan :instance (-> response :ctrl-mult) reservation-status-promise request-close-promise-chan on-close-callback))
+    (->> (fn client-on-close-callback [status]
+           (deliver reservation-status-promise (if (successful? status) :success :client-error)))
+         (watch-ctrl-chan :client (-> request :ctrl-mult) reservation-status-promise request-close-promise-chan))
+    (->> (fn instance-on-close-callback [status]
+           (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
+           (statsd/inc! metric-group (str "response_status_" status))
+           (if (successful? status)
+             (deliver reservation-status-promise (if (successful? status) :success :instance-error))))
+         (watch-ctrl-chan :instance (-> response :ctrl-mult) reservation-status-promise request-close-promise-chan))
 
     (try
       ;; stream data between client and instance

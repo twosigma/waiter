@@ -10,7 +10,6 @@
 ;;
 (ns waiter.websocket-test
   (:require [clojure.core.async :as async]
-            [clojure.data.json :as json]
             [clojure.test :refer :all]
             [qbits.jet.client.websocket :as ws-client]
             [waiter.auth.authentication :as auth]
