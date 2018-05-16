@@ -797,9 +797,6 @@
    :token->service-description-template (pc/fnk [[:curator kv-store]]
                                           (fn token->service-description-template [token]
                                             (sd/token->service-description-template kv-store token :error-on-missing false)))
-   :token->token-hash (pc/fnk [[:curator kv-store]]
-                        (fn token->token-hash [token]
-                          (sd/token->token-hash kv-store token :error-on-missing false)))
    :token->token-metadata (pc/fnk [[:curator kv-store]]
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
@@ -1250,7 +1247,7 @@
                                (fn waiter-auth-handler-fn [request]
                                  {:body (str (:authorization/user request)), :status 200})))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
-                                                    token->token-hash token->token-metadata]
+                                                    token->token-metadata]
                                                    [:settings consent-expiry-days]
                                                    [:state clock passwords]
                                                    wrap-secure-request-fn]
@@ -1262,18 +1259,17 @@
                                                 (wrap-secure-request-fn
                                                   (fn inner-waiter-acknowledge-consent-handler-fn [request]
                                                     (handler/acknowledge-consent-handler
-                                                      token->service-description-template token->token-metadata token->token-hash
+                                                      token->service-description-template token->token-metadata
                                                       service-description->service-id consent-cookie-value add-encoded-cookie
                                                       consent-expiry-days request))))))
-   :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
-                                                token->token-hash]
+   :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]
                                                wrap-secure-request-fn]
                                         (wrap-secure-request-fn
                                           (fn waiter-request-consent-handler-fn [request]
                                             (handler/request-consent-handler
-                                              token->service-description-template token->token-hash
-                                              service-description->service-id consent-expiry-days request))))
+                                              token->service-description-template service-description->service-id
+                                              consent-expiry-days request))))
    :waiter-request-interstitial-handler-fn (pc/fnk [wrap-secure-request-fn]
                                              (wrap-secure-request-fn
                                                (fn waiter-request-interstitial-handler-fn [request]
@@ -1292,7 +1288,7 @@
                             (fn [{:keys [headers] :as request}]
                               (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
                                     {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
-                                    {:strs [authentication] :as service-description} (and token (sd/token->service-description-template kv-store token :error-on-missing false))
+                                    {:strs [authentication] :as service-description} (and token (sd/token->service-parameter-template kv-store token :error-on-missing false))
                                     authentication-disabled? (= authentication "disabled")]
                                 (cond
                                   (contains? waiter-headers "x-waiter-authentication")

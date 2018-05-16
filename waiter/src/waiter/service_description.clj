@@ -497,18 +497,12 @@
     (when (or (not deleted) include-deleted)
       (select-keys token-data allowed-keys))))
 
-(defn token->token-hash
-  "Retrieves the token-data and converts it into a hash."
-  [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (-> (token->token-data kv-store token token-data-keys error-on-missing false)
-      token-data->token-hash))
-
 (defn token-data->token-description
   "Retrieves the token description for the given token when the raw kv data (merged value of service
    parameters and metadata) is provided.
    The token-description consists of the following keys: :service-description-template and :token-metadata"
   [config]
-  {:service-description-template (select-keys config service-parameter-keys)
+  {:service-parameter-template (select-keys config service-parameter-keys)
    :token-metadata (select-keys config token-metadata-keys)})
 
 (defn token->token-description
@@ -517,10 +511,19 @@
   (-> (token->token-data kv-store token token-data-keys false include-deleted)
       token-data->token-description))
 
-(defn token->service-description-template
-  "Retrieves the service description template for the given token."
+(defn token->service-parameter-template
+  "Retrieves the service description template for the given token containing only the service parameters."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
   (token->token-data kv-store token service-parameter-keys error-on-missing false))
+
+(defn token->service-description-template
+  "Retrieves the service description template for the given token including the service metadata values."
+  [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
+  (let [token-data (token->token-data kv-store token token-data-keys error-on-missing false)
+        service-parameter-template (select-keys token-data service-parameter-keys)]
+    (cond-> service-parameter-template
+            (seq service-parameter-template)
+            (assoc "source-tokens" {token (token-data->token-hash token-data)}))))
 
 (defn token->token-metadata
   "Retrieves the token metadata for the given token."
@@ -573,9 +576,9 @@
   [token-defaults token-sequence token->token-data]
   (let [merged-token-data (->> (token-sequence->merged-data token->token-data token-sequence)
                                (merge token-defaults))
-        service-description-from-token-sequence (select-keys merged-token-data service-parameter-keys)
-        service-description-template (cond-> service-description-from-token-sequence
-                                             (seq service-description-from-token-sequence)
+        service-parameter-template (select-keys merged-token-data service-parameter-keys)
+        service-description-template (cond-> service-parameter-template
+                                             (seq service-parameter-template)
                                              (assoc "source-tokens" (pc/map-vals token-data->token-hash token->token-data)))]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
      :service-description-template service-description-template

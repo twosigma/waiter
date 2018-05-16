@@ -641,7 +641,7 @@
 (defn acknowledge-consent-handler
   "Processes the acknowledgment to launch a service as the auth-user.
    It triggers storing of the x-waiter-consent cookie on the client."
-  [token->service-description-template token->token-metadata token->token-hash service-description->service-id
+  [token->service-description-template token->token-metadata service-description->service-id
    consent-cookie-value add-encoded-cookie consent-expiry-days {:keys [request-method] :as request}]
   (try
     (when-not (= :post request-method)
@@ -672,8 +672,7 @@
         (when-not service-id
           (throw (ex-info "Missing service-id" (assoc params :status 400)))))
       (let [token (utils/authority->host host)
-            service-description-template (some-> (token->service-description-template token)
-                                                 (assoc "source-tokens" {token (token->token-hash token)}))]
+            service-description-template (token->service-description-template token)]
         (when-not (seq service-description-template)
           (throw (ex-info "Unable to load description for token" {:token token :status 400})))
         (when (= "service" mode)
@@ -708,7 +707,7 @@
 (defn request-consent-handler
   "Displays the consent form and requests approval from user. The content is rendered from consent.html.
    Approval form is submitted using AJAX and the user is then redirected to the target url that triggered a redirect to this form."
-  [token->service-description-template token->token-hash service-description->service-id consent-expiry-days
+  [token->service-description-template service-description->service-id consent-expiry-days
    {:keys [headers query-string request-method request-time route-params] :as request}]
   (try
     (when-not (= :get request-method)
@@ -716,9 +715,7 @@
     (let [host-header (get headers "host")
           token (utils/authority->host host-header)
           {:keys [path]} route-params
-          {:strs [interstitial-secs] :as service-description-template}
-          (some-> (token->service-description-template token)
-                  (assoc "source-tokens" {token (token->token-hash token)}))]
+          {:strs [interstitial-secs] :as service-description-template} (token->service-description-template token)]
       (when-not (seq service-description-template)
         (throw (ex-info "Unable to load description for token" {:token token :status 404})))
       (let [auth-user (:authorization/user request)

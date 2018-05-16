@@ -296,12 +296,10 @@
           (is (= 200 status))
           (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store token))))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (-> service-description-1
-                     (assoc "source-tokens" [token])
-                     (select-keys sd/token-data-keys))
-                 (sd/token->service-description-template kv-store token)))
-          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
-            (is (= (dissoc service-description-1 "token") service-description-template))
+          (is (= (select-keys service-description-1 sd/token-data-keys)
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description-1 "token") service-parameter-template))
             (is (= {"last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu1"
@@ -335,12 +333,10 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (-> service-description-1
-                     (assoc "source-tokens" [token])
-                     (select-keys sd/token-data-keys))
-                 (sd/token->service-description-template kv-store token)))
-          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
-            (is (= (dissoc service-description-1 "token") service-description-template))
+          (is (= (select-keys service-description-1 sd/token-data-keys)
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description-1 "token") service-parameter-template))
             (is (= {"last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu2"
@@ -391,12 +387,10 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully updated " token)))
-          (is (= (-> service-description-2
-                     (assoc "source-tokens" [token])
-                     (select-keys sd/token-data-keys))
-                 (sd/token->service-description-template kv-store token)))
-          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
-            (is (= (dissoc service-description-2 "token") service-description-template))
+          (is (= (select-keys service-description-2 sd/token-data-keys)
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description-2 "token") service-parameter-template))
             (is (= {"last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu1"
@@ -417,12 +411,10 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (str/includes? body (str "Successfully updated " token)))
-          (is (= (-> service-description-2
-                     (assoc "source-tokens" [token])
-                     (select-keys sd/token-data-keys))
-                 (sd/token->service-description-template kv-store token)))
-          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
-            (is (= (dissoc service-description-2 "token") service-description-template))
+          (is (= (select-keys service-description-2 sd/token-data-keys)
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description-2 "token") service-parameter-template))
             (is (= {"last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu2"
@@ -444,12 +436,10 @@
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (str/includes? body (str "Successfully updated " token)))
-          (is (= (-> service-description-2
-                     (assoc "source-tokens" [token])
-                     (select-keys sd/token-data-keys))
-                 (sd/token->service-description-template kv-store token)))
-          (let [{:keys [service-description-template token-metadata]} (sd/token->token-description kv-store token)]
-            (is (= (dissoc service-description-2 "token") service-description-template))
+          (is (= (select-keys service-description-2 sd/token-data-keys)
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description-2 "token") service-parameter-template))
             (is (= {"last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu2"
