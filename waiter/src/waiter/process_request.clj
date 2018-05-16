@@ -62,7 +62,7 @@
             (error-callback e))
           (throw e))))))
 
-(defn- set-idle-timeout!
+(defn set-idle-timeout!
   "Configures the idle timeout in the response output stream (HttpOutput) to `idle-timeout-ms` ms."
   [^HttpOutput output-stream idle-timeout-ms]
   (try

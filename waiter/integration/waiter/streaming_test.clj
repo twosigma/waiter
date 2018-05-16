@@ -12,8 +12,7 @@
   (:require [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.util.client-tools :refer :all])
-  (:import (java.net HttpURLConnection URL)
-           (java.io IOException)))
+  (:import (java.net HttpURLConnection URL)))
 
 (deftest ^:parallel ^:integration-fast test-streaming
   (testing-using-waiter-url
@@ -110,26 +109,6 @@
           (.close input-stream)
           (delete-service waiter-url service-id))))))
 
-;; FAIL in (test-streaming-timeout-on-default-settings)
-;; expected: (< total-bytes-read data-size-in-bytes)
-;; actual: (not (< 40000000 40000000))?
-(deftest ^:parallel ^:integration-slow ^:explicit test-streaming-timeout-on-default-settings
-  (testing-using-waiter-url
-    (log/info "Streaming test timeout with default settings")
-    (let [service-name (rand-name)]
-      (is (thrown-with-msg? IOException #"Premature EOF"
-                            (perform-streaming-timeout-test
-                              waiter-url
-                              (* 40 1000 1000)
-                              service-name
-                              (constantly nil)
-                              (fn [streaming-timeout-ms]
-                                (* streaming-timeout-ms 8))
-                              (constantly 0)
-                              (fn [data-size-in-bytes] (quot data-size-in-bytes (* 4 1000)))
-                              (fn [total-bytes-read data-size-in-bytes]
-                                (is (< total-bytes-read data-size-in-bytes)))))))))
-
 (deftest ^:parallel ^:integration-fast test-successful-streaming-with-custom-settings
   (testing-using-waiter-url
     (log/info "Streaming test success with default settings")
@@ -146,25 +125,3 @@
         (fn [data-size-in-bytes] (quot data-size-in-bytes (* 4 1000)))
         (fn [total-bytes-read data-size-in-bytes]
           (is (= total-bytes-read data-size-in-bytes)))))))
-
-; Marked explicit due to:
-; FAIL in (test-streaming-timeout-with-custom-settings)
-; expected: (< total-bytes-read data-size-in-bytes)
-;   actual: (not (< 40000000 40000000))
-(deftest ^:parallel ^:integration-slow ^:explicit test-streaming-timeout-with-custom-settings
-  (testing-using-waiter-url
-    (log/info "Streaming test timeout with default settings")
-    (let [service-name (rand-name)]
-      (is (thrown-with-msg? IOException #"Premature EOF"
-                            (perform-streaming-timeout-test
-                              waiter-url
-                              (* 40 1000 1000)
-                              service-name
-                              (fn [streaming-timeout-ms]
-                                (int (* 0.75 streaming-timeout-ms)))
-                              (fn [streaming-timeout-ms]
-                                (* streaming-timeout-ms 6))
-                              (constantly 0)
-                              (fn [data-size-in-bytes] (quot data-size-in-bytes (* 4 1000)))
-                              (fn [total-bytes-read data-size-in-bytes]
-                                (is (< total-bytes-read data-size-in-bytes)))))))))

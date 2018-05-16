@@ -22,7 +22,8 @@
             [waiter.descriptor :as descriptor]
             [waiter.process-request :refer :all]
             [waiter.statsd :as statsd])
-  (:import (org.eclipse.jetty.client HttpClient)))
+  (:import (java.io ByteArrayOutputStream)
+           (org.eclipse.jetty.client HttpClient)))
 
 (defn request
   [resource request-method & params]
@@ -143,6 +144,46 @@
         (let [actual (prepare-request-properties (:request-properties input)
                                                  (pc/map-keys #(str headers/waiter-header-prefix %) (:waiter-headers input)))]
           (is (= expected actual)))))))
+
+(deftest test-stream-http-response-configure-idle-timeout
+  (let [idle-timeout-atom (atom nil)
+        output-stream (ByteArrayOutputStream.)]
+    (with-redefs [set-idle-timeout! (fn [in-output-stream idle-timeout-ms]
+                                      (is (= output-stream in-output-stream))
+                                      (reset! idle-timeout-atom idle-timeout-ms))]
+      (let [body (async/chan)
+            confirm-live-connection (fn [] :nothing)
+            request-abort-callback (fn [_] :nothing)
+            resp-chan (async/chan)
+            streaming-timeout-ms 100
+            instance-request-properties {:output-buffer-size 1000000 :streaming-timeout-ms streaming-timeout-ms}
+            reservation-status-promise (promise)
+            request-state-chan (async/chan)
+            metric-group nil
+            waiter-debug-enabled? nil
+            service-id "service-id"
+            abort-request-chan (async/chan)
+            error-chan (async/chan)
+            response {:abort-request-chan abort-request-chan, :body body, :error-chan error-chan}]
+
+        (async/close! error-chan)
+        (async/close! body)
+
+        (stream-http-response
+          response confirm-live-connection request-abort-callback resp-chan instance-request-properties
+          reservation-status-promise request-state-chan metric-group waiter-debug-enabled?
+          (metrics/stream-metric-map service-id))
+
+        (loop []
+          (let [message (async/<!! resp-chan)]
+            (when (function? message)
+              (message output-stream))
+            (when message
+              (recur))))
+
+        (is (= streaming-timeout-ms @idle-timeout-atom))
+        (is (= :success @reservation-status-promise))
+        (is (nil? (async/<!! request-state-chan)))))))
 
 (defn- stream-response
   "Calls stream-http-response with statsd/inc! redefined to simply store the count of
