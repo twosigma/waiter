@@ -258,11 +258,26 @@
   (when service-name
     (some #(when (re-matches (first %) service-name) (second %)) mappings)))
 
+(defn- source-tokens->metric-group
+  "When there is a single source token and it contains a dot (.), extracts the
+   part of the token before the dot as the metric group. If this fragment satisfies
+   the metric-group schema, return the fragment."
+  [source-tokens]
+  (when (= 1 (count source-tokens))
+    (when-let [token (-> source-tokens first (get "token"))]
+      (when-let [index-of-dot (str/index-of token ".")]
+        (let [metric-group (subs token 0 index-of-dot)]
+          (when-not (s/check schema/valid-metric-group metric-group)
+            metric-group))))))
+
 (defn metric-group-filter
   "Filter for descriptors which resolves the metric group"
-  [{:strs [name metric-group] :as descriptor} mappings]
-  (cond-> descriptor
-          (nil? metric-group) (assoc "metric-group" (or (name->metric-group mappings name) "other"))))
+  [{:strs [name metric-group source-tokens] :as service-description} mappings]
+  (cond-> service-description
+          (nil? metric-group)
+          (assoc "metric-group" (or (name->metric-group mappings name)
+                                    (source-tokens->metric-group source-tokens)
+                                    "other"))))
 
 (defn merge-defaults
   "Merges the defaults into the existing service description."
