@@ -92,6 +92,7 @@
                                         schema/contains-kind-sub-map?)
    (s/required-key :scheduler-gc-config) {(s/required-key :broken-service-min-hosts) schema/positive-int
                                           (s/required-key :broken-service-timeout-mins) schema/positive-int
+                                          (s/required-key :outdated-service-timeout-mins) schema/positive-int
                                           (s/required-key :scheduler-gc-broken-service-interval-ms) schema/positive-int
                                           (s/required-key :scheduler-gc-interval-ms) schema/positive-int}
    (s/required-key :scheduler-syncer-interval-secs) schema/positive-int
@@ -284,6 +285,7 @@
                               :work-directory "scheduler"}}
    :scheduler-gc-config {:broken-service-min-hosts 2
                          :broken-service-timeout-mins 30
+                         :outdated-service-timeout-mins 15
                          :scheduler-gc-broken-service-interval-ms 60000
                          :scheduler-gc-interval-ms 60000}
    :scheduler-syncer-interval-secs 5

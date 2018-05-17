@@ -756,6 +756,13 @@
    :service-description->service-id (pc/fnk [[:state service-id-prefix]]
                                       (fn service-description->service-id [service-description]
                                         (sd/service-description->service-id service-id-prefix service-description)))
+   :service-id->idle-timeout (pc/fnk [[:settings [:scheduler-gc-config outdated-service-timeout-mins] service-description-defaults]
+                                      service-id->service-description-fn token->token-data-field token->token-hash]
+                               (let [default-fallback-period-secs (get service-description-defaults "fallback-period-secs")]
+                                 (fn service-id->idle-timeout [service-id]
+                                   (sd/service-id->idle-timeout
+                                     service-id->service-description-fn token->token-hash token->token-data-field
+                                     default-fallback-period-secs outdated-service-timeout-mins service-id))))
    :service-id->password-fn (pc/fnk [[:state passwords]]
                               (fn service-id->password [service-id]
                                 (log/debug "generating password for" service-id)
@@ -797,6 +804,12 @@
    :token->service-description-template (pc/fnk [[:curator kv-store]]
                                           (fn token->service-description-template [token]
                                             (sd/token->service-description-template kv-store token :error-on-missing false)))
+   :token->token-data-field (pc/fnk [[:curator kv-store]]
+                              (fn token->token-data-field [token field]
+                                (sd/token->token-data-field kv-store token field)))
+   :token->token-hash (pc/fnk [[:curator kv-store]]
+                        (fn token->token-hash [token]
+                          (sd/token->token-hash kv-store token)))
    :token->token-metadata (pc/fnk [[:curator kv-store]]
                             (fn token->token-metadata [token]
                               (sd/token->token-metadata kv-store token :error-on-missing false)))
@@ -919,7 +932,7 @@
                                       scheduler/available? http-client failed-check-threshold)
                                :scheduler-state-mult-chan scheduler-state-mult-chan)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
-                                   [:routines router-metrics-helpers service-id->service-description-fn]
+                                   [:routines router-metrics-helpers service-id->idle-timeout]
                                    [:scheduler scheduler]
                                    [:settings scheduler-gc-config]
                                    [:state clock]
@@ -928,7 +941,8 @@
                                   {:keys [service-id->metrics-fn]} router-metrics-helpers
                                   service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                               (scheduler/scheduler-services-gc
-                                scheduler scheduler-state-chan service-id->metrics-fn scheduler-gc-config service-gc-go-routine service-id->service-description-fn)))
+                                scheduler scheduler-state-chan service-id->metrics-fn scheduler-gc-config service-gc-go-routine
+                                service-id->idle-timeout)))
    :service-chan-maintainer (pc/fnk [[:routines start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
                                      [:settings blacklist-config instance-request-properties]
                                      [:state instance-rpc-chan query-app-maintainer-chan]

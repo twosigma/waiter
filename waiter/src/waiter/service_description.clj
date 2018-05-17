@@ -26,6 +26,7 @@
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.schema :as schema]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (java.util.regex Pattern)
            (org.joda.time DateTime)
@@ -512,6 +513,19 @@
     (when (or (not deleted) include-deleted)
       (select-keys token-data allowed-keys))))
 
+(defn token->token-hash
+  "Retrieves the hash for a token"
+  [kv-store token]
+  (-> (token->token-data kv-store token token-data-keys false false)
+      token-data->token-hash))
+
+(defn token->token-data-field
+  "Retrieves the value for a specific field mapped in the given token."
+  [kv-store ^String token ^String token-field]
+  (some-> (token->token-data kv-store token #{token-field} false false)
+          first
+          val))
+
 (defn token-data->token-description
   "Retrieves the token description for the given token when the raw kv data (merged value of service
    parameters and metadata) is provided.
@@ -874,3 +888,25 @@
           (and (= "token" consent-mode) (= consent-id token) (= consent-owner owner)))
       (> (+ auth-timestamp (-> consent-expiry-days t/days t/in-millis))
          (.getMillis ^DateTime (clock))))))
+
+(defn service-id->idle-timeout
+  "Computes the idle timeout, in minutes, for a given service.
+   If the service is active or was created by on-the-fly, the idle timeout is retrieved from the service description.
+   Else, the idle timeout is the sum of the fallback period seconds and the outdated service timeout."
+  [service-id->service-description-fn token->token-hash token->token-data-field default-fallback-period-secs
+   outdated-service-timeout-mins service-id]
+  (let [{:strs [idle-timeout-mins source-tokens]} (service-id->service-description-fn service-id)]
+    (if (and (-> source-tokens count pos?)
+             (some (fn [{:strs [token version]}]
+                     (not= (token->token-hash token) version))
+                   source-tokens))
+      (do
+        (log/info service-id "that uses" (mapv #(get % "token") source-tokens) "is outdated")
+        (->> source-tokens
+             (map #(token->token-data-field (get % "token") "fallback-period-secs")) ;; get latest value
+             (remove nil?)
+             (concat [default-fallback-period-secs])
+             last
+             (+ (-> outdated-service-timeout-mins t/minutes t/in-seconds))
+             du/seconds->minutes))
+      idle-timeout-mins)))

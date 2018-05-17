@@ -293,6 +293,11 @@
                        ;; instance state past this amount of time (minutes):
                        :broken-service-timeout-mins 30
 
+                       ;; Outdated services are detected by looking at the version of the
+                       ;; token used to create them, such services will have their idle timeout
+                       ;; reduced to outdated-service-timeout-mins + fallback-period-secs.
+                       :outdated-service-timeout-mins 15
+
                        ;; Timeout intervals (milliseconds) used as a refractory period to
                        ;; allow effects of any GC run to propagate through the system,
                        ;; for broken and idle services, respectively:

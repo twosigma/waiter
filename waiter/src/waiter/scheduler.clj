@@ -266,7 +266,7 @@
    They are then deleted by the leader using the `delete-app` function.
    If an error occurs while deleting a service, there will be repeated attempts to delete it later."
   [scheduler scheduler-state-chan service-id->metrics-fn {:keys [scheduler-gc-interval-ms]} service-gc-go-routine
-   service-id->service-description-fn]
+   service-id->idle-timeout]
   (let [service-data-chan (au/latest-chan)]
     (let [transformer-fn (fn [scheduler-messages out*]
                            (async/go
@@ -286,8 +286,7 @@
                            (let [outstanding (get state "outstanding")]
                              (and (number? outstanding)
                                   (zero? outstanding)
-                                  (let [service-description (service-id->service-description-fn service-id)
-                                        idle-timeout-mins (get service-description "idle-timeout-mins")
+                                  (let [idle-timeout-mins (service-id->idle-timeout service-id)
                                         timeout-time (t/plus last-modified-time (t/minutes idle-timeout-mins))]
                                     (log/debug service-id "timeout:" (du/date-to-str timeout-time) "current:" (du/date-to-str current-time))
                                     (t/after? current-time timeout-time)))))
