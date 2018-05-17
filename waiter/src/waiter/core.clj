@@ -626,12 +626,12 @@
                                       (sd/can-manage-service? kv-store entitlement-manager service-id auth-user)))
    :assoc-run-as-user-approved? (pc/fnk [[:settings consent-expiry-days]
                                          [:state clock passwords]
-                                         token->token-description]
+                                         token->token-metadata]
                                   (fn assoc-run-as-user-approved? [{:keys [headers]} service-id]
                                     (let [{:strs [cookie host]} headers
                                           token (when-not (headers/contains-waiter-header headers sd/on-the-fly-service-description-keys)
                                                   (utils/authority->host host))
-                                          {:keys [token-metadata]} (when token (token->token-description token))
+                                          token-metadata (when token (token->token-metadata token))
                                           service-consent-cookie (cookie-support/cookie-value cookie "x-waiter-consent")
                                           decoded-cookie (when service-consent-cookie
                                                            (some #(cookie-support/decode-cookie-cached service-consent-cookie %1)
@@ -732,7 +732,7 @@
                                endpoint-url
                                (str "http://" hostname ":" port endpoint-url)))))
    :request->descriptor-fn (pc/fnk [[:curator kv-store]
-                                    [:settings [:token-config history-length token-defaults]  metric-group-mappings service-description-defaults]
+                                    [:settings [:token-config history-length token-defaults] metric-group-mappings service-description-defaults]
                                     [:state fallback-state-atom service-description-builder service-id-prefix waiter-hostnames]
                                     assoc-run-as-user-approved? can-run-as?-fn]
                              (fn request->descriptor-fn [request]
@@ -792,9 +792,9 @@
    :token->service-description-template (pc/fnk [[:curator kv-store]]
                                           (fn token->service-description-template [token]
                                             (sd/token->service-description-template kv-store token :error-on-missing false)))
-   :token->token-description (pc/fnk [[:curator kv-store]]
-                               (fn token->token-description [token]
-                                 (sd/token->token-description kv-store token)))
+   :token->token-metadata (pc/fnk [[:curator kv-store]]
+                            (fn token->token-metadata [token]
+                              (sd/token->token-metadata kv-store token :error-on-missing false)))
    :validate-service-description-fn (pc/fnk [[:state service-description-builder]]
                                       (fn validate-service-description [service-description]
                                         (sd/validate service-description-builder service-description {})))
@@ -1241,7 +1241,8 @@
                              (wrap-secure-request-fn
                                (fn waiter-auth-handler-fn [request]
                                  {:body (str (:authorization/user request)), :status 200})))
-   :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->token-description]
+   :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
+                                                    token->token-metadata]
                                                    [:settings consent-expiry-days]
                                                    [:state clock passwords]
                                                    wrap-secure-request-fn]
@@ -1253,8 +1254,9 @@
                                                 (wrap-secure-request-fn
                                                   (fn inner-waiter-acknowledge-consent-handler-fn [request]
                                                     (handler/acknowledge-consent-handler
-                                                      token->token-description service-description->service-id
-                                                      consent-cookie-value add-encoded-cookie consent-expiry-days request))))))
+                                                      token->service-description-template token->token-metadata
+                                                      service-description->service-id consent-cookie-value add-encoded-cookie
+                                                      consent-expiry-days request))))))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
                                                [:settings consent-expiry-days]
                                                wrap-secure-request-fn]
