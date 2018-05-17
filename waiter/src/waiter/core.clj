@@ -760,12 +760,12 @@
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
                                   [:state authenticator start-app-cache-atom task-threadpool]
                                   service-id->password-fn store-service-description-fn]
-                           (fn start-new-service [{:keys [service-id core-service-description] :as descriptor}]
+                           (fn start-new-service [{:keys [service-id] :as descriptor}]
                              (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
                                (auth/check-user authenticator run-as-user service-id))
                              (service/start-new-service
                                scheduler service-id->password-fn descriptor start-app-cache-atom task-threadpool
-                               :pre-start-fn #(store-service-description-fn service-id core-service-description))))
+                               :pre-start-fn #(store-service-description-fn descriptor))))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]
@@ -782,8 +782,8 @@
                                            (async/>! exit-chan :exit)))))
    :store-service-description-fn (pc/fnk [[:curator kv-store]
                                           validate-service-description-fn]
-                                   (fn store-service-description [service-id service-description]
-                                     (sd/store-core kv-store service-id service-description validate-service-description-fn)))
+                                   (fn store-service-description [{:keys [core-service-description service-id]}]
+                                     (sd/store-core kv-store service-id core-service-description validate-service-description-fn)))
    :synchronize-fn (pc/fnk [[:curator curator]
                             [:settings [:zookeeper base-path mutex-timeout-ms]]]
                      (fn synchronize-fn [path f]
