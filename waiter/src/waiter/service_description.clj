@@ -516,6 +516,11 @@
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
   (token->token-data kv-store token service-parameter-keys error-on-missing false))
 
+(defn source-tokens-entry
+  "Creates an entry for the source-tokens field"
+  [token token-data]
+  {"token" token "version" (token-data->token-hash token-data)})
+
 (defn token->service-description-template
   "Retrieves the service description template for the given token including the service metadata values."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
@@ -523,7 +528,7 @@
         service-parameter-template (select-keys token-data service-parameter-keys)]
     (cond-> service-parameter-template
             (seq service-parameter-template)
-            (assoc "source-tokens" {token (token-data->token-hash token-data)}))))
+            (assoc "source-tokens" [(source-tokens-entry token token-data)]))))
 
 (defn token->token-metadata
   "Retrieves the token metadata for the given token."
@@ -579,7 +584,8 @@
         service-parameter-template (select-keys merged-token-data service-parameter-keys)
         service-description-template (cond-> service-parameter-template
                                              (seq service-parameter-template)
-                                             (assoc "source-tokens" (pc/map-vals token-data->token-hash token->token-data)))]
+                                             (assoc "source-tokens"
+                                                    (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)))]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
      :service-description-template service-description-template
      :token->token-data token->token-data

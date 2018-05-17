@@ -501,9 +501,9 @@
     (testing "single token with previous"
       (let [test-token "test-token"
             token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo1"}
-            service-description-1 (assoc token-data-1 "source-tokens" {test-token (sd/token-data->token-hash token-data-1)})
+            service-description-1 (assoc token-data-1 "source-tokens" [(sd/source-tokens-entry test-token token-data-1)])
             token-data-2 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" "ru" "version" "foo2"}
-            service-description-2 (assoc token-data-2 "source-tokens" {test-token (sd/token-data->token-hash token-data-2)})
+            service-description-2 (assoc token-data-2 "source-tokens" [(sd/source-tokens-entry test-token token-data-2)])
             sources {:defaults {"metric-group" "other" "permitted-user" "*"}
                      :headers {}
                      :service-description-template service-description-2
@@ -538,9 +538,9 @@
     (testing "single on-the-fly+token with previous"
       (let [test-token "test-token"
             token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru1" "version" "foo1"}
-            service-description-1 (assoc token-data-1 "source-tokens" {test-token (sd/token-data->token-hash token-data-1)})
+            service-description-1 (assoc token-data-1 "source-tokens" [(sd/source-tokens-entry test-token token-data-1)])
             token-data-2 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" "ru2" "version" "foo2"}
-            service-description-2 (assoc token-data-1 "source-tokens" {test-token (sd/token-data->token-hash token-data-2)})
+            service-description-2 (assoc token-data-1 "source-tokens" [(sd/source-tokens-entry test-token token-data-2)])
             sources {:defaults {"metric-group" "other" "permitted-user" "*"}
                      :headers {"cpus" 20}
                      :on-the-fly? nil ;; invalid value to check if it is ignored and generated in the fallback
@@ -594,22 +594,19 @@
     (testing "multiple tokens with previous"
       (let [test-token-1 "test-token-1"
             token-data-1p {"cmd" "lsp" "cpus" 1 "last-update-time" 1000 "mem" 32}
-            token-hash-1p (sd/token-data->token-hash token-data-1p)
-            service-description-1p (assoc token-data-1p "source-tokens" {test-token-1 token-hash-1p})
+            service-description-1p (assoc token-data-1p "source-tokens" [(sd/source-tokens-entry test-token-1 token-data-1p)])
             token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "previous" token-data-1p}
-            token-hash-1 (sd/token-data->token-hash token-data-1)
-            service-description-1 (assoc token-data-1 "source-tokens" {test-token-1 token-hash-1})
+            service-description-1 (assoc token-data-1 "source-tokens" (sd/source-tokens-entry test-token-1 token-data-1))
             test-token-2 "test-token-2"
             token-data-2p {"last-update-time" 2000 "run-as-user" "rup" "version" "foo"}
-            token-hash-2p (sd/token-data->token-hash token-data-2p)
-            service-description-2p (assoc token-data-2p "source-tokens" {test-token-2 token-hash-2p})
+            service-description-2p (assoc token-data-2p "source-tokens" (sd/source-tokens-entry test-token-2 token-data-2p))
             token-data-2 {"previous" token-data-2p "run-as-user" "ru" "version" "foo"}
-            token-hash-2 (sd/token-data->token-hash token-data-2)
             sources {:defaults {"metric-group" "other" "permitted-user" "*"}
                      :headers {}
                      :service-description-template (-> (merge service-description-1 service-description-2p)
-                                                       (assoc "source-tokens" {test-token-1 token-hash-1
-                                                                               test-token-2 token-hash-2}))
+                                                       (assoc "source-tokens"
+                                                              [(sd/source-tokens-entry test-token-1 token-data-1)
+                                                               (sd/source-tokens-entry test-token-2 token-data-2)]))
                      :token->token-data {test-token-1 token-data-1
                                          test-token-2 token-data-2}
                      :token-authentication-disabled false
@@ -624,8 +621,9 @@
                                    :waiter-headers waiter-headers})]
         (let [expected-core-service-description (-> (merge service-description-1 service-description-2p)
                                                     (select-keys sd/service-parameter-keys)
-                                                    (assoc "source-tokens" {test-token-1 token-hash-1
-                                                                            test-token-2 token-hash-2p}))]
+                                                    (assoc "source-tokens"
+                                                           [(sd/source-tokens-entry test-token-1 token-data-1)
+                                                            (sd/source-tokens-entry test-token-2 token-data-2p)]))]
           (is (= {:core-service-description expected-core-service-description
                   :on-the-fly? nil
                   :passthrough-headers passthrough-headers
@@ -645,8 +643,9 @@
                                   previous-descriptor)]
           (let [expected-core-service-description (-> (merge service-description-1p service-description-2p)
                                                       (select-keys sd/service-parameter-keys)
-                                                      (assoc "source-tokens" {test-token-1 token-hash-1p
-                                                                              test-token-2 token-hash-2p}))]
+                                                      (assoc "source-tokens"
+                                                             [(sd/source-tokens-entry test-token-1 token-data-1p)
+                                                              (sd/source-tokens-entry test-token-2 token-data-2p)]))]
             (is (= {:core-service-description expected-core-service-description
                     :on-the-fly? nil
                     :passthrough-headers passthrough-headers

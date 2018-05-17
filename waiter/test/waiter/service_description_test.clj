@@ -19,7 +19,6 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [plumbing.core :as pc]
             [schema.core :as s]
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
@@ -398,7 +397,7 @@
                                       (str/includes? token "run") (assoc "run-as-user" "ruser"))
                               {}))
         build-source-tokens (fn [& tokens]
-                              (pc/map-from-keys #(-> % create-token-data token-data->token-hash) tokens))]
+                              (mapv (fn [token] (source-tokens-entry token (create-token-data token))) tokens))]
     (with-redefs [kv/fetch (fn [in-kv-store token]
                              (is (= kv-store in-kv-store))
                              (create-token-data token))]
@@ -897,7 +896,7 @@
                           :headers {}
                           :service-description-template (-> token-data
                                                             (select-keys service-parameter-keys)
-                                                            (assoc "source-tokens" {test-token (token-data->token-hash token-data)}))
+                                                            (assoc "source-tokens" [(source-tokens-entry test-token token-data)]))
                           :token->token-data {test-token token-data}
                           :token-authentication-disabled true
                           :token-preauthorized true
@@ -930,7 +929,7 @@
                           :headers {}
                           :service-description-template (-> token-data
                                                             (select-keys service-parameter-keys)
-                                                            (assoc "source-tokens" {test-token (token-data->token-hash token-data)}))
+                                                            (assoc "source-tokens" [(source-tokens-entry test-token token-data)]))
                           :token->token-data {test-token token-data}
                           :token-authentication-disabled false
                           :token-preauthorized true

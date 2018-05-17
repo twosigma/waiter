@@ -29,6 +29,7 @@
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
+            [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all]
             [waiter.util.async-utils :as au])
@@ -842,7 +843,7 @@
         token->service-description-template (fn [token]
                                               (when (= token test-token)
                                                 (assoc test-service-description
-                                                  "source-tokens" {token (hash test-service-description)})))
+                                                  "source-tokens" [(sd/source-tokens-entry test-token test-service-description)])))
         token->token-metadata (fn [token] (when (= token test-token) {"owner" "user"}))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
@@ -850,7 +851,7 @@
         test-service-id (-> test-service-description
                             (assoc "permitted-user" test-user
                                    "run-as-user" test-user
-                                   "source-tokens" {test-token (hash test-service-description)})
+                                   "source-tokens" [(sd/source-tokens-entry test-token test-service-description)])
                             service-description->service-id)
         add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
                              (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-days}))
@@ -1049,9 +1050,8 @@
                                       nil)]
             (cond-> service-description
                     (seq service-description)
-                    (assoc "source-tokens" {token (hash service-description)}))
+                    (assoc "source-tokens" [(sd/source-tokens-entry token service-description)]))
             service-description))
-        token->token-hash (fn [token] (hash (token->service-description-template token)))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
         consent-expiry-days 1
