@@ -57,28 +57,28 @@
   [handler request->descriptor-fn start-new-service-fn fallback-state-atom]
   (fn [request]
     (tl/try-let [request-descriptor (request->descriptor-fn request)]
-       (let [{:keys [descriptor latest-descriptor]} request-descriptor
-             fallback-service-id (:service-id descriptor)
-             latest-service-id (:service-id latest-descriptor)
-             handler (middleware/wrap-merge handler {:descriptor descriptor :latest-service-id latest-service-id})]
-         (when (not= latest-service-id fallback-service-id)
-           (counters/inc! (metrics/service-counter latest-service-id "request-counts" "fallback" "source"))
-           (counters/inc! (metrics/service-counter fallback-service-id "request-counts" "fallback" "target"))
-           (when-not (service-exists? @fallback-state-atom latest-service-id)
-             (log/info "starting" latest-service-id "before causing request to fallback to" fallback-service-id)
-             (start-new-service-fn latest-descriptor)))
-         (handler request))
-       (catch Exception e
-         (if (missing-run-as-user? e)
-           (let [{:keys [query-string uri]} request
-                 location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
-             (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
-             (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
-             {:headers {"location" location} :status 303})
-           (do
-             ; For consistency with historical data, count errors looking up the descriptor as a "process error"
-             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
-             (utils/exception->response e request)))))))
+      (let [{:keys [descriptor latest-descriptor]} request-descriptor
+            fallback-service-id (:service-id descriptor)
+            latest-service-id (:service-id latest-descriptor)
+            handler (middleware/wrap-merge handler {:descriptor descriptor :latest-service-id latest-service-id})]
+        (when (not= latest-service-id fallback-service-id)
+          (counters/inc! (metrics/service-counter latest-service-id "request-counts" "fallback" "source"))
+          (counters/inc! (metrics/service-counter fallback-service-id "request-counts" "fallback" "target"))
+          (when-not (service-exists? @fallback-state-atom latest-service-id)
+            (log/info "starting" latest-service-id "before causing request to fallback to" fallback-service-id)
+            (start-new-service-fn latest-descriptor)))
+        (handler request))
+      (catch Exception e
+        (if (missing-run-as-user? e)
+          (let [{:keys [query-string uri]} request
+                location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
+            (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
+            (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
+            {:headers {"location" location} :status 303})
+          (do
+            ; For consistency with historical data, count errors looking up the descriptor as a "process error"
+            (meters/mark! (metrics/waiter-meter "core" "process-errors"))
+            (utils/exception->response e request)))))))
 
 (defn fallback-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
@@ -202,7 +202,7 @@
     (-> (headers/split-headers (:headers request))
         (sd/merge-service-description-sources kv-store waiter-hostnames service-description-defaults token-defaults)
         (sd/merge-service-description-and-id kv-store service-id-prefix current-request-user metric-group-mappings
-                                          service-description-builder assoc-run-as-user-approved?)
+                                             service-description-builder assoc-run-as-user-approved?)
         (sd/merge-suspended kv-store))))
 
 (defn descriptor->previous-descriptor
