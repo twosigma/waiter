@@ -637,8 +637,8 @@
 (defn acknowledge-consent-handler
   "Processes the acknowledgment to launch a service as the auth-user.
    It triggers storing of the x-waiter-consent cookie on the client."
-  [token->token-description service-description->service-id consent-cookie-value add-encoded-cookie
-   consent-expiry-days {:keys [request-method] :as request}]
+  [token->service-description-template token->token-metadata service-description->service-id
+   consent-cookie-value add-encoded-cookie consent-expiry-days {:keys [request-method] :as request}]
   (try
     (when-not (= :post request-method)
       (throw (ex-info "Only POST supported" {:request-method request-method, :status 405})))
@@ -668,18 +668,19 @@
         (when-not service-id
           (throw (ex-info "Missing service-id" (assoc params :status 400)))))
       (let [token (utils/authority->host host)
-            {:keys [service-description-template token-metadata]} (token->token-description token)]
+            service-description-template (token->service-description-template token)]
         (when-not (seq service-description-template)
           (throw (ex-info "Unable to load description for token" {:token token :status 400})))
         (when (= "service" mode)
           (let [auth-user (:authorization/user request)
                 computed-service-id (-> service-description-template
                                         (sd/assoc-run-as-requester-fields auth-user)
-                                        (service-description->service-id))]
+                                        service-description->service-id)]
             (when-not (= service-id computed-service-id)
               (log/error "computed" computed-service-id ", but user[" auth-user "] provided" service-id "for" token)
               (throw (ex-info "Invalid service-id for specified token" (assoc params :status 400))))))
-        (let [cookie-name "x-waiter-consent"
+        (let [token-metadata (token->token-metadata token)
+              cookie-name "x-waiter-consent"
               cookie-value (consent-cookie-value mode service-id token token-metadata)]
           (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "approve-success"))
           (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "approve-success"))
@@ -716,7 +717,7 @@
       (let [auth-user (:authorization/user request)
             service-id (-> service-description-template
                            (sd/assoc-run-as-requester-fields auth-user)
-                           (service-description->service-id))]
+                           service-description->service-id)]
         (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-render"))
         (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-render"))
         {:body (render-consent-template

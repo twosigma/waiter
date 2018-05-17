@@ -833,15 +833,16 @@
   (let [current-time-ms (System/currentTimeMillis)
         clock (constantly current-time-ms)
         test-token "www.example.com"
-        test-service-description {"cmd" "some-cmd", "cpus" 1, "mem" 1024, "token" test-token}
-        token->token-description (fn [token]
-                                   (when (= token test-token)
-                                     {:service-description-template test-service-description
-                                      :token-metadata {"owner" "user"}}))
+        test-service-description {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
+        token->service-description-template (fn [token] (when (= token test-token) test-service-description))
+        token->token-metadata (fn [token] (when (= token test-token) {"owner" "user"}))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
         test-user "test-user"
-        test-service-id (service-description->service-id (assoc test-service-description "permitted-user" test-user "run-as-user" test-user))
+        test-service-id (-> test-service-description
+                            (assoc "permitted-user" test-user
+                                   "run-as-user" test-user)
+                            service-description->service-id)
         add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
                              (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-days}))
         consent-expiry-days 1
@@ -858,8 +859,10 @@
                                                             (update :authorization/user #(or %1 test-user))
                                                             (update :request-method #(or %1 :post))
                                                             (update :scheme #(or %1 :http)))]
-                                           (acknowledge-consent-handler token->token-description service-description->service-id
-                                                                        consent-cookie-value add-encoded-cookie consent-expiry-days request')))]
+                                           (acknowledge-consent-handler
+                                             token->service-description-template token->token-metadata
+                                             service-description->service-id consent-cookie-value add-encoded-cookie
+                                             consent-expiry-days request')))]
     (testing "unsupported request method"
       (let [request {:request-method :get}
             {:keys [body headers status]} (acknowledge-consent-handler-fn request)]
@@ -1025,34 +1028,40 @@
 
 (deftest test-request-consent-handler
   (let [request-time (t/now)
-        token->service-description-template (fn [token]
-                                              (when (= token "www.example.com")
-                                                {"cmd" "some-cmd", "cpus" 1, "mem" 1024})) ;; produces service-4.67
+        test-token "www.example.com"
+        basic-service-description {"cmd" "some-cmd" "cpus" 1 "mem" 1024}
+        token->service-description-template (fn [token] (when (= token test-token) basic-service-description))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
         consent-expiry-days 1
+        test-user "test-user"
         request-consent-handler-fn (fn [request]
                                      (let [request' (-> request
-                                                        (update :authorization/user #(or %1 "test-user"))
+                                                        (update :authorization/user #(or %1 test-user))
                                                         (update :request-method #(or %1 :get)))]
-                                       (request-consent-handler token->service-description-template service-description->service-id
-                                                                consent-expiry-days request')))
+                                       (request-consent-handler
+                                         token->service-description-template service-description->service-id
+                                         consent-expiry-days request')))
         io-resource-fn (fn [file-path]
                          (is (= "web/consent.html" file-path))
                          (StringReader. "some-content"))
+        expected-service-id (-> basic-service-description
+                                (assoc "permitted-user" test-user
+                                       "run-as-user" test-user)
+                                service-description->service-id)
         template-eval-factory (fn [scheme]
                                 (fn [data]
-                                  (is (= {:auth-user "test-user"
+                                  (is (= {:auth-user test-user
                                           :consent-expiry-days 1
-                                          :service-description-template {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
-                                          :service-id "service-5.97"
+                                          :service-description-template basic-service-description
+                                          :service-id expected-service-id
                                           :target-url (str scheme "://www.example.com:6789/some-path?"
                                                            (interstitial/request-time->interstitial-param-string request-time))
-                                          :token "www.example.com"}
+                                          :token test-token}
                                          data))
                                   "template:some-content"))]
     (testing "unsupported request method"
-      (let [request {:authorization/user "test-user"
+      (let [request {:authorization/user test-user
                      :request-method :post
                      :request-time request-time
                      :scheme :http}
@@ -1062,7 +1071,7 @@
         (is (str/includes? body "Only GET supported"))))
 
     (testing "token without service description"
-      (let [request {:authorization/user "test-user"
+      (let [request {:authorization/user test-user
                      :headers {"host" "www.example2.com:6789"}
                      :request-method :get
                      :request-time request-time
@@ -1076,7 +1085,7 @@
     (with-redefs [io/resource io-resource-fn
                   render-consent-template (template-eval-factory "http")]
       (testing "token without service description - http scheme"
-        (let [request {:authorization/user "test-user"
+        (let [request {:authorization/user test-user
                        :headers {"host" "www.example.com:6789"}
                        :request-time request-time
                        :route-params {:path "some-path"}
@@ -1089,7 +1098,7 @@
     (with-redefs [io/resource io-resource-fn
                   render-consent-template (template-eval-factory "https")]
       (testing "token without service description - https scheme"
-        (let [request {:authorization/user "test-user"
+        (let [request {:authorization/user test-user
                        :headers {"host" "www.example.com:6789"}
                        :request-time request-time
                        :route-params {:path "some-path"}
@@ -1102,7 +1111,7 @@
     (with-redefs [io/resource io-resource-fn
                   render-consent-template (template-eval-factory "https")]
       (testing "token without service description - https x-forwarded-proto"
-        (let [request {:authorization/user "test-user"
+        (let [request {:authorization/user test-user
                        :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
                        :request-time request-time
                        :route-params {:path "some-path"}
