@@ -712,6 +712,9 @@
                                                    (make-request-sync http-client initial-socket-timeout-ms method endpoint-url auth body config))]
                                            (fn make-inter-router-requests-sync-fn [endpoint & args]
                                              (apply make-inter-router-requests make-request-sync-fn make-basic-auth-fn router-id discovery passwords endpoint args))))
+   :member-of?-fn (pc/fnk [[:state entitlement-manager]]
+                    (fn member-of [auth-user user-group]
+                      (authz/member-of? entitlement-manager auth-user user-group)))
    :peers-acknowledged-blacklist-requests-fn (pc/fnk [[:curator discovery]
                                                       [:state router-id]
                                                       make-inter-router-requests-sync-fn]
@@ -739,10 +742,10 @@
    :request->descriptor-fn (pc/fnk [[:curator kv-store]
                                     [:settings [:token-config history-length token-defaults] metric-group-mappings service-description-defaults]
                                     [:state fallback-state-atom service-description-builder service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? can-run-as?-fn]
+                                    assoc-run-as-user-approved? can-run-as?-fn member-of?-fn]
                              (fn request->descriptor-fn [request]
                                (descriptor/request->descriptor
-                                 assoc-run-as-user-approved? can-run-as?-fn fallback-state-atom kv-store metric-group-mappings
+                                 assoc-run-as-user-approved? can-run-as?-fn member-of?-fn fallback-state-atom kv-store metric-group-mappings
                                  history-length service-description-builder service-description-defaults service-id-prefix
                                  token-defaults waiter-hostnames request)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]

@@ -196,48 +196,55 @@
 (deftest test-request-authorized?
   (let [test-cases
         (list
-          {:name "request-authorized?:missing-permission-and-user"
-           :input-data {:user nil, :waiter-headers {"foo" "bar"}}
-           :expected false
-           }
-          {:name "request-authorized?:missing-permitted-but-valid-user"
-           :input-data {:user "test-user", :waiter-headers {"foo" "bar"}}
-           :expected false
-           }
-          {:name "request-authorized?:unauthorized-user"
-           :input-data {:user "test-user", :waiter-headers {"permitted-user" "another-user"}}
-           :expected false
-           }
-          {:name "request-authorized?:authorized-user-match"
-           :input-data {:user "test-user", :waiter-headers {"permitted-user" "test-user"}}
-           :expected true
-           }
-          {:name "request-authorized?:authorized-user-any"
-           :input-data {:user "test-user", :waiter-headers {"permitted-user" token/ANY-USER}}
-           :expected true
-           }
-          {:name "request-authorized?:authorized-user-any-with-missing-user"
-           :input-data {:user nil, :waiter-headers {"permitted-user" token/ANY-USER}}
-           :expected true
-           })]
-    (doseq [test-case test-cases]
-      (testing (str "Test " (:name test-case))
-        (is (= (:expected test-case)
-               (request-authorized?
-                 (get-in test-case [:input-data :user])
-                 (get-in test-case [:input-data :waiter-headers "permitted-user"]))))))))
+          {:expected false
+           :input-data {:user nil
+                        :waiter-headers {"foo" "bar"}}
+           :name "request-authorized?:missing-permission-and-user"}
+          {:expected false
+           :input-data {:user "test-user"
+                        :waiter-headers {"foo" "bar"}}
+           :name "request-authorized?:missing-permitted-but-valid-user"}
+          {:expected false
+           :input-data {:user "test-user"
+                        :waiter-headers {"permitted-user" "another-user"}}
+           :name "request-authorized?:unauthorized-user"}
+          {:expected true
+           :input-data {:member-of? (fn [auth-user permitted-group]
+                                      (and (= auth-user "test-user") (= permitted-group "another-user")))
+                        :user "test-user"
+                        :waiter-headers {"permitted-user" "another-user"}}
+           :name "request-authorized?:can-run-as-another-user"}
+          {:expected true
+           :input-data {:user "test-user"
+                        :waiter-headers {"permitted-user" "test-user"}}
+           :name "request-authorized?:authorized-user-match"}
+          {:expected true
+           :input-data {:user "test-user"
+                        :waiter-headers {"permitted-user" token/ANY-USER}}
+           :name "request-authorized?:authorized-user-any"}
+          {:expected true
+           :input-data {:user nil
+                        :waiter-headers {"permitted-user" token/ANY-USER}}
+           :name "request-authorized?:authorized-user-any-with-missing-user"})]
+    (doseq [{:keys [expected input-data name]} test-cases]
+      (testing (str "Test " name)
+        (let [{:keys [user waiter-headers]} input-data
+              member-of? (or (:member-of? input-data) =)]
+          (is (= expected (request-authorized? member-of? user (get waiter-headers "permitted-user")))))))))
 
 (deftest test-request->descriptor
   (let [default-search-history-length 5
         run-request->descriptor
         (fn run-request->descriptor
           [request &
-           {:keys [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings search-history-length
-                   service-description-builder service-description-defaults service-id-prefix token-defaults waiter-hostnames]
+           {:keys [assoc-run-as-user-approved? can-run-as? member-of? fallback-state-atom kv-store metric-group-mappings
+                   search-history-length service-description-builder service-description-defaults service-id-prefix
+                   token-defaults waiter-hostnames]
             :or {assoc-run-as-user-approved? (fn [_ _] false)
                  can-run-as? #(= %1 %2)
                  fallback-state-atom (atom {})
                  kv-store (kv/->LocalKeyValueStore (atom {}))
+                 member-of? #(= %1 %2)
                  metric-group-mappings []
                  search-history-length default-search-history-length
                  service-description-builder (sd/create-default-service-description-builder {})
@@ -246,7 +253,7 @@
                  token-defaults {}
                  waiter-hostnames ["waiter-hostname.app.example.com"]}}]
           (request->descriptor
-            assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings
+            assoc-run-as-user-approved? can-run-as? member-of? fallback-state-atom kv-store metric-group-mappings
             search-history-length service-description-builder service-description-defaults service-id-prefix token-defaults
             waiter-hostnames request))]
 

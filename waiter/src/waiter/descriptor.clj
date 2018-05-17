@@ -190,12 +190,13 @@
             latest-descriptor)))))
 
 (defn request-authorized?
-  "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "
-  [user permitted-user]
+  "Takes the request with authentication info and the permitted user, and returns true if the
+   authenticated user is allowed to use the service."
+  [member-of? user permitted-user]
   (log/debug "validating:" (str "permitted=" permitted-user) (str "actual=" user))
   (or (= token/ANY-USER permitted-user)
       (= ":any" (str permitted-user)) ; support ":any" for backwards compatibility
-      (and (not (nil? permitted-user)) (= user permitted-user))))
+      (and (not (nil? permitted-user)) (member-of? user permitted-user))))
 
 (defn compute-descriptor
   "Creates the service descriptor from the request.
@@ -236,7 +237,7 @@
   (defn request->descriptor
     "Extract the service descriptor from a request.
      It also performs the necessary authorization."
-    [assoc-run-as-user-approved? can-run-as? fallback-state-atom kv-store metric-group-mappings
+    [assoc-run-as-user-approved? can-run-as? member-of? fallback-state-atom kv-store metric-group-mappings
      search-history-length service-description-builder service-description-defaults service-id-prefix token-defaults
      waiter-hostnames {:keys [request-time] :as request}]
     (timers/start-stop-time!
@@ -264,7 +265,7 @@
                           {:authenticated-user auth-user
                            :run-as-user run-as-user
                            :status 403})))
-        (when-not (request-authorized? auth-user permitted-user)
+        (when-not (request-authorized? member-of? auth-user permitted-user)
           (throw (ex-info "This user isn't allowed to invoke this service"
                           {:authenticated-user auth-user
                            :service-description service-description
