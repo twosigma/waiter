@@ -1068,8 +1068,7 @@
                          (StringReader. "some-content"))
         expected-service-id (fn [token]
                               (-> (token->service-description-template token)
-                                  (assoc "permitted-user" test-user
-                                         "run-as-user" test-user)
+                                  (assoc "permitted-user" test-user "run-as-user" test-user)
                                   service-description->service-id))
         template-eval-factory (fn [scheme]
                                 (fn [{:keys [token] :as data}]
@@ -1133,56 +1132,56 @@
           (is (= body "template:some-content")))))
 
     (with-redefs [io/resource io-resource-fn
-                          render-consent-template (template-eval-factory "https")]
-             (testing "token without service description - https x-forwarded-proto"
-               (let [request {:authorization/user test-user
-                              :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
-                              :request-time request-time
-                              :route-params {:path "some-path"}
-                              :scheme :http}
-                     {:keys [body headers status]} (request-consent-handler-fn request)]
-                 (is (= 200 status))
-                 (is (= {"content-type" "text/html"} headers))
-                 (is (= body "template:some-content")))))
+                  render-consent-template (template-eval-factory "https")]
+      (testing "token without service description - https x-forwarded-proto"
+        (let [request {:authorization/user test-user
+                       :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
+                       :request-time request-time
+                       :route-params {:path "some-path"}
+                       :scheme :http}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {"content-type" "text/html"} headers))
+          (is (= body "template:some-content")))))
 
     (with-redefs [io/resource io-resource-fn
-                          render-consent-template (template-eval-factory "https")]
-             (testing "token without service description - https x-forwarded-proto"
-               (let [request {:authorization/user test-user
-                              :headers {"host" "www.example-i0.com:6789", "x-forwarded-proto" "https"}
-                              :request-time request-time
-                              :route-params {:path "some-path"}
-                              :scheme :http}
-                     {:keys [body headers status]} (request-consent-handler-fn request)]
-                 (is (= 200 status))
-                 (is (= {"content-type" "text/html"} headers))
-                 (is (= body "template:some-content")))))
+                  render-consent-template (template-eval-factory "https")]
+      (testing "token without service description - https x-forwarded-proto"
+        (let [request {:authorization/user test-user
+                       :headers {"host" "www.example-i0.com:6789", "x-forwarded-proto" "https"}
+                       :request-time request-time
+                       :route-params {:path "some-path"}
+                       :scheme :http}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {"content-type" "text/html"} headers))
+          (is (= body "template:some-content")))))
 
     (with-redefs [io/resource io-resource-fn
-                          render-consent-template (template-eval-factory "https")]
-             (testing "token without service description - https x-forwarded-proto"
-               (let [request {:authorization/user test-user
-                              :headers {"host" "www.example-i10.com:6789", "x-forwarded-proto" "https"}
-                              :request-time request-time
-                              :route-params {:path "some-path"}
-                              :scheme :http}
-                     {:keys [body headers status]} (request-consent-handler-fn request)]
-                 (is (= 200 status))
-                 (is (= {"content-type" "text/html"} headers))
-                 (is (= body "template:some-content")))))
+                  render-consent-template (template-eval-factory "https")]
+      (testing "token without service description - https x-forwarded-proto"
+        (let [request {:authorization/user test-user
+                       :headers {"host" "www.example-i10.com:6789", "x-forwarded-proto" "https"}
+                       :request-time request-time
+                       :route-params {:path "some-path"}
+                       :scheme :http}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {"content-type" "text/html"} headers))
+          (is (= body "template:some-content")))))
 
     (with-redefs [io/resource io-resource-fn
-                          render-consent-template (template-eval-factory "https")]
-             (testing "token without service description - https x-forwarded-proto"
-               (let [request {:authorization/user test-user
-                              :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
-                              :request-time request-time
-                              :route-params {:path "some-path"}
-                              :scheme :http}
-                     {:keys [body headers status]} (request-consent-handler-fn request)]
-                 (is (= 200 status))
-                 (is (= {"content-type" "text/html"} headers))
-                 (is (= body "template:some-content")))))))
+                  render-consent-template (template-eval-factory "https")]
+      (testing "token without service description - https x-forwarded-proto"
+        (let [request {:authorization/user test-user
+                       :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
+                       :request-time request-time
+                       :route-params {:path "some-path"}
+                       :scheme :http}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {"content-type" "text/html"} headers))
+          (is (= body "template:some-content")))))))
 
 (deftest test-blacklist-instance-cannot-find-channel
   (let [instance-rpc-chan (async/chan)
