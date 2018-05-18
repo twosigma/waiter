@@ -1028,9 +1028,13 @@
 
 (deftest test-request-consent-handler
   (let [request-time (t/now)
-        test-token "www.example.com"
         basic-service-description {"cmd" "some-cmd" "cpus" 1 "mem" 1024}
-        token->service-description-template (fn [token] (when (= token test-token) basic-service-description))
+        token->service-description-template (fn [token]
+                                              (condp = token
+                                                "www.example.com" basic-service-description
+                                                "www.example-i0.com" (assoc basic-service-description "interstitial-secs" 0)
+                                                "www.example-i10.com" (assoc basic-service-description "interstitial-secs" 10)
+                                                nil))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
         consent-expiry-days 1
@@ -1045,20 +1049,22 @@
         io-resource-fn (fn [file-path]
                          (is (= "web/consent.html" file-path))
                          (StringReader. "some-content"))
-        expected-service-id (-> basic-service-description
-                                (assoc "permitted-user" test-user
-                                       "run-as-user" test-user)
-                                service-description->service-id)
+        expected-service-id (fn [token]
+                              (-> (token->service-description-template token)
+                                  (assoc "permitted-user" test-user "run-as-user" test-user)
+                                  service-description->service-id))
         template-eval-factory (fn [scheme]
-                                (fn [data]
-                                  (is (= {:auth-user test-user
-                                          :consent-expiry-days 1
-                                          :service-description-template basic-service-description
-                                          :service-id expected-service-id
-                                          :target-url (str scheme "://www.example.com:6789/some-path?"
-                                                           (interstitial/request-time->interstitial-param-string request-time))
-                                          :token test-token}
-                                         data))
+                                (fn [{:keys [token] :as data}]
+                                  (let [service-description-template (token->service-description-template token)]
+                                    (is (= {:auth-user test-user
+                                            :consent-expiry-days 1
+                                            :service-description-template service-description-template
+                                            :service-id (expected-service-id token)
+                                            :target-url (str scheme "://" token ":6789/some-path"
+                                                             (when (some-> (get service-description-template "interstitial-secs") pos?)
+                                                               (str "?" (interstitial/request-time->interstitial-param-string request-time))))
+                                            :token token}
+                                           data)))
                                   "template:some-content"))]
     (testing "unsupported request method"
       (let [request {:authorization/user test-user
@@ -1103,6 +1109,45 @@
                        :request-time request-time
                        :route-params {:path "some-path"}
                        :scheme :https}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {"content-type" "text/html"} headers))
+          (is (= body "template:some-content")))))
+
+    (with-redefs [io/resource io-resource-fn
+                  render-consent-template (template-eval-factory "https")]
+      (testing "token without service description - https x-forwarded-proto"
+        (let [request {:authorization/user test-user
+                       :headers {"host" "www.example.com:6789", "x-forwarded-proto" "https"}
+                       :request-time request-time
+                       :route-params {:path "some-path"}
+                       :scheme :http}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {"content-type" "text/html"} headers))
+          (is (= body "template:some-content")))))
+
+    (with-redefs [io/resource io-resource-fn
+                  render-consent-template (template-eval-factory "https")]
+      (testing "token without service description - https x-forwarded-proto"
+        (let [request {:authorization/user test-user
+                       :headers {"host" "www.example-i0.com:6789", "x-forwarded-proto" "https"}
+                       :request-time request-time
+                       :route-params {:path "some-path"}
+                       :scheme :http}
+              {:keys [body headers status]} (request-consent-handler-fn request)]
+          (is (= 200 status))
+          (is (= {"content-type" "text/html"} headers))
+          (is (= body "template:some-content")))))
+
+    (with-redefs [io/resource io-resource-fn
+                  render-consent-template (template-eval-factory "https")]
+      (testing "token without service description - https x-forwarded-proto"
+        (let [request {:authorization/user test-user
+                       :headers {"host" "www.example-i10.com:6789", "x-forwarded-proto" "https"}
+                       :request-time request-time
+                       :route-params {:path "some-path"}
+                       :scheme :http}
               {:keys [body headers status]} (request-consent-handler-fn request)]
           (is (= 200 status))
           (is (= {"content-type" "text/html"} headers))
