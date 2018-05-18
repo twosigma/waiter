@@ -251,17 +251,18 @@
 (deftest test-inspect-for-202-async-request-response
   (letfn [(execute-inspect-for-202-async-request-response
             [endpoint request response]
-            (let [reservation-status-promise (promise)
-                  post-process-data (atom {})
+            (let [post-process-data (atom {:result :not-async})
                   post-process-async-request-response-fn
                   (fn [_ _ _ _ auth-user _ _ location query-string]
                     (reset! post-process-data
-                            {:auth-user (:username auth-user) :location location :query-string query-string}))]
+                            {:auth-user (:username auth-user)
+                             :location location
+                             :query-string query-string
+                             :result :success-async}))]
               (inspect-for-202-async-request-response
                 response post-process-async-request-response-fn {} "service-id" "metric-group" {}
-                endpoint request {} reservation-status-promise)
-              (deliver reservation-status-promise :not-async)
-              (assoc @post-process-data :result @reservation-status-promise)))]
+                endpoint request {})
+              @post-process-data))]
     (testing "202-missing-location-header"
       (is (= {:result :not-async}
              (execute-inspect-for-202-async-request-response
