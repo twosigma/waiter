@@ -711,13 +711,18 @@
     (let [host-header (get headers "host")
           token (utils/authority->host host-header)
           {:keys [path]} route-params
-          service-description-template (token->service-description-template token)]
+          {:strs [interstitial-secs] :as service-description-template} (token->service-description-template token)]
       (when-not (seq service-description-template)
         (throw (ex-info "Unable to load description for token" {:token token :status 404})))
       (let [auth-user (:authorization/user request)
             service-id (-> service-description-template
                            (sd/assoc-run-as-requester-fields auth-user)
-                           service-description->service-id)]
+                           service-description->service-id)
+            query-string' (str (when (not (str/blank? query-string)) query-string)
+                               (when (some-> interstitial-secs pos?)
+                                 ;; add the bypass query param only if interstitial is enabled
+                                 (str (when (not (str/blank? query-string)) "&")
+                                      (interstitial/request-time->interstitial-param-string request-time))))]
         (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-render"))
         (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-render"))
         {:body (render-consent-template
@@ -725,9 +730,8 @@
                   :consent-expiry-days consent-expiry-days
                   :service-description-template service-description-template
                   :service-id service-id
-                  :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path "?"
-                                   (when (not (str/blank? query-string)) (str query-string "&"))
-                                   (interstitial/request-time->interstitial-param-string request-time))
+                  :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
+                                   (when (not (str/blank? query-string')) (str "?" query-string')))
                   :token token})
          :headers {"content-type" "text/html"}
          :status 200}))
