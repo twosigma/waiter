@@ -751,7 +751,7 @@
         (throw (ex-info (utils/message :cannot-identify-service)
                         (error-message-map-fn passthrough-headers waiter-headers))))
       (sling/try+
-        (let [{:keys [service-id service-description core-service-description]}
+        (let [{:keys [core-service-description service-description service-id]}
               (build service-description-builder user-service-description
                      {:assoc-run-as-user-approved? assoc-run-as-user-approved?
                       :defaults defaults
@@ -796,14 +796,9 @@
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
   [kv-store service-id service-description-defaults metric-group-mappings &
-   {:keys [refresh nil-on-missing? effective?] :or {refresh false nil-on-missing? true effective? true}}]
-  (let [core-service-description (fetch-core
-                                   kv-store
-                                   service-id
-                                   :refresh refresh
-                                   :nil-on-missing? nil-on-missing?)]
-    (cond-> core-service-description
-            effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id))))
+   {:keys [effective? nil-on-missing? refresh] :or {effective? true nil-on-missing? true refresh false}}]
+  (cond-> (fetch-core kv-store service-id :nil-on-missing? nil-on-missing? :refresh refresh)
+          effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."
