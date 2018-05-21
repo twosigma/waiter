@@ -63,8 +63,8 @@
              new-interstitial-promise (promise)]
         (->> (fn [{:keys [service-id->interstitial-promise] :as interstitial-state}]
                (cond-> interstitial-state
-                       (not (contains? service-id->interstitial-promise service-id))
-                       (assoc-in [:service-id->interstitial-promise service-id] new-interstitial-promise)))
+                 (not (contains? service-id->interstitial-promise service-id))
+                 (assoc-in [:service-id->interstitial-promise service-id] new-interstitial-promise)))
              (swap! interstitial-state-atom))
         (if-let [interstitial-promise (service-id->interstitial-promise @interstitial-state-atom service-id)]
           (do

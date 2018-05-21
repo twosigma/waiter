@@ -274,9 +274,9 @@
                     timeouts 0
                     timeout-chan nil]
       (let [channels (cond-> [exit-chan]
-                             (nil? timeout-chan) (conj router-state-chan)
-                             timeout-chan (conj timeout-chan)
-                             true (conj query-chan))
+                       (nil? timeout-chan) (conj router-state-chan)
+                       timeout-chan (conj timeout-chan)
+                       true (conj query-chan))
             [data channel] (async/alts! channels :priority true)]
         (condp = channel
           exit-chan

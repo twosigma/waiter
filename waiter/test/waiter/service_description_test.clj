@@ -389,12 +389,12 @@
                                        "owner" "token-owner"
                                        "previous" {}
                                        "version" "token"}
-                                      (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
-                                      (str/includes? token "cpus") (assoc "cpus" "1")
-                                      (str/includes? token "fall") (assoc "fallback-period-secs" 600)
-                                      (str/includes? token "mem") (assoc "mem" "2")
-                                      (str/includes? token "per") (assoc "permitted-user" "puser")
-                                      (str/includes? token "run") (assoc "run-as-user" "ruser"))
+                                (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
+                                (str/includes? token "cpus") (assoc "cpus" "1")
+                                (str/includes? token "fall") (assoc "fallback-period-secs" 600)
+                                (str/includes? token "mem") (assoc "mem" "2")
+                                (str/includes? token "per") (assoc "permitted-user" "puser")
+                                (str/includes? token "run") (assoc "run-as-user" "ruser"))
                               {}))]
     (with-redefs [kv/fetch (fn [in-kv-store token]
                              (is (= kv-store in-kv-store))

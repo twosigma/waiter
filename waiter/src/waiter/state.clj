@@ -118,8 +118,8 @@
                                                                         :started-at
                                                                         tc/to-long)
                                                                 0)
-                                                            ; invert sorting for expired instances
-                                                            (expired? state) (unchecked-negate))))
+                                                      ; invert sorting for expired instances
+                                                      (expired? state) (unchecked-negate))))
         instance-id-comparator #(let [category-comparison (compare
                                                             (instance-id-state-pair->categorizer-vec %1)
                                                             (instance-id-state-pair->categorizer-vec %2))]
@@ -162,9 +162,9 @@
                                    (fn [{:keys [id started-at]}]
                                      [(contains? expired-instance-ids id)
                                       (cond-> (or (some-> started-at .getMillis) 0)
-                                              ; invert sorting for expired instances
-                                              (contains? expired-instance-ids id)
-                                              (unchecked-negate))
+                                        ; invert sorting for expired instances
+                                        (contains? expired-instance-ids id)
+                                        (unchecked-negate))
                                       id]))
         instance-comparator (fn [i1 i2]
                               (compare (instance->feature-vector i1) (instance->feature-vector i2)))]
@@ -281,13 +281,13 @@
                                                               starting? (contains? starting-instance-ids instance-id)]
                                                           (persistent!
                                                             (cond-> (transient #{})
-                                                                    healthy? (conj! :healthy)
-                                                                    unhealthy? (conj! :unhealthy)
-                                                                    expired? (conj! :expired)
-                                                                    starting? (conj! :starting)
-                                                                    (or healthy? unhealthy?) (disj! :killed)
-                                                                    was-locked? (conj! :locked)
-                                                                    was-blacklisted? (conj! :blacklisted))))]
+                                                              healthy? (conj! :healthy)
+                                                              unhealthy? (conj! :unhealthy)
+                                                              expired? (conj! :expired)
+                                                              starting? (conj! :starting)
+                                                              (or healthy? unhealthy?) (disj! :killed)
+                                                              was-locked? (conj! :locked)
+                                                              was-blacklisted? (conj! :blacklisted))))]
                                         ; cleanup instances who have no useful state
                                         (if (and (zero? slots-assigned)
                                                  (zero? slots-used)
@@ -409,12 +409,12 @@
               (cond-> (-> current-state
                           (update-in [:instance-id->request-id->use-reason-map] utils/dissoc-in [instance-id request-id])
                           (update-in [:instance-id->state instance-id] sanitize-instance-state))
-                      ; instance received from work-stealing, do not change slot state
-                      (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
-                      ; mark instance as no longer locked.
-                      (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
-                      ; clear work-stealing entry
-                      work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id))
+                ; instance received from work-stealing, do not change slot state
+                (nil? work-stealing-data) (update-slot-state-fn instance-id #(cond-> %2 (not= :kill-instance reason) (-> (dec) (max 0))))
+                ; mark instance as no longer locked.
+                (nil? work-stealing-data) (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :locked))
+                ; clear work-stealing entry
+                work-stealing-data (update-in [:request-id->work-stealer] dissoc request-id))
               (-> current-state
                   (assoc-in [:instance-id->request-id->use-reason-map instance-id request-id :variant] :async-request)
                   (update-in [:instance-id->state instance-id] sanitize-instance-state)))]
@@ -478,8 +478,8 @@
    instance-id expiry-time]
   (log/info "unblacklisting instance" instance-id "as blacklist expired at" expiry-time)
   (cond-> (update-instance-id->blacklist-expiry-time-fn current-state #(dissoc % instance-id))
-          (contains? instance-id->state instance-id)
-          (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
+    (contains? instance-id->state instance-id)
+    (update-in [:instance-id->state instance-id] update-status-tag-fn #(disj % :blacklisted))))
 
 (defn- expiry-time-reached?
   "Returns true if current-time is greater than or equal to expiry-time."
@@ -988,9 +988,9 @@
           ; consume a slot from the currently preferred instance
           :else (let [slot-available? (pos? (get instance-id->available-slots instance-id 0))
                       instance-id->assigned-slots' (cond-> instance-id->assigned-slots
-                                                           slot-available? (assign-slot-fn instance-id))
+                                                     slot-available? (assign-slot-fn instance-id))
                       instance-id->available-slots' (cond-> instance-id->available-slots
-                                                            slot-available? (update-in [instance-id] dec))]
+                                                      slot-available? (update-in [instance-id] dec))]
                   (recur (cond-> num-slots-to-consume slot-available? (dec))
                          (cond-> num-slots-available slot-available? (dec))
                          instance-id->assigned-slots'

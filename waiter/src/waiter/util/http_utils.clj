@@ -36,12 +36,12 @@
   (let [request-map (cond-> {:as :string
                              :method (or request-method :get)
                              :url request-url}
-                            spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
-                            accept (assoc :accept accept)
-                            body (assoc :body body)
-                            (not (str/blank? content-type)) (assoc :content-type content-type)
-                            (seq headers) (assoc :headers headers)
-                            query-string (assoc :query-string query-string))
+                      spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                      accept (assoc :accept accept)
+                      body (assoc :body body)
+                      (not (str/blank? content-type)) (assoc :content-type content-type)
+                      (seq headers) (assoc :headers headers)
+                      query-string (assoc :query-string query-string))
         raw-response (http/request http-client request-map)
         {:keys [error status] :as response} (async/<!! raw-response)]
     (when error

@@ -401,11 +401,11 @@
                                             (update :flags
                                                     (fn [flags]
                                                       (cond-> flags
-                                                              (not= error :connect-exception)
-                                                              (conj :has-connected)
+                                                        (not= error :connect-exception)
+                                                        (conj :has-connected)
 
-                                                              (not (contains? connection-errors error))
-                                                              (conj :has-responded))))))
+                                                        (not (contains? connection-errors error))
+                                                        (conj :has-responded))))))
             health-check-refs (map (fn [instance]
                                      (let [chan (async/promise-chan)]
                                        (if (:healthy? instance)
@@ -507,7 +507,7 @@
                               :instance-id->tracked-failed-instance instance-id->tracked-failed-instance'
                               :instance-id->failed-health-check-count instance-id->failed-health-check-count'})
                 (cond-> healthy-service-ids
-                        (seq healthy-instances) (conj service-id))
+                  (seq healthy-instances) (conj service-id))
                 scheduler-messages'
                 remaining))
             (let [summary-message [:update-available-services
@@ -591,8 +591,8 @@
          (fn [service-id->failed-instances]
            (update-in service-id->failed-instances [service-id]
                       #(cond-> (or % (initial-value-fn))
-                               (= max-instances-to-keep (count %)) (remove-fn)
-                               true (conj instance-entry))))))
+                         (= max-instances-to-keep (count %)) (remove-fn)
+                         true (conj instance-entry))))))
 
 (def service-id->killed-instances-transient-store (atom {}))
 

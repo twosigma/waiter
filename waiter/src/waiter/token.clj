@@ -289,15 +289,15 @@
         (log/info "successfully retrieved token " token)
         (utils/map->json-response
           (cond-> service-description-template
-                  show-metadata
-                  (merge (cond-> (loop [loop-token-metadata token-metadata
-                                        nested-last-update-time-path ["last-update-time"]]
-                                   (if (get-in loop-token-metadata nested-last-update-time-path)
-                                     (recur (update-in loop-token-metadata nested-last-update-time-path epoch-time->date-time)
-                                            (concat ["previous"] nested-last-update-time-path))
-                                     loop-token-metadata))
-                                 (not (contains? token-metadata "root"))
-                                 (assoc "root" token-root))))
+            show-metadata
+            (merge (cond-> (loop [loop-token-metadata token-metadata
+                                  nested-last-update-time-path ["last-update-time"]]
+                             (if (get-in loop-token-metadata nested-last-update-time-path)
+                               (recur (update-in loop-token-metadata nested-last-update-time-path epoch-time->date-time)
+                                      (concat ["previous"] nested-last-update-time-path))
+                               loop-token-metadata))
+                     (not (contains? token-metadata "root"))
+                     (assoc "root" token-root))))
           :headers {"etag" token-hash}))
       (do
         (throw (ex-info (str "Couldn't find token " token)
@@ -482,8 +482,8 @@
                            (map
                              (fn [[token entry]]
                                (cond-> (assoc entry :owner owner :token token)
-                                       (not show-metadata)
-                                       (dissoc :deleted :etag)))))))
+                                 (not show-metadata)
+                                 (dissoc :deleted :etag)))))))
                   flatten
                   utils/map->streaming-json-response))
       (throw (ex-info "Only GET supported" {:request-method request-method

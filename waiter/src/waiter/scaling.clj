@@ -61,8 +61,8 @@
                     (log/info "service-scaling-multiplexer received" {:service-id service-id :scale-amount scale-amount})
                     (let [service-id->scaling-executor-chan
                           (cond-> service-id->scaling-executor-chan
-                                  (not (get service-id->scaling-executor-chan service-id))
-                                  (assoc service-id (scaling-executor-factory service-id)))
+                            (not (get service-id->scaling-executor-chan service-id))
+                            (assoc service-id (scaling-executor-factory service-id)))
                           {:keys [executor-chan]} (get service-id->scaling-executor-chan service-id)]
                       (if scale-amount
                         (do

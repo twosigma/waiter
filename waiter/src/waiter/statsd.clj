@@ -391,8 +391,8 @@
          counts-by-metric-group {}]
     (let [counts-by-metric-group'
           (cond-> counts-by-metric-group
-                  (= message-type :update-service-instances)
-                  (process-update-service-instances-message message-data service-id->service-description-fn))]
+            (= message-type :update-service-instances)
+            (process-update-service-instances-message message-data service-id->service-description-fn))]
       (if (some? remaining)
         (recur remaining counts-by-metric-group')
         counts-by-metric-group'))))
