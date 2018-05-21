@@ -343,19 +343,19 @@
                                     (log/error e "Error in retrieving service suspended state for" service-id)))
         result-map (walk/stringify-keys
                      (cond-> {:router-id router-id, :num-routers (count router->metrics)}
-                             (not-empty service-instance-maps)
-                             (assoc :instances service-instance-maps
-                                    :num-active-instances (count (:active-instances service-instance-maps)))
-                             (not-empty aggregate-metrics-map)
-                             (assoc-in [:metrics :aggregate] aggregate-metrics-map)
-                             (not-empty router->metrics)
-                             (assoc-in [:metrics :routers] router->metrics)
-                             (not-empty core-service-description)
-                             (assoc :service-description core-service-description)
-                             (not-empty (or (:overrides service-description-overrides) {}))
-                             (assoc :service-description-overrides service-description-overrides)
-                             (:time service-suspended-state)
-                             (assoc :service-suspended-state service-suspended-state)))
+                       (not-empty service-instance-maps)
+                       (assoc :instances service-instance-maps
+                              :num-active-instances (count (:active-instances service-instance-maps)))
+                       (not-empty aggregate-metrics-map)
+                       (assoc-in [:metrics :aggregate] aggregate-metrics-map)
+                       (not-empty router->metrics)
+                       (assoc-in [:metrics :routers] router->metrics)
+                       (not-empty core-service-description)
+                       (assoc :service-description core-service-description)
+                       (not-empty (or (:overrides service-description-overrides) {}))
+                       (assoc :service-description-overrides service-description-overrides)
+                       (:time service-suspended-state)
+                       (assoc :service-suspended-state service-suspended-state)))
         sorted-result-map (utils/deep-sort-map result-map)]
     (utils/map->streaming-json-response sorted-result-map)))
 

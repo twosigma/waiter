@@ -112,10 +112,10 @@
         (is (contains? token-description# :root)))
       (is (= (cond-> {:health-check-url "/probe"
                       :name ~service-id-prefix}
-                     ~include-metadata (assoc :last-update-user (retrieve-username)
-                                              :owner (retrieve-username)
-                                              :root ~token-root)
-                     (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
+               ~include-metadata (assoc :last-update-user (retrieve-username)
+                                        :owner (retrieve-username)
+                                        :root ~token-root)
+               (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
              (dissoc token-description# :last-update-time :previous))))))
 
 (deftest ^:parallel ^:integration-fast test-token-create-delete
@@ -178,9 +178,9 @@
               (when actual-etag
                 (let [convert-last-update-time (fn [{:strs [last-update-time] :as service-description}]
                                                  (cond-> service-description
-                                                         last-update-time
-                                                         (assoc "last-update-time"
-                                                                (-> last-update-time du/str-to-date .getMillis))))
+                                                   last-update-time
+                                                   (assoc "last-update-time"
+                                                          (-> last-update-time du/str-to-date .getMillis))))
                       expected-etag (str "E-"
                                          (-> body
                                              json/read-str

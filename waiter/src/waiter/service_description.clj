@@ -137,27 +137,27 @@
   "Converts allowed-params comma-separated string in the service-description to a set."
   [service-description]
   (cond-> service-description
-          (contains? service-description "allowed-params")
-          (update "allowed-params"
-                  (fn [allowed-params]
-                    (when-not (string? allowed-params)
-                      (throw (ex-info "Provided allowed-params is not a string"
-                                      {:allowed-params allowed-params :status 400})))
-                    (if-not (str/blank? allowed-params)
-                      (set (str/split allowed-params #","))
-                      #{})))))
+    (contains? service-description "allowed-params")
+    (update "allowed-params"
+            (fn [allowed-params]
+              (when-not (string? allowed-params)
+                (throw (ex-info "Provided allowed-params is not a string"
+                                {:allowed-params allowed-params :status 400})))
+              (if-not (str/blank? allowed-params)
+                (set (str/split allowed-params #","))
+                #{})))))
 
 (defn transform-allowed-params-token-entry
   "Converts allowed-params vector in the service-description to a set."
   [service-description]
   (cond-> service-description
-          (contains? service-description "allowed-params")
-          (update "allowed-params"
-                  (fn [allowed-params]
-                    (when-not (coll? allowed-params)
-                      (throw (ex-info "Provided allowed-params is not a vector"
-                                      {:allowed-params allowed-params :status 400})))
-                    (set allowed-params)))))
+    (contains? service-description "allowed-params")
+    (update "allowed-params"
+            (fn [allowed-params]
+              (when-not (coll? allowed-params)
+                (throw (ex-info "Provided allowed-params is not a vector"
+                                {:allowed-params allowed-params :status 400})))
+              (set allowed-params)))))
 
 (defn map-validation-helper [issue key]
   (when-let [error (get issue key)]
@@ -169,8 +169,8 @@
                                 (map #(str/join ": " %)))
             bad-keys (filter #(instance? ValidationError %) (keys error))]
         (cond-> {}
-                (not-empty keys-with-bad-values) (assoc :bad-key-values bad-key-values)
-                (not-empty bad-keys) (assoc :bad-keys bad-keys)))
+          (not-empty keys-with-bad-values) (assoc :bad-key-values bad-key-values)
+          (not-empty bad-keys) (assoc :bad-keys bad-keys)))
       (instance? ValidationError error)
       (let [provided (.value ^ValidationError error)]
         (cond
@@ -255,7 +255,7 @@
   "Filter for descriptors which resolves the metric group"
   [{:strs [name metric-group] :as descriptor} mappings]
   (cond-> descriptor
-          (nil? metric-group) (assoc "metric-group" (or (name->metric-group mappings name) "other"))))
+    (nil? metric-group) (assoc "metric-group" (or (name->metric-group mappings name) "other"))))
 
 (defn merge-defaults
   "Merges the defaults into the existing service description."
@@ -269,7 +269,7 @@
   "Merges the overrides into the service description."
   [service-description-without-overrides service-description-overrides]
   (cond-> service-description-without-overrides
-          service-description-overrides (merge service-description-overrides)))
+    service-description-overrides (merge service-description-overrides)))
 
 (defn sanitize-service-description
   "Sanitizes the service description by removing unsupported keys."
@@ -321,7 +321,7 @@
   ; sanitize before sending to marathon, limit to lower-case letters and digits
   (let [{:strs [name]} service-description
         prefix (cond-> service-id-prefix
-                       name (str (str/replace (str/lower-case name) #"[^a-z0-9]" "") "-"))
+                 name (str (str/replace (str/lower-case name) #"[^a-z0-9]" "") "-"))
         service-hash (-> (select-keys service-description service-description-keys)
                          parameters->id)]
     (str prefix service-hash)))
@@ -351,7 +351,7 @@
                                              :service-description service-description-template
                                              :status 400
                                              :issue issue}
-                                            (not-empty friendly-error-message) (assoc :friendly-error-message friendly-error-message))
+                                      (not-empty friendly-error-message) (assoc :friendly-error-message friendly-error-message))
                                     e))]
     (try
       (s/validate service-description-schema service-description-to-use)
@@ -635,7 +635,7 @@
     [{:keys [service-id] :as descriptor} kv-store]
     (let [suspended-state (service-id->suspended-state kv-store service-id)]
       (cond-> descriptor
-              suspended-state (assoc :suspended-state suspended-state)))))
+        suspended-state (assoc :suspended-state suspended-state)))))
 
 (defn- parse-env-map-headers
   "Parses headers into an environment map.
@@ -732,21 +732,21 @@
                                                                  ; param headers need to update the environment
                                                                  merge-params)
           sanitized-service-description-from-sources (cond-> service-description-from-headers-and-token-sources
-                                                             ;; * run-as-user is the same as a missing run-as-user
-                                                             (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))
-                                                             (dissoc service-description-from-headers-and-token-sources "run-as-user"))
+                                                       ;; * run-as-user is the same as a missing run-as-user
+                                                       (= "*" (get service-description-from-headers-and-token-sources "run-as-user"))
+                                                       (dissoc service-description-from-headers-and-token-sources "run-as-user"))
           sanitized-metadata-description (sanitize-metadata sanitized-service-description-from-sources)
           ; run-as-user will not be set if description-from-headers or the token description contains it.
           ; else rely on presence of x-waiter headers to set the run-as-user
           contains-waiter-header? (headers/contains-waiter-header waiter-headers on-the-fly-service-description-keys)
           contains-service-parameter-header? (headers/contains-waiter-header waiter-headers service-description-keys)
           user-service-description (cond-> sanitized-metadata-description
-                                           (and (not (contains? sanitized-metadata-description "run-as-user")) contains-waiter-header?)
-                                           ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided
-                                           (assoc-run-as-requester-fields username)
-                                           contains-service-parameter-header?
-                                           ; can only set the permitted-user if some service-description-keys waiter header was provided
-                                           (assoc "permitted-user" (or (get headers "permitted-user") username)))]
+                                     (and (not (contains? sanitized-metadata-description "run-as-user")) contains-waiter-header?)
+                                     ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided
+                                     (assoc-run-as-requester-fields username)
+                                     contains-service-parameter-header?
+                                     ; can only set the permitted-user if some service-description-keys waiter header was provided
+                                     (assoc "permitted-user" (or (get headers "permitted-user") username)))]
       (when-not (seq user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
                         (error-message-map-fn passthrough-headers waiter-headers))))
@@ -798,7 +798,7 @@
   [kv-store service-id service-description-defaults metric-group-mappings &
    {:keys [effective? nil-on-missing? refresh] :or {effective? true nil-on-missing? true refresh false}}]
   (cond-> (fetch-core kv-store service-id :nil-on-missing? nil-on-missing? :refresh refresh)
-          effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
+    effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."

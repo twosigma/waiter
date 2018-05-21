@@ -234,9 +234,9 @@
               (launch-service service-id service-description service-id->password-fn
                               work-directory port->reservation-atom port-range)]
           (deliver completion-promise :created)
-          (let [service-entry (-> {:service service 
+          (let [service-entry (-> {:service service
                                    :id->instance {(:id instance) instance}}
-                                  update-task-stats)] 
+                                  update-task-stats)]
             (assoc id->service service-id service-entry)))))
     (catch Throwable e
       (log/error e "error attempting to create service" service-id)
@@ -508,13 +508,13 @@
            (cond-> {:name (.getName file)
                     :size (.length file)
                     :type (if (.isDirectory file) "directory" "file")}
-                   (.isDirectory file)
-                   (assoc :path (-> file
-                                    (.toPath)
-                                    (.relativize (.getPath (File. (str working-directory))))
-                                    (str)))
-                   (.isFile file)
-                   (assoc :url (str (.toURL file)))))
+             (.isDirectory file)
+             (assoc :path (-> file
+                              (.toPath)
+                              (.relativize (.getPath (File. (str working-directory))))
+                              (str)))
+             (.isFile file)
+             (assoc :url (str (.toURL file)))))
          directory-content)))
 
 ; The ShellScheduler's shell-agent holds all of the state about which

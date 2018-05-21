@@ -138,21 +138,21 @@
                                 (cond-> {:host host
                                          :protocol backend-proto
                                          :service-id (remove-slash-prefix appId)}
-                                        log-directory
-                                        (assoc :log-directory log-directory)
+                                  log-directory
+                                  (assoc :log-directory log-directory)
 
-                                        message
-                                        (assoc :message (str/trim message))
+                                  message
+                                  (assoc :message (str/trim message))
 
-                                        (str/includes? (str message) "Memory limit exceeded:")
-                                        (assoc :flags #{:memory-limit-exceeded})
+                                  (str/includes? (str message) "Memory limit exceeded:")
+                                  (assoc :flags #{:memory-limit-exceeded})
 
-                                        (str/includes? (str message) "Task was killed since health check failed")
-                                        (assoc :flags #{:never-passed-health-checks})
+                                  (str/includes? (str message) "Task was killed since health check failed")
+                                  (assoc :flags #{:never-passed-health-checks})
 
-                                        (str/includes? (str message) "Command exited with status")
-                                        (assoc :exit-code (try (-> message (str/split #"\s+") last Integer/parseInt)
-                                                               (catch Throwable _))))))
+                                  (str/includes? (str message) "Command exited with status")
+                                  (assoc :exit-code (try (-> message (str/split #"\s+") last Integer/parseInt)
+                                                         (catch Throwable _))))))
         healthy?-fn #(let [health-checks (:healthCheckResults %)]
                        (and
                          (and (seq health-checks)

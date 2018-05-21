@@ -289,7 +289,7 @@
   "If the specified key, k, is not already associated with a value, v, in the map, m, associate k with v in m."
   [m k v]
   (cond-> m
-          (not (contains? m k)) (assoc k v)))
+    (not (contains? m k)) (assoc k v)))
 
 (defn sleep
   "Helper function that wraps sleep call to java.lang.Thread"

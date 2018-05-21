@@ -202,16 +202,16 @@
                             (update response :headers
                                     (fn [headers]
                                       (cond-> headers
-                                              request-time (assoc "x-waiter-request-date" request-date)
-                                              request-id (assoc "x-waiter-request-id" request-id)
-                                              router-id (assoc "x-waiter-router-id" router-id)
-                                              descriptor (assoc "x-waiter-service-id" (:service-id descriptor))
-                                              instance (assoc "x-waiter-backend-id" (:id instance)
-                                                              "x-waiter-backend-host" (:host instance)
-                                                              "x-waiter-backend-port" (str (:port instance))
-                                                              "x-waiter-backend-proto" (:protocol instance))
-                                              backend-directory (assoc "x-waiter-backend-directory" backend-directory
-                                                                       "x-waiter-backend-log-url" backend-log-url))))))]
+                                        request-time (assoc "x-waiter-request-date" request-date)
+                                        request-id (assoc "x-waiter-request-id" request-id)
+                                        router-id (assoc "x-waiter-router-id" router-id)
+                                        descriptor (assoc "x-waiter-service-id" (:service-id descriptor))
+                                        instance (assoc "x-waiter-backend-id" (:id instance)
+                                                        "x-waiter-backend-host" (:host instance)
+                                                        "x-waiter-backend-port" (str (:port instance))
+                                                        "x-waiter-backend-proto" (:protocol instance))
+                                        backend-directory (assoc "x-waiter-backend-directory" backend-directory
+                                                                 "x-waiter-backend-log-url" backend-log-url))))))]
         (ru/update-response response add-headers))
       (handler request))))
 

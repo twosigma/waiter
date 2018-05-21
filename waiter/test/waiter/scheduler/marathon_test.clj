@@ -422,12 +422,12 @@
                                 (cond-> {:service-id appId
                                          :host host
                                          :health-check-path health-check-url}
-                                        (and framework-id slaveId)
-                                        (assoc :log-directory
-                                               (str slave-directory "/" slaveId "/frameworks/" framework-id
-                                                    "/executors/" instance-id "/runs/latest"))
-                                        message
-                                        (assoc :message (str/trim message)))))
+                                  (and framework-id slaveId)
+                                  (assoc :log-directory
+                                         (str slave-directory "/" slaveId "/frameworks/" framework-id
+                                              "/executors/" instance-id "/runs/latest"))
+                                  message
+                                  (assoc :message (str/trim message)))))
         service-id-1 "test-service-id-failed-instances-1"
         service-id-2 "test-service-id-failed-instances-2"
         service-id->failed-instances-transient-store (atom {})]

@@ -98,5 +98,5 @@
    username and principal are non-nil, respectively."
   [headers username principal]
   (cond-> headers
-          username (assoc "x-waiter-auth-principal" username)
-          principal (assoc "x-waiter-authenticated-principal" principal)))
+    username (assoc "x-waiter-auth-principal" username)
+    principal (assoc "x-waiter-authenticated-principal" principal)))

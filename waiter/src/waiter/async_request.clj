@@ -178,7 +178,7 @@
     (let [param-map {:host host, :location location, :port port, :request-id request-id, :router-id router-id, :service-id service-id}
           status-location (route-params->uri "/waiter-async/status/" param-map)
           status-url (cond-> status-location
-                             query-string (str "?" query-string))]
+                       query-string (str "?" query-string))]
       (log/info "updating status location to" status-location "from" location "with query string" query-string)
       (-> response
           (assoc-in [:headers "location"] status-url)))))

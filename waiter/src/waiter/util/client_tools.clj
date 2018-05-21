@@ -259,11 +259,11 @@
                                    :method method
                                    :query-string query-params
                                    :url request-url}
-                                  multipart (assoc :multipart multipart)
-                                  add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
-                                  form-params (assoc :form-params form-params)
-                                  (not (str/blank? content-type)) (assoc :content-type content-type)
-                                  cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
+                            multipart (assoc :multipart multipart)
+                            add-spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                            form-params (assoc :form-params form-params)
+                            (not (str/blank? content-type)) (assoc :content-type content-type)
+                            cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
              response-body (if body (async/<!! body) nil)]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
@@ -390,7 +390,7 @@
         settings-result (make-request waiter-url settings-path)]
     (log/debug "service" service-id ":" settings-result)
     (cond-> (some-> settings-result :body try-parse-json)
-            keywordize-keys walk/keywordize-keys)))
+      keywordize-keys walk/keywordize-keys)))
 
 (defn service-state [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
   (let [state-result (make-request waiter-url (str "/state/" service-id) :cookies cookies)
@@ -433,7 +433,7 @@
     (log/debug "routers retrieved from /state:" routers-raw)
     (pc/map-vals (fn [router-url]
                    (cond-> router-url
-                           (str/starts-with? router-url HTTP-SCHEME) (str/replace HTTP-SCHEME "")))
+                     (str/starts-with? router-url HTTP-SCHEME) (str/replace HTTP-SCHEME "")))
                  routers-raw)))
 
 (defn router-endpoint
@@ -795,8 +795,8 @@
         slave-directory (get-in settings [:scheduler-config :slave-directory])]
     (cond-> ["x-waiter-backend-id" "x-waiter-backend-host" "x-waiter-backend-port" "x-waiter-backend-proto"
              "x-waiter-backend-response-ns" "x-waiter-get-available-instance-ns" "x-waiter-router-id"]
-            (and mesos-slave-port slave-directory)
-            (concat ["x-waiter-backend-directory" "x-waiter-backend-log-url"]))))
+      (and mesos-slave-port slave-directory)
+      (concat ["x-waiter-backend-directory" "x-waiter-backend-log-url"]))))
 
 (defn rand-router-url
   "Returns a random router url from the routers in the specified cluster"
