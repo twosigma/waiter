@@ -186,19 +186,22 @@
                                                   ["test-throughput"]
                                                   ["nested" "test-throughput"]
                                                   ["foo" "bar"]
-                                                  ["outstanding" "fum"]]))]
+                                                  ["outstanding" "fum"]]))
+        service-id-1 (str "test-service-1." (rand-int 10000))
+        service-id-2 (str "test-service-2." (rand-int 10000))
+        service-id-3 (str "test-service-3." (rand-int 10000))]
     (testing "retrieving metrics for specified services"
       (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))
       (is (zero? (count (.getMetrics metrics-registry))))
-      (create-metrics "test-service-1")
-      (is (all-service-metrics-available? (retrieve-service-metrics "test-service-1")))
-      (is (zero? (count (retrieve-service-metrics "test-service-2"))))
-      (is (zero? (count (retrieve-service-metrics "test-service-3"))))
-      (create-metrics "test-service-2")
-      (create-metrics "test-service-3")
-      (is (all-service-metrics-available? (retrieve-service-metrics "test-service-1")))
-      (is (all-service-metrics-available? (retrieve-service-metrics "test-service-2")))
-      (is (all-service-metrics-available? (retrieve-service-metrics "test-service-3")))
+      (create-metrics service-id-1)
+      (is (all-service-metrics-available? (retrieve-service-metrics service-id-1)))
+      (is (zero? (count (retrieve-service-metrics service-id-2))))
+      (is (zero? (count (retrieve-service-metrics service-id-3))))
+      (create-metrics service-id-2)
+      (create-metrics service-id-3)
+      (is (all-service-metrics-available? (retrieve-service-metrics service-id-1)))
+      (is (all-service-metrics-available? (retrieve-service-metrics service-id-2)))
+      (is (all-service-metrics-available? (retrieve-service-metrics service-id-3)))
       (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true))))))
 
 (deftest test-get-waiter-metrics
@@ -306,31 +309,34 @@
                                             (or (not-empty (.getCounters metrics-registry metric-filter))
                                                 (not-empty (.getHistograms metrics-registry metric-filter))
                                                 (not-empty (.getMeters metrics-registry metric-filter))
-                                                (not-empty (.getTimers metrics-registry metric-filter)))))]
+                                                (not-empty (.getTimers metrics-registry metric-filter)))))
+        service-id-1 (str "test-service-1." (rand-int 10000))
+        service-id-2 (str "test-service-2." (rand-int 10000))
+        service-id-3 (str "test-service-3." (rand-int 10000))]
     (testing "Delete metrics for specified services"
       (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true)))
       (is (zero? (count (.getMetrics metrics-registry))))
-      (create-metrics "test-service-1")
-      (create-metrics "test-service-2")
-      (create-metrics "test-service-3")
+      (create-metrics service-id-1)
+      (create-metrics service-id-2)
+      (create-metrics service-id-3)
       (is (= (* 3 metrics-per-service) (count (.getMetrics metrics-registry))))
-      (create-metrics "test-service-2")
+      (create-metrics service-id-2)
       (is (= (* 3 metrics-per-service) (count (.getMetrics metrics-registry))))
-      (create-metrics "test-service-1")
+      (create-metrics service-id-1)
       (is (= (* 3 metrics-per-service) (count (.getMetrics metrics-registry))))
-      (is (has-metrics-except-outstanding? "test-service-1"))
-      (is (has-metrics-except-outstanding? "test-service-2"))
-      (is (has-metrics-except-outstanding? "test-service-3"))
-      (remove-metrics-except-outstanding metrics-registry "test-service-1")
+      (is (has-metrics-except-outstanding? service-id-1))
+      (is (has-metrics-except-outstanding? service-id-2))
+      (is (has-metrics-except-outstanding? service-id-3))
+      (remove-metrics-except-outstanding metrics-registry service-id-1)
       (is (= (+ (* 1 1) (* 2 metrics-per-service)) (count (.getMetrics metrics-registry))))
-      (is (not (has-metrics-except-outstanding? "test-service-1")))
-      (is (has-metrics-except-outstanding? "test-service-2"))
-      (is (has-metrics-except-outstanding? "test-service-3"))
-      (remove-metrics-except-outstanding metrics-registry "test-service-2")
+      (is (not (has-metrics-except-outstanding? service-id-1)))
+      (is (has-metrics-except-outstanding? service-id-2))
+      (is (has-metrics-except-outstanding? service-id-3))
+      (remove-metrics-except-outstanding metrics-registry service-id-2)
       (is (= (+ (* 2 1) (* 1 metrics-per-service)) (count (.getMetrics metrics-registry))))
-      (is (not (has-metrics-except-outstanding? "test-service-1")))
-      (is (not (has-metrics-except-outstanding? "test-service-2")))
-      (is (has-metrics-except-outstanding? "test-service-3"))
+      (is (not (has-metrics-except-outstanding? service-id-1)))
+      (is (not (has-metrics-except-outstanding? service-id-2)))
+      (is (has-metrics-except-outstanding? service-id-3))
       (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true))))))
 
 (deftest test-transient-metrics-data-producer
@@ -353,32 +359,35 @@
                 initial-iteration (retrieve-iteration)]
             (test-helpers/wait-for #(> (retrieve-iteration) initial-iteration)
                                    :interval metrics-gc-interval-ms
-                                   :unit-multiplier 1)))]
+                                   :unit-multiplier 1)))
+        service-id-1 (str "test-service-1." (rand-int 10000))
+        service-id-2 (str "test-service-2." (rand-int 10000))
+        service-id-3 (str "test-service-3." (rand-int 10000))]
     (testing "Transient Data producer"
       (reset! service-id->metrics-atom {})
-      (create-metrics "test-service-1")
-      (create-metrics "test-service-2")
+      (create-metrics service-id-1)
+      (create-metrics service-id-2)
       (await-iteration-execution)
       (let [service->metrics (async/<!! service-id->metrics-chan)]
         (is (= 2 (count service->metrics)))
-        (is (contains? service->metrics "test-service-1"))
-        (is (contains? service->metrics "test-service-2")))
-      (create-metrics "test-service-3")
+        (is (contains? service->metrics service-id-1))
+        (is (contains? service->metrics service-id-2)))
+      (create-metrics service-id-3)
       (await-iteration-execution)
       (let [service->metrics (async/<!! service-id->metrics-chan)]
         (is (= 3 (count service->metrics)))
-        (is (contains? service->metrics "test-service-1"))
-        (is (contains? service->metrics "test-service-2"))
-        (is (contains? service->metrics "test-service-3")))
+        (is (contains? service->metrics service-id-1))
+        (is (contains? service->metrics service-id-2))
+        (is (contains? service->metrics service-id-3)))
       (reset! service-id->metrics-atom {})
       (await-iteration-execution)
       (let [service->metrics (async/<!! service-id->metrics-chan)]
         (is (zero? (count service->metrics))))
-      (create-metrics "test-service-1")
+      (create-metrics service-id-1)
       (await-iteration-execution)
       (let [service->metrics (async/<!! service-id->metrics-chan)]
         (is (= 1 (count service->metrics)))
-        (is (contains? service->metrics "test-service-1")))
+        (is (contains? service->metrics service-id-1)))
       (async/>!! exit-chan :exit)
       (reset! service-id->metrics-atom {}))))
 

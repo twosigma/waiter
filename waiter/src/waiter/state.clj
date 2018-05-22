@@ -544,7 +544,11 @@
    initial-state]
   (when (some nil? (vals initial-state))
     (throw (ex-info "Initial state contains nil values!" initial-state)))
-  (let [max-backoff-exponent (int (max 1 (inc (/ (Math/log max-blacklist-time-ms) (Math/log blacklist-backoff-base-time-ms)))))
+  (let [max-backoff-exponent (->> (/ (Math/log max-blacklist-time-ms) (Math/log blacklist-backoff-base-time-ms))
+                                  Math/exp
+                                  inc
+                                  (max 1)
+                                  int)
         responder-timer (metrics/service-timer service-id "service-chan-responder-iteration")
         slots-available-counter (metrics/service-counter service-id "instance-counts" "slots-available")
         slots-assigned-counter (metrics/service-counter service-id "instance-counts" "slots-assigned")

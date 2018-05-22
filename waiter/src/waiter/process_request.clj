@@ -389,18 +389,18 @@
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
-    (let [request-abort-callback (abort-http-request-callback-factory response)]
+    (let [modified-response (inspect-for-202-async-request-response
+                              response post-process-async-request-response-fn instance-request-properties service-id
+                              metric-group instance endpoint request reason-map reservation-status-promise)
+          request-abort-callback (abort-http-request-callback-factory response)]
       (stream-http-response response confirm-live-connection-with-abort request-abort-callback
                             resp-chan instance-request-properties reservation-status-promise
                             request-state-chan metric-group waiter-debug-enabled?
-                            (metrics/stream-metric-map service-id)))
-    (-> response
-        (inspect-for-202-async-request-response
-          post-process-async-request-response-fn instance-request-properties service-id metric-group
-          instance endpoint request reason-map reservation-status-promise)
-        (assoc :body resp-chan)
-        (update-in [:headers] (fn update-response-headers [headers]
-                                (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers))))))
+                            (metrics/stream-metric-map service-id))
+      (-> modified-response
+          (assoc :body resp-chan)
+          (update-in [:headers] (fn update-response-headers [headers]
+                                  (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."
