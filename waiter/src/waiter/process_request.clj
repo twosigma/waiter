@@ -238,25 +238,18 @@
       http-client make-basic-auth-fn request-method instance-endpoint query-string headers body service-password
       (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size)))
 
-(defn inspect-for-202-async-request-response
-  "Helper function that inspects the response and triggers async-request post processing."
-  [{:keys [headers status] :as response} post-process-async-request-response-fn instance-request-properties
-   service-id metric-group instance endpoint request reason-map reservation-status-promise]
-  (let [location-header (str (get headers "location"))
-        [endpoint _] (str/split endpoint #"\?" 2)
-        [location-header query-string] (str/split location-header #"\?" 2)
-        location (async-req/normalize-location-header endpoint location-header)]
-    (if (= status 202)
+(defn extract-async-request-response-data
+  "Helper function that inspects the response and returns the location and query-string if the response
+   has a status code is 202 and contains a location header with a base path."
+  [{:keys [headers status]} endpoint]
+  (when (= status 202)
+    (let [location-header (str (get headers "location"))
+          [endpoint _] (str/split endpoint #"\?" 2)
+          [location-header query-string] (str/split location-header #"\?" 2)
+          location (async-req/normalize-location-header endpoint location-header)]
       (if (str/starts-with? location "/")
-        (let [auth-user-map (handler/make-auth-user-map request)]
-          (deliver reservation-status-promise :success-async) ;; backend is processing as an asynchronous request
-          (post-process-async-request-response-fn
-            response service-id metric-group instance auth-user-map reason-map instance-request-properties
-            location query-string))
-        (do
-          (log/info "response status 202, not treating as an async request as location is" location)
-          response))
-      response)))
+        {:location location :query-string query-string}
+        (log/info "response status 202, not treating as an async request as location is" location)))))
 
 (defn stream-http-response
   "Writes byte data to the resp-chan. If the body is a string, just writes the string.
@@ -357,9 +350,9 @@
     (let [{:keys [service-id] {:strs [metric-group]} :service-description} descriptor
           response (handler request)
           update! (fn [{:keys [status] :as response}]
-                   (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
-                   (statsd/inc! metric-group (str "response_status_" status))
-                   response)]
+                    (counters/inc! (metrics/service-counter service-id "response-status" (str status)))
+                    (statsd/inc! metric-group (str "response_status_" status))
+                    response)]
       (ru/update-response response update!))))
 
 (defn abort-http-request-callback-factory
@@ -389,18 +382,22 @@
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
-    (let [request-abort-callback (abort-http-request-callback-factory response)]
+    (let [{:keys [location query-string]} (extract-async-request-response-data response endpoint)
+          request-abort-callback (abort-http-request-callback-factory response)]
+      (when location
+        ;; backend is processing as an asynchronous request, eagerly trigger the write to the promise
+        (deliver reservation-status-promise :success-async))
       (stream-http-response response confirm-live-connection-with-abort request-abort-callback
                             resp-chan instance-request-properties reservation-status-promise
                             request-state-chan metric-group waiter-debug-enabled?
-                            (metrics/stream-metric-map service-id)))
-    (-> response
-        (inspect-for-202-async-request-response
-          post-process-async-request-response-fn instance-request-properties service-id metric-group
-          instance endpoint request reason-map reservation-status-promise)
-        (assoc :body resp-chan)
-        (update-in [:headers] (fn update-response-headers [headers]
-                                (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers))))))
+                            (metrics/stream-metric-map service-id))
+      (-> (cond-> response
+            location (post-process-async-request-response-fn
+                       service-id metric-group instance (handler/make-auth-user-map request) reason-map
+                       instance-request-properties location query-string))
+          (assoc :body resp-chan)
+          (update-in [:headers] (fn update-response-headers [headers]
+                                  (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
 
 (defn track-process-error-metrics
   "Updates metrics for process errors."
@@ -464,7 +461,7 @@
                                             :time request-time
                                             :cid (cid/get-correlation-id)
                                             :request-id request-id}
-                                     priority (assoc :priority priority))
+                                           priority (assoc :priority priority))
                         ; pass false to keep request-state-chan open after control-mult is closed
                         ; request-state-chan should be explicitly closed after the request finishes processing
                         request-state-chan (async/tap control-mult (au/latest-chan) false)
@@ -524,8 +521,8 @@
     (if (get suspended-state :suspended false)
       (let [{:keys [last-updated-by time]} suspended-state
             response-map (cond-> {:service-id service-id}
-                           time (assoc :suspended-at (du/date-to-str time))
-                           (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
+                                 time (assoc :suspended-at (du/date-to-str time))
+                                 (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "Service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
         (-> {:details response-map, :message "Service has been suspended", :status 503}

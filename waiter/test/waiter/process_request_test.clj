@@ -248,86 +248,62 @@
         (is (= 10000000 (reduce + bytes-reported)))
         (is (= [1000448 1000448 1000448 1000448 1000448 1000448 1000448 1000448 1000448 995968] bytes-reported))))))
 
-(deftest test-inspect-for-202-async-request-response
-  (letfn [(execute-inspect-for-202-async-request-response
-            [endpoint request response]
-            (let [reservation-status-promise (promise)
-                  post-process-data (atom {})
-                  post-process-async-request-response-fn
-                  (fn [_ _ _ _ auth-user _ _ location query-string]
-                    (reset! post-process-data
-                            {:auth-user (:username auth-user) :location location :query-string query-string}))]
-              (inspect-for-202-async-request-response
-                response post-process-async-request-response-fn {} "service-id" "metric-group" {}
-                endpoint request {} reservation-status-promise)
-              (deliver reservation-status-promise :not-async)
-              (assoc @post-process-data :result @reservation-status-promise)))]
-    (testing "202-missing-location-header"
-      (is (= {:result :not-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 202 :headers {}}))))
-    (testing "200-not-async"
-      (is (= {:result :not-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 200, :headers {"location" "/result/location"}}))))
-    (testing "303-not-async"
-      (is (= {:result :not-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 303, :headers {"location" "/result/location"}}))))
-    (testing "404-not-async"
-      (is (= {:result :not-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 404, :headers {"location" "/result/location"}}))))
-    (testing "202-absolute-location"
-      (is (= {:auth-user "test-user" :location "/result/location" :query-string nil :result :success-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 202 :headers {"location" "/result/location"}}))))
-    (testing "202-relative-location-1"
-      (is (= {:auth-user "test-user" :location "/query/result/location" :query-string nil :result :success-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 202 :headers {"location" "../result/location"}}))))
-    (testing "202-relative-location-2"
-      (is (= {:auth-user "test-user" :location "/query/for/result/location" :query-string nil :result :success-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 202 :headers {"location" "result/location"}}))))
-    (testing "202-relative-location-two-levels"
-      (is (= {:auth-user "test-user" :location "/result/location" :query-string "p=q&r=s|t" :result :success-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status?u=v&w=x|y|z"
-               {:authorization/user "test-user" :query-string "a=b&c=d|e"}
-               {:status 202 :headers {"location" "../../result/location?p=q&r=s|t"}}))))
-    (testing "202-absolute-url-same-host-port"
-      (is (= {:auth-user "test-user" :location "/retrieve/result/location" :query-string nil :result :success-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 202 :headers {"location" "http://www.example.com:1234/retrieve/result/location"}}))))
-    (testing "202-absolute-url-different-host"
-      (is (= {:result :not-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 202 :headers {"location" "http://www.example2.com:1234/retrieve/result/location"}}))))
-    (testing "202-absolute-url-different-port"
-      (is (= {:result :not-async}
-             (execute-inspect-for-202-async-request-response
-               "http://www.example.com:1234/query/for/status"
-               {:authorization/user "test-user"}
-               {:status 202 :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}))))))
+(deftest test-extract-async-request-response-data
+  (testing "202-missing-location-header"
+    (is (nil?
+          (extract-async-request-response-data
+            {:status 202 :headers {}}
+            "http://www.example.com:1234/query/for/status"))))
+  (testing "200-not-async"
+    (is (nil?
+          (extract-async-request-response-data
+            {:status 200, :headers {"location" "/result/location"}}
+            "http://www.example.com:1234/query/for/status"))))
+  (testing "303-not-async"
+    (is (nil?
+          (extract-async-request-response-data
+            {:status 303, :headers {"location" "/result/location"}}
+            "http://www.example.com:1234/query/for/status"))))
+  (testing "404-not-async"
+    (is (nil?
+          (extract-async-request-response-data
+            {:status 404, :headers {"location" "/result/location"}}
+            "http://www.example.com:1234/query/for/status"))))
+  (testing "202-absolute-location"
+    (is (= {:location "/result/location" :query-string nil}
+           (extract-async-request-response-data
+             {:status 202 :headers {"location" "/result/location"}}
+             "http://www.example.com:1234/query/for/status"))))
+  (testing "202-relative-location-1"
+    (is (= {:location "/query/result/location" :query-string nil}
+           (extract-async-request-response-data
+             {:status 202 :headers {"location" "../result/location"}}
+             "http://www.example.com:1234/query/for/status"))))
+  (testing "202-relative-location-2"
+    (is (= {:location "/query/for/result/location" :query-string nil}
+           (extract-async-request-response-data
+             {:status 202 :headers {"location" "result/location"}}
+             "http://www.example.com:1234/query/for/status"))))
+  (testing "202-relative-location-two-levels"
+    (is (= {:location "/result/location" :query-string "p=q&r=s|t"}
+           (extract-async-request-response-data
+             {:status 202 :headers {"location" "../../result/location?p=q&r=s|t"}}
+             "http://www.example.com:1234/query/for/status?u=v&w=x|y|z"))))
+  (testing "202-absolute-url-same-host-port"
+    (is (= {:location "/retrieve/result/location" :query-string nil}
+           (extract-async-request-response-data
+             {:status 202 :headers {"location" "http://www.example.com:1234/retrieve/result/location"}}
+             "http://www.example.com:1234/query/for/status"))))
+  (testing "202-absolute-url-different-host"
+    (is (nil?
+          (extract-async-request-response-data
+            {:status 202 :headers {"location" "http://www.example2.com:1234/retrieve/result/location"}}
+            "http://www.example.com:1234/query/for/status"))))
+  (testing "202-absolute-url-different-port"
+    (is (nil?
+          (extract-async-request-response-data
+            {:status 202 :headers {"location" "http://www.example.com:5678/retrieve/result/location"}}
+            "http://www.example.com:1234/query/for/status")))))
 
 (deftest test-make-request
   (let [instance {:service-id "test-service-id", :host "example.com", :port 8080, :protocol "proto"}
