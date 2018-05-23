@@ -44,8 +44,8 @@
 
 (defn- token-description->token-hash
   "Converts the token metadata to a hash."
-  [{:keys [service-description-template token-metadata]}]
-  (-> (merge service-description-template token-metadata)
+  [{:keys [service-parameter-template token-metadata]}]
+  (-> (merge service-parameter-template token-metadata)
       sd/token-data->token-hash))
 
 (defn- validate-token-modification-based-on-hash
@@ -86,13 +86,13 @@
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
-    [synchronize-fn kv-store history-length ^String token service-description-template token-metadata &
+    [synchronize-fn kv-store history-length ^String token service-parameter-template token-metadata &
      {:keys [version-hash]}]
     (synchronize-fn
       token-lock
       (fn inner-store-service-description-for-token []
         (log/info "storing service description for token:" token)
-        (let [token-data (-> (merge service-description-template token-metadata)
+        (let [token-data (-> (merge service-parameter-template token-metadata)
                              (select-keys sd/token-data-keys))
               {:strs [deleted owner] :as new-token-data} (sd/sanitize-service-description token-data sd/token-data-keys)
               existing-token-data (kv/fetch kv-store token :refresh true)
@@ -239,8 +239,8 @@
         hard-delete (utils/request-flag request-params "hard-delete")]
     (if token
       (let [token-description (sd/token->token-description kv-store token :include-deleted hard-delete)
-            {:keys [service-description-template token-metadata]} token-description]
-        (if (and service-description-template (not-empty service-description-template))
+            {:keys [service-parameter-template token-metadata]} token-description]
+        (if (and service-parameter-template (not-empty service-parameter-template))
           (let [token-owner (get token-metadata "owner")
                 version-hash (get headers "if-match")]
             (if hard-delete
@@ -281,14 +281,14 @@
         token (or (get request-params "token")
                   (:token (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)))
         token-description (sd/token->token-description kv-store token :include-deleted include-deleted)
-        {:keys [service-description-template token-metadata]} token-description
+        {:keys [service-parameter-template token-metadata]} token-description
         token-hash (token-description->token-hash token-description)]
-    (if (seq service-description-template)
+    (if (seq service-parameter-template)
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
         (log/info "successfully retrieved token " token)
         (utils/map->json-response
-          (cond-> service-description-template
+          (cond-> service-parameter-template
                   show-metadata
                   (merge (cond-> (loop [loop-token-metadata token-metadata
                                         nested-last-update-time-path ["last-update-time"]]
@@ -318,8 +318,8 @@
                                                sd/transform-allowed-params-token-entry)
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
         new-user-metadata (select-keys new-token-metadata sd/user-metadata-keys)
-        {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-description-template}
-        (select-keys new-token-data sd/service-description-keys)
+        {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-parameter-template}
+        (select-keys new-token-data sd/service-parameter-keys)
         existing-token-metadata (sd/token->token-metadata kv-store token :error-on-missing false)
         owner (or (get new-token-metadata "owner")
                   (get existing-token-metadata "owner")
@@ -332,7 +332,7 @@
     (when-not (re-matches valid-token-re token)
       (throw (ex-info "Token must match pattern"
                       {:status 400 :token token :pattern (str valid-token-re)})))
-    (validate-service-description-fn new-service-description-template)
+    (validate-service-description-fn new-service-parameter-template)
     (when-let [user-metadata-check (s/check sd/user-metadata-schema new-user-metadata)]
       (throw (ex-info "User metadata validation failed"
                       {:failed-check user-metadata-check :status 400 :token token})))
@@ -350,13 +350,13 @@
                              " permitted-user as *, instead provided " permitted-user)
                         {:status 400 :token token})))
       ;; partial tokens not supported when authentication is disabled
-      (when-not (sd/required-keys-present? new-service-description-template)
+      (when-not (sd/required-keys-present? new-service-parameter-template)
         (throw (ex-info "Tokens with authentication disabled must specify all required parameters"
                         {:missing-parameters (->> sd/service-required-keys
-                                                  (remove #(contains? new-service-description-template %1)) seq)
-                         :service-description new-service-description-template
+                                                  (remove #(contains? new-service-parameter-template %1)) seq)
+                         :service-description new-service-parameter-template
                          :status 400}))))
-    (when (and interstitial-secs (not (sd/required-keys-present? new-service-description-template)))
+    (when (and interstitial-secs (not (sd/required-keys-present? new-service-parameter-template)))
       (throw (ex-info (str "Tokens with missing required parameters cannot use interstitial support")
                       {:status 400 :token token})))
     (case (get request-params "update-mode")
@@ -424,7 +424,7 @@
                                      "root" (or (get existing-token-metadata "root") token-root)}
                                     new-token-metadata)]
       (store-service-description-for-token
-        synchronize-fn kv-store history-length token new-service-description-template new-token-metadata
+        synchronize-fn kv-store history-length token new-service-parameter-template new-token-metadata
         :version-hash version-hash)
       ; notify peers of token update
       (make-peer-requests-fn "tokens/refresh"
@@ -434,11 +434,12 @@
                                    (not (get existing-token-metadata "deleted")))
                             "updated "
                             "created ")]
-        (utils/map->json-response {:message (str "Successfully " creation-mode token)
-                                   :service-description new-service-description-template}
-                                  :headers {"etag" (-> {:service-description-template new-service-description-template
-                                                        :token-metadata new-token-metadata}
-                                                       token-description->token-hash)})))))
+        (utils/map->json-response
+          {:message (str "Successfully " creation-mode token)
+           :service-description new-service-parameter-template}
+          :headers {"etag" (token-description->token-hash
+                             {:service-parameter-template new-service-parameter-template
+                              :token-metadata new-token-metadata})})))))
 
 (defn handle-token-request
   "Ring handler for dealing with tokens.

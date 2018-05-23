@@ -395,7 +395,9 @@
                                       (str/includes? token "mem") (assoc "mem" "2")
                                       (str/includes? token "per") (assoc "permitted-user" "puser")
                                       (str/includes? token "run") (assoc "run-as-user" "ruser"))
-                              {}))]
+                              {}))
+        build-source-tokens (fn [& tokens]
+                              (mapv (fn [token] (source-tokens-entry token (create-token-data token))) tokens))]
     (with-redefs [kv/fetch (fn [in-kv-store token]
                              (is (= kv-store in-kv-store))
                              (create-token-data token))]
@@ -420,8 +422,9 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :service-description-template {"name" "test-host"
-                                                                    "cmd" "token-user"
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-host"
+                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
@@ -468,8 +471,9 @@
                                                "cmd" "test-cmd"
                                                "version" "test-version"
                                                "run-as-user" test-user}
-                                     :service-description-template {"name" "test-host"
-                                                                    "cmd" "token-user"
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-host"
+                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
@@ -506,8 +510,9 @@
                                                 "health-check-url" "/ping"}
                                      :fallback-period-secs 300
                                      :headers {}
-                                     :service-description-template {"name" "test-host"
-                                                                    "cmd" "token-user"
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-host"
+                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
@@ -522,8 +527,9 @@
                                                 "health-check-url" "/ping"}
                                      :fallback-period-secs 300
                                      :headers {}
-                                     :service-description-template {"name" "test-token"
-                                                                    "cmd" "token-user"
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token"
+                                                                    "source-tokens" (build-source-tokens "test-token")
                                                                     "version" "token"}
                                      :token->token-data {"test-token" (create-token-data "test-token")}
                                      :token-authentication-disabled false
@@ -539,8 +545,9 @@
                                                 "health-check-url" "/ping"}
                                      :fallback-period-secs 300
                                      :headers {}
-                                     :service-description-template {"name" "test-token2"
-                                                                    "cmd" "token-user"
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token2"
+                                                                    "source-tokens" (build-source-tokens "test-token" "test-token2")
                                                                     "version" "token"}
                                      :token->token-data {"test-token" (create-token-data "test-token")
                                                          "test-token2" (create-token-data "test-token2")}
@@ -555,10 +562,11 @@
                           :expected {:defaults {"name" "default-name" "health-check-url" "/ping"}
                                      :fallback-period-secs 300
                                      :headers {}
-                                     :service-description-template {"name" "test-mem-token"
-                                                                    "cmd" "token-user"
+                                     :service-description-template {"cmd" "token-user"
                                                                     "cpus" "1"
                                                                     "mem" "2"
+                                                                    "name" "test-mem-token"
+                                                                    "source-tokens" (build-source-tokens "test-token" "test-token2" "test-cpus-token" "test-mem-token")
                                                                     "version" "token"}
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-mem-token" (create-token-data "test-mem-token")
@@ -575,8 +583,9 @@
                                                 "health-check-url" "/ping"}
                                      :fallback-period-secs 300
                                      :headers {}
-                                     :service-description-template {"name" "test-host"
-                                                                    "cmd" "token-user"
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-host"
+                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
@@ -590,8 +599,9 @@
                                                 "health-check-url" "/ping"}
                                      :fallback-period-secs 300
                                      :headers {}
-                                     :service-description-template {"name" "test-host"
-                                                                    "cmd" "token-user"
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-host"
+                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false,
@@ -605,10 +615,11 @@
                                                 "health-check-url" "/ping"}
                                      :fallback-period-secs 300
                                      :headers {}
-                                     :service-description-template {"name" "test-token-run"
-                                                                    "cmd" "token-user"
-                                                                    "version" "token"
-                                                                    "run-as-user" "ruser"}
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token-run"
+                                                                    "run-as-user" "ruser"
+                                                                    "source-tokens" (build-source-tokens "test-token-run")
+                                                                    "version" "token"}
                                      :token->token-data {"test-token-run" (create-token-data "test-token-run")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -621,8 +632,9 @@
                                                 "health-check-url" "/ping"}
                                      :fallback-period-secs 600
                                      :headers {}
-                                     :service-description-template {"name" "test-token-per-fall"
-                                                                    "cmd" "token-user"
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token-per-fall"
+                                                                    "source-tokens" (build-source-tokens "test-token-per-fall")
                                                                     "version" "token" "permitted-user" "puser"}
                                      :token->token-data {"test-token-per-fall" (create-token-data "test-token-per-fall")}
                                      :token-authentication-disabled false,
@@ -636,11 +648,12 @@
                                                 "health-check-url" "/ping"}
                                      :fallback-period-secs 300
                                      :headers {}
-                                     :service-description-template {"name" "test-token-per-run"
-                                                                    "cmd" "token-user"
-                                                                    "version" "token"
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token-per-run"
+                                                                    "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "permitted-user" "puser"}
+                                                                    "source-tokens" (build-source-tokens "test-token-per-run")
+                                                                    "version" "token"}
                                      :token->token-data {"test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -653,12 +666,13 @@
                                                 "health-check-url" "/ping"}
                                      :fallback-period-secs 300
                                      :headers {}
-                                     :service-description-template {"name" "test-cpus-token"
-                                                                    "cmd" "token-user"
-                                                                    "version" "token"
+                                     :service-description-template {"cmd" "token-user"
                                                                     "cpus" "1"
+                                                                    "name" "test-cpus-token"
+                                                                    "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "permitted-user" "puser"}
+                                                                    "source-tokens" (build-source-tokens "test-token-per-run" "test-cpus-token")
+                                                                    "version" "token"}
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
@@ -712,6 +726,7 @@
                                                                     "name" "test-host-allowed-cpus-mem-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
+                                                                    "source-tokens" (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                                                     "version" "token"}
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
@@ -735,6 +750,7 @@
                                                                     "name" "test-host-allowed-cpus-mem-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
+                                                                    "source-tokens" (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                                                     "version" "token"}
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
@@ -757,6 +773,7 @@
                                                                     "name" "test-host-allowed-cpus-mem-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
+                                                                    "source-tokens" (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                                                     "version" "token"}
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
@@ -854,12 +871,20 @@
         service-description-defaults {"name" "default-name" "health-check-url" "/ping"}
         token-defaults {"fallback-period-secs" 300}]
     (testing "authentication-disabled token"
-      (let [token-description {"authentication" "disabled", "cmd" "a-command", "cpus" "1", "mem" "2", "name" test-token
-                               "owner" "token-owner", "permitted-user" "*", "previous" {}, "run-as-user" "ruser", "version" "token"}]
+      (let [token-data {"authentication" "disabled"
+                        "cmd" "a-command"
+                        "cpus" "1"
+                        "mem" "2"
+                        "name" test-token
+                        "owner" "token-owner"
+                        "permitted-user" "*"
+                        "previous" {}
+                        "run-as-user" "ruser"
+                        "version" "token"}]
         (with-redefs [kv/fetch (fn [in-kv-store token]
                                  (is (= kv-store in-kv-store))
                                  (is (= test-token token))
-                                 token-description)]
+                                 token-data)]
           (let [waiter-headers {"x-waiter-token" test-token}
                 passthrough-headers {"host" "test-host:1234", "fee" "foe"}
                 actual (prepare-service-description-sources
@@ -869,20 +894,30 @@
                 expected {:defaults service-description-defaults
                           :fallback-period-secs 300
                           :headers {}
-                          :service-description-template (select-keys token-description service-description-keys)
-                          :token->token-data {test-token token-description}
+                          :service-description-template (-> token-data
+                                                            (select-keys service-parameter-keys)
+                                                            (assoc "source-tokens" [(source-tokens-entry test-token token-data)]))
+                          :token->token-data {test-token token-data}
                           :token-authentication-disabled true
                           :token-preauthorized true
                           :token-sequence [test-token]}]
             (is (= expected actual))))))
 
     (testing "limited-access token"
-      (let [token-description {"authentication" "standard", "cmd" "a-command", "cpus" "1", "mem" "2", "name" test-token
-                               "owner" "token-owner", "permitted-user" "*", "previous" {}, "run-as-user" "ruser", "version" "token"}]
+      (let [token-data {"authentication" "standard"
+                        "cmd" "a-command"
+                        "cpus" "1"
+                        "mem" "2"
+                        "name" test-token
+                        "owner" "token-owner"
+                        "permitted-user" "*"
+                        "previous" {}
+                        "run-as-user" "ruser"
+                        "version" "token"}]
         (with-redefs [kv/fetch (fn [in-kv-store token]
                                  (is (= kv-store in-kv-store))
                                  (is (= test-token token))
-                                 token-description)]
+                                 token-data)]
           (let [waiter-headers {"x-waiter-token" test-token}
                 passthrough-headers {"host" "test-host:1234", "fee" "foe"}
                 actual (prepare-service-description-sources
@@ -892,8 +927,10 @@
                 expected {:defaults service-description-defaults
                           :fallback-period-secs 300
                           :headers {}
-                          :service-description-template (select-keys token-description service-description-keys)
-                          :token->token-data {test-token token-description}
+                          :service-description-template (-> token-data
+                                                            (select-keys service-parameter-keys)
+                                                            (assoc "source-tokens" [(source-tokens-entry test-token token-data)]))
+                          :token->token-data {test-token token-data}
                           :token-authentication-disabled false
                           :token-preauthorized true
                           :token-sequence [test-token]}]
@@ -1372,50 +1409,41 @@
                                                                   "cmd" "token-cmd"}}
                                   :waiter-headers {"x-waiter-run-as-user" "header-user"}))))
 
-    (testing "active overrides"
-      (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
-        (store-service-description-overrides
-          kv-store
-          "test-service-activeoverride-00de822338af921fbefacd263d092c8a"
-          "current-request-user"
-          {"scale-factor" 0.3})
-        (is (= {"cmd" "on-the-fly-cmd"
-                "health-check-url" "/ping"
-                "permitted-user" "bob"
-                "run-as-user" "on-the-fly-ru"
-                "name" "active-override"
-                "scale-factor" 0.3}
-               (service-description {:defaults {"health-check-url" "/ping"
-                                                "permitted-user" "bob"}
-                                     :headers {"cmd" "on-the-fly-cmd"
-                                               "run-as-user" "on-the-fly-ru"
-                                               "name" "active-override"}}
-                                    :kv-store kv-store)))))
+    (testing "overrides"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            basic-service-description {"cmd" "on-the-fly-cmd"
+                                       "run-as-user" "on-the-fly-ru"}
+            basic-service-id (service-description->service-id "test-service-" basic-service-description)]
 
-    (testing "inactive overrides"
-      (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
-        (store-service-description-overrides
-          kv-store
-          "test-service-inactiveoverride-b72d04dd1527e9730d1e8f5bc6bcf341"
-          "current-request-user"
-          {"scale-factor" 0.3})
-        (clear-service-description-overrides
-          kv-store
-          "test-service-inactiveoverride-b72d04dd1527e9730d1e8f5bc6bcf341"
-          "current-request-user")
-        (is (= {"cmd" "on-the-fly-cmd"
-                "health-check-url" "/ping"
-                "permitted-user" "bob"
-                "run-as-user" "on-the-fly-ru"
-                "name" "inactive-override"
-                "scale-factor" 1}
-               (service-description {:defaults {"health-check-url" "/ping"
-                                                "permitted-user" "bob"
-                                                "scale-factor" 1}
-                                     :headers {"cmd" "on-the-fly-cmd"
-                                               "run-as-user" "on-the-fly-ru"
-                                               "name" "inactive-override"}}
-                                    :kv-store kv-store)))))
+        (testing "active"
+          (store-service-description-overrides
+            kv-store
+            basic-service-id
+            "current-request-user"
+            {"scale-factor" 0.3})
+          (is (= (-> basic-service-description
+                     (dissoc "source-tokens")
+                     (assoc "health-check-url" "/ping" "permitted-user" "bob" "scale-factor" 0.3))
+                 (service-description {:defaults {"health-check-url" "/ping"
+                                                  "permitted-user" "bob"
+                                                  "scale-factor" 1}
+                                       :headers {"cmd" "on-the-fly-cmd"
+                                                 "run-as-user" "on-the-fly-ru"}}
+                                      :kv-store kv-store))))
+
+        (testing "inactive"
+          (clear-service-description-overrides
+            kv-store
+            basic-service-id
+            "current-request-user")
+          (is (= (-> basic-service-description
+                     (dissoc "source-tokens")
+                     (assoc "health-check-url" "/ping" "permitted-user" "bob"))
+                 (service-description {:defaults {"health-check-url" "/ping"
+                                                  "permitted-user" "bob"}
+                                       :headers {"cmd" "on-the-fly-cmd"
+                                                 "run-as-user" "on-the-fly-ru"}}
+                                      :kv-store kv-store))))))
 
     (testing "override token metadata from headers"
       (is (= {"cmd" "token-cmd"
@@ -1693,15 +1721,15 @@
 
       ; test
       (testing "retrieve-invalid-token"
-        (is (= {} (token->service-description-template kv-store "invalid-token" :error-on-missing false)))
-        (is (thrown? ExceptionInfo (token->service-description-template kv-store "invalid-token")))
+        (is (= {} (token->service-parameter-template kv-store "invalid-token" :error-on-missing false)))
+        (is (thrown? ExceptionInfo (token->service-parameter-template kv-store "invalid-token")))
         (is (nil? (kv/fetch kv-store service-id))))
 
       (testing "test:token->service-description-2"
-        (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token)
-              service-description-template-2 (token->service-description-template kv-store token)]
-          (is (= service-description-template service-description-template-2))
-          (is (= (select-keys in-service-description service-description-keys) service-description-template))
+        (let [{:keys [service-parameter-template token-metadata]} (token->token-description kv-store token)
+              service-description-template-2 (token->service-parameter-template kv-store token)]
+          (is (= service-parameter-template service-description-template-2))
+          (is (= (select-keys in-service-description service-description-keys) service-parameter-template))
           (is (= (-> in-service-description
                      (assoc "previous" {})
                      (select-keys token-metadata-keys))
@@ -1709,15 +1737,15 @@
 
       (testing "test:deleted:token->service-description-2"
         (kv/store kv-store token (assoc in-service-description "deleted" true))
-        (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token)
-              service-description-template-2 (token->service-description-template kv-store token)]
+        (let [{:keys [service-parameter-template token-metadata]} (token->token-description kv-store token)
+              service-description-template-2 (token->service-parameter-template kv-store token)]
           (is (empty? service-description-template-2))
-          (is (empty? service-description-template))
+          (is (empty? service-parameter-template))
           (is (empty? token-metadata)))
-        (let [{:keys [service-description-template token-metadata]} (token->token-description kv-store token :include-deleted true)
-              service-description-template-2 (token->service-description-template kv-store token)]
+        (let [{:keys [service-parameter-template token-metadata]} (token->token-description kv-store token :include-deleted true)
+              service-description-template-2 (token->service-parameter-template kv-store token)]
           (is (empty? service-description-template-2))
-          (is (= (select-keys in-service-description service-description-keys) service-description-template))
+          (is (= (select-keys in-service-description service-description-keys) service-parameter-template))
           (is (= {"deleted" true, "owner" "tu3", "previous" {}} token-metadata)))))))
 
 (deftest test-service-suspend-resume
@@ -1987,6 +2015,10 @@
   (is (token-authentication-disabled? {"authentication" "disabled", "cpus" 1, "mem" 1, "cmd" "default-cmd", "version" "default-version", "permitted-user" "*", "run-as-user" "ru"})))
 
 (deftest test-no-intersection-in-token-request-scope-and-service-description-and-metadata
+  (is (empty? (set/intersection service-override-keys service-non-override-keys))
+      "We found common elements in service-override-keys and service-non-override-keys!")
+  (is (empty? (set/intersection service-parameter-keys service-metadata-keys))
+      "We found common elements in service-description-without-metadata-keys and service-metadata-keys!")
   (is (empty? (set/intersection system-metadata-keys user-metadata-keys))
       "We found common elements in system-metadata-keys and user-metadata-keys!")
   (is (empty? (set/intersection service-description-keys token-metadata-keys))

@@ -29,6 +29,7 @@
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.scheduler :as scheduler]
+            [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all]
             [waiter.util.async-utils :as au])
@@ -839,14 +840,18 @@
         clock (constantly current-time-ms)
         test-token "www.example.com"
         test-service-description {"cmd" "some-cmd", "cpus" 1, "mem" 1024}
-        token->service-description-template (fn [token] (when (= token test-token) test-service-description))
+        token->service-description-template (fn [token]
+                                              (when (= token test-token)
+                                                (assoc test-service-description
+                                                  "source-tokens" [(sd/source-tokens-entry test-token test-service-description)])))
         token->token-metadata (fn [token] (when (= token test-token) {"owner" "user"}))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
         test-user "test-user"
         test-service-id (-> test-service-description
                             (assoc "permitted-user" test-user
-                                   "run-as-user" test-user)
+                                   "run-as-user" test-user
+                                   "source-tokens" [(sd/source-tokens-entry test-token test-service-description)])
                             service-description->service-id)
         add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
                              (assoc-in response [:cookie cookie-name] {:value cookie-value, :age consent-expiry-days}))
@@ -1034,12 +1039,19 @@
 (deftest test-request-consent-handler
   (let [request-time (t/now)
         basic-service-description {"cmd" "some-cmd" "cpus" 1 "mem" 1024}
-        token->service-description-template (fn [token]
-                                              (condp = token
-                                                "www.example.com" basic-service-description
-                                                "www.example-i0.com" (assoc basic-service-description "interstitial-secs" 0)
-                                                "www.example-i10.com" (assoc basic-service-description "interstitial-secs" 10)
-                                                nil))
+        token->service-description-template
+        (fn [token]
+          (let [service-description (condp = token
+                                      "www.example.com" basic-service-description
+                                      "www.example-i0.com" (assoc basic-service-description
+                                                             "interstitial-secs" 0)
+                                      "www.example-i10.com" (assoc basic-service-description
+                                                              "interstitial-secs" 10)
+                                      nil)]
+            (cond-> service-description
+                    (seq service-description)
+                    (assoc "source-tokens" [(sd/source-tokens-entry token service-description)]))
+            service-description))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
         consent-expiry-days 1

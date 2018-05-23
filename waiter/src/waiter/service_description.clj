@@ -103,23 +103,30 @@
                                         (map :k)
                                         (set)))
 
-; keys used in computing the service-id from the service description
 (def ^:const service-override-keys
   #{"authentication" "blacklist-on-503" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate"
     "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures"
     "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold" "max-queue-length" "min-instances"
     "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
 
-; keys stored in the service description
-(def ^:const service-description-keys
-  (set/union service-override-keys
-             #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata"
-               "metric-group" "name" "permitted-user" "ports" "run-as-user" "version"}))
+(def ^:const service-non-override-keys
+  #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata"
+    "metric-group" "name" "permitted-user" "ports" "run-as-user" "version"})
 
-(def ^:const service-description-from-header-keys (set/union service-description-keys #{"param"}))
+; keys used as parameters in the service description
+(def ^:const service-parameter-keys
+  (set/union service-override-keys service-non-override-keys))
+
+; keys allowed in service description metadata, these need to be distinct from service parameter keys
+(def ^:const service-metadata-keys #{"source-tokens"})
+
+; keys used in computing the service-id from the service description
+(def ^:const service-description-keys (set/union service-parameter-keys service-metadata-keys))
+
+(def ^:const service-description-from-header-keys (set/union service-parameter-keys #{"param"}))
 
 ; keys allowed in a service description for on-the-fly requests
-(def ^:const on-the-fly-service-description-keys (set/union service-description-keys #{"token"}))
+(def ^:const on-the-fly-service-description-keys (set/union service-parameter-keys #{"token"}))
 
 ; keys allowed in system metadata for tokens, these need to be distinct from service description keys
 (def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "owner" "previous" "root"})
@@ -131,7 +138,7 @@
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
 
 ; keys allowed in the token data
-(def ^:const token-data-keys (set/union service-description-keys token-metadata-keys))
+(def ^:const token-data-keys (set/union service-parameter-keys token-metadata-keys))
 
 (defn transform-allowed-params-header
   "Converts allowed-params comma-separated string in the service-description to a set."
@@ -421,7 +428,8 @@
 (defrecord DefaultServiceDescriptionBuilder [max-constraints-schema]
   ServiceDescriptionBuilder
 
-  (build [_ user-service-description {:keys [service-id-prefix metric-group-mappings kv-store defaults assoc-run-as-user-approved? username]}]
+  (build [_ user-service-description
+          {:keys [assoc-run-as-user-approved? defaults kv-store metric-group-mappings service-id-prefix username]}]
     (let [core-service-description (if (get user-service-description "run-as-user")
                                      user-service-description
                                      (let [candidate-service-description (assoc-run-as-requester-fields user-service-description username)
@@ -494,7 +502,7 @@
    parameters and metadata) is provided.
    The token-description consists of the following keys: :service-description-template and :token-metadata"
   [config]
-  {:service-description-template (select-keys config service-description-keys)
+  {:service-parameter-template (select-keys config service-parameter-keys)
    :token-metadata (select-keys config token-metadata-keys)})
 
 (defn token->token-description
@@ -503,10 +511,24 @@
   (-> (token->token-data kv-store token token-data-keys false include-deleted)
       token-data->token-description))
 
-(defn token->service-description-template
-  "Retrieves the service description template for the given token."
+(defn token->service-parameter-template
+  "Retrieves the service description template for the given token containing only the service parameters."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (token->token-data kv-store token service-description-keys error-on-missing false))
+  (token->token-data kv-store token service-parameter-keys error-on-missing false))
+
+(defn source-tokens-entry
+  "Creates an entry for the source-tokens field"
+  [token token-data]
+  {"token" token "version" (token-data->token-hash token-data)})
+
+(defn token->service-description-template
+  "Retrieves the service description template for the given token including the service metadata values."
+  [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
+  (let [token-data (token->token-data kv-store token token-data-keys error-on-missing false)
+        service-parameter-template (select-keys token-data service-parameter-keys)]
+    (cond-> service-parameter-template
+            (seq service-parameter-template)
+            (assoc "source-tokens" [(source-tokens-entry token token-data)]))))
 
 (defn token->token-metadata
   "Retrieves the token metadata for the given token."
@@ -559,7 +581,11 @@
   [token-defaults token-sequence token->token-data]
   (let [merged-token-data (->> (token-sequence->merged-data token->token-data token-sequence)
                                (merge token-defaults))
-        service-description-template (select-keys merged-token-data service-description-keys)]
+        service-parameter-template (select-keys merged-token-data service-parameter-keys)
+        service-description-template (cond-> service-parameter-template
+                                             (seq service-parameter-template)
+                                             (assoc "source-tokens"
+                                                    (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)))]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
      :service-description-template service-description-template
      :token->token-data token->token-data
@@ -739,7 +765,7 @@
           ; run-as-user will not be set if description-from-headers or the token description contains it.
           ; else rely on presence of x-waiter headers to set the run-as-user
           contains-waiter-header? (headers/contains-waiter-header waiter-headers on-the-fly-service-description-keys)
-          contains-service-parameter-header? (headers/contains-waiter-header waiter-headers service-description-keys)
+          contains-service-parameter-header? (headers/contains-waiter-header waiter-headers service-parameter-keys)
           user-service-description (cond-> sanitized-metadata-description
                                            (and (not (contains? sanitized-metadata-description "run-as-user")) contains-waiter-header?)
                                            ; can only set the run-as-user if some on-the-fly-service-description-keys waiter header was provided

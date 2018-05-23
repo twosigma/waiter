@@ -79,6 +79,19 @@
 (defn- name-from-service-description [waiter-url service-id]
   (get-in (service-settings waiter-url service-id) [:service-description :name]))
 
+(defn- source-tokens-from-service-description [waiter-url service-id]
+  (-> (service-settings waiter-url service-id)
+      (get-in [:service-description :source-tokens])
+      walk/stringify-keys))
+
+(defn- token->etag [waiter-url token]
+  (-> (get-token waiter-url token :query-params {"token" token})
+      :headers
+      (get "etag")))
+
+(defn- make-source-tokens-entries [waiter-url & tokens]
+  (mapv (fn [token] {"token" token "version" (token->etag waiter-url token)}) tokens))
+
 (defn- create-token-name
   [waiter-url service-id-prefix]
   (str service-id-prefix "." (subs waiter-url 0 (str/index-of waiter-url ":"))))
@@ -166,9 +179,9 @@
               (assert-response-status response 200)
               (let [token-description (-> response :body json/read-str)]
                 (is (= {"health-check-url" "/check", "name" service-id-prefix}
-                       (-> token-description (get-in (repeat 2 "previous")) (select-keys sd/service-description-keys))))
+                       (-> token-description (get-in (repeat 2 "previous")) (select-keys sd/service-parameter-keys))))
                 (is (= {"health-check-url" "/health", "name" service-id-prefix}
-                       (-> token-description (get-in (repeat 1 "previous")) (select-keys sd/service-description-keys)))))
+                       (-> token-description (get-in (repeat 1 "previous")) (select-keys sd/service-parameter-keys)))))
               (is actual-etag)))
           (testing "via x-waiter-token header"
             (let [{:keys [body headers] :as response} (get-token waiter-url token :cookies cookies)
@@ -303,7 +316,9 @@
                     response (make-request waiter-url path :headers request-headers)
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
                 (assert-response-status response 200)
-                (is (= (name-from-service-description waiter-url service-id) service-id-prefix)))
+                (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+                (is (= (make-source-tokens-entries waiter-url token)
+                       (source-tokens-from-service-description waiter-url service-id))))
 
               (log/info "request with hostname token" token "along with x-waiter headers except permitted-user")
               (let [request-headers (merge (dissoc service-description :x-waiter-permitted-user) {"host" token})
@@ -312,6 +327,8 @@
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
                 (assert-response-status response 200)
                 (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+                (is (= (make-source-tokens-entries waiter-url token)
+                       (source-tokens-from-service-description waiter-url service-id)))
                 ;; the above request hashes to a different service-id than the rest of the test, so we need to cleanup
                 (delete-service waiter-url service-id))
 
@@ -322,6 +339,8 @@
                     service-id (retrieve-service-id waiter-url (:request-headers response))]
                 (assert-response-status response 200)
                 (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+                (is (= (make-source-tokens-entries waiter-url token)
+                       (source-tokens-from-service-description waiter-url service-id)))
 
                 (testing "backend request headers"
                   (let [{:keys [body] :as response} (make-request waiter-url "/request-info" :headers request-headers)
@@ -353,6 +372,8 @@
                     service-id (retrieve-service-id waiter-url request-headers)]
                 (assert-response-status response 200)
                 (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+                (is (= (make-source-tokens-entries waiter-url token)
+                       (source-tokens-from-service-description waiter-url service-id)))
                 (is (every? #(not (str/blank? (get headers %)))
                             (concat required-response-headers (retrieve-debug-response-headers waiter-url)))
                     (str headers))
@@ -528,7 +549,9 @@
               response (make-request waiter-url path :headers request-headers)
               service-id (retrieve-service-id waiter-url (:request-headers response))]
           (assert-response-status response 200)
-          (is (= (name-from-service-description waiter-url service-id) service-id-prefix)))
+          (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+          (is (= (make-source-tokens-entries waiter-url token)
+                 (source-tokens-from-service-description waiter-url service-id))))
 
         (log/info "making Waiter request with token and x-waiter-debug token" token "in header")
         (let [request-headers {:x-waiter-debug "true", :x-waiter-token token}
@@ -537,6 +560,8 @@
               service-id (retrieve-service-id waiter-url request-headers)]
           (assert-response-status response 200)
           (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+          (is (= (make-source-tokens-entries waiter-url token)
+                 (source-tokens-from-service-description waiter-url service-id)))
           (is (every? #(not (str/blank? (get headers %)))
                       (concat required-response-headers (retrieve-debug-response-headers waiter-url)))
               (str headers))
@@ -586,6 +611,8 @@
               service-id (retrieve-service-id waiter-url (:request-headers response))]
           (assert-response-status response 200)
           (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+          (is (= (make-source-tokens-entries waiter-url token)
+                 (source-tokens-from-service-description waiter-url service-id)))
           (is (= (retrieve-username) (:run-as-user (service-id->service-description waiter-url service-id)))))
 
         (log/info "making Waiter request with token and x-waiter-debug token" token "in header")
@@ -595,6 +622,8 @@
               service-id (retrieve-service-id waiter-url request-headers)]
           (assert-response-status response 200)
           (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
+          (is (= (make-source-tokens-entries waiter-url token)
+                 (source-tokens-from-service-description waiter-url service-id)))
           (is (every? #(not (str/blank? (get headers %)))
                       (concat required-response-headers (retrieve-debug-response-headers waiter-url)))
               (str headers))
@@ -606,10 +635,21 @@
   (testing-using-waiter-url
     (let [name-string (rand-name)
           canary-response (make-kitchen-request waiter-url {:x-waiter-name name-string})
-          service-id (retrieve-service-id waiter-url (:request-headers canary-response))]
-      (is (str/includes? service-id name-string) (str "ERROR: App-name is missing " name-string))
-      (is (= 200 (:status (make-request waiter-url "" :headers {:x-waiter-token (str "^SERVICE-ID#" service-id)}))))
-      (delete-service waiter-url service-id))))
+          service-id-1 (retrieve-service-id waiter-url (:request-headers canary-response))]
+      (with-service-cleanup
+        service-id-1
+        (is (str/includes? service-id-1 name-string) (str "ERROR: App-name is missing " name-string))
+        (is (nil? (source-tokens-from-service-description waiter-url service-id-1)))
+        (let [token (str "^SERVICE-ID#" service-id-1)
+              response (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "" :headers %))
+              service-id-2 (:service-id response)]
+          (with-service-cleanup
+            service-id-2
+            (assert-response-status response 200)
+            (is service-id-2)
+            (is (not= service-id-1 service-id-2))
+            (is (= (make-source-tokens-entries waiter-url token)
+                   (source-tokens-from-service-description waiter-url service-id-2)))))))))
 
 (deftest ^:parallel ^:integration-fast test-bad-token
   (testing-using-waiter-url

@@ -520,7 +520,7 @@
                                   (when-let [unknown-keys (-> service-description-constraints
                                                               keys
                                                               set
-                                                              (set/difference sd/service-description-keys)
+                                                              (set/difference sd/service-parameter-keys)
                                                               seq)]
                                     (throw (ex-info "Unsupported keys present in the service description constraints"
                                                     {:service-description-constraints service-description-constraints
@@ -1288,7 +1288,7 @@
                             (fn [{:keys [headers] :as request}]
                               (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
                                     {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
-                                    {:strs [authentication] :as service-description} (and token (sd/token->service-description-template kv-store token :error-on-missing false))
+                                    {:strs [authentication] :as service-description} (and token (sd/token->service-parameter-template kv-store token :error-on-missing false))
                                     authentication-disabled? (= authentication "disabled")]
                                 (cond
                                   (contains? waiter-headers "x-waiter-authentication")
@@ -1299,7 +1299,7 @@
                                                               :status 400))
 
                                   ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
-                                  (and authentication-disabled? (some sd/service-description-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
+                                  (and authentication-disabled? (some sd/service-parameter-keys (-> waiter-headers headers/drop-waiter-header-prefix keys)))
                                   (do
                                     (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
                                               {:service-description service-description, :token token})
