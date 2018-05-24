@@ -788,6 +788,12 @@
     :interval interval
     :timeout timeout))
 
+(defn service-id->metric-group
+  "Retrieves the metric-group corresponding to the provided service-id"
+  [waiter-url service-id]
+  (-> (service waiter-url service-id {"effective-parameters" "true"})
+      (get-in ["effective-parameters" "metric-group"])))
+
 (defn retrieve-debug-response-headers
   [waiter-url]
   (let [settings (waiter-settings waiter-url)

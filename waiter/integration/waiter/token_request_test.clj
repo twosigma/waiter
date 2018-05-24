@@ -278,7 +278,8 @@
 (deftest ^:parallel ^:integration-fast test-hostname-token
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
-          token (create-token-name waiter-url service-id-prefix)
+          token-prefix (str "token-" (rand-int 3000000))
+          token (create-token-name waiter-url token-prefix)
           token-root (retrieve-token-root waiter-url)]
       (testing "hostname-token-test"
         (try
@@ -318,7 +319,8 @@
                 (assert-response-status response 200)
                 (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
                 (is (= (make-source-tokens-entries waiter-url token)
-                       (source-tokens-from-service-description waiter-url service-id))))
+                       (source-tokens-from-service-description waiter-url service-id)))
+                (is (= token-prefix (service-id->metric-group waiter-url service-id))))
 
               (log/info "request with hostname token" token "along with x-waiter headers except permitted-user")
               (let [request-headers (merge (dissoc service-description :x-waiter-permitted-user) {"host" token})
@@ -329,6 +331,7 @@
                 (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
                 (is (= (make-source-tokens-entries waiter-url token)
                        (source-tokens-from-service-description waiter-url service-id)))
+                (is (= token-prefix (service-id->metric-group waiter-url service-id)))
                 ;; the above request hashes to a different service-id than the rest of the test, so we need to cleanup
                 (delete-service waiter-url service-id))
 
@@ -341,6 +344,7 @@
                 (is (= (name-from-service-description waiter-url service-id) service-id-prefix))
                 (is (= (make-source-tokens-entries waiter-url token)
                        (source-tokens-from-service-description waiter-url service-id)))
+                (is (= token-prefix (service-id->metric-group waiter-url service-id)))
 
                 (testing "backend request headers"
                   (let [{:keys [body] :as response} (make-request waiter-url "/request-info" :headers request-headers)
@@ -377,6 +381,7 @@
                 (is (every? #(not (str/blank? (get headers %)))
                             (concat required-response-headers (retrieve-debug-response-headers waiter-url)))
                     (str headers))
+                (is (= token-prefix (service-id->metric-group waiter-url service-id)))
                 (delete-service waiter-url service-id))))
           (finally
             (delete-token-and-assert waiter-url token)))))))
