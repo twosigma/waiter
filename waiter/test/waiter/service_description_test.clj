@@ -1917,6 +1917,16 @@
       (testing "should use mapping when metric group not specified"
         (is (= "mapped" (mg-filter {"name" "foo"}))))
 
+      (testing "should use source-tokens when single token specified"
+        (is (= "example-1" (mg-filter {"cpus" 1 "source-tokens" [{"token" "example-1.app.com" "version" "hash-1"}]}))))
+
+      (testing "should use other when token in source-tokens does not validate"
+        (is (= "other" (mg-filter {"cpus" 1 "source-tokens" [{"token" "example-1@app.com" "version" "hash-1"}]}))))
+
+      (testing "should use other when source-tokens has multiple tokens"
+        (is (= "other" (mg-filter {"cpus" 1 "source-tokens" [{"token" "example-1.app.com" "version" "hash-1"}
+                                                             {"token" "example-2.app.com" "version" "hash-2"}]}))))
+
       (testing "should use 'other' when metric group not specified and name not mapped"
         (is (= "other" (mg-filter {})))))))
 

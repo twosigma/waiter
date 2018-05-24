@@ -134,6 +134,9 @@
           (let [response (make-request 24000)]
             (assert-response-status response 200))))
 
+      (testing "metric group should be waiter_kitchen"
+        (is (= "waiter_kitchen" (service-id->metric-group waiter-url service-id))))
+
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-basic-logs
@@ -187,6 +190,10 @@
           service-settings (service-settings waiter-url service-id)
           command (get-in service-settings [:service-description :cmd])]
       (is (= (:x-waiter-cmd headers) command))
+
+      (testing "metric group should be other"
+        (is (= "other" (service-id->metric-group waiter-url service-id))))
+
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-basic-unsupported-command-type
