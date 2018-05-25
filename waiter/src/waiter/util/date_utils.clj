@@ -64,5 +64,3 @@
   (if (and duration started-at)
     (t/after? current-time (t/plus started-at duration))
     false))
-
-

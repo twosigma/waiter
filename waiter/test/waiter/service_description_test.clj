@@ -2108,3 +2108,96 @@
           token-data-3 {"cmd" "c-3-B"}
           token->token-data {"token-1" token-data-1 "token-2" token-data-2 "token-3" token-data-3}]
       (is (= "token-3" (retrieve-most-recently-modified-token (into (sorted-map) token->token-data)))))))
+
+(deftest test-token->token-hash
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        token "test-token"
+        token-data {"cpus" 1 "mem" 2048 "last-update-time" 1100 "owner" "test-user"}]
+    (kv/store kv-store token token-data)
+    (is (= (token-data->token-hash token-data) (token->token-hash kv-store token)))))
+
+(deftest test-service-id->idle-timeout
+  (let [fallback-period-secs 150
+        stale-timeout-mins 5
+        token-defaults {"fallback-period-secs" fallback-period-secs
+                        "stale-timeout-mins" stale-timeout-mins}
+        idle-timeout-mins 25
+        service-id "test-service-id"
+        token->token-hash (fn [in-token] (str in-token ".hash1"))
+        token->token-metadata-fn (fn [token->token-data]
+                                   (fn token->token-metadata [in-token]
+                                     (-> in-token
+                                         token->token-data
+                                         (select-keys token-metadata-keys))))]
+    (testing "service with single token is active"
+      (let [token->token-data {"t1" {"cpus" 1}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (= service-id in-service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins
+                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}]})
+            token->token-metadata (token->token-metadata-fn token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn token->token-hash token->token-metadata
+                 token-defaults service-id)))))
+
+    (testing "service with multiple tokens is active"
+      (let [token->token-data {"t1" {"cpus" 1}
+                               "t2" {"mem" 2048}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (= service-id in-service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins
+                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}
+                                                                   {"token" "t2" "version" "t2.hash1"}]})
+            token->token-metadata (token->token-metadata-fn token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn token->token-hash token->token-metadata
+                 token-defaults service-id)))))
+
+    (testing "service outdated but fallback not configured"
+      (let [token->token-data {"t1" {"cpus" 1}
+                               "t2" {"mem" 2048}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (= service-id in-service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins
+                                                  "source-tokens" [{"token" "t1" "version" "t1.hash0"}]})
+            token->token-metadata (token->token-metadata-fn token->token-data)]
+        (is (= (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds)))
+                   t/seconds
+                   t/in-minutes
+                   (+ stale-timeout-mins))
+               (service-id->idle-timeout
+                 service-id->service-description-fn token->token-hash token->token-metadata
+                 token-defaults service-id)))))
+
+    (testing "service outdated and fallback configured on one token"
+      (let [token->token-data {"t1" {"cpus" 1 "fallback-period-secs" 300}
+                               "t2" {"mem" 2048}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (= service-id in-service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins
+                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}
+                                                                   {"token" "t2" "version" "t2.hash0"}]})
+            token->token-metadata (token->token-metadata-fn token->token-data)]
+        (is (= (-> 300 t/seconds t/in-minutes (+ stale-timeout-mins))
+               (service-id->idle-timeout
+                 service-id->service-description-fn token->token-hash token->token-metadata
+                 token-defaults service-id)))))
+
+    (testing "service outdated and fallback and timeout configured on all tokens"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (= service-id in-service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins
+                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}
+                                                                   {"token" "t2" "version" "t2.hash0"}
+                                                                   {"token" "t3" "version" "t3.hash0"}]})
+            token->token-metadata (token->token-metadata-fn token->token-data)]
+        (is (= (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
+               (service-id->idle-timeout
+                 service-id->service-description-fn token->token-hash token->token-metadata
+                 token-defaults service-id)))))))

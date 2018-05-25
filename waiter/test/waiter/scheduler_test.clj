@@ -142,12 +142,13 @@
           (let [timeout-interval-ms 1
                 broken-service-timeout-mins 5
                 broken-service-min-hosts 2
+                service-id->idle-timeout (constantly 50)
                 channel-map (scheduler-services-gc
                               scheduler scheduler-state-chan service-id->metrics-fn
                               {:broken-service-min-hosts broken-service-min-hosts
                                :broken-service-timeout-mins broken-service-timeout-mins
                                :scheduler-gc-interval-ms timeout-interval-ms}
-                              service-gc-go-routine (constantly {"idle-timeout-mins" 50}))
+                              service-gc-go-routine service-id->idle-timeout)
                 service-gc-exit-chan (:exit channel-map)]
             (dotimes [n 100]
               (let [global-state (pc/map-vals #(update-in % ["outstanding"] (fn [v] (max 0 (- v n))))
