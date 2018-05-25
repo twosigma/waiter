@@ -140,7 +140,7 @@
                                                             (s/required-key :value) schema/non-empty-string}}]
    (s/required-key :token-config) {(s/required-key :history-length) schema/positive-int
                                    (s/required-key :token-defaults) {(s/required-key "fallback-period-secs") schema/non-negative-int
-                                                                     (s/required-key "stale-timeout-mins") schema/positive-int}}
+                                                                     (s/required-key "stale-timeout-mins") schema/non-negative-int}}
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
                                        (s/required-key :ws-max-text-message-size) schema/positive-int}
    (s/required-key :work-stealing) {(s/required-key :offer-help-interval-ms) schema/positive-int

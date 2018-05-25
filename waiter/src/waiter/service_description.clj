@@ -96,6 +96,7 @@
 
 (def user-metadata-schema
   {(s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/hours 1))) 'at-most-1-hour))
+   (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
    s/Str s/Any})
 
 (def ^:const service-required-keys (->> (keys service-description-schema)
