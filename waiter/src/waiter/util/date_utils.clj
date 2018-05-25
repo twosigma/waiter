@@ -64,8 +64,3 @@
   (if (and duration started-at)
     (t/after? current-time (t/plus started-at duration))
     false))
-
-(defn seconds->minutes
-  "Converts the seconds to minutes by rounding up."
-  [s]
-  (-> (* s 1.0) (/ (-> 1 t/minutes t/in-seconds)) Math/ceil int))

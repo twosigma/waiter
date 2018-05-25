@@ -756,13 +756,12 @@
    :service-description->service-id (pc/fnk [[:state service-id-prefix]]
                                       (fn service-description->service-id [service-description]
                                         (sd/service-description->service-id service-id-prefix service-description)))
-   :service-id->idle-timeout (pc/fnk [[:settings [:scheduler-gc-config outdated-service-timeout-mins] service-description-defaults]
-                                      service-id->service-description-fn token->token-data-field token->token-hash]
-                               (let [default-fallback-period-secs (get service-description-defaults "fallback-period-secs")]
-                                 (fn service-id->idle-timeout [service-id]
-                                   (sd/service-id->idle-timeout
-                                     service-id->service-description-fn token->token-hash token->token-data-field
-                                     default-fallback-period-secs outdated-service-timeout-mins service-id))))
+   :service-id->idle-timeout (pc/fnk [[:settings [:token-config token-defaults]]
+                                      service-id->service-description-fn token->token-hash token->token-metadata]
+                               (fn service-id->idle-timeout [service-id]
+                                 (sd/service-id->idle-timeout
+                                   service-id->service-description-fn token->token-hash token->token-metadata
+                                   token-defaults service-id)))
    :service-id->password-fn (pc/fnk [[:state passwords]]
                               (fn service-id->password [service-id]
                                 (log/debug "generating password for" service-id)
@@ -804,9 +803,6 @@
    :token->service-description-template (pc/fnk [[:curator kv-store]]
                                           (fn token->service-description-template [token]
                                             (sd/token->service-description-template kv-store token :error-on-missing false)))
-   :token->token-data-field (pc/fnk [[:curator kv-store]]
-                              (fn token->token-data-field [token field]
-                                (sd/token->token-data-field kv-store token field)))
    :token->token-hash (pc/fnk [[:curator kv-store]]
                         (fn token->token-hash [token]
                           (sd/token->token-hash kv-store token)))
