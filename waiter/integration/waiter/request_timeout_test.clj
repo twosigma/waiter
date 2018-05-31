@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.request-timeout-test
-  (:require [clj-time.core :as time]
-            [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
@@ -25,7 +24,7 @@
 
 (defmacro assert-failed-request [service-name response-body start-time-ms timeout-period-sec faulty-app?]
   `(let [end-time-ms# (System/currentTimeMillis)
-         elapsed-time-secs# (time/in-seconds (time/millis (- end-time-ms# ~start-time-ms)))]
+         elapsed-time-secs# (t/in-seconds (t/millis (- end-time-ms# ~start-time-ms)))]
      (is (>= elapsed-time-secs# ~timeout-period-sec))
      (is (str/includes? ~response-body (str "After " ~timeout-period-sec " seconds, no instance available to handle request.")))
      (when ~faulty-app?
@@ -106,7 +105,7 @@
 (deftest ^:parallel ^:integration-fast test-request-queue-timeout-slow-start-app
   (testing-using-waiter-url
     (let [timeout-period-sec 10
-          timeout-period-ms (time/in-millis (time/seconds timeout-period-sec))
+          timeout-period-ms (t/in-millis (t/seconds timeout-period-sec))
           start-time-ms (System/currentTimeMillis)
           start-up-sleep-ms (* 2 timeout-period-ms)
           request-headers (walk/stringify-keys
@@ -130,85 +129,62 @@
                              :x-waiter-cmd-type "shell"
                              :x-waiter-cmd "sleep 5"
                              :x-waiter-health-check-url "/status"
-                             :x-waiter-queue-timeout (time/in-millis (time/seconds timeout-period-sec))})]
+                             :x-waiter-queue-timeout (t/in-millis (t/seconds timeout-period-sec))})]
       (make-request-and-assert-timeout waiter-url request-headers start-time-ms timeout-period-sec false)
       (delete-service waiter-url request-headers))))
 
-; Marked explicit due to:
-; FAIL in (test-request-queue-timeout-unable-to-scale-app)
-;  Body:Hello World
-; expected: (clojure.core/= 503 actual-status__18382__auto__)
-;   actual: (not (clojure.core/= 503 200))
-;
-; FAIL in (test-request-queue-timeout-unable-to-scale-app)
-; expected: (>= elapsed-time-secs timeout-period-sec)
-;   actual: (not (>= 0 15))
-;
-; FAIL in (test-request-queue-timeout-unable-to-scale-app)
-; expected: (str/includes? response-body "requests-waiting-to-stream: 0")
-;   actual: (not (str/includes? "Hello World" "requests-waiting-to-stream: 0"))
-;
-; FAIL in (test-request-queue-timeout-unable-to-scale-app)
-; expected: (str/includes? response-body "waiting-for-available-instance: 1")
-;   actual: (not (str/includes? "Hello World" "waiting-for-available-instance: 1"))
-(deftest ^:parallel ^:integration-slow ^:explicit test-request-queue-timeout-unable-to-scale-app
+(deftest ^:parallel ^:integration-slow test-request-queue-timeout-max-instances-limit
+  ;; Limits the service to a single instance and then makes a long requests to it on each router.
+  ;; Then we make a request with a small timeout and make sure it actually times out.
   (testing-using-waiter-url
-    (let [timeout-period-sec 15
-          long-request-period-ms 30000
-          service-name (rand-name)
-          request-headers (walk/stringify-keys
-                            (merge (kitchen-request-headers)
-                                   {:x-waiter-name service-name
-                                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")
-                                    :x-waiter-max-instances 1}))
-          {:keys [cookies service-id] :as response} (make-successful-request waiter-url request-headers)
-          _ (assert-response-status response 200)
-          router-id->router-url (routers waiter-url)
+    (let [router-id->router-url (routers waiter-url)
           num-routers (count router-id->router-url)
-          started-latch (CountDownLatch. num-routers)
-          completed-latch (CountDownLatch. num-routers)]
-      (doseq [[router-id router-url] (seq router-id->router-url)] ; make multiple requests to disable work-stealing
-        (let [request-cid-success (str service-name "-success." router-id)]
-          (async/thread
-            (log/info "starting long request" request-cid-success "for" long-request-period-ms "ms at" router-url)
-            (.countDown started-latch)
-            (try
-              (assert-response-status
-                (make-successful-request router-url
-                                         (assoc request-headers
-                                           :x-cid request-cid-success
-                                           :x-kitchen-delay-ms long-request-period-ms)
-                                         :cookies cookies)
-                200)
-              (log/info "long request" request-cid-success "complete")
-              (catch Exception e
-                (log/error e "long request" request-cid-success "encountered error")
-                (is false (str e))))
-            (.countDown completed-latch))))
-      (log/info "awaiting long request(s) to start...")
-      (.await started-latch)
-      (Thread/sleep 1000)
-      (let [request-cid-timeout (str service-name "-timeout")
-            request-headers (assoc request-headers
-                              :x-cid request-cid-timeout
-                              :x-waiter-queue-timeout (time/in-millis (time/seconds timeout-period-sec)))
-            start-time-ms (System/currentTimeMillis)]
-        (log/info "making request" request-cid-timeout "that is expected to timeout")
-        (let [{:keys [body service-name] :as response} (make-request-verbose waiter-url request-headers cookies)]
+          long-request-period-ms (* 3 5000)
+          long-request-started-latch (CountDownLatch. num-routers)
+          long-request-ended-latch (CountDownLatch. num-routers)
+          make-request-fn (fn make-request-fn [target-url extra-headers cookies]
+                            (make-request-with-debug-info
+                              extra-headers #(make-kitchen-request target-url % :cookies cookies)))
+          extra-headers {:x-waiter-cmd (kitchen-cmd "-p $PORT0")
+                         :x-waiter-concurrency-level num-routers
+                         :x-waiter-max-instances 1
+                         :x-waiter-name (rand-name)}
+          {:keys [cookies instance-id service-id] :as response} (make-request-fn waiter-url extra-headers nil)]
+      (assert-response-status response 200)
+      (log/info "canary instance-id:" instance-id)
+      (with-service-cleanup
+        service-id
+        (doseq [[_ router-url] (seq router-id->router-url)]
+          (launch-thread
+            (.countDown long-request-started-latch)
+            (let [extra-headers (assoc extra-headers :x-kitchen-delay-ms long-request-period-ms)
+                  response (make-request-fn router-url extra-headers cookies)]
+              (assert-response-status response 200)
+              (log/info "long request instance-id:" (:instance-id response))
+              (is (= instance-id (:instance-id response))))
+            (.countDown long-request-ended-latch)))
+        (.await long-request-started-latch)
+        (let [timeout-period-ms (/ long-request-period-ms 3)
+              timeout-period-secs (-> timeout-period-ms t/millis t/in-seconds)
+              extra-headers (assoc extra-headers :x-waiter-queue-timeout timeout-period-ms)
+              _ (Thread/sleep timeout-period-ms)
+              {:keys [body] :as response} (make-request-fn waiter-url extra-headers cookies)]
           (assert-response-status response 503)
-          (assert-failed-request service-name body start-time-ms timeout-period-sec false)))
-      (log/info "awaiting long request(s) to complete...")
-      (.await completed-latch)
-      (delete-service waiter-url service-id))))
+          (is (str/includes?
+                (str body)
+                (str "After " timeout-period-secs " seconds, no instance available to handle request.")))
+          (is (str/includes? (str body) service-id))
+          (is (str/blank? (:instance-id response))))
+        (.await long-request-ended-latch)))))
 
 (deftest ^:parallel ^:integration-fast test-grace-period-with-tokens
   (testing-using-waiter-url
-    (let [grace-period (time/minutes 2)
+    (let [grace-period (t/minutes 2)
           token (rand-name)]
       (try
         (log/info "Creating token for" token)
         (let [{:keys [status body]}
-              (post-token waiter-url {:cmd (kitchen-cmd (str "-p $PORT0 " (time/in-millis grace-period)))
+              (post-token waiter-url {:cmd (kitchen-cmd (str "-p $PORT0 " (t/in-millis grace-period)))
                                       :version "not-used"
                                       :cpus 1
                                       :mem 1024
@@ -216,7 +192,7 @@
                                       :permitted-user "*"
                                       :token token
                                       :name (str "test" token)
-                                      :grace-period-secs (time/in-seconds grace-period)
+                                      :grace-period-secs (t/in-seconds grace-period)
                                       :cmd-type "shell"})]
           (is (= 200 status) (str "Did not get a 200 response. " body)))
         (log/info "Making request for" token)
@@ -226,7 +202,7 @@
           (is (= 200 status) (str "Did not get a 200 response. " body))
           (when (and (= 200 status) (can-query-for-grace-period? waiter-url))
             (log/info "Verifying app grace period for" token)
-            (is (= (time/in-seconds grace-period) (service-id->grace-period waiter-url service-id))))
+            (is (= (t/in-seconds grace-period) (service-id->grace-period waiter-url service-id))))
           (delete-service waiter-url service-id))
         (finally
           (delete-token-and-assert waiter-url token))))))
