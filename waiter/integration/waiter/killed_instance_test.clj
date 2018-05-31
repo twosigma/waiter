@@ -109,10 +109,11 @@
           (let [new-request-instance-ids-atom (atom #{})]
             (parallelize-requests
               10 1
-              #(let [{:keys [instance-id router-id]} (make-request-fn)]
-                 (if (t/before? (t/now) (du/str-to-date (router-id->blacklist-time router-id)))
-                   (swap! new-request-instance-ids-atom conj instance-id)
-                   (log/warn "request responded after blacklist period, not including instance" instance-id))))
+              (fn []
+                (let [{:keys [instance-id router-id]} (make-request-fn)]
+                  (if (t/before? (t/now) (du/str-to-date (router-id->blacklist-time router-id)))
+                    (swap! new-request-instance-ids-atom conj instance-id)
+                    (log/warn "request responded after blacklist period, not including instance" instance-id)))))
             (log/info "new-request-instance-ids:" @new-request-instance-ids-atom)
             (if-not (seq @new-request-instance-ids-atom)
               (log/warn "no requests completed after blacklist expiry time of" instance-id)
