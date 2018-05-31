@@ -245,7 +245,7 @@
         scheduler (create-shell-scheduler scheduler-config)]
     ;; Bogus service
     (is (= {:success false, :result :no-such-service-exists, :message "bar does not exist!"}
-           (scheduler/scale-app scheduler "bar" 2)))
+           (scheduler/scale-app scheduler "bar" 2 false)))
     (with-redefs [perform-health-check (constantly true)]
       ;; Create service, instances: 1
       (is (= {:success true, :result :created, :message "Created foo"}
@@ -254,14 +254,14 @@
       (is (scheduler/app-exists? scheduler "foo"))
       ;; Scale up, instances: 2
       (is (= {:success true, :result :scaled, :message "Scaled foo"}
-             (scheduler/scale-app scheduler "foo" 2)))
+             (scheduler/scale-app scheduler "foo" 2 false)))
       (force-maintain-instance-scale scheduler)
       (force-update-service-health scheduler scheduler-config)
       (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}
              (task-stats scheduler)))
       ;; No need to scale down, instances: 2
       (is (= {:success false, :result :scaling-not-needed, :message "Unable to scale foo"}
-             (scheduler/scale-app scheduler "foo" 1)))
+             (scheduler/scale-app scheduler "foo" 1 false)))
       (ensure-agent-finished scheduler)
       ;; Successfully kill one instance, instances: 1
       (let [instance (first (:active-instances (scheduler/get-instances scheduler "foo")))]
@@ -272,7 +272,7 @@
              (task-stats scheduler)))
       ;; Scale up, instances: 2
       (is (= {:success true, :result :scaled, :message "Scaled foo"}
-             (scheduler/scale-app scheduler "foo" 2)))
+             (scheduler/scale-app scheduler "foo" 2 false)))
       (force-maintain-instance-scale scheduler)
       (force-update-service-health scheduler scheduler-config)
       (is (= {:running 2, :healthy 2, :unhealthy 0, :staged 0}

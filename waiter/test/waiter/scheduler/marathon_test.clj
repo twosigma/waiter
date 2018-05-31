@@ -868,10 +868,10 @@
                            (let [body-chan (async/promise-chan)]
                              (async/>!! body-chan body)
                              {:body body-chan}))]
-    (with-redefs [marathon/get-deployments (constantly [{:affectedApps "waiter-app-1234" :id "1234" :version "v1234"}
-                                                        {:affectedApps "waiter-app-4567" :id "4567" :version "v4567"}
-                                                        {:affectedApps "waiter-app-3829" :id "3829" :version "v3829"}
-                                                        {:affectedApps "waiter-app-4321" :id "4321" :version "v4321"}])]
+    (with-redefs [marathon/get-deployments (constantly [{:affectedApps ["/waiter-app-1234"] :id "1234" :version "v1234"}
+                                                        {:affectedApps ["/waiter-app-4567"] :id "4567" :version "v4567"}
+                                                        {:affectedApps ["/waiter-app-3829"] :id "3829" :version "v3829"}
+                                                        {:affectedApps ["/waiter-app-4321"] :id "4321" :version "v4321"}])]
       (testing "no deployments entry"
         (let [response (prepare-response "{\"message\": \"App is locked by one or more deployments.\"}")]
           (is (not (extract-deployment-info marathon-api response)))))
@@ -884,19 +884,123 @@
       (testing "single deployment"
         (let [response (prepare-response "{\"deployments\": [{\"id\":\"1234\"}],
                                            \"message\": \"App is locked by one or more deployments.\"}")]
-          (is (= [{:affectedApps "waiter-app-1234" :id "1234" :version "v1234"}]
+          (is (= [{:affectedApps ["/waiter-app-1234"] :id "1234" :version "v1234"}]
                  (extract-deployment-info marathon-api response)))))
 
       (testing "multiple deployments"
         (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}],
                                 \"message\": \"App is locked by one or more deployments.\"}"}]
-          (is (= [{:affectedApps "waiter-app-1234" :id "1234" :version "v1234"}
-                  {:affectedApps "waiter-app-3829" :id "3829" :version "v3829"}]
+          (is (= [{:affectedApps ["/waiter-app-1234"] :id "1234" :version "v1234"}
+                  {:affectedApps ["/waiter-app-3829"] :id "3829" :version "v3829"}]
                  (extract-deployment-info marathon-api response)))))
 
       (testing "multiple deployments, one without info"
         (let [response (prepare-response "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}, {\"id\":\"9876\"}],
                                            \"message\": \"App is locked by one or more deployments.\"}")]
-          (is (= [{:affectedApps "waiter-app-1234" :id "1234" :version "v1234"}
-                  {:affectedApps "waiter-app-3829" :id "3829" :version "v3829"}]
+          (is (= [{:affectedApps ["/waiter-app-1234"] :id "1234" :version "v1234"}
+                  {:affectedApps ["/waiter-app-3829"] :id "3829" :version "v3829"}]
                  (extract-deployment-info marathon-api response))))))))
+
+(deftest test-extract-service-deployment-info
+  (let [marathon-api (Object.)]
+    (with-redefs [marathon/get-deployments (constantly [{:affectedApps ["/waiter-app-1234"] :id "1234a" :version "v1234a"}
+                                                        {:affectedApps ["/waiter-app-4567"] :id "4567" :version "v4567"}
+                                                        {:affectedApps ["/waiter-app-3829"] :id "3829" :version "v3829"}
+                                                        {:affectedApps ["/waiter-app-4321"] :id "4321" :version "v4321"}
+                                                        {:affectedApps ["/waiter-app-1234"] :id "1234b" :version "v1234b"}])]
+      (testing "no deployments entry"
+        (is (nil? (extract-service-deployment-info marathon-api "missing-service-id"))))
+
+      (testing "matching single deployment"
+        (is (= {:affectedApps ["/waiter-app-4567"] :id "4567" :version "v4567"}
+               (extract-service-deployment-info marathon-api "waiter-app-4567"))))
+
+      (testing "matching multiple deployments"
+        (is (= {:affectedApps ["/waiter-app-1234"] :id "1234a" :version "v1234a"}
+               (extract-service-deployment-info marathon-api "waiter-app-1234")))))))
+
+(deftest test-scale-app
+  (let [marathon-api (Object.)
+        marathon-scheduler (->MarathonScheduler marathon-api {} (constantly nil) "/home/path/"
+                                                (atom {}) (atom {}) (constantly nil) 60000 (constantly true))
+        service-id "test-service-id"]
+
+    (testing "unforced scale of service"
+      (let [updated-invoked-promise (promise)
+            instances 30]
+        (with-redefs [extract-service-deployment-info (fn [in-marathon-api in-service-id]
+                                                        (is (= marathon-api in-marathon-api))
+                                                        (is (= service-id in-service-id))
+                                                        (is false))
+                      marathon/get-app (fn [in-marathon-api in-service-id]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         {:app {:cmd "tc" :cpus 2 :id service-id :instances 15 :mem 4
+                                                :tasks (->> (fn [] {:appId service-id
+                                                                    :id (str service-id "." (rand-int 1000))})
+                                                            (repeatedly 15))}})
+                      marathon/update-app (fn [in-marathon-api in-service-id descriptor]
+                                            (is (= marathon-api in-marathon-api))
+                                            (is (= service-id in-service-id))
+                                            (is (= {:cmd "tc" :cpus 2 :id service-id :instances instances :mem 4} descriptor))
+                                            (deliver updated-invoked-promise :invoked))]
+          (scheduler/scale-app marathon-scheduler service-id instances false)
+          (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
+
+    (testing "forced scale of service - fewer instances"
+      (let [updated-invoked-promise (promise)
+            deleted-deployment-promise (promise)
+            instances 10
+            deployment-id "d-1234"]
+        (with-redefs [extract-service-deployment-info (fn [in-marathon-api in-service-id]
+                                                        (is (= marathon-api in-marathon-api))
+                                                        (is (= service-id in-service-id))
+                                                        {:id deployment-id})
+                      marathon/delete-deployment (fn [in-marathon-api in-deployment-id]
+                                                   (is (= marathon-api in-marathon-api))
+                                                   (is (= deployment-id in-deployment-id))
+                                                   (deliver deleted-deployment-promise :invoked))
+                      marathon/get-app (fn [in-marathon-api in-service-id]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         {:app {:cmd "tc" :cpus 2 :id service-id :instances 25 :mem 4
+                                                :tasks (->> (fn [] {:appId service-id
+                                                                    :id (str service-id "." (rand-int 1000))})
+                                                            (repeatedly 15))}})
+                      marathon/update-app (fn [in-marathon-api in-service-id descriptor]
+                                            (is (= marathon-api in-marathon-api))
+                                            (is (= service-id in-service-id))
+                                            (is (= {:cmd "tc" :cpus 2 :id service-id :instances 15 :mem 4} descriptor))
+                                            (deliver updated-invoked-promise :invoked))]
+          (scheduler/scale-app marathon-scheduler service-id instances true)
+          (is (= :invoked (deref deleted-deployment-promise 0 :not-invoked)))
+          (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
+
+    (testing "forced scale of service - more instances"
+      (let [updated-invoked-promise (promise)
+            deleted-deployment-promise (promise)
+            instances 20
+            deployment-id "d-1234"]
+        (with-redefs [extract-service-deployment-info (fn [in-marathon-api in-service-id]
+                                                        (is (= marathon-api in-marathon-api))
+                                                        (is (= service-id in-service-id))
+                                                        {:id deployment-id})
+                      marathon/delete-deployment (fn [in-marathon-api in-deployment-id]
+                                                   (is (= marathon-api in-marathon-api))
+                                                   (is (= deployment-id in-deployment-id))
+                                                   (deliver deleted-deployment-promise :invoked))
+                      marathon/get-app (fn [in-marathon-api in-service-id]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         {:app {:cmd "tc" :cpus 2 :id service-id :instances 25 :mem 4
+                                                :tasks (->> (fn [] {:appId service-id
+                                                                    :id (str service-id "." (rand-int 1000))})
+                                                            (repeatedly 15))}})
+                      marathon/update-app (fn [in-marathon-api in-service-id descriptor]
+                                            (is (= marathon-api in-marathon-api))
+                                            (is (= service-id in-service-id))
+                                            (is (= {:cmd "tc" :cpus 2 :id service-id :instances instances :mem 4} descriptor))
+                                            (deliver updated-invoked-promise :invoked))]
+          (scheduler/scale-app marathon-scheduler service-id instances true)
+          (is (= :invoked (deref deleted-deployment-promise 0 :not-invoked)))
+          (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))))

@@ -97,6 +97,19 @@
     (catch Exception e
       (log/error e "unable to extract the deployment info"))))
 
+(defn extract-service-deployment-info
+  "Pings Marathon to get the deployment details and return the first deployment that affects service-id."
+  [marathon-api service-id]
+  (try
+    (->> (marathon/get-deployments marathon-api)
+         (filter (fn service-deployment-info-filter-pred [{:keys [affectedApps]}]
+                   (some (fn service-deployment-info-some-pred [affected-app]
+                           (= (remove-slash-prefix affected-app) service-id))
+                         affectedApps)))
+         first)
+    (catch Exception e
+      (log/error e "unable to extract the deployment info for" service-id))))
+
 (defn process-kill-instance-request
   "Processes a kill instance request"
   [marathon-api service-id instance-id {:keys [force scale] :or {force false, scale true} :as kill-params}]
@@ -370,15 +383,22 @@
         (log/warn "[delete-app] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[delete-app] Marathon unavailable"))))
 
-  (scale-app [_ service-id instances]
+  (scale-app [_ service-id scale-to-instances force]
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
         (str "in scale-app[" service-id "]")
+        (when force
+          (when-let [current-deployment (extract-service-deployment-info marathon-api service-id)]
+            (log/info "forcefully deleting deployment" current-deployment)
+            (marathon/delete-deployment marathon-api (:id current-deployment))))
         (let [old-descriptor (:app (marathon/get-app marathon-api service-id))
-              new-descriptor (update-in
-                               (select-keys old-descriptor [:id :cmd :mem :cpus :instances])
-                               [:instances]
-                               (fn [_] instances))]
+              scale-to-instances' (cond-> scale-to-instances
+                                    ;; avoid unintentional scale-down in force mode
+                                    force (max (-> old-descriptor :tasks count)))
+              _ (when (not= scale-to-instances scale-to-instances')
+                  (log/info "adjusting scale to instances to" scale-to-instances' "in force mode"))
+              new-descriptor (-> (select-keys old-descriptor [:cmd :cpus :id :mem])
+                                 (assoc :instances scale-to-instances'))]
           (marathon/update-app marathon-api service-id new-descriptor)))
       (catch [:status 409] e
         (log/warn "Marathon deployment conflict while scaling"

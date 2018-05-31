@@ -100,9 +100,9 @@
       :result :deleted|:error|:no-such-service-exists
       :success true|false}")
 
-  (scale-app [this ^String service-id target-instances]
-    "Instructs the scheduler to scale up/down instances of the specified service to
-    the specified number of instances.")
+  (scale-app [this ^String service-id target-instances force]
+    "Instructs the scheduler to scale up/down instances of the specified service to the specified number
+     of instances. The force flag can be used enforce the scaling by ignoring previous pending operations.")
 
   (retrieve-directory-content [this ^String service-id ^String instance-id ^String host ^String directory]
     "Retrieves the content of the directory for the specified instance (identified by `instance-id`) on the

@@ -48,11 +48,10 @@
       (throw error))
     (when (and throw-exceptions (not (<= 200 status 299)))
       (ss/throw+ response))
-    (-> response
-        :body
-        async/<!!
-        json/read-str
-        walk/keywordize-keys)))
+    (let [response-body (-> response :body async/<!!)]
+      (cond-> response-body
+        (and (string? response-body) (pos? (count response-body)))
+        (-> json/read-str walk/keywordize-keys)))))
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."

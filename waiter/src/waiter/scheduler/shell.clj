@@ -604,7 +604,7 @@
        :result :no-such-service-exists
        :message (str service-id " does not exist!")}))
 
-  (scale-app [this service-id scale-to-instances]
+  (scale-app [this service-id scale-to-instances _]
     (if (scheduler/app-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent set-service-scale service-id scale-to-instances completion-promise)
