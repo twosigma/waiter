@@ -90,10 +90,9 @@
     (when-let [deployments (get-deployment-info response)]
       (let [deployment-ids (->> deployments
                                 (map #(get % "id"))
-                                set)
-            all-marathon-deployments (marathon/get-deployments marathon-api)]
-        (->> all-marathon-deployments
-             (filter (fn [{:strs [id]}] (contains? deployment-ids id)))
+                                set)]
+        (->> (marathon/get-deployments marathon-api)
+             (filter (fn [{:keys [id]}] (contains? deployment-ids id)))
              vec)))
     (catch Exception e
       (log/error e "unable to extract the deployment info"))))
