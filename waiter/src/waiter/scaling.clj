@@ -250,10 +250,7 @@
                               (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "ignore"))
                               executor-state)))
 
-                        (and scale-to-instances
-                             task-count
-                             (neg? scale-amount)
-                             (neg? (- task-count scale-to-instances)))
+                        (and (neg? scale-amount) (< task-count scale-to-instances))
                         (do
                           (log/info "potential overshoot detected, triggering scale-force for service"
                                     {:scale-to-instances scale-to-instances :task-count task-count})
