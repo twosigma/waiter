@@ -1150,9 +1150,11 @@
    for modifying this data for the router."
   [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config]
   (let [state-chan (async/chan)
-        router-state-push-chan (au/latest-chan)]
+        router-state-push-chan (au/latest-chan)
+        query-chan (async/chan)]
     {:state-chan state-chan
      :router-state-push-mult (async/mult router-state-push-chan)
+     :query-chan query-chan
      :go-chan
      (async/go
        (try
@@ -1268,6 +1270,11 @@
                                  (async/put! router-state-push-chan new-state))
                                new-state)
                              (recur loop-state' remaining))))))
+
+                   query-chan
+                   ([response-chan]
+                    (async/put! response-chan current-state)
+                    current-state)
 
                    router-chan
                    ([data]
