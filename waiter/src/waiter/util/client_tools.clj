@@ -166,8 +166,7 @@
 (defn current-test-name
   "Get the name of the currently-running test."
   []
-  (str (or (-> *testing-vars* first meta :name)
-           "test-unknown-name")))
+  (-> *testing-vars* first meta :name (or "test-unknown-name") str))
 
 (defmacro testing-using-waiter-url
   [& body]
