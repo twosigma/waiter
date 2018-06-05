@@ -116,19 +116,18 @@
 
 (defn stringify-elements
   [k v]
-  (if (vector? v)
-    (map (partial stringify-elements k) v)
-    (cond
-      (instance? DateTime v) (du/date-to-str v)
-      (instance? UUID v) (str v)
-      (instance? Pattern v) (str v)
-      (instance? PersistentQueue v) (vec v)
-      (instance? ManyToManyChannel v) (str v)
-      (instance? Process v) (str v)
-      (instance? ValidationError v) (str v)
-      (= k :time) (str v)
-      (symbol? v) (str/join "/" ((juxt namespace name) v))
-      :else v)))
+  (cond
+    (vector? v) (mapv (partial stringify-elements k) v)
+    (instance? DateTime v) (du/date-to-str v)
+    (instance? UUID v) (str v)
+    (instance? Pattern v) (str v)
+    (instance? PersistentQueue v) (vec v)
+    (instance? ManyToManyChannel v) (str v)
+    (instance? Process v) (str v)
+    (instance? ValidationError v) (str v)
+    (= k :time) (str v)
+    (symbol? v) (str/join "/" ((juxt namespace name) v))
+    :else v))
 
 (defn map->json
   "Convert the input data into a json string."
@@ -152,6 +151,9 @@
              (let [writer (OutputStreamWriter. (.getOutputStream resp))]
                (try
                  (json/write data-map writer :value-fn stringify-elements)
+                 (catch Exception e
+                   (log/error e "Exception creating streaming json response")
+                   (throw e))
                  (finally
                    (.flush writer)))))}))
 
