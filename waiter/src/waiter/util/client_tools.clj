@@ -163,9 +163,14 @@
     (.setCookieStore client (HttpCookieStore$Empty.))
     client))
 
+(defn current-test-name
+  "Get the name of the currently-running test."
+  []
+  (-> *testing-vars* first meta :name (or "test-unknown-name") str))
+
 (defmacro testing-using-waiter-url
   [& body]
-  `(let [name# (str (or (:name (meta (first *testing-vars*))) "test-unknown-name"))]
+  `(let [name# (current-test-name)]
      (testing name#
        (cid/with-correlation-id
          name#
