@@ -535,7 +535,9 @@
         state-query-chan (async/chan 32)]
     (async/go
       (try
-        (loop [{:keys [last-update-time service-id->health-check-context] :as current-state} {}]
+        (loop [{:keys [last-update-time service-id->health-check-context]
+                :or {service-id->health-check-context {}}
+                :as current-state} {}]
           (when-let [next-state
                      (async/alt!
                        exit-chan
@@ -574,7 +576,7 @@
                        :priority true)]
             (recur next-state)))
         (catch Exception e
-          (log/error e "Fatal error in scheduler-syncer")
+          (log/error e "fatal error in scheduler-syncer")
           (System/exit 1))))
     {:exit-chan exit-chan
      :query-chan state-query-chan}))

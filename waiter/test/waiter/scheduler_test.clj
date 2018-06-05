@@ -260,6 +260,9 @@
                               :flags #{:has-connected :has-responded}
                               :healthy? false
                               :health-check-status 400)]
+    (let [response-chan (async/promise-chan)]
+      (async/>!! query-chan {:response-chan response-chan :service-id "s0"})
+      (is (= {:last-update-time nil :service-specific-state []} (async/<!! response-chan))))
     (async/>!! timeout-chan :timeout)
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-services update-apps-msg))

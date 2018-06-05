@@ -628,7 +628,7 @@
                                                             {:cid (cid/get-correlation-id)
                                                              :response-chan response-chan
                                                              :service-id service-id})
-                                                  (log/info (str "Waiting on response on " key " channel"))
+                                                  (log/info (str "waiting on response from " key " channel"))
                                                   (async/alt!
                                                     response-chan ([state] state)
                                                     (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
