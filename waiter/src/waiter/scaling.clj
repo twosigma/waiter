@@ -38,7 +38,7 @@
                       "get-app-instance-stats"
                       (scheduler/get-apps scheduler))
                     (catch Exception ex
-                      (log/warn ex "Marathon fetch failed for instance count")))]
+                      (log/warn ex "fetch failed for instance counts from scheduler")))]
     (zipmap (map :id apps)
             (map #(select-keys % [:instances :task-count]) apps))))
 
