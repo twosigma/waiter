@@ -61,3 +61,9 @@
   [entitlement-manager auth-user run-as-user]
   (and auth-user run-as-user
        (authorized? entitlement-manager auth-user :run-as {:resource-type :credential, :user run-as-user})))
+
+(defn member-of?
+  "Helper function that checks the whether the auth-user is a member of the provided group."
+  [entitlement-manager auth-user group]
+  (and auth-user group
+       (authorized? entitlement-manager auth-user :member-of {:resource-type :group, :user group})))

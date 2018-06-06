@@ -89,3 +89,15 @@
                                resource)))
         entitlement-manager (TestEntitlementManager. assertion-fn)]
     (is (authz/run-as? entitlement-manager test-user-1 test-user-2))))
+
+(deftest test-member-of?
+  (let [test-user "test-user-1"
+        test-group "test-group-2"
+        assertion-fn (fn [[subject action resource]]
+                       (and (= test-user subject)
+                            (= :member-of action)
+                            (= {:resource-type :group
+                                :user test-group}
+                               resource)))
+        entitlement-manager (TestEntitlementManager. assertion-fn)]
+    (is (authz/member-of? entitlement-manager test-user test-group))))
