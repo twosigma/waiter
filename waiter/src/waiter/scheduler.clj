@@ -535,9 +535,8 @@
         state-query-chan (async/chan 32)]
     (async/go
       (try
-        (loop [{:keys [last-update-time service-id->health-check-context]
-                :or {service-id->health-check-context {}}
-                :as current-state} {}]
+        (loop [{:keys [last-update-time service-id->health-check-context] :as current-state}
+               {:service-id->health-check-context {}}]
           (when-let [next-state
                      (async/alt!
                        exit-chan
