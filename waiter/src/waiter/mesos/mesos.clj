@@ -35,10 +35,10 @@
   "Lists files and directories contained in the path."
   [{:keys [http-client slave-port spnego-auth]} host directory]
   (http-utils/http-request http-client (str "http://" host ":" slave-port "/files/browse")
-                            :query-string {"path" directory}
-                            :request-method :get
-                            :spnego-auth spnego-auth
-                            :throw-exceptions false))
+                           :query-string {"path" directory}
+                           :request-method :get
+                           :spnego-auth spnego-auth
+                           :throw-exceptions false))
 
 (defn build-directory-download-link
   "Generates a download link to the directory on the specified mesos agent."
@@ -51,6 +51,6 @@
   [{:keys [http-client slave-port spnego-auth]} host]
   (when (and slave-port host)
     (http-utils/http-request http-client (str "http://" host ":" slave-port "/state.json")
-                              :request-method :get
-                              :spnego-auth spnego-auth
-                              :throw-exceptions false)))
+                             :request-method :get
+                             :spnego-auth spnego-auth
+                             :throw-exceptions false)))
