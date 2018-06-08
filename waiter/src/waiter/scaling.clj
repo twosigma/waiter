@@ -300,7 +300,8 @@
   between scaling operations.
   Additionally, the autoscaler attempts to replace expired instances. For every expired instance, the autoscaler increases
   its target by one additional instance. Then, it scales down one instance for each healthy instance in excess of its target."
-  [{:strs [concurrency-level expired-instance-restart-rate jitter-threshold max-instances min-instances scale-down-factor scale-factor scale-ticks scale-up-factor]}
+  [{:strs [concurrency-level expired-instance-restart-rate jitter-threshold max-instances min-instances
+           scale-down-factor scale-factor scale-ticks scale-up-factor]}
    {:keys [expired-instances healthy-instances outstanding-requests target-instances total-instances]}]
   {:pre [(<= 0 scale-up-factor 1)
          (<= 0 scale-down-factor 1)
@@ -320,10 +321,11 @@
                                     (* (- 1 scale-up-factor) target-instances))
         smoothed-scale-down-target (+ (* scale-down-factor ideal-instances)
                                       (* (- 1 scale-down-factor) target-instances))
-        target-instances' (max min-instances (min max-instances
-                                                  (if (>= smoothed-scale-up-target target-instances)
-                                                    smoothed-scale-up-target
-                                                    smoothed-scale-down-target)))
+        target-instances' (->> (if (>= smoothed-scale-up-target target-instances)
+                                 smoothed-scale-up-target
+                                 smoothed-scale-down-target)
+                               (min max-instances)
+                               (max min-instances))
         ^double delta (- target-instances' total-instances)
         integer-delta (if (>= (Math/abs delta) jitter-threshold)
                         (int (Math/ceil (- delta epsilon)))
@@ -336,10 +338,10 @@
         ; since the instance killer will kill the expired instances
         scaling-down (< integer-delta 0)
         all-instances-are-healthy (= total-instances healthy-instances)
-        scale-to-instances' (if (or (and scaling-down all-instances-are-healthy)
-                                    (zero? expired-instances))
-                              scale-to-instances
-                              (- (+ scale-to-instances expired-instances-to-replace) excess-instances))
+        scale-to-instances' (cond-> scale-to-instances
+                              (and (pos? expired-instances)
+                                   (not (and scaling-down all-instances-are-healthy)))
+                              (+ (- expired-instances-to-replace excess-instances)))
         integer-delta' (int (- scale-to-instances' total-instances))]
     {:scale-to-instances scale-to-instances'
      :target-instances target-instances'
