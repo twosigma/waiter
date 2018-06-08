@@ -1121,7 +1121,7 @@
                                       :routers routers
                                       :time current-time})
                     state (async/<!! router-state-push-chan)
-                    actual-state (dissoc state :iteration)]
+                    actual-state (dissoc state :iteration :service-id->instance-counts)]
                 (when (not= expected-state actual-state)
                   (clojure.pprint/pprint (clojure.data/diff expected-state actual-state)))
                 (is (= expected-state actual-state) (str (clojure.data/diff expected-state actual-state))))))
@@ -1209,7 +1209,7 @@
                                                                       (map #(deployment-error-fn % (index-fn %)) expected-services))))})
                     state (async/<!! router-state-push-chan)
                     actual-state (dissoc state :iteration :service-id->healthy-instances :service-id->expired-instances :service-id->starting-instances
-                                         :service-id->my-instance->slots :routers :time)]
+                                          :service-id->instance-counts :service-id->my-instance->slots :routers :time)]
                 (when (not= expected-state actual-state)
                   (clojure.pprint/pprint (clojure.data/diff expected-state actual-state)))
                 (is (= expected-state actual-state) (str (clojure.data/diff expected-state actual-state))))))

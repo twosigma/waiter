@@ -99,6 +99,7 @@
                      "state" [["" :state-all-handler-fn]
                               ["/fallback" :state-fallback-handler-fn]
                               ["/interstitial" :state-interstitial-handler-fn]
+                              ["/launch-metrics" :state-launch-metrics-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
                               ["/leader" :state-leader-handler-fn]
                               ["/local-usage" :state-local-usage-handler-fn]
@@ -874,6 +875,10 @@
                                     initial-state {}]
                                 (interstitial/interstitial-maintainer
                                   service-id->service-description-fn scheduler-state-chan interstitial-state-atom initial-state)))
+   :launch-metrics-maintainer (pc/fnk [router-state-maintainer]
+                                (let [{{:keys [router-state-push-mult]} :maintainer-chans} router-state-maintainer]
+                                  (scheduler/start-launch-metrics-maintainer
+                                    (async/tap router-state-push-mult (au/latest-chan)))))
    :messages (pc/fnk [[:settings {messages nil}]]
                (when messages
                  (utils/load-messages messages)))
@@ -1168,6 +1173,13 @@
                                       (wrap-secure-request-fn
                                         (fn state-interstitial-handler-fn [request]
                                           (handler/get-query-chan-state-handler router-id interstitial-query-chan request)))))
+   :state-launch-metrics-handler-fn (pc/fnk [[:daemons launch-metrics-maintainer]
+                                             [:state router-id]
+                                             wrap-secure-request-fn]
+                                      (let [query-chan (:query-chan launch-metrics-maintainer)]
+                                        (wrap-secure-request-fn
+                                          (fn state-launch-metrics-handler-fn [request]
+                                            (handler/get-query-chan-state-handler router-id query-chan request)))))
    :state-kv-store-handler-fn (pc/fnk [[:curator kv-store]
                                        [:state router-id]
                                        wrap-secure-request-fn]
