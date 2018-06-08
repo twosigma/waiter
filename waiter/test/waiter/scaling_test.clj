@@ -678,6 +678,9 @@
       (scales-like 2 3 2, fast-scaling 1 2 0.9 1 1))
     (testing "scale down with expired instances"
       (scales-like -4 1 1, fast-scaling 5 0 5.3 5 5))
+    (testing "scale down without expired instances"
+      (scales-like -2 8 7.919, (assoc default-scaling "scale-down-factor" 0.001 "scale-up-factor" 0.1) 10 0 7.927 9 0)
+      (scales-like -1 8 7.919, (assoc default-scaling "scale-down-factor" 0.001 "scale-up-factor" 0.1) 9 0 7.927 8 0))
     (testing "scale down does not affect unhealthy instance"
       (scales-like 0 2 1, default-scaling 2 0 1.3 1 1))
     (testing "scale down replacement instance for expired"

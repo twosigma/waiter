@@ -336,7 +336,8 @@
         ; since the instance killer will kill the expired instances
         scaling-down (< integer-delta 0)
         all-instances-are-healthy (= total-instances healthy-instances)
-        scale-to-instances' (if (and scaling-down all-instances-are-healthy)
+        scale-to-instances' (if (or (and scaling-down all-instances-are-healthy)
+                                    (zero? expired-instances))
                               scale-to-instances
                               (- (+ scale-to-instances expired-instances-to-replace) excess-instances))
         integer-delta' (int (- scale-to-instances' total-instances))]
@@ -383,10 +384,11 @@
           (when-not (zero? scale-amount)
             (apply-scaling-fn service-id
                               {:outstanding-requests outstanding-requests
-                               :task-count task-count
-                               :total-instances instances
                                :scale-amount scale-amount
-                               :scale-to-instances scale-to-instances}))
+                               :scale-to-instances scale-to-instances
+                               :target-instances target-instances
+                               :task-count task-count
+                               :total-instances instances}))
           {:target-instances target-instances
            :scale-to-instances scale-to-instances
            :scale-amount scale-amount}))
