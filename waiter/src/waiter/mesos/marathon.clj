@@ -60,9 +60,9 @@
 
 (defn get-apps
   "List all running apps including running and failed tasks."
-  [{:keys [http-client marathon-url spnego-auth]}]
+  [{:keys [http-client marathon-url spnego-auth]} query-params]
   (http-utils/http-request http-client (str marathon-url "/v2/apps")
-                           :query-string {"embed" ["apps.lastTaskFailure" "apps.tasks"]}
+                           :query-string query-params
                            :request-method :get
                            :spnego-auth spnego-auth))
 

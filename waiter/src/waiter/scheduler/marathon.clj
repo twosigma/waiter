@@ -227,8 +227,8 @@
 (defn- get-apps
   "Makes a call with hardcoded embed parameters.
    Filters the apps to return only Waiter apps."
-  [marathon-api is-waiter-app?-fn]
-  (let [apps (marathon/get-apps marathon-api)]
+  [marathon-api is-waiter-app?-fn query-params]
+  (let [apps (marathon/get-apps marathon-api query-params)]
     (filter #(is-waiter-app?-fn (app->waiter-service-id %)) (:apps apps))))
 
 (defn marathon-descriptor
@@ -295,13 +295,13 @@
   scheduler/ServiceScheduler
 
   (get-apps->instances [_]
-    (let [apps (get-apps marathon-api is-waiter-app?-fn)]
+    (let [apps (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})]
       (response-data->service->service-instances
         apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
         service-id->service-description)))
 
   (get-apps [_]
-    (map response->Service (get-apps marathon-api is-waiter-app?-fn)))
+    (map response->Service (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})))
 
   (get-instances [_ service-id]
     (ss/try+
