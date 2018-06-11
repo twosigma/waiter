@@ -159,7 +159,7 @@
   "Returns true if the launch-metrics state reflects at least $n$ scheduled
    instances in the instance counts for the given service on the given router."
   [router-url service-id n]
-  (-> (make-request router-url "/state/launch-metrics")
+  (-> (make-request router-url "/state/launch-metrics" :verbose true)
       :body
       try-parse-json
       (get-in ["state" "service-id->launch-tracker" service-id "instance-counts" "scheduled"] 0)
