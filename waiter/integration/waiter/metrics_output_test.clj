@@ -158,8 +158,8 @@
 (defn- n-scheduled-instances-observed?
   "Returns true if the launch-metrics state reflects at least $n$ scheduled
    instances in the instance counts for the given service on the given router."
-  [router-url service-id n]
-  (-> (make-request router-url "/state/launch-metrics" :verbose true)
+  [router-url cookies service-id n]
+  (-> (make-request router-url "/state/launch-metrics" :cookies cookies :verbose true)
       :body
       try-parse-json
       (get-in ["state" "service-id->launch-tracker" service-id "instance-counts" "scheduled"] 0)
@@ -181,7 +181,7 @@
                        :x-waiter-cmd-type "shell"
                        :x-waiter-min-instances instance-count
                        :x-waiter-name service-name}
-          {:keys [headers request-headers service-id] :as first-response}
+          {:keys [cookies headers request-headers service-id] :as first-response}
           (make-request-with-debug-info req-headers #(make-kitchen-request waiter-url % :method :get))]
       (with-service-cleanup
         service-id
@@ -189,7 +189,7 @@
         (assert-response-status first-response 200)
         ; on each router, check that the launch-metrics are present and have sane values
         (doseq [[router-id router-url] router->endpoint]
-          (wait-for #(n-scheduled-instances-observed? router-url service-id instance-count)
+          (wait-for #(n-scheduled-instances-observed? router-url cookies service-id instance-count)
                     :interval 1 :timeout min-startup-seconds)
           (let [metrics-response (->> "/metrics"
                                       (make-request router-url)
