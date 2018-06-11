@@ -737,58 +737,27 @@
 
 (deftest test-marathon-scheduler
   (testing "Creating a MarathonScheduler"
+    (let [valid-config {:force-kill-after-ms 60000
+                        :framework-id-ttl 900000
+                        :home-path-prefix "/home/"
+                        :http-options {:conn-timeout 10000 :socket-timeout 10000}
+                        :mesos-slave-port 5051
+                        :slave-directory "/foo"
+                        :sync-deployment-interval-ms 60000
+                        :url "url"}]
 
-    (testing "should throw on invalid configuration"
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory "/foo"
-                                                  :url nil})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory ""
-                                                  :url "url"})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 0
-                                                  :slave-directory "/foo"
-                                                  :url "url"})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory "/foo"
-                                                  :url "url"})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix nil
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory "/foo"
-                                                  :url "url"})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 0
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory "/foo"
-                                                  :url "url"}))))
+      (testing "should throw on invalid configuration"
+        (is (thrown? Throwable (marathon-scheduler (assoc valid-config :framework-id-ttl 0))))
+        (is (thrown? Throwable (marathon-scheduler (assoc valid-config :home-path-prefix nil))))
+        (is (thrown? Throwable (marathon-scheduler (assoc valid-config :http-options {}))))
+        (is (thrown? Throwable (marathon-scheduler (assoc valid-config :mesos-slave-port 0))))
+        (is (thrown? Throwable (marathon-scheduler (assoc valid-config :slave-directory ""))))
+        (is (thrown? Throwable (marathon-scheduler (assoc valid-config :sync-deployment-interval-ms 0))))
+        (is (thrown? Throwable (marathon-scheduler (assoc valid-config :url nil)))))
 
-    (testing "should work with valid configuration"
-      (is (instance? MarathonScheduler
-                     (marathon-scheduler {:home-path-prefix "/home/"
-                                          :http-options {:conn-timeout 10000
-                                                         :socket-timeout 10000}
-                                          :force-kill-after-ms 60000
-                                          :framework-id-ttl 900000
-                                          :url "url"}))))))
+      (testing "should work with valid configuration"
+        (is (instance? MarathonScheduler (marathon-scheduler valid-config)))
+        (is (instance? MarathonScheduler (marathon-scheduler (dissoc valid-config :force-kill-after-ms))))))))
 
 (deftest test-process-kill-instance-request
   (let [marathon-api (Object.)
@@ -1004,3 +973,110 @@
           (scheduler/scale-app marathon-scheduler service-id instances true)
           (is (= :invoked (deref deleted-deployment-promise 0 :not-invoked)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))))
+
+(deftest test-sync-deployment-maintainer
+  (let [marathon-api {:identifier (str "marathon-api-" (rand-int 10000))}
+        marathon-scheduler {:identifier (str "marathon-scheduler-" (rand-int 10000))
+                            :is-waiter-app?-fn (fn [id] (str/starts-with? id "ws-"))
+                            :marathon-api marathon-api}
+        initial-state {:iteration 0 :last-sync-result :inital-state}
+        make-app-entry (fn [deployment-ids app-id instances task-ids]
+                         {:deployments (map (fn [deployment-id] [{:id deployment-id}]) deployment-ids)
+                          :id app-id
+                          :instances instances
+                          :tasks (map (fn [task-id] [{:id task-id}]) task-ids)})]
+
+    (testing "initialization"
+      (let [timeout-chan (async/chan 1)
+            {:keys [exit-chan query-chan]} (sync-deployment-maintainer marathon-scheduler initial-state timeout-chan)]
+        (let [response-chan (async/promise-chan)]
+          (async/>!! query-chan {:response-chan response-chan})
+          (is (= initial-state (async/<!! response-chan))))
+        (async/>!! exit-chan :ignore-me)
+        (async/>!! exit-chan :exit)))
+
+    (testing "no services with pending sync-deployment"
+      (let [current-time (t/now)]
+        (with-redefs [marathon/get-apps
+                      (fn [in-marathon-api in-query-params]
+                        (is (= marathon-api in-marathon-api))
+                        (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
+                        {:apps [(make-app-entry [] "ts-s1" 4 ["ts-s1.t1"])
+                                (make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])
+                                (make-app-entry [] "ws-s2" 2 ["ws-s1.t1" "ws-s1.t2"])]})
+                      t/now (constantly current-time)]
+          (let [timeout-chan (async/chan 1)
+                {:keys [exit-chan query-chan]} (sync-deployment-maintainer marathon-scheduler initial-state timeout-chan)]
+            (async/>!! timeout-chan :timeout)
+            (let [response-chan (async/promise-chan)]
+              (async/>!! query-chan {:response-chan response-chan})
+              (is (= {:iteration 1 :last-sync-result nil :last-update-time current-time}
+                     (async/<!! response-chan))))
+            (async/>!! exit-chan :exit)))))
+
+    (testing "some services with pending sync-deployment"
+      (let [current-time (t/now)
+            scheduler-operations-atom (atom [])]
+        (with-redefs [marathon/get-apps
+                      (fn [in-marathon-api in-query-params]
+                        (is (= marathon-api in-marathon-api))
+                        (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
+                        {:apps [(make-app-entry [] "ts-s1" 4 ["ts-s1.t1"])
+                                (make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])
+                                (make-app-entry [] "ws-s2" 2 ["ws-s1.t1"])
+                                (make-app-entry ["ws-s3.d1234"] "ws-s3" 3 ["ws-s3.t1"])
+                                (make-app-entry [] "ws-s4" 4 ["ws-s4.t1" "ws-s4.t2"])]})
+                      scheduler/scale-app (fn [in-scheduler in-service-id in-target in-force]
+                                            (is (= marathon-scheduler in-scheduler))
+                                            (swap! scheduler-operations-atom conj [in-service-id in-target in-force]))
+                      t/now (constantly current-time)]
+          (let [timeout-chan (async/chan 1)
+                {:keys [exit-chan query-chan]} (sync-deployment-maintainer marathon-scheduler initial-state timeout-chan)]
+            (async/>!! timeout-chan :timeout)
+            (let [response-chan (async/promise-chan)]
+              (async/>!! query-chan {:response-chan response-chan})
+              (is (= {:iteration 1  :last-sync-result ["ws-s2" "ws-s4"] :last-update-time current-time}
+                     (async/<!! response-chan))))
+            (is (= [["ws-s2" 1 false] ["ws-s4" 2 false]] @scheduler-operations-atom))
+            (async/>!! exit-chan :exit)))))
+
+    (testing "repeated pending sync-deployment"
+      (let [current-time (t/now)
+            scheduler-operations-atom (atom [])
+            get-apps-result-atom (atom
+                                   (list {:apps [(make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])
+                                                 (make-app-entry [] "ws-s2" 2 ["ws-s1.t1"])
+                                                 (make-app-entry ["ws-s3.d12"] "ws-s3" 3 ["ws-s3.t1"])
+                                                 (make-app-entry [] "ws-s4" 4 ["ws-s4.t1" "ws-s4.t2"])]}
+                                         {:apps [(make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])
+                                                 (make-app-entry ["ws-s2.d34"] "ws-s2" 2 ["ws-s1.t1"])
+                                                 (make-app-entry ["ws-s3.d12"] "ws-s3" 3 ["ws-s3.t1"])
+                                                 (make-app-entry [] "ws-s4" 4 ["ws-s4.t1" "ws-s4.t2" "ws-s4.t3"])]}))]
+        (with-redefs [marathon/get-apps
+                      (fn [in-marathon-api in-query-params]
+                        (is (= marathon-api in-marathon-api))
+                        (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
+                        (let [result (first @get-apps-result-atom)]
+                          (swap! get-apps-result-atom pop)
+                          result))
+                      scheduler/scale-app (fn [in-scheduler in-service-id in-target in-force]
+                                            (is (= marathon-scheduler in-scheduler))
+                                            (swap! scheduler-operations-atom conj [in-service-id in-target in-force]))
+                      t/now (constantly current-time)]
+          (let [timeout-chan (async/chan 1)
+                {:keys [exit-chan query-chan]} (sync-deployment-maintainer marathon-scheduler initial-state timeout-chan)]
+            (async/>!! timeout-chan :timeout)
+            (let [response-chan (async/promise-chan)]
+              (async/>!! query-chan {:response-chan response-chan})
+              (is (= {:iteration 1 :last-sync-result ["ws-s2" "ws-s4"] :last-update-time current-time}
+                     (async/<!! response-chan))))
+            (is (= [["ws-s2" 1 false] ["ws-s4" 2 false]] @scheduler-operations-atom))
+
+            (reset! scheduler-operations-atom [])
+            (async/>!! timeout-chan :timeout)
+            (let [response-chan (async/promise-chan)]
+              (async/>!! query-chan {:response-chan response-chan})
+              (is (= {:iteration 2 :last-sync-result ["ws-s4"] :last-update-time current-time}
+                     (async/<!! response-chan))))
+            (is (= [["ws-s4" 3 false]] @scheduler-operations-atom))
+            (async/>!! exit-chan :exit)))))))

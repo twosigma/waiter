@@ -22,6 +22,7 @@
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [slingshot.slingshot :as ss]
+            [waiter.correlation-id :as cid]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.util.http-utils :as http-utils]
@@ -428,14 +429,90 @@
     "Error in retrieving info from marathon."
     (:frameworkId (marathon/get-info marathon-api))))
 
+(defn- get-apps-with-deployments
+  "Retrieves the apps with the deployment info embedded."
+  [{:keys [marathon-api is-waiter-app?-fn]}]
+  (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.deployments" "apps.tasks"]}))
+
+(defn- is-out-of-sync?
+  "Returns true if the app does not have pending deployments and the instance and task counts do not match."
+  [{:keys [deployments instances tasks]}]
+  (and (empty? deployments) (not= instances (count tasks))))
+
+(defn- trigger-sync-deployments
+  "Triggers deployments for apps which are out of sync.
+   It returns the ids of the apps that were out of sync."
+  [marathon-scheduler]
+  (try
+    (let [apps (get-apps-with-deployments marathon-scheduler)
+          out-of-sync-apps (filter is-out-of-sync? apps)]
+      (log/info "found" (count out-of-sync-apps) "service(s) that require sync deployments")
+      (when (seq out-of-sync-apps)
+        (doseq [{:keys [id instances tasks]} out-of-sync-apps]
+          (let [task-count (count tasks)]
+            (log/info "triggering sync deployment" {:instances instances :service-id id :task-count task-count})
+            (scheduler/scale-app marathon-scheduler id task-count false)))
+        (map :id out-of-sync-apps)))
+    (catch Exception e
+      (log/error e "unable to sync marathon service deployments"))))
+
+(defn sync-deployment-maintainer
+  "Launches the sync-deployment maintainer which triggers new deployments for services which have a mismatch
+   in the counts for requested and scheduled instances.
+   The intervals for the sync are controlled by the timeout-chan."
+  [marathon-scheduler initial-state timeout-chan]
+  (cid/cinfo "sync-deployment" "starting marathon sync-deployment maintainer")
+  (let [exit-chan (async/chan 1)
+        query-chan (async/chan 32)]
+    (async/go-loop [{:keys [iteration last-update-time] :as current-state}
+                    (utils/assoc-if-absent initial-state :iteration 0)]
+      (let [[message chan-selected] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
+        (condp = chan-selected
+          exit-chan
+          (if (= :exit message)
+            (do
+              (async/close! timeout-chan)
+              (cid/cinfo "sync-deployment" "stopping marathon sync-deployment maintainer"
+                         {:last-update-time last-update-time}))
+            (do
+              (cid/cinfo "sync-deployment" "ignoring unknown message sent to exit chan" {:message message})
+              (recur current-state)))
+
+          query-chan
+          (let [{:keys [response-chan]} message]
+            (async/>! response-chan current-state)
+            (recur current-state))
+
+          timeout-chan
+          (-> current-state
+              (assoc :iteration (inc iteration)
+                     :last-sync-result (cid/with-correlation-id
+                                         (str "sync-deployment." iteration)
+                                         (trigger-sync-deployments marathon-scheduler))
+                     :last-update-time (t/now))
+              recur))))
+    {:exit-chan exit-chan
+     :query-chan query-chan}))
+
+(defn start-sync-deployment-maintainer
+  "Starts the sync-deployment-maintainer"
+  [marathon-scheduler sync-deployment-interval-ms]
+  (let [sync-deployment-interval (t/millis sync-deployment-interval-ms)
+        sync-deployment-start (t/plus (t/now) sync-deployment-interval)]
+    (->> sync-deployment-interval
+         (du/time-seq sync-deployment-start)
+         chime/chime-ch
+         (sync-deployment-maintainer marathon-scheduler {}))))
+
 (defn marathon-scheduler
-  "Returns a new MarathonScheduler with the provided configuration. Validates the
-  configuration against marathon-scheduler-schema and throws if it's not valid."
+  "Returns a new MarathonScheduler with the provided configuration.
+   Validates the configuration against marathon-scheduler-schema and throws if it's not valid."
   [{:keys [home-path-prefix http-options force-kill-after-ms framework-id-ttl mesos-slave-port
-           service-id->service-description-fn slave-directory url is-waiter-app?-fn]}]
+           sync-deployment-interval-ms service-id->service-description-fn slave-directory url is-waiter-app?-fn]}]
   {:pre [(not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
          (or (nil? mesos-slave-port) (utils/pos-int? mesos-slave-port))
+         (utils/pos-int? sync-deployment-interval-ms)
          (utils/pos-int? framework-id-ttl)
          (utils/pos-int? (:conn-timeout http-options))
          (utils/pos-int? (:socket-timeout http-options))
@@ -447,7 +524,10 @@
         mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})
         service-id->last-force-kill-store (atom {})
-        retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)]
-    (->MarathonScheduler marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
-                         service-id->failed-instances-transient-store service-id->last-force-kill-store
-                         service-id->service-description-fn force-kill-after-ms is-waiter-app?-fn)))
+        retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)
+        marathon-scheduler (->MarathonScheduler
+                             marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
+                             service-id->failed-instances-transient-store service-id->last-force-kill-store
+                             service-id->service-description-fn force-kill-after-ms is-waiter-app?-fn)]
+    (start-sync-deployment-maintainer marathon-scheduler sync-deployment-interval-ms)
+    marathon-scheduler))
