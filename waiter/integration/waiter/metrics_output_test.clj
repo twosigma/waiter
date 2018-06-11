@@ -120,7 +120,7 @@
       (doall (map (fn [router-id]
                     (let [router-url (str (get router->endpoint router-id))
                           metrics-json-response (make-request router-url "/metrics")
-                          metrics-response (json/read-str (:body metrics-json-response))
+                          metrics-response (try-parse-json (:body metrics-json-response))
                           service-metrics (get-in metrics-response ["services" service-id])]
                       (log/info "asserting jvm metrics output for" router-url)
                       (assert-metrics-output (get metrics-response "jvm") jvm-metrics-schema)
@@ -161,7 +161,7 @@
   [router-url service-id n]
   (-> (make-request router-url "/state/launch-metrics")
       :body
-      json/read-str
+      try-parse-json
       (get-in ["state" "service-id->launch-tracker" service-id "instance-counts" "scheduled"] 0)
       (>= n)))
 
@@ -194,7 +194,7 @@
           (let [metrics-response (->> "/metrics"
                                       (make-request router-url)
                                       :body
-                                      json/read-str)
+                                      try-parse-json)
                 service-launch-metrics (get-in metrics-response ["services" service-id "timers" "launch-overhead"])
                 service-scheduling-metric (get service-launch-metrics "schedule-time")
                 service-startup-metric (get service-launch-metrics "startup-time")
