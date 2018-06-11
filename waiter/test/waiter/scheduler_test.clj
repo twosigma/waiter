@@ -18,15 +18,19 @@
             [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [clojure.walk :as walk]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
             [waiter.core :as core]
             [waiter.curator :as curator]
+            [waiter.metrics :as metrics]
             [waiter.scheduler :refer :all]
+            [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du])
   (:import (java.net ConnectException SocketTimeoutException)
-           (java.util.concurrent TimeoutException)))
+           (java.util.concurrent TimeoutException)
+           (org.joda.time DateTime)))
 
 (deftest test-record-Service
   (let [test-instance-1 (->Service "service1-id" 100 100 {:running 0, :healthy 0, :unhealthy 0, :staged 0})
@@ -542,3 +546,240 @@
                                       "/health-check"
                                       (Object.)))]
       (is (= {:healthy? false} resp)))))
+
+(defmacro check-trackers
+  [all-trackers assertion-maps]
+  `(let [assertion-maps# ~assertion-maps
+         all-trackers# ~all-trackers]
+     (is (= (count all-trackers#) (count assertion-maps#)))
+     (doseq [tracker-entry# all-trackers#]
+       (let [[service-id#
+              {actual-known-instance-ids# :known-instance-ids
+               actual-instance-scheduling-start-times# :instance-scheduling-start-times
+               actual-starting-instance-id->start-timestamp# :starting-instance-id->start-timestamp}] tracker-entry#
+             actual-starting-instance-ids# (keys actual-starting-instance-id->start-timestamp#)
+             {expected-known-instance-ids# :known-instance-ids
+              expected-scheduling-instance-count# :scheduling-instance-count
+              expected-starting-instance-ids# :starting-instance-ids
+              :or {expected-known-instance-ids# #{}
+                   expected-scheduling-instance-count# 0
+                   expected-starting-instance-ids# []} :as assertion-map#} (get assertion-maps# service-id#)]
+         (is (= expected-known-instance-ids# actual-known-instance-ids#))
+         (is (= expected-scheduling-instance-count# (count actual-instance-scheduling-start-times#)))
+         (is (= (sort expected-starting-instance-ids#)
+                (sort actual-starting-instance-ids#)))))))
+
+(def base-start-time (t/minus (t/now) (t/minutes 1)))
+
+(defn- make-service-instance
+  [service-number instance-number]
+  (let [offset-seconds (t/seconds (+ service-number instance-number))]
+    {:id (str "inst-" service-number \. instance-number)
+     :service-id (str "service-" service-number)
+     :started-at (t/plus base-start-time offset-seconds)}))
+
+(deftest test-update-launch-trackers
+  (let [empty-trackers {}
+        empty-new-service-ids #{}
+        empty-removed-service-ids #{}
+        empty-service-id->healthy-instances {}
+        empty-service-id->unhealthy-instances {}
+        empty-service-id->instance-counts {}
+        req1 {:requested 1}
+        req3 {:requested 3}
+        waiter-timer (metrics/waiter-timer "launch-overhead" "schedule-time")
+
+        empty-trackers' (update-launch-trackers
+                          empty-trackers empty-new-service-ids empty-removed-service-ids
+                          empty-service-id->healthy-instances empty-service-id->unhealthy-instances
+                          empty-service-id->instance-counts waiter-timer)
+        empty-trackers'' (update-launch-trackers
+                           empty-trackers empty-new-service-ids #{"service-foo"}
+                           empty-service-id->healthy-instances empty-service-id->unhealthy-instances
+                           empty-service-id->instance-counts waiter-timer)
+        _ (testing "update-launch-trackers: empty -> empty"
+            (is (= empty-trackers empty-trackers'))
+            (is (= empty-trackers empty-trackers'')))
+
+        service-id->instance-counts-1 {"service-1" req1 "service-2" req1}
+        trackers-1 (update-launch-trackers
+                     empty-trackers #{"service-1" "service-2"} empty-removed-service-ids
+                     empty-service-id->healthy-instances empty-service-id->unhealthy-instances
+                     service-id->instance-counts-1 waiter-timer)
+        _ (testing "update-launch-trackers: empty -> non-empty"
+            (check-trackers trackers-1 {"service-1" {:scheduling-instance-count 1}
+                                        "service-2" {:scheduling-instance-count 1}}))
+
+        trackers-2 (update-launch-trackers
+                     trackers-1 empty-new-service-ids #{"service-1" "service-2"}
+                     empty-service-id->healthy-instances empty-service-id->unhealthy-instances
+                     empty-service-id->instance-counts waiter-timer)
+        _ (testing "update-launch-trackers: trivial non-empty -> empty"
+            (is (= empty-trackers trackers-2)))
+
+        service-id->instance-counts-3 {"service-1" req1 "service-3" req1}
+        trackers-3 (update-launch-trackers
+                     trackers-1 #{"service-3"} #{"service-2"}
+                     empty-service-id->healthy-instances empty-service-id->unhealthy-instances
+                     service-id->instance-counts-3 waiter-timer)
+        _ (testing "update-launch-trackers: simultaneously add and remove services"
+            (check-trackers trackers-3 {"service-1" {:scheduling-instance-count 1}
+                                        "service-3" {:scheduling-instance-count 1}}))
+
+        trackers-4 (update-launch-trackers
+                     trackers-3 empty-new-service-ids empty-removed-service-ids
+                     empty-service-id->healthy-instances {"service-1" [(make-service-instance 1 1)]}
+                     service-id->instance-counts-3 waiter-timer)
+        _ (testing "update-launch-trackers: scheduled a service instance"
+            (check-trackers trackers-4 {"service-1" {:known-instance-ids #{"inst-1.1"}
+                                                     :starting-instance-ids ["inst-1.1"]}
+                                        "service-3" {:scheduling-instance-count 1}}))
+
+        service-id->instance-counts-5 {"service-1" req1 "service-3" req1 "service-4" req1}
+        trackers-5 (update-launch-trackers
+                     trackers-4 #{"service-4"} empty-removed-service-ids
+                     {"service-1" [(make-service-instance 1 1)]
+                      "service-3" [(make-service-instance 3 1)]}
+                     empty-service-id->unhealthy-instances service-id->instance-counts-5 waiter-timer)
+        _ (testing "update-launch-trackers: service instances started, and a new service appears"
+            (check-trackers trackers-5 {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                        "service-3" {:known-instance-ids #{"inst-3.1"}}
+                                        "service-4" {:scheduling-instance-count 1}}))
+
+        service-id->instance-counts-6 {"service-1" req1 "service-4" req1 "service-5" req1}
+        trackers-6 (update-launch-trackers
+                     trackers-5 #{"service-5"} #{"service-3"}
+                     {"service-1" [(make-service-instance 1 1)]
+                      "service-4" [(make-service-instance 4 1)]}
+                     {"service-5" [(make-service-instance 5 1)]}
+                     service-id->instance-counts-6 waiter-timer)
+        _ (testing "update-launch-trackers: simultaneously add and remove services,
+                    and a healthy instance appears"
+            (check-trackers trackers-6 {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                        "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                        "service-5" {:known-instance-ids #{"inst-5.1"}
+                                                     :starting-instance-ids ["inst-5.1"]}}))
+
+        service-id->instance-counts-7 {"service-1" req1 "service-4" req1 "service-5" req3}
+        trackers-7 (update-launch-trackers
+                     trackers-6 empty-new-service-ids empty-removed-service-ids
+                     {"service-1" [(make-service-instance 1 1)]
+                      "service-4" [(make-service-instance 4 1)]}
+                     {"service-5" [(make-service-instance 5 1)]}
+                     service-id->instance-counts-7 waiter-timer)
+        _ (testing "update-launch-trackers: service 5 scales to 3 instances"
+            (check-trackers trackers-7 {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                        "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                        "service-5" {:known-instance-ids #{"inst-5.1"}
+                                                     :scheduling-instance-count 2
+                                                     :starting-instance-ids ["inst-5.1"]}}))
+
+        service-id->instance-counts-8 {"service-1" req1 "service-4" req1 "service-5" req3}
+        trackers-8 (update-launch-trackers
+                     trackers-7 empty-new-service-ids empty-removed-service-ids
+                     empty-service-id->healthy-instances
+                     {"service-1" [(make-service-instance 1 1)]
+                      "service-4" [(make-service-instance 4 1)]
+                      "service-5" [(make-service-instance 5 1)
+                                   (make-service-instance 5 2)
+                                   (make-service-instance 5 3)]}
+                     service-id->instance-counts-8 waiter-timer)
+        _ (testing "update-launch-trackers: all requested instances transition to unhealthy"
+            (check-trackers trackers-8 {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                        "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                        "service-5" {:known-instance-ids #{"inst-5.1" "inst-5.2" "inst-5.3"}
+                                                     :starting-instance-ids ["inst-5.1" "inst-5.2" "inst-5.3"]}}))
+
+        trackers-9 (update-launch-trackers
+                     trackers-8 empty-new-service-ids empty-removed-service-ids
+                     {"service-1" [(make-service-instance 1 1)]
+                      "service-4" [(make-service-instance 4 1)]
+                      "service-5" [(make-service-instance 5 1)
+                                   (make-service-instance 5 2)
+                                   (make-service-instance 5 3)]}
+                     empty-service-id->unhealthy-instances
+                     service-id->instance-counts-8 waiter-timer)
+        _ (testing "update-launch-trackers: all instances transition to healthy"
+            (check-trackers trackers-9 {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                        "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                        "service-5" {:known-instance-ids #{"inst-5.1" "inst-5.2" "inst-5.3"}}}))
+
+        trackers-10 (update-launch-trackers
+                      trackers-9 empty-new-service-ids #{"service-1" "service-4" "service-5"}
+                      empty-service-id->healthy-instances empty-service-id->unhealthy-instances
+                      empty-service-id->instance-counts waiter-timer)]
+    (testing "update-launch-trackers: transition back to empty"
+      (is (= empty-trackers trackers-10)))))
+
+(deftest test-start-launch-metrics-maintainer
+  (testing "start-launch-metrics-maintainer"
+    (let [make-metric-maintainer
+          (fn make-metric-maintainer
+            [state-0]
+            (let [state-updates-chan (async/chan 1)
+                  maintainer (start-launch-metrics-maintainer state-updates-chan)]
+              (async/>!! state-updates-chan state-0)
+              (assoc maintainer :update-chan state-updates-chan)))
+          update-metric-maintainer-state
+          (fn update-metric-maintainer-state
+            [maintainer state']
+            (async/>!! (:update-chan maintainer) state'))
+          query-metric-maintainer-state
+          (fn query-metric-maintainer-state
+            [maintainer]
+            (let [response-chan (async/chan 1)]
+              (async/>!! (:query-chan maintainer)
+                         {:cid (ct/current-test-name) :response-chan response-chan})
+              (->> (async/<!! response-chan)
+                   ;; replace unpredictable state timestamps in with `:time`
+                   (walk/postwalk
+                     (fn [x] (if (instance? DateTime x) :time x))))))]
+      (let [empty-router-state {:iteration 0
+                                :service-id->healthy-instances {}
+                                :service-id->instance-counts {}
+                                :service-id->unhealthy-instances {}}
+            maintainer (make-metric-maintainer empty-router-state)
+            actual-state (query-metric-maintainer-state maintainer)
+            expected-state {:known-service-ids #{}
+                            :previous-iteration 0
+                            :service-id->launch-tracker {}}]
+        (testing "empty initial router state"
+          (is (= expected-state actual-state))))
+      (let [service-id "service1"
+            instance-counts {:requested 3 :scheduled 2}
+            initial-router-state {:iteration 7
+                                  :service-id->healthy-instances {service-id [{:id "inst1"}]}
+                                  :service-id->instance-counts {service-id instance-counts}
+                                  :service-id->unhealthy-instances {service-id [{:id "inst2"}]}}
+            maintainer (make-metric-maintainer initial-router-state)
+            actual-state-1 (query-metric-maintainer-state maintainer)
+            actual-state-1' (do (update-metric-maintainer-state maintainer {:iteration 3})
+                                (query-metric-maintainer-state maintainer))
+            expected-state-1 {:known-service-ids #{service-id}
+                              :previous-iteration 7
+                              :service-id->launch-tracker
+                              {service-id {:instance-counts instance-counts
+                                           :instance-scheduling-start-times []
+                                           :known-instance-ids #{"inst1" "inst2"}
+                                           :starting-instance-id->start-timestamp {}}}}
+
+            instance-counts' {:requested 6 :scheduled 3}
+            updated-router-state {:iteration 9
+                                  :service-id->healthy-instances {service-id [{:id "inst1"} {:id "inst2"}]}
+                                  :service-id->instance-counts {service-id instance-counts'}
+                                  :service-id->unhealthy-instances {service-id [{:id "inst3"}]}}
+            actual-state-2 (do (update-metric-maintainer-state maintainer updated-router-state)
+                               (query-metric-maintainer-state maintainer))
+            expected-state-2 {:known-service-ids #{service-id}
+                              :previous-iteration 9
+                              :service-id->launch-tracker
+                              {service-id {:instance-counts instance-counts'
+                                           :instance-scheduling-start-times [:time :time]
+                                           :known-instance-ids #{"inst1" "inst2" "inst3"}
+                                           :starting-instance-id->start-timestamp {"inst3" :time}}}}]
+        (testing "non-empty initial router state"
+          (is (= expected-state-1 actual-state-1)))
+        (testing "ignored router state update"
+          (is (= expected-state-1 actual-state-1')))
+        (testing "applied router state update"
+          (is (= expected-state-2 actual-state-2)))))))

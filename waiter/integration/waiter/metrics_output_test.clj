@@ -145,3 +145,73 @@
         (is (>= (get-in aggregate-metrics ["counters" "request-counts" "total"]) num-requests)))
 
       (delete-service waiter-url service-id))))
+
+(defmacro get-percentile-value
+  "Look up percentile from metric, also asserting that it's present.
+   The percentile argument should be a string (e.g., \"1.0\" or \"0.95\")."
+  [metric p]
+  `(let [p# ~p
+         p-value# (get-in ~metric ["value" p#])]
+     (is (number? p-value#) (str "missing p" p# " value"))
+     p-value#))
+
+(defn- n-scheduled-instances-observed?
+  "Returns true if the launch-metrics state reflects at least $n$ scheduled
+   instances in the instance counts for the given service on the given router."
+  [router-url service-id n]
+  (-> (make-request router-url "/state/launch-metrics")
+      :body
+      json/read-str
+      (get-in ["state" "service-id->launch-tracker" service-id "instance-counts" "scheduled"] 0)
+      (>= n)))
+
+(deftest ^:parallel ^:integration-slow test-launch-metrics-output
+  (testing-using-waiter-url
+    (let [waiter-settings (waiter-settings waiter-url)
+          metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])
+          router->endpoint (routers waiter-url)
+          router-urls (vals router->endpoint)
+          service-name (rand-name)
+          sleep-seconds 20
+          min-startup-seconds 10 ; 20s +/- 10s for 2 polls with 5s granularity
+          max-startup-seconds 60 ; the service shouldn't take more than a minute to become healthy
+          instance-count 2
+          req-headers {:x-waiter-cmd (kitchen-cmd (str "-p $PORT0 --start-up-sleep-ms "
+                                                       (* 1000 sleep-seconds)))
+                       :x-waiter-cmd-type "shell"
+                       :x-waiter-min-instances instance-count
+                       :x-waiter-name service-name}
+          {:keys [headers request-headers service-id] :as first-response}
+          (make-request-with-debug-info req-headers #(make-kitchen-request waiter-url % :method :get))]
+      (with-service-cleanup
+        service-id
+        ; ensure the first request succeded before continuing with testing
+        (assert-response-status first-response 200)
+        ; on each router, check that the launch-metrics are present and have sane values
+        (doseq [[router-id router-url] router->endpoint]
+          (wait-for #(n-scheduled-instances-observed? router-url service-id instance-count)
+                    :interval 1 :timeout min-startup-seconds)
+          (let [metrics-response (->> "/metrics"
+                                      (make-request router-url)
+                                      :body
+                                      json/read-str)
+                service-launch-metrics (get-in metrics-response ["services" service-id "timers" "launch-overhead"])
+                service-scheduling-metric (get service-launch-metrics "schedule-time")
+                service-startup-metric (get service-launch-metrics "startup-time")
+                waiter-scheduling-metric (get-in metrics-response ["waiter" "launch-overhead" "timers" "schedule-time"])]
+            (testing "all launch metrics present"
+              (is (every? some? [service-scheduling-metric service-startup-metric waiter-scheduling-metric])))
+            (testing "expected launch-metric instance counts"
+              (is (== instance-count
+                      (get service-scheduling-metric "count")))
+              (is (<= instance-count
+                      (get waiter-scheduling-metric "count"))))
+            (testing "reasonable values for current service's launch metrics"
+              (is (<= min-startup-seconds
+                      (get-percentile-value service-startup-metric "1.0")
+                      max-startup-seconds)))
+            (testing "reasonable values for global launch metrics"
+              (is (<= (get-percentile-value waiter-scheduling-metric "0.0")
+                      (get-percentile-value service-scheduling-metric "0.0")))
+              (is (<= (get-percentile-value service-scheduling-metric "1.0")
+                      (get-percentile-value waiter-scheduling-metric "1.0"))))))))))

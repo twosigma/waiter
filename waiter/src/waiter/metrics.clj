@@ -29,6 +29,7 @@
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils])
   (:import (com.codahale.metrics Counter Gauge Histogram Meter MetricFilter MetricRegistry Timer Timer$Context)
+           (java.util.concurrent TimeUnit)
            (org.joda.time DateTime)))
 
 (defn compress-strings
@@ -478,3 +479,23 @@
    :stream-read-body (service-timer service-id "stream-read-body")
    :stream-request-rate (service-meter service-id "stream-request-rate")
    :throughput-meter (service-meter service-id "stream-throughput")})
+
+(defn duration-between
+  "Returns the duration (interval) elapsed between the start and end times.
+   Negative durations are reported as zero-length intervals."
+  [start-time end-time]
+  (t/interval
+    start-time
+    (if (t/before? start-time end-time)
+      end-time
+      start-time)))
+
+(defn report-duration
+  "Report elapsed duration on the given timer metric.
+   Returns nil. Granularity is in milliseconds."
+  ([^Timer timer start-time end-time]
+   (report-duration timer (duration-between start-time end-time)))
+  ([^Timer timer duration]
+   (.update timer
+            (t/in-millis duration)
+            TimeUnit/MILLISECONDS)))
