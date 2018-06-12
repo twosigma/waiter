@@ -276,7 +276,8 @@
                                                 :spnego-auth true}
                                  :force-kill-after-ms 60000
                                  :framework-id-ttl 900000
-                                 :sync-deployment-interval-ms 60000}
+                                 :sync-deployment {:interval-ms (-> 1 t/minutes t/in-millis)
+                                                   :timeout-ms (-> 5 t/minutes t/in-millis)}}
                       :shell {:factory-fn 'waiter.scheduler.shell/shell-scheduler
                               :failed-instance-retry-interval-ms 5000
                               :health-check-interval-ms 5000
