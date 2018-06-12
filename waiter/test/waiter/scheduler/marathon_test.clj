@@ -1005,9 +1005,9 @@
       interval-timeout (t/millis 2000)
       trigger-timeout (t/millis 6000)
       initial-state {:iteration 0}
-      make-app-entry (fn [deployment-ids app-id instances task-ids]
+      make-app-entry (fn [deployment-ids service-id instances task-ids]
                        {:deployments (map (fn [deployment-id] [{:id deployment-id}]) deployment-ids)
-                        :id app-id
+                        :id (str "/" service-id)
                         :instances instances
                         :tasks (map (fn [task-id] [{:id task-id}]) task-ids)})
       launch-sync-deployment-maintainer
@@ -1151,8 +1151,8 @@
 
             ;; check we forget previously out-of-sync services
             (let [time-2 (t/plus time-1 interval-timeout)]
-              (swap! app-entries-atom (fn [app-entries] (remove #(= "ws-s2b" (:id %)) app-entries)))
-              (swap! app-entries-atom (fn [app-entries] (remove #(= "ws-s2c" (:id %)) app-entries)))
+              (swap! app-entries-atom (fn [app-entries] (remove #(= "/ws-s2b" (:id %)) app-entries)))
+              (swap! app-entries-atom (fn [app-entries] (remove #(= "/ws-s2c" (:id %)) app-entries)))
               (swap! app-entries-atom conj (make-app-entry [] "ws-s2b" 3 ["ws-s2b.t1" "ws-s2b.t2" "ws-s2b.t3"]))
               (reset! current-time-atom time-2)
               (async/>!! timeout-chan :timeout)
@@ -1264,7 +1264,7 @@
 
           (testing "trigger scale remaining out-of-sync services"
 
-            (swap! app-entries-atom (fn [app-entries] (remove #(= "ws-s2a" (:id %)) app-entries)))
+            (swap! app-entries-atom (fn [app-entries] (remove #(= "/ws-s2a" (:id %)) app-entries)))
             (reset! current-time-atom time-6)
             (async/>!! timeout-chan :timeout)
 

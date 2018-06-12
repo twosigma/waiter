@@ -455,7 +455,8 @@
     (->> (get-apps-with-deployments marathon-scheduler)
          (filter is-out-of-sync?)
          (map (fn [{:keys [id instances tasks]}]
-                [id {:instances-requested instances :instances-scheduled (count tasks)}]))
+                [(remove-slash-prefix id)
+                 {:instances-requested instances :instances-scheduled (count tasks)}]))
          (into {}))
     (catch Exception e
       (log/error e "unable to retrieve out-of-sync services"))))
