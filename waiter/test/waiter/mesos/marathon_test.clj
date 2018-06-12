@@ -20,7 +20,7 @@
 
 (def ^:private http-client (Object.))
 
-(def ^:private marathon-url "http://www.marathon.com:1234")
+(def ^:private marathon-url "http://marathon.localtest.me:1234")
 
 (defn- assert-endpoint-request-method
   ([expected-method expected-url]
