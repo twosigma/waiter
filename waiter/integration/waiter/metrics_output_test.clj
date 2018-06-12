@@ -155,14 +155,14 @@
      (is (number? p-value#) (str "missing p" p# " value"))
      p-value#))
 
-(defn- n-scheduled-instances-observed?
-  "Returns true if the launch-metrics state reflects at least $n$ scheduled
+(defn- n-healthy-instances-observed?
+  "Returns true if the launch-metrics state reflects at least $n$ healthy
    instances in the instance counts for the given service on the given router."
   [router-url cookies service-id n]
   (-> (make-request router-url "/state/launch-metrics" :cookies cookies :verbose true)
       :body
       try-parse-json
-      (get-in ["state" "service-id->launch-tracker" service-id "instance-counts" "scheduled"] 0)
+      (get-in ["state" "service-id->launch-tracker" service-id "instance-counts" "healthy"] 0)
       (>= n)))
 
 (deftest ^:parallel ^:integration-slow test-launch-metrics-output
@@ -189,7 +189,7 @@
         (assert-response-status first-response 200)
         ; on each router, check that the launch-metrics are present and have sane values
         (doseq [[router-id router-url] router->endpoint]
-          (wait-for #(n-scheduled-instances-observed? router-url cookies service-id instance-count)
+          (wait-for #(n-healthy-instances-observed? router-url cookies service-id instance-count)
                     :interval 1 :timeout min-startup-seconds)
           (let [metrics-response (->> "/metrics"
                                       (make-request router-url)
