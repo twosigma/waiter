@@ -673,7 +673,7 @@
    2) the time from scheduling a new instance until it becomes healthy (the \"startup\" time)."
   [service-id->launch-tracker new-service-ids removed-service-ids service-id->healthy-instances
    service-id->unhealthy-instances service-id->instance-counts
-   service-id->service-description-fn waiter-schedule-timer]
+   service-id->service-description-fn leader? waiter-schedule-timer]
   (let [current-time (t/now)
         ;; Remove deleted services and add newly-discovered services
         service-id->launch-tracker'
@@ -734,12 +734,17 @@
           (let [duration (metrics/duration-between start-time current-time)]
             (metrics/report-duration waiter-schedule-timer duration)
             (metrics/report-duration service-schedule-timer duration)
-            (statsd/histo! metric-group "schedule_time_seconds"
-                           (t/in-seconds duration))))
+            (when leader?
+              (statsd/histo! metric-group "schedule_time"
+                             (t/in-millis duration)))))
         ;; Report startup time for instances that are now healthy
         (doseq [instance-id started-instance-ids]
-          (let [start-time (starting-instance-id->start-timestamp' instance-id)]
-            (metrics/report-duration service-startup-timer start-time current-time)))
+          (let [start-time (starting-instance-id->start-timestamp' instance-id)
+                duration (metrics/duration-between start-time current-time)]
+            (metrics/report-duration service-startup-timer duration)
+            (when leader?
+              (statsd/histo! metric-group "startup_time"
+                             (t/in-millis duration)))))
         ;; tracker-state'
         (assoc tracker-state
                :instance-counts instance-counts'
@@ -777,7 +782,7 @@
   "go block to collect metrics on the instance launch overhead of waiter services.
 
   Updates to state for the router are then read from `router-state-updates-chan`."
-  [router-state-updates-chan service-id->service-description-fn]
+  [router-state-updates-chan leader?-fn service-id->service-description-fn]
   (let [exit-chan (async/chan 1)
         query-chan (au/latest-chan)
         update-state-timer (metrics/waiter-timer "state" "launch-metrics-maintainer" "update-state")
@@ -811,7 +816,8 @@
                      (< previous-iteration (:iteration router-state))
                      (timers/start-stop-time!
                        update-state-timer
-                       (let [{:keys [iteration service-id->healthy-instances
+                       (let [leader? (leader?-fn)
+                             {:keys [iteration service-id->healthy-instances
                                      service-id->instance-counts service-id->unhealthy-instances]} router-state
                              incoming-service-ids (set (keys service-id->instance-counts))
                              new-service-ids (set/difference incoming-service-ids known-service-ids)
@@ -820,7 +826,7 @@
                                                            service-id->launch-tracker new-service-ids removed-service-ids
                                                            service-id->healthy-instances service-id->unhealthy-instances
                                                            service-id->instance-counts service-id->service-description-fn
-                                                           waiter-schedule-timer)]
+                                                           leader? waiter-schedule-timer)]
                          {:known-service-ids incoming-service-ids
                           :previous-iteration iteration
                           :service-id->launch-tracker service-id->launch-tracker'}))

@@ -875,11 +875,13 @@
                                     initial-state {}]
                                 (interstitial/interstitial-maintainer
                                   service-id->service-description-fn scheduler-state-chan interstitial-state-atom initial-state)))
-   :launch-metrics-maintainer (pc/fnk [[:routines service-id->service-description-fn]
+   :launch-metrics-maintainer (pc/fnk [[:curator leader?-fn]
+                                       [:routines service-id->service-description-fn]
                                        router-state-maintainer]
                                 (let [{{:keys [router-state-push-mult]} :maintainer-chans} router-state-maintainer]
                                   (scheduler/start-launch-metrics-maintainer
                                     (async/tap router-state-push-mult (au/latest-chan))
+                                    leader?-fn
                                     service-id->service-description-fn)))
    :messages (pc/fnk [[:settings {messages nil}]]
                (when messages
