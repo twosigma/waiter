@@ -470,39 +470,46 @@
     (catch Exception e
       (log/error e "unable to sync marathon deployment for" service-id))))
 
+(defn- compute-out-of-sync-state
+  "A helper function that computes the new out-of-sync-state and the trigger service-ids."
+  [marathon-scheduler current-time trigger-timeout]
+  (let [service-id->out-of-sync-state (retrieve-service-id->out-of-sync-state marathon-scheduler)
+        service-id->instance-count-map (retrieve-out-of-sync-apps marathon-scheduler)
+        out-of-sync-service-ids (-> service-id->instance-count-map keys set)
+        trigger-time (t/minus current-time trigger-timeout)
+        trigger-service-ids (->> service-id->out-of-sync-state
+                                 (filter (fn out-of-sync-trigger-predicate
+                                           [[service-id {:keys [data last-modified-time]}]]
+                                           (and (= data (service-id->instance-count-map service-id))
+                                                (t/before? last-modified-time trigger-time))))
+                                 (map first)
+                                 set)]
+    (log/info (count out-of-sync-service-ids) "service(s) have out-of-sync deployments:" out-of-sync-service-ids)
+    (log/info (count trigger-service-ids) "service(s) qualify for sync deployments:" trigger-service-ids)
+    {:service-id->instance-count-map service-id->instance-count-map
+     :service-id->out-of-sync-state (->> (set/difference out-of-sync-service-ids trigger-service-ids)
+                                         (pc/map-from-keys
+                                           (fn compute-out-of-sync-state [service-id]
+                                             (let [prev-state (service-id->out-of-sync-state service-id)
+                                                   prev-data (:data prev-state)
+                                                   curr-data (service-id->instance-count-map service-id)]
+                                               (if (= prev-data curr-data)
+                                                 prev-state
+                                                 {:data curr-data :last-modified-time current-time})))))
+     :trigger-service-ids trigger-service-ids}))
+
 (defn- process-out-of-sync-services!
   "Determines the out-of-sync services and triggers sync deployments on those services if needed.
    As a side-effect, it updates the service-id->out-of-sync-state in the scheduler."
-  [marathon-scheduler trigger-timeout]
+  [marathon-scheduler current-time  trigger-timeout]
   (try
-    (let [prev-service-id->out-of-sync-state (retrieve-service-id->out-of-sync-state marathon-scheduler)
-          service-id->instance-count-map (retrieve-out-of-sync-apps marathon-scheduler)
-          out-of-sync-service-ids (-> service-id->instance-count-map keys set)
-          current-time (t/now)
-          trigger-time (t/minus current-time trigger-timeout)
-          trigger-service-ids (->> prev-service-id->out-of-sync-state
-                                   (filter (fn out-of-sync-trigger-predicate
-                                             [[service-id {:keys [data last-modified-time]}]]
-                                             (and (= data (service-id->instance-count-map service-id))
-                                                  (t/before? last-modified-time trigger-time))))
-                                   (map first)
-                                   set)]
-      (log/info (count out-of-sync-service-ids) "service(s) have out-of-sync deployments:" out-of-sync-service-ids)
-      (log/info (count trigger-service-ids) "service(s) qualify for sync deployments:" trigger-service-ids)
+    (let [{:keys [service-id->instance-count-map service-id->out-of-sync-state trigger-service-ids]}
+          (compute-out-of-sync-state marathon-scheduler current-time trigger-timeout)]
       (doseq [service-id trigger-service-ids]
         (->> (service-id->instance-count-map service-id)
              (trigger-sync-deployment! marathon-scheduler service-id)))
       (log/info "updating local service-id->out-of-sync-state")
-      (->> (set/difference out-of-sync-service-ids trigger-service-ids)
-           (pc/map-from-keys
-             (fn compute-out-of-sync-state [service-id]
-               (let [prev-state (prev-service-id->out-of-sync-state service-id)
-                     prev-data (:data prev-state)
-                     curr-data (service-id->instance-count-map service-id)]
-                 (if (= prev-data curr-data)
-                   prev-state
-                   {:data curr-data :last-modified-time current-time}))))
-           (reset-service-id->out-of-sync-state! marathon-scheduler)))
+      (reset-service-id->out-of-sync-state! marathon-scheduler service-id->out-of-sync-state))
     (catch Exception e
       (log/error e "unable to process out-of-sync services"))))
 
@@ -534,14 +541,14 @@
             (recur current-state))
 
           timeout-chan
-          (do
+          (let [current-time (t/now)]
             (if-not (leader?-fn)
               (reset-service-id->out-of-sync-state! marathon-scheduler {})
               (cid/with-correlation-id
                 (str "sync-deployment." iteration)
-                (process-out-of-sync-services! marathon-scheduler trigger-timeout)))
+                (process-out-of-sync-services! marathon-scheduler current-time trigger-timeout)))
             (-> current-state
-                (assoc :iteration (inc iteration) :last-update-time (t/now))
+                (assoc :iteration (inc iteration) :last-update-time current-time)
                 recur)))))
     {:exit-chan exit-chan
      :query-chan query-chan}))
