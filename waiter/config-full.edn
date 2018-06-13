@@ -253,11 +253,12 @@
                                ;; corrected by triggering new deployments
                                :sync-deployment {;; Specifies the intervals at which the syncer runs to
                                                  ;; check for mismatches in task and instance counts.
-                                                 :interval-ms 60000
+                                                 :interval-ms 15000
 
-                                                 ;; Specifies the timeout for which a service is in need of a
-                                                 ;; sync deployment before such a deployment is triggered.
-                                                 :timeout-ms 300000}
+                                                 ;; Specifies the number of cycles for which a service is
+                                                 ;; determined to be in need of a sync deployment before
+                                                 ;; such a deployment is actually triggered.
+                                                 :timeout-cycles 4}
 
                                ;; The URL for your Marathon HTTP API:
                                :url "http://marathon.example.com:8080"}

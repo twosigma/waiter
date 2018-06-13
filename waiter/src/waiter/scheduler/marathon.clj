@@ -555,10 +555,10 @@
 
 (defn- start-sync-deployment-maintainer
   "Starts the sync-deployment-maintainer"
-  [leader?-fn marathon-scheduler {:keys [interval-ms timeout-ms]}]
+  [leader?-fn marathon-scheduler {:keys [interval-ms timeout-cycles]}]
   (let [sync-deployment-interval (t/millis interval-ms)
         sync-deployment-start (t/plus (t/now) sync-deployment-interval)
-        trigger-timeout (t/millis timeout-ms)
+        trigger-timeout (t/millis (* interval-ms timeout-cycles))
         timeout-chan (->> sync-deployment-interval
                           (du/time-seq sync-deployment-start)
                           chime/chime-ch)]
@@ -585,8 +585,7 @@
          (utils/pos-int? (:socket-timeout http-options))
          (not (str/blank? home-path-prefix))
          (utils/pos-int? (:interval-ms sync-deployment))
-         (utils/pos-int? (:timeout-ms sync-deployment))
-         (<= (:interval-ms sync-deployment) (:timeout-ms sync-deployment))]}
+         (utils/pos-int? (:timeout-cycles sync-deployment))]}
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
   (let [http-client (http-utils/http-client-factory http-options)

@@ -751,7 +751,7 @@
                         :mesos-slave-port 5051
                         :slave-directory "/foo"
                         :sync-deployment {:interval-ms 15000
-                                          :timeout-ms 60000}
+                                          :timeout-cycles 4}
                         :url "url"}
           create-marathon-scheduler (fn create-marathon-scheduler [config]
                                       (let [result (marathon-scheduler config)
