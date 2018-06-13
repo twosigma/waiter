@@ -736,7 +736,7 @@
             (metrics/report-duration service-schedule-timer duration)
             (when leader?
               (statsd/histo! metric-group "schedule_time"
-                             (t/in-millis duration)))))
+                             (du/interval->nanoseconds duration)))))
         ;; Report startup time for instances that are now healthy
         (doseq [instance-id started-instance-ids]
           (let [start-time (starting-instance-id->start-timestamp' instance-id)
@@ -744,7 +744,7 @@
             (metrics/report-duration service-startup-timer duration)
             (when leader?
               (statsd/histo! metric-group "startup_time"
-                             (t/in-millis duration)))))
+                             (du/interval->nanoseconds duration)))))
         ;; tracker-state'
         (assoc tracker-state
                :instance-counts instance-counts'
