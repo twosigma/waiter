@@ -31,6 +31,8 @@
            (org.eclipse.jetty.websocket.api UpgradeException UpgradeRequest)
            (org.eclipse.jetty.websocket.client WebSocketClient)))
 
+(def ^:const default-timeout-period (-> 4 t/minutes t/in-millis))
+
 (defn- ws-url [waiter-url endpoint]
   (str "ws://" waiter-url endpoint))
 
@@ -85,7 +87,7 @@
             {:middleware (fn [_ ^UpgradeRequest request]
                            (websocket/add-headers-to-upgrade-request! request waiter-headers)
                            (add-auth-cookie request auth-cookie-value))})
-          (is (= :done (deref response-promise (-> 2 t/minutes t/in-millis) :timed-out))))
+          (is (= :done (deref response-promise default-timeout-period :timed-out))))
         (is (= "Connected to kitchen" (first @ws-response-atom)))
         (let [{:keys [headers]} (-> @ws-response-atom second str json/read-str walk/keywordize-keys)
               {:keys [upgrade x-cid x-waiter-auth-principal]} headers]
@@ -177,7 +179,7 @@
                                            "x-waiter-timeout" "1000")]
                              (websocket/add-headers-to-upgrade-request! request headers))
                            (add-auth-cookie request auth-cookie-value))})
-          (is (= :done (deref response-promise (-> 2 t/minutes t/in-millis) :timed-out))))
+          (is (= :done (deref response-promise default-timeout-period :timed-out))))
         (is (not @send-success-after-timeout-atom))
         (finally
           (delete-service waiter-url waiter-headers))))))
@@ -216,7 +218,7 @@
                                            "x-waiter-timeout" "20000")]
                              (websocket/add-headers-to-upgrade-request! request headers))
                            (add-auth-cookie request auth-cookie-value))})
-          (is (= :done (deref response-promise (-> 2 t/minutes t/in-millis) :timed-out))))
+          (is (= :done (deref response-promise default-timeout-period :timed-out))))
         (is (not @send-success-after-timeout-atom))
         (finally
           (delete-service waiter-url waiter-headers))))))
@@ -269,7 +271,7 @@
                   (deliver response-promise :done)))
               {:middleware middleware})
 
-            (is (= :done (deref response-promise (-> 3 t/minutes t/in-millis) :timed-out)))
+            (is (= :done (deref response-promise default-timeout-period :timed-out)))
             (is (nil? (deref backend-data-promise 100 :timed-out)))
             (let [[message-key close-code close-message] (deref ctrl-data-promise 100 [:timed-out])]
               (is (= :qbits.jet.websocket/close message-key))
@@ -315,7 +317,7 @@
             {:middleware (fn [_ ^UpgradeRequest request]
                            (websocket/add-headers-to-upgrade-request! request waiter-headers)
                            (add-auth-cookie request auth-cookie-value))})
-          (is (= :done (deref response-promise (-> 2 t/minutes t/in-millis) :timed-out))))
+          (is (= :done (deref response-promise default-timeout-period :timed-out))))
         (is @uncorrupted-data-streamed-atom)
         (finally
           (delete-service waiter-url waiter-headers))))))
@@ -356,7 +358,7 @@
         {:middleware (fn [_ ^UpgradeRequest request]
                        (websocket/add-headers-to-upgrade-request! request (assoc waiter-headers "x-cid" correlation-id))
                        (add-auth-cookie request auth-cookie-value))})
-      (let [iteration-result (deref iteration-promise (-> 2 t/minutes t/in-millis) :timed-out)]
+      (let [iteration-result (deref iteration-promise default-timeout-period :timed-out)]
         (swap! all-iteration-result-atom assoc correlation-id iteration-result)))
     (catch Exception e
       (log/error e "error in executing websocket request for test")
@@ -388,7 +390,7 @@
             (request-streaming-helper waiter-url waiter-headers auth-cookie-value all-iteration-result-atom
                                       websocket-client)))
         (is (= num-requests (count @all-iteration-result-atom)))
-        (is (every? #(= :success (val %1)) @all-iteration-result-atom) (str @all-iteration-result-atom))
+        (is (every? #{:success} (vals @all-iteration-result-atom)) (str @all-iteration-result-atom))
         (is (pos? (num-instances waiter-url service-id)))
         (Thread/sleep 1000) ;; allow metrics to be sync-ed
         (let [service-data (service-settings waiter-url service-id)
