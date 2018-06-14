@@ -1197,6 +1197,7 @@
                                        service-id->expired-instances' (select-keys service-id->expired-instances available-service-ids)
                                        service-id->starting-instances' (select-keys service-id->starting-instances available-service-ids)
                                        service-id->failed-instances' (select-keys service-id->failed-instances available-service-ids)
+                                       service-id->instance-counts' (select-keys service-id->instance-counts available-service-ids)
                                        service-id->deployment-error' (select-keys service-id->deployment-error available-service-ids)]
                                    (when (or (not= service-id->healthy-instances service-id->healthy-instances')
                                              (not= service-id->unhealthy-instances service-id->unhealthy-instances')
@@ -1211,6 +1212,7 @@
                                      :service-id->expired-instances service-id->expired-instances'
                                      :service-id->starting-instances service-id->starting-instances'
                                      :service-id->failed-instances service-id->failed-instances'
+                                     :service-id->instance-counts service-id->instance-counts'
                                      :service-id->deployment-error service-id->deployment-error'
                                      :time scheduler-sync-time))
 

@@ -165,6 +165,15 @@
       (get-in ["state" "service-id->launch-tracker" service-id "instance-counts" "healthy"] 0)
       (>= n)))
 
+(defn- tracked-service-id?
+  "Returns true if the launch-metrics state exists for the given service on the given router."
+  [router-url cookies service-id]
+  (-> (make-request router-url "/state/launch-metrics" :cookies cookies :verbose true)
+      :body
+      try-parse-json
+      (get-in ["state" "service-id->launch-tracker" service-id])
+      some?))
+
 (deftest ^:parallel ^:integration-slow test-launch-metrics-output
   (testing-using-waiter-url
     (let [waiter-settings (waiter-settings waiter-url)
@@ -189,8 +198,8 @@
         (assert-response-status first-response 200)
         ; on each router, check that the launch-metrics are present and have sane values
         (doseq [[router-id router-url] router->endpoint]
-          (wait-for #(n-healthy-instances-observed? router-url cookies service-id instance-count)
-                    :interval 1 :timeout min-startup-seconds)
+          (is (wait-for #(n-healthy-instances-observed? router-url cookies service-id instance-count)
+                        :interval 1 :timeout (* 2 max-startup-seconds)))
           (let [metrics-response (->> "/metrics"
                                       (make-request router-url)
                                       :body
@@ -214,4 +223,9 @@
               (is (<= (get-percentile-value waiter-scheduling-metric "0.0")
                       (get-percentile-value service-scheduling-metric "0.0")))
               (is (<= (get-percentile-value service-scheduling-metric "1.0")
-                      (get-percentile-value waiter-scheduling-metric "1.0"))))))))))
+                      (get-percentile-value waiter-scheduling-metric "1.0")))))))
+      (testing "launch trackers are removed when service is deleted"
+        (doseq [[router-id router-url] router->endpoint]
+          (is (wait-for #(not (tracked-service-id? router-url cookies service-id))
+                        :interval 1 :timeout 10))
+          (log/info "Cleaned up" service-id "state on router" router-id))))))
