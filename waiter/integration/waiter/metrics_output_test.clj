@@ -120,7 +120,7 @@
       (doall (map (fn [router-id]
                     (let [router-url (str (get router->endpoint router-id))
                           metrics-json-response (make-request router-url "/metrics")
-                          metrics-response (json/read-str (:body metrics-json-response))
+                          metrics-response (try-parse-json (:body metrics-json-response))
                           service-metrics (get-in metrics-response ["services" service-id])]
                       (log/info "asserting jvm metrics output for" router-url)
                       (assert-metrics-output (get metrics-response "jvm") jvm-metrics-schema)
@@ -155,14 +155,14 @@
      (is (number? p-value#) (str "missing p" p# " value"))
      p-value#))
 
-(defn- n-scheduled-instances-observed?
-  "Returns true if the launch-metrics state reflects at least $n$ scheduled
+(defn- n-healthy-instances-observed?
+  "Returns true if the launch-metrics state reflects at least $n$ healthy
    instances in the instance counts for the given service on the given router."
-  [router-url service-id n]
-  (-> (make-request router-url "/state/launch-metrics")
+  [router-url cookies service-id n]
+  (-> (make-request router-url "/state/launch-metrics" :cookies cookies :verbose true)
       :body
-      json/read-str
-      (get-in ["state" "service-id->launch-tracker" service-id "instance-counts" "scheduled"] 0)
+      try-parse-json
+      (get-in ["state" "service-id->launch-tracker" service-id "instance-counts" "healthy"] 0)
       (>= n)))
 
 (deftest ^:parallel ^:integration-slow test-launch-metrics-output
@@ -181,7 +181,7 @@
                        :x-waiter-cmd-type "shell"
                        :x-waiter-min-instances instance-count
                        :x-waiter-name service-name}
-          {:keys [headers request-headers service-id] :as first-response}
+          {:keys [cookies headers request-headers service-id] :as first-response}
           (make-request-with-debug-info req-headers #(make-kitchen-request waiter-url % :method :get))]
       (with-service-cleanup
         service-id
@@ -189,12 +189,12 @@
         (assert-response-status first-response 200)
         ; on each router, check that the launch-metrics are present and have sane values
         (doseq [[router-id router-url] router->endpoint]
-          (wait-for #(n-scheduled-instances-observed? router-url service-id instance-count)
+          (wait-for #(n-healthy-instances-observed? router-url cookies service-id instance-count)
                     :interval 1 :timeout min-startup-seconds)
           (let [metrics-response (->> "/metrics"
                                       (make-request router-url)
                                       :body
-                                      json/read-str)
+                                      try-parse-json)
                 service-launch-metrics (get-in metrics-response ["services" service-id "timers" "launch-overhead"])
                 service-scheduling-metric (get service-launch-metrics "schedule-time")
                 service-startup-metric (get service-launch-metrics "startup-time")
