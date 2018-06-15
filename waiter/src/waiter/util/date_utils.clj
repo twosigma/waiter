@@ -64,3 +64,10 @@
   (if (and duration started-at)
     (t/after? current-time (t/plus started-at duration))
     false))
+
+(defn interval->nanoseconds
+  "Convert a time interval to a duration in nanoseconds."
+  [interval]
+  ;; clj-time.core doesn't have a in-nanos function.
+  ;; We shouldn't need to worry about overflows here if our intervals are < 200 years.
+  (-> interval t/in-millis (* 1e6)))

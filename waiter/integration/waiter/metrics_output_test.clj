@@ -181,12 +181,11 @@
           router->endpoint (routers waiter-url)
           router-urls (vals router->endpoint)
           service-name (rand-name)
-          sleep-seconds 20
+          sleep-millis 20000
           min-startup-seconds 10 ; 20s +/- 10s for 2 polls with 5s granularity
           max-startup-seconds 60 ; the service shouldn't take more than a minute to become healthy
           instance-count 2
-          req-headers {:x-waiter-cmd (kitchen-cmd (str "-p $PORT0 --start-up-sleep-ms "
-                                                       (* 1000 sleep-seconds)))
+          req-headers {:x-waiter-cmd (kitchen-cmd (str "-p $PORT0 --start-up-sleep-ms " sleep-millis))
                        :x-waiter-cmd-type "shell"
                        :x-waiter-min-instances instance-count
                        :x-waiter-name service-name}
@@ -215,11 +214,11 @@
                       (get service-scheduling-metric "count")))
               (is (<= instance-count
                       (get waiter-scheduling-metric "count"))))
-            (testing "reasonable values for current service's launch metrics"
+            (testing "reasonable values for current service's startup-time metrics"
               (is (<= min-startup-seconds
                       (get-percentile-value service-startup-metric "1.0")
                       max-startup-seconds)))
-            (testing "reasonable values for global launch metrics"
+            (testing "reasonable values for scheduling-time metrics"
               (is (<= (get-percentile-value waiter-scheduling-metric "0.0")
                       (get-percentile-value service-scheduling-metric "0.0")))
               (is (<= (get-percentile-value service-scheduling-metric "1.0")
