@@ -26,12 +26,22 @@ if [ ! -f ${JAR} ]; then
     ${KITCHEN_DIR}/bin/build-uberjar.sh
 fi
 
+# Ensure ncat is available for kitchenette
+if ! type ncat; then
+    NCAT=${KITCHEN_DIR}/bin/ncat
+    [ -f ${NCAT} ] || xz -dk ${NCAT}.xz
+    cp ${NCAT} ~/.local/bin/
+fi
+
 # Start waiter
 WAITER_PORT=9091
 ${WAITER_DIR}/bin/run-using-shell-scheduler.sh ${WAITER_PORT} &
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
+WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/run.sh \
+    WAITER_TEST_KITCHENETTE_CMD=${KITCHEN_DIR}/bin/kitchenette \
+    WAITER_URI=127.0.0.1:${WAITER_PORT} \
+    ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
 
 # If there were failures, dump the logs
 if [ "$test_failures" = true ]; then

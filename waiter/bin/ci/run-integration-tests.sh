@@ -18,7 +18,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
 KITCHEN_DIR=${WAITER_DIR}/../kitchen
 
-# Build mesos agent with kitchen backed in
+# Build mesos agent with kitchen packed in
 export PATH=${KITCHEN_DIR}/..:$PATH
 ${KITCHEN_DIR}/bin/build-docker-image.sh
 
@@ -34,7 +34,10 @@ WAITER_PORT=9091
 ${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
+WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh \
+    WAITER_TEST_KITCHENETTE_CMD=/opt/kitchen/kitchenette \
+    WAITER_URI=127.0.0.1:${WAITER_PORT} \
+    ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
 
 # If there were failures, dump the logs
 if [ "$test_failures" = true ]; then
