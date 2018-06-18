@@ -24,14 +24,17 @@
           cookie-fn (fn [cookies name] (some #(when (= name (:name %)) (:value %)) cookies))]
       (testing "multiple cookies sent from backend"
         (let [headers (assoc headers :x-kitchen-cookies "test=CrazyCase,test2=lol2,test3=\"lol3\"")
-              {:keys [cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+              {:keys [cookies]} (make-request-with-debug-info
+                                  headers #(make-kitchen-request waiter-url % :full-kitchen true))]
           (is (= "CrazyCase" (cookie-fn cookies "test")))
           (is (= "lol2" (cookie-fn cookies "test2")))
           (is (= "%22lol3%22" (cookie-fn cookies "test3")))
           (is (cookie-fn cookies "x-waiter-auth"))))
       (testing "single cookie sent from backend"
         (let [headers (assoc headers :x-kitchen-cookies "test=singlecookie")
-              {:keys [cookies] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+              {:keys [cookies] :as response} (make-request-with-debug-info
+                                               headers #(make-kitchen-request
+                                                          waiter-url % :full-kitchen true))]
           (is (= "singlecookie" (cookie-fn cookies "test")))
           (is (cookie-fn cookies "x-waiter-auth"))
           (delete-service waiter-url (:service-id response)))))))
@@ -40,9 +43,11 @@
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)}]
       (testing "single client cookie sent to backend (x-waiter-auth removed)"
-        (let [{:keys [cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+        (let [{:keys [cookies]} (make-request-with-debug-info
+                                  headers #(make-kitchen-request waiter-url % :full-kitchen true))
               {:keys [body]} (make-request-with-debug-info headers #(make-kitchen-request
                                                                       waiter-url %
+                                                                      :full-kitchen true
                                                                       :path "/request-info"
                                                                       :cookies (conj cookies {:name "test"
                                                                                               :value "cookie"
@@ -51,9 +56,11 @@
               body-json (json/read-str (str body))]
           (is (= "test=cookie" (get-in body-json ["headers" "cookie"])))))
       (testing "no cookies sent to backend (x-waiter-auth removed)"
-        (let [{:keys [service-id cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
-              {:keys [body]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/request-info"
-                                                                                          :cookies cookies))
+        (let [{:keys [service-id cookies]} (make-request-with-debug-info
+                                             headers #(make-kitchen-request waiter-url % :full-kitchen true))
+              {:keys [body]} (make-request-with-debug-info
+                               headers #(make-kitchen-request
+                                          waiter-url % :full-kitchen true :cookies cookies :path "/request-info"))
               {:strings [headers]} (json/read-str (str body))]
           (is (not (contains? headers "cookie")))
           (delete-service waiter-url service-id))))))

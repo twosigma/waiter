@@ -30,7 +30,9 @@
                                  :x-kitchen-store-async-response-ms 40000}
           {:keys [headers service-id] :as response}
           (make-request-with-debug-info async-request-headers
-                                        #(make-kitchen-request waiter-url % :method :get :path "/async/request"))
+                                        #(make-kitchen-request
+                                           waiter-url % :full-kitchen true
+                                           :method :get :path "/async/request"))
           status-location (get (pc/map-keys str/lower-case headers) "location")]
       (assert-response-status response 202)
       (is (str/blank? status-location))
@@ -50,12 +52,15 @@
                  :x-waiter-max-instances 1
                  :x-waiter-concurrency-level 100}
         {:keys [request-headers service-id cookies]}
-        (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+        (make-request-with-debug-info headers #(make-kitchen-request
+                                                 waiter-url % :full-kitchen true))
         async-request-headers (-> request-headers
                                   (dissoc "x-cid")
                                   (assoc :x-kitchen-delay-ms processing-time-ms :x-kitchen-store-async-response-ms 40000))
         {:keys [headers] :as response}
-        (make-kitchen-request waiter-url async-request-headers :body "" :method :get :path "/async/request")
+        (make-kitchen-request
+          waiter-url async-request-headers
+          :body "" :full-kitchen true :method :get :path "/async/request")
         status-location (get (pc/map-keys str/lower-case headers) "location")]
     {:cookies cookies
      :request-headers request-headers
@@ -195,7 +200,9 @@
           inter-router-metrics-interval-ms (max (int 2000) (int (* 3 metrics-sync-interval-ms)))
           headers {:x-waiter-name (rand-name)
                    :x-waiter-concurrency-level 5}
-          {:keys [request-headers service-id cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+          {:keys [request-headers service-id cookies]} (make-request-with-debug-info
+                                                         headers #(make-kitchen-request
+                                                                    waiter-url % :full-kitchen true))
           processing-time-ms 30000
           num-threads 20
           num-requests-to-delete 10
@@ -209,6 +216,7 @@
                                       :x-kitchen-store-async-response-ms 600000)]
                                 (make-kitchen-request waiter-url async-request-headers
                                                       :body ""
+                                                      :full-kitchen true
                                                       :method :get
                                                       :path "/async/request")))
                             :verbose true)

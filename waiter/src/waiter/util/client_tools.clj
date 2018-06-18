@@ -300,9 +300,21 @@
   ([] (kitchen-cmd ""))
   ([args]
    (let [cmd (System/getProperty "waiter.test.kitchen.cmd")]
-     (if (str/blank? cmd)
-       (throw (Exception. "Property waiter.test.kitchen.cmd is not set! (try `lein with-profile +test`)"))
-       (str cmd (when-not (str/blank? args) " ") args)))))
+     (when (str/blank? cmd)
+       (throw (Exception. "Property waiter.test.kitchen.cmd is not set!"
+                          "(try `lein with-profile +test`)")))
+     (cond-> cmd
+       (not (str/blank? args))
+       (str " " args)))))
+
+(defn kitchenette-cmd
+  ([] (kitchenette-cmd ""))
+  ([args]
+   (let [cmd (or (System/getenv "WAITER_TEST_KITCHENETTE_CMD")
+                 (kitchen-cmd))]
+     (cond-> cmd
+       (not (str/blank? args))
+       (str " " args)))))
 
 (defn kitchen-params
   []
@@ -362,21 +374,22 @@
 (defn make-kitchen-request
   "Makes an on-the-fly request to the Kitchen test app."
   [waiter-url custom-headers &
-   {:keys [body cookies debug method path query-params]
-    :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
+   {:keys [body cookies debug full-kitchen method path query-params]
+    :or {cookies {} debug true method :post path "/endpoint" query-params {}}}]
   {:pre [(not (str/blank? waiter-url))]}
-  (make-shell-request
-    waiter-url
-    (merge
-      {:x-waiter-cmd (kitchen-cmd "-p $PORT0")
-       :x-waiter-metric-group "waiter_kitchen"}
-      custom-headers)
-    :body body
-    :cookies cookies
-    :debug debug
-    :method method
-    :path path
-    :query-params query-params))
+  (let [kitchen-cmd-fn (if full-kitchen kitchen-cmd kitchenette-cmd)]
+    (make-shell-request
+      waiter-url
+      (merge
+        {:x-waiter-cmd (kitchen-cmd-fn "-p $PORT0")
+         :x-waiter-metric-group "waiter_kitchen"}
+        custom-headers)
+      :body body
+      :cookies cookies
+      :debug debug
+      :method method
+      :path path
+      :query-params query-params)))
 
 (defn retrieve-service-id [waiter-url waiter-headers & {:keys [verbose] :or {verbose false}}]
   (let [service-id-result (make-request waiter-url "/service-id" :headers waiter-headers)

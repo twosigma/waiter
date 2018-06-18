@@ -26,7 +26,7 @@
           service-name (rand-name)
           post-body (slurp file-path)
           headers {:x-waiter-name service-name, :x-kitchen-echo "true"}
-          make-request #(make-kitchen-request waiter-url headers :body post-body)
+          make-request #(make-kitchen-request waiter-url headers :body post-body :full-kitchen true)
           response (make-request)
           metrics-sync-interval-ms (get-in (waiter-settings waiter-url) [:metrics-config :metrics-sync-interval-ms])
           service-id (retrieve-service-id waiter-url (:request-headers response))
@@ -55,7 +55,8 @@
   (testing-using-waiter-url
     (let [request-body (apply str (take 2000000 (repeat "hello")))
          headers {:x-waiter-name (rand-name), :x-kitchen-echo true}
-         {:keys [body request-headers] :as response} (make-kitchen-request waiter-url headers :body request-body)]
+         {:keys [body request-headers] :as response} (make-kitchen-request
+                                                       waiter-url headers :body request-body :full-kitchen true)]
       (assert-response-status response 200)
       (is (= (count request-body) (count body)))
       (delete-service waiter-url (retrieve-service-id waiter-url request-headers)))))

@@ -104,9 +104,10 @@
           waiter-headers (assoc (kitchen-request-headers)
                            :x-waiter-metric-group "test-ws-support"
                            :x-waiter-name (rand-name))
-          _ (make-kitchen-request waiter-url waiter-headers :method :get)
+          _ (make-kitchen-request waiter-url waiter-headers :full-kitchen true :method :get)
           {:keys [headers service-id] :as canary-response}
-          (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :method :get))
+          (make-request-with-debug-info waiter-headers #(make-kitchen-request
+                                                          waiter-url % :full-kitchen true :method :get))
           _ (assert-response-status canary-response 200)
           first-request-time-header (-> (get headers "x-waiter-request-date")
                                         (du/str-to-date du/formatter-rfc822))

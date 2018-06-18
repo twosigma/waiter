@@ -1,0 +1,105 @@
+#!/bin/bash
+
+delay-millis() {
+    if [ "$1" -gt 0 ]; then
+        sleep $(printf '%.3f' "${1}e-3")
+    fi
+}
+
+if [ $# -gt 0 ]; then
+
+    server_port=8080
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -p|--port)
+                server_port=$2
+                shift 2
+                ;;
+            --start-up-sleep-ms)
+                delay-millis "$2"
+                shift 2
+                ;;
+            *)
+                echo Unrecognized option $1
+                exit 1
+        esac
+    done
+
+    echo Starting Kitchenette on port $server_port
+    export SERVER_PID=$$
+    exec ncat --listen $server_port --keep-open --exec "$0"
+
+else
+
+    shopt -s nocasematch
+    body='Hello World'
+    content_length=0
+    delay_ms=0
+    echo_server=false
+    status_msg='200 OK'
+    terminate=false
+    termination_delay_ms=0
+
+    set-status() {
+        case $1 in
+            200) body='OK' ;;
+            400) body='Bad Request' ;;
+            401) body='Unauthorized' ;;
+            402) body='Payment Required' ;;
+            403) body='Forbidden' ;;
+            404) body='Not Found' ;;
+            503) body='Service Unavailable' ;;
+            *) body='Unknown Status'
+        esac
+        status_msg="$1 $body"
+    }
+
+    while IFS='' read -r raw_line; do
+
+        line="${raw_line%$'\r'}"
+
+        [ -z "$line" ] && break
+
+        if [[ "$line" =~ ^content-length:[[:space:]][0-9]+$ ]]; then
+            content_length="${line:16}"
+        elif [[ "$line" =~ ^x-kitchen-delay-ms:[[:space:]][0-9]+$ ]]; then
+             delay_ms="${line:20}"
+        elif [[ "$line" =~ ^x-kitchen-die-after-ms:[[:space:]][0-9]+$ ]]; then
+             termination_delay_ms="${line:24}"
+        elif [[ "$line" =~ ^x-kitchen-echo: ]]; then
+            echo_server=true
+        elif [[ "$line" =~ ^(GET|POST)[[:space:]]/bad-status\?status=[0-9]{3} ]]; then
+            set-status ${line#*=}
+        elif [[ "$line" =~ ^(GET|POST)[[:space:]]/die[[:space:]] ]]; then
+            terminate=true
+        elif [[ "$line" =~ ^(GET|POST)[[:space:]]/sleep\? ]]; then
+            query="${line#*\?}"
+            for param in ${query//&/ }; do
+                if [[ "$param" =~ ^sleep-ms=[0-9]+$ ]]; then
+                    delay-millis ${param:9}
+                elif [[ "$param" =~ ^status=[0-9]{3}$ ]]; then
+                    set-status ${param:7}
+                fi
+            done
+        fi
+    done
+
+    if [ $terminate = true ]; then
+        delay-millis $termination_delay_ms && kill $$ $SERVER_PID &
+    fi
+
+    if [ $delay_ms -gt 0 ]; then
+        delay-millis $delay_ms
+    fi
+
+    printf 'HTTP/1.1 %s\r\nContent-Type: text/plain\r\nConnection: close\r\n' "$status_msg"
+
+    if [ $echo_server = true ]; then
+        printf 'Content-Length: %d\r\n\r\n' $content_length
+        head -c $content_length
+    else
+        printf 'Content-Length: %d\r\n\r\n%s' "${#body}" "$body"
+    fi
+
+fi

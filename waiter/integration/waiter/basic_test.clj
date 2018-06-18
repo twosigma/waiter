@@ -35,12 +35,14 @@
     (let [{:keys [service-id request-headers]}
           (make-request-with-debug-info
             {:x-waiter-name (rand-name)}
-            #(make-kitchen-request waiter-url % :path "/hello"))]
+            #(make-kitchen-request
+               waiter-url % :full-kitchen true :path "/hello"))]
 
       (testing "secrun"
         (log/info (str "Basic test using endpoint: /secrun"))
         (let [{:keys [body] :as response}
-              (make-kitchen-request waiter-url request-headers :path "/secrun")]
+              (make-kitchen-request
+                waiter-url request-headers :full-kitchen true :path "/secrun")]
           (assert-response-status response 200)
           (is (= "Hello World" body))))
 
@@ -49,6 +51,7 @@
         (let [{:keys [body]} (make-kitchen-request
                                waiter-url
                                (assoc request-headers :accept "text/plain")
+                               :full-kitchen true
                                :path "/request-info")
               body-json (json/read-str (str body))]
           (is (get-in body-json ["headers" "authorization"]) (str body))
@@ -64,6 +67,7 @@
               {:keys [body] :as response} (make-kitchen-request
                                             waiter-url
                                             (assoc request-headers :accept "application/json")
+                                            :full-kitchen true
                                             :path "/request-info"
                                             :query-params bad-query-string)]
           (assert-response-status response 200)
@@ -74,6 +78,7 @@
               {:keys [body] :as response} (make-kitchen-request
                                             waiter-url
                                             (assoc request-headers :accept "application/json")
+                                            :full-kitchen true
                                             :path "/request-info"
                                             :query-params bad-query-string)]
           (assert-response-status response 200)
@@ -82,13 +87,17 @@
       (testing "http methods"
         (log/info "Basic test for empty body in request")
         (testing "http method: HEAD"
-          (let [response (make-kitchen-request waiter-url request-headers :method :head :path "/request-info")]
+          (let [response (make-kitchen-request
+                           waiter-url request-headers
+                           :full-kitchen true :method :head :path "/request-info")]
             (assert-response-status response 200)
             (is (str/blank? (:body response)))))
         (doseq [request-method [:delete :copy :get :move :patch :post :put]]
           (testing (str "http method: " (-> request-method name str/upper-case))
             (let [{:keys [body] :as response}
-                  (make-kitchen-request waiter-url request-headers :method request-method :path "/request-info")
+                  (make-kitchen-request
+                    waiter-url request-headers
+                    :full-kitchen true :method request-method :path "/request-info")
                   body-json (json/read-str (str body))]
               (assert-response-status response 200)
               (is (= (name request-method) (get body-json "request-method")))))))
@@ -98,12 +107,14 @@
               long-request (apply str (repeat request-length "a"))
               plain-resp (make-kitchen-request
                            waiter-url request-headers
+                           :full-kitchen true
                            :path "/request-info"
                            :body long-request)
               chunked-resp (make-kitchen-request
                              waiter-url
                              request-headers
                              :path "/request-info"
+                             :full-kitchen true
                              ; force a chunked request
                              :body (ByteArrayInputStream. (.getBytes long-request)))
               plain-body-json (json/read-str (str (:body plain-resp)))
@@ -118,9 +129,11 @@
               random-string (fn [n] (reduce str (take n (repeatedly #(rand-nth all-chars)))))
               make-request (fn [header-size]
                              (log/info "making request with header size" header-size)
-                             (make-kitchen-request waiter-url
-                                                   (assoc request-headers :x-kitchen-long-string
-                                                                          (random-string header-size))))]
+                             (make-kitchen-request
+                               waiter-url
+                               (assoc request-headers :x-kitchen-long-string
+                                      (random-string header-size))
+                               :full-kitchen true))]
           (let [response (make-request 2000)]
             (assert-response-status response 200))
           (let [response (make-request 4000)]
@@ -248,7 +261,9 @@
                      :x-waiter-env-timestamp "20160713201333949"
                      :x-waiter-env-time2 "201607132013"}
             {:keys [body status service-id] :as response}
-            (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/environment"))
+            (make-request-with-debug-info
+              headers #(make-kitchen-request
+                         waiter-url % :full-kitchen true :path "/environment"))
             body-json (json/read-str (str body))]
         (is (= 200 status))
         (testing "waiter configured environment variables"
@@ -545,7 +560,9 @@
           waiter-headers {:x-waiter-name (rand-name)
                           :x-waiter-ports num-ports}
           {:keys [body service-id]}
-          (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :path "/environment"))
+          (make-request-with-debug-info
+            waiter-headers #(make-kitchen-request
+                              waiter-url % :full-kitchen true :path "/environment"))
           body-json (json/read-str (str body))]
       (is (every? #(contains? body-json (str "PORT" %)) (range num-ports))
           (str body-json))
