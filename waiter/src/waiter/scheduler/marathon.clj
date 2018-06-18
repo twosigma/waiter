@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.scheduler.marathon
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.core.memoize :as memo]
             [clojure.data.json :as json]
@@ -432,16 +433,6 @@
   [{:keys [marathon-api is-waiter-app?-fn]}]
   (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.deployments" "apps.tasks"]}))
 
-(defn retrieve-service-id->out-of-sync-state
-  "Retrieves the service-id->out-of-sync-state."
-  [{:keys [service-id->out-of-sync-state-store]}]
-  (deref service-id->out-of-sync-state-store))
-
-(defn- reset-service-id->out-of-sync-state!
-  "Updates the service-id->out-of-sync-state."
-  [{:keys [service-id->out-of-sync-state-store]} service-id->out-of-sync-state]
-  (reset! service-id->out-of-sync-state-store service-id->out-of-sync-state))
-
 (defn- is-out-of-sync?
   "Returns true if the service does not have pending deployments and the instance and task counts do not match."
   [{:keys [deployments instances tasks]}]
@@ -488,7 +479,7 @@
      :service-id->out-of-sync-state (->> (set/difference out-of-sync-service-ids trigger-service-ids)
                                          (pc/map-from-keys
                                            (fn compute-out-of-sync-state [service-id]
-                                             (let [prev-state (service-id->out-of-sync-state service-id)
+                                             (let [prev-state (get service-id->out-of-sync-state service-id)
                                                    prev-data (:data prev-state)
                                                    curr-data (service-id->instance-count-map service-id)]
                                                (if (= prev-data curr-data)
@@ -499,7 +490,7 @@
 (defn- process-out-of-sync-services!
   "Determines the out-of-sync services and triggers sync deployments on those services if needed.
    As a side-effect, it updates the service-id->out-of-sync-state in the scheduler."
-  [service-id->out-of-sync-state marathon-scheduler current-time  trigger-timeout]
+  [{:keys [service-id->out-of-sync-state] :as current-state} marathon-scheduler current-time trigger-timeout]
   (try
     (let [service-id->instance-count-map (retrieve-out-of-sync-apps marathon-scheduler)
           {:keys [service-id->instance-count-map service-id->out-of-sync-state trigger-service-ids]}
@@ -508,63 +499,39 @@
       (doseq [service-id trigger-service-ids]
         (->> (service-id->instance-count-map service-id)
              (trigger-sync-deployment! marathon-scheduler service-id)))
-      service-id->out-of-sync-state)
+      (assoc current-state
+        :last-update-time current-time
+        :service-id->out-of-sync-state service-id->out-of-sync-state))
     (catch Exception e
       (log/error e "unable to process out-of-sync services")
-      service-id->out-of-sync-state)))
+      (assoc current-state :last-update-time current-time))))
 
-(defn sync-deployment-maintainer
+(defn trigger-sync-deployment-maintainer-iteration
+  "Triggers an agent send-off to run an individual iteration of the sync-deployment-maintainer."
+  [leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout]
+  (if (leader?-fn)
+    (let [current-time (t/now)]
+      (cid/with-correlation-id
+        (str "sync-deployment." (tc/to-long current-time))
+        (send-off service-id->out-of-sync-state-store
+                  process-out-of-sync-services! marathon-scheduler current-time trigger-timeout)))
+    (->> (fn reset-state-fn [current-state]
+           (assoc current-state
+             :last-update-time (t/now)
+             :service-id->out-of-sync-state {}))
+         (send service-id->out-of-sync-state-store))))
+
+(defn start-sync-deployment-maintainer
   "Launches the sync-deployment maintainer which triggers new deployments for services which have a mismatch
-   in the counts for requested and scheduled instances.
-   The intervals for the sync are controlled by the timeout-chan."
-  [leader?-fn marathon-scheduler trigger-timeout timeout-chan initial-state]
-  (log/info "starting marathon sync-deployment maintainer")
-  (let [exit-chan (async/chan 1)
-        query-chan (async/chan 32)]
-    (async/go-loop [{:keys [iteration last-update-time] :as current-state}
-                    (utils/assoc-if-absent initial-state :iteration 0)]
-      (let [[message chan-selected] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
-        (condp = chan-selected
-          exit-chan
-          (if (= :exit message)
-            (do
-              (async/close! timeout-chan)
-              (log/info "stopping marathon sync-deployment maintainer"
-                         {:last-update-time last-update-time}))
-            (do
-              (log/info "ignoring unknown message sent to exit chan" {:message message})
-              (recur current-state)))
-
-          query-chan
-          (let [{:keys [response-chan]} message]
-            (async/>! response-chan current-state)
-            (recur current-state))
-
-          timeout-chan
-          (let [current-time (t/now)]
-            (if-not (leader?-fn)
-              (reset-service-id->out-of-sync-state! marathon-scheduler {})
-              (cid/with-correlation-id
-                (str "sync-deployment." iteration)
-                (let [service-id->out-of-sync-state (retrieve-service-id->out-of-sync-state marathon-scheduler)]
-                  (->> (process-out-of-sync-services! service-id->out-of-sync-state marathon-scheduler current-time trigger-timeout)
-                       (reset-service-id->out-of-sync-state! marathon-scheduler)))))
-            (-> current-state
-                (assoc :iteration (inc iteration) :last-update-time current-time)
-                recur)))))
-    {:exit-chan exit-chan
-     :query-chan query-chan}))
-
-(defn- start-sync-deployment-maintainer
-  "Starts the sync-deployment-maintainer"
-  [leader?-fn marathon-scheduler {:keys [interval-ms timeout-cycles]}]
-  (let [sync-deployment-interval (t/millis interval-ms)
-        sync-deployment-start (t/plus (t/now) sync-deployment-interval)
-        trigger-timeout (t/millis (* interval-ms timeout-cycles))
-        timeout-chan (->> sync-deployment-interval
-                          (du/time-seq sync-deployment-start)
-                          chime/chime-ch)]
-    (sync-deployment-maintainer leader?-fn marathon-scheduler trigger-timeout timeout-chan {})))
+   in the counts for requested and scheduled instances."
+  [leader?-fn service-id->out-of-sync-state-store marathon-scheduler {:keys [interval-ms timeout-cycles]}]
+  (let [trigger-timeout (t/millis (* interval-ms timeout-cycles))]
+    (du/start-timer-task
+      (t/millis interval-ms)
+      (fn sync-deployment-maintainer-timer-task []
+        (trigger-sync-deployment-maintainer-iteration
+          leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout))
+      :delay-ms interval-ms)))
 
 (defn- retrieve-framework-id
   "Retrieves the framework id of the running marathon instance."
@@ -595,7 +562,7 @@
         mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})
         service-id->last-force-kill-store (atom {})
-        service-id->out-of-sync-state-store (atom {})
+        service-id->out-of-sync-state-store (agent {})
         retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)
         sync-deployment-maintainer-atom (atom nil)
         marathon-scheduler (->MarathonScheduler
@@ -603,6 +570,7 @@
                              service-id->failed-instances-transient-store service-id->last-force-kill-store
                              service-id->out-of-sync-state-store service-id->service-description-fn
                              force-kill-after-ms is-waiter-app?-fn sync-deployment-maintainer-atom)
-        sync-deployment-maintainer (start-sync-deployment-maintainer leader?-fn marathon-scheduler sync-deployment)]
+        sync-deployment-maintainer (start-sync-deployment-maintainer
+                                     leader?-fn service-id->out-of-sync-state-store marathon-scheduler sync-deployment)]
     (reset! sync-deployment-maintainer-atom sync-deployment-maintainer)
     marathon-scheduler))
