@@ -50,7 +50,7 @@
       (ss/throw+ response))
     (let [response-body (-> response :body async/<!!)]
       (cond-> response-body
-        (and (string? response-body) (pos? (count response-body)))
+        (not-empty response-body)
         (-> json/read-str walk/keywordize-keys)))))
 
 (defn ^HttpClient http-client-factory
