@@ -35,7 +35,7 @@ WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/run.sh WAITER_URI=127.0.0.1:${WAITER_
 
 # If there were failures, dump the logs
 if [ "$test_failures" = true ]; then
-    echo "integration tests failed -- dumping logs"
-    tail -n +1 -- log/*.log
+    echo "Uploading logs..."
+    ${WAITER_DIR}/bin/ci/upload_logs.sh
     exit 1
 fi
