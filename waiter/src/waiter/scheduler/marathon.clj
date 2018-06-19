@@ -521,7 +521,7 @@
              :service-id->out-of-sync-state {}))
          (send service-id->out-of-sync-state-store))))
 
-(defn start-sync-deployment-maintainer
+(defn- start-sync-deployment-maintainer
   "Launches the sync-deployment maintainer which triggers new deployments for services which have a mismatch
    in the counts for requested and scheduled instances."
   [leader?-fn service-id->out-of-sync-state-store marathon-scheduler {:keys [interval-ms timeout-cycles]}]
