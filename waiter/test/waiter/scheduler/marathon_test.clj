@@ -422,12 +422,12 @@
                                 (cond-> {:service-id appId
                                          :host host
                                          :health-check-path health-check-url}
-                                        (and framework-id slaveId)
-                                        (assoc :log-directory
-                                               (str slave-directory "/" slaveId "/frameworks/" framework-id
-                                                    "/executors/" instance-id "/runs/latest"))
-                                        message
-                                        (assoc :message (str/trim message)))))
+                                  (and framework-id slaveId)
+                                  (assoc :log-directory
+                                         (str slave-directory "/" slaveId "/frameworks/" framework-id
+                                              "/executors/" instance-id "/runs/latest"))
+                                  message
+                                  (assoc :message (str/trim message)))))
         service-id-1 "test-service-id-failed-instances-1"
         service-id-2 "test-service-id-failed-instances-2"
         service-id->failed-instances-transient-store (atom {})]
@@ -593,7 +593,8 @@
         service-id "service-1"
         instance-id "service-1.A"
         make-marathon-scheduler #(->MarathonScheduler {} {} (constantly nil) "/home/path/"
-                                                      (atom {}) %1 (constantly nil) %2 (constantly true))
+                                                      (atom {}) %1 (atom {}) (constantly nil) %2
+                                                      (constantly true) (atom nil))
         successful-kill-result {:instance-id instance-id :killed? true :service-id service-id}
         failed-kill-result {:instance-id instance-id :killed? false :service-id service-id}]
     (with-redefs [t/now (fn [] current-time)]
@@ -647,16 +648,22 @@
         marathon-scheduler (->MarathonScheduler {} {} (constantly nil) "/home/path/"
                                                 (atom {service-id [:failed-instances]})
                                                 (atom {service-id :kill-call-info})
-                                                (constantly nil) 100 (constantly true))
+                                                (atom {})
+                                                (constantly nil) 100 (constantly true) (atom nil))
         state (scheduler/service-id->state marathon-scheduler service-id)]
-    (is (= {:failed-instances [:failed-instances], :killed-instances [], :kill-info :kill-call-info} state))))
+    (is (= {:failed-instances [:failed-instances]
+            :killed-instances []
+            :kill-info :kill-call-info
+            :out-of-sync-state nil}
+           state))))
 
 (deftest test-killed-instances-transient-store
   (let [current-time (t/now)
         current-time-str (du/date-to-str current-time)
         marathon-api (Object.)
         marathon-scheduler (->MarathonScheduler marathon-api {} (constantly nil) "/home/path/"
-                                                (atom {}) (atom {}) (constantly nil) 60000 (constantly true))
+                                                (atom {}) (atom {}) (atom {}) (constantly nil) 60000
+                                                (constantly true) (atom nil))
         make-instance (fn [service-id instance-id]
                         {:id instance-id
                          :service-id service-id})]
@@ -737,58 +744,33 @@
 
 (deftest test-marathon-scheduler
   (testing "Creating a MarathonScheduler"
+    (let [valid-config {:force-kill-after-ms 60000
+                        :framework-id-ttl 900000
+                        :home-path-prefix "/home/"
+                        :http-options {:conn-timeout 10000 :socket-timeout 10000}
+                        :mesos-slave-port 5051
+                        :slave-directory "/foo"
+                        :sync-deployment {:interval-ms 15000
+                                          :timeout-cycles 4}
+                        :url "url"}
+          create-marathon-scheduler (fn create-marathon-scheduler [config]
+                                      (let [result (marathon-scheduler config)
+                                            {:keys [sync-deployment-maintainer-atom]} result]
+                                        ((deref sync-deployment-maintainer-atom))
+                                        result))]
 
-    (testing "should throw on invalid configuration"
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory "/foo"
-                                                  :url nil})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory ""
-                                                  :url "url"})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 0
-                                                  :slave-directory "/foo"
-                                                  :url "url"})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory "/foo"
-                                                  :url "url"})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 900000
-                                                  :home-path-prefix nil
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory "/foo"
-                                                  :url "url"})))
-      (is (thrown? Throwable (marathon-scheduler {:framework-id-ttl 0
-                                                  :home-path-prefix "/home/"
-                                                  :http-options {:conn-timeout 10000
-                                                                 :socket-timeout 10000}
-                                                  :mesos-slave-port 5051
-                                                  :slave-directory "/foo"
-                                                  :url "url"}))))
+      (testing "should throw on invalid configuration"
+        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :framework-id-ttl 0))))
+        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :home-path-prefix nil))))
+        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :http-options {}))))
+        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :mesos-slave-port 0))))
+        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :slave-directory ""))))
+        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :sync-deployment {:interval-ms 0}))))
+        (is (thrown? Throwable (create-marathon-scheduler (assoc valid-config :url nil)))))
 
-    (testing "should work with valid configuration"
-      (is (instance? MarathonScheduler
-                     (marathon-scheduler {:home-path-prefix "/home/"
-                                          :http-options {:conn-timeout 10000
-                                                         :socket-timeout 10000}
-                                          :force-kill-after-ms 60000
-                                          :framework-id-ttl 900000
-                                          :url "url"}))))))
+      (testing "should work with valid configuration"
+        (is (instance? MarathonScheduler (create-marathon-scheduler valid-config)))
+        (is (instance? MarathonScheduler (create-marathon-scheduler (dissoc valid-config :force-kill-after-ms))))))))
 
 (deftest test-process-kill-instance-request
   (let [marathon-api (Object.)
@@ -845,7 +827,7 @@
                (process-kill-instance-request marathon-api service-id instance-id {})))))))
 
 (deftest test-delete-app
-  (let [scheduler (->MarathonScheduler {} {} nil nil (atom {}) (atom {}) (constantly nil) nil nil)]
+  (let [scheduler (->MarathonScheduler {} {} nil nil (atom {}) (atom {}) (atom {}) (constantly nil) nil nil (atom nil))]
 
     (with-redefs [marathon/delete-app (constantly {:deploymentId 12345})]
       (is (= {:result :deleted
@@ -868,10 +850,10 @@
                            (let [body-chan (async/promise-chan)]
                              (async/>!! body-chan body)
                              {:body body-chan}))]
-    (with-redefs [marathon/get-deployments (constantly [{:affectedApps "waiter-app-1234" :id "1234" :version "v1234"}
-                                                        {:affectedApps "waiter-app-4567" :id "4567" :version "v4567"}
-                                                        {:affectedApps "waiter-app-3829" :id "3829" :version "v3829"}
-                                                        {:affectedApps "waiter-app-4321" :id "4321" :version "v4321"}])]
+    (with-redefs [marathon/get-deployments (constantly [{:affectedApps ["/waiter-app-1234"] :id "1234" :version "v1234"}
+                                                        {:affectedApps ["/waiter-app-4567"] :id "4567" :version "v4567"}
+                                                        {:affectedApps ["/waiter-app-3829"] :id "3829" :version "v3829"}
+                                                        {:affectedApps ["/waiter-app-4321"] :id "4321" :version "v4321"}])]
       (testing "no deployments entry"
         (let [response (prepare-response "{\"message\": \"App is locked by one or more deployments.\"}")]
           (is (not (extract-deployment-info marathon-api response)))))
@@ -884,19 +866,402 @@
       (testing "single deployment"
         (let [response (prepare-response "{\"deployments\": [{\"id\":\"1234\"}],
                                            \"message\": \"App is locked by one or more deployments.\"}")]
-          (is (= [{:affectedApps "waiter-app-1234" :id "1234" :version "v1234"}]
+          (is (= [{:affectedApps ["/waiter-app-1234"] :id "1234" :version "v1234"}]
                  (extract-deployment-info marathon-api response)))))
 
       (testing "multiple deployments"
         (let [response {:body "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}],
                                 \"message\": \"App is locked by one or more deployments.\"}"}]
-          (is (= [{:affectedApps "waiter-app-1234" :id "1234" :version "v1234"}
-                  {:affectedApps "waiter-app-3829" :id "3829" :version "v3829"}]
+          (is (= [{:affectedApps ["/waiter-app-1234"] :id "1234" :version "v1234"}
+                  {:affectedApps ["/waiter-app-3829"] :id "3829" :version "v3829"}]
                  (extract-deployment-info marathon-api response)))))
 
       (testing "multiple deployments, one without info"
         (let [response (prepare-response "{\"deployments\": [{\"id\":\"1234\"}, {\"id\":\"3829\"}, {\"id\":\"9876\"}],
                                            \"message\": \"App is locked by one or more deployments.\"}")]
-          (is (= [{:affectedApps "waiter-app-1234" :id "1234" :version "v1234"}
-                  {:affectedApps "waiter-app-3829" :id "3829" :version "v3829"}]
+          (is (= [{:affectedApps ["/waiter-app-1234"] :id "1234" :version "v1234"}
+                  {:affectedApps ["/waiter-app-3829"] :id "3829" :version "v3829"}]
                  (extract-deployment-info marathon-api response))))))))
+
+(deftest test-extract-service-deployment-info
+  (let [marathon-api (Object.)]
+    (with-redefs [marathon/get-deployments (constantly [{:affectedApps ["/waiter-app-1234"] :id "1234a" :version "v1234a"}
+                                                        {:affectedApps ["/waiter-app-4567"] :id "4567" :version "v4567"}
+                                                        {:affectedApps ["/waiter-app-3829"] :id "3829" :version "v3829"}
+                                                        {:affectedApps ["/waiter-app-4321"] :id "4321" :version "v4321"}
+                                                        {:affectedApps ["/waiter-app-1234"] :id "1234b" :version "v1234b"}])]
+      (testing "no deployments entry"
+        (is (nil? (extract-service-deployment-info marathon-api "missing-service-id"))))
+
+      (testing "matching single deployment"
+        (is (= {:affectedApps ["/waiter-app-4567"] :id "4567" :version "v4567"}
+               (extract-service-deployment-info marathon-api "waiter-app-4567"))))
+
+      (testing "matching multiple deployments"
+        (is (= {:affectedApps ["/waiter-app-1234"] :id "1234a" :version "v1234a"}
+               (extract-service-deployment-info marathon-api "waiter-app-1234")))))))
+
+(deftest test-scale-app
+  (let [marathon-api (Object.)
+        marathon-scheduler (->MarathonScheduler marathon-api {} (constantly nil) "/home/path/"
+                                                (atom {}) (atom {}) (atom {}) (constantly nil) 60000
+                                                (constantly true) (atom nil))
+        service-id "test-service-id"]
+
+    (testing "unforced scale of service"
+      (let [updated-invoked-promise (promise)
+            instances 30]
+        (with-redefs [extract-service-deployment-info (fn [in-marathon-api in-service-id]
+                                                        (is (= marathon-api in-marathon-api))
+                                                        (is (= service-id in-service-id))
+                                                        (is false))
+                      marathon/get-app (fn [in-marathon-api in-service-id]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         {:app {:cmd "tc" :cpus 2 :id service-id :instances 15 :mem 4
+                                                :tasks (->> (fn [] {:appId service-id
+                                                                    :id (str service-id "." (rand-int 1000))})
+                                                            (repeatedly 15))}})
+                      marathon/update-app (fn [in-marathon-api in-service-id descriptor]
+                                            (is (= marathon-api in-marathon-api))
+                                            (is (= service-id in-service-id))
+                                            (is (= {:cmd "tc" :cpus 2 :id service-id :instances instances :mem 4} descriptor))
+                                            (deliver updated-invoked-promise :invoked))]
+          (scheduler/scale-app marathon-scheduler service-id instances false)
+          (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
+
+    (testing "forced scale of service - fewer instances"
+      (let [updated-invoked-promise (promise)
+            deleted-deployment-promise (promise)
+            instances 10
+            deployment-id "d-1234"]
+        (with-redefs [extract-service-deployment-info (fn [in-marathon-api in-service-id]
+                                                        (is (= marathon-api in-marathon-api))
+                                                        (is (= service-id in-service-id))
+                                                        {:id deployment-id})
+                      marathon/delete-deployment (fn [in-marathon-api in-deployment-id]
+                                                   (is (= marathon-api in-marathon-api))
+                                                   (is (= deployment-id in-deployment-id))
+                                                   (deliver deleted-deployment-promise :invoked))
+                      marathon/get-app (fn [in-marathon-api in-service-id]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         {:app {:cmd "tc" :cpus 2 :id service-id :instances 25 :mem 4
+                                                :tasks (->> (fn [] {:appId service-id
+                                                                    :id (str service-id "." (rand-int 1000))})
+                                                            (repeatedly 15))}})
+                      marathon/update-app (fn [in-marathon-api in-service-id descriptor]
+                                            (is (= marathon-api in-marathon-api))
+                                            (is (= service-id in-service-id))
+                                            (is (= {:cmd "tc" :cpus 2 :id service-id :instances 15 :mem 4} descriptor))
+                                            (deliver updated-invoked-promise :invoked))]
+          (scheduler/scale-app marathon-scheduler service-id instances true)
+          (is (= :invoked (deref deleted-deployment-promise 0 :not-invoked)))
+          (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
+
+    (testing "forced scale of service - more instances"
+      (let [updated-invoked-promise (promise)
+            deleted-deployment-promise (promise)
+            instances 20
+            deployment-id "d-1234"]
+        (with-redefs [extract-service-deployment-info (fn [in-marathon-api in-service-id]
+                                                        (is (= marathon-api in-marathon-api))
+                                                        (is (= service-id in-service-id))
+                                                        {:id deployment-id})
+                      marathon/delete-deployment (fn [in-marathon-api in-deployment-id]
+                                                   (is (= marathon-api in-marathon-api))
+                                                   (is (= deployment-id in-deployment-id))
+                                                   (deliver deleted-deployment-promise :invoked))
+                      marathon/get-app (fn [in-marathon-api in-service-id]
+                                         (is (= marathon-api in-marathon-api))
+                                         (is (= service-id in-service-id))
+                                         {:app {:cmd "tc" :cpus 2 :id service-id :instances 25 :mem 4
+                                                :tasks (->> (fn [] {:appId service-id
+                                                                    :id (str service-id "." (rand-int 1000))})
+                                                            (repeatedly 15))}})
+                      marathon/update-app (fn [in-marathon-api in-service-id descriptor]
+                                            (is (= marathon-api in-marathon-api))
+                                            (is (= service-id in-service-id))
+                                            (is (= {:cmd "tc" :cpus 2 :id service-id :instances instances :mem 4} descriptor))
+                                            (deliver updated-invoked-promise :invoked))]
+          (scheduler/scale-app marathon-scheduler service-id instances true)
+          (is (= :invoked (deref deleted-deployment-promise 0 :not-invoked)))
+          (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))))
+
+(defmacro run-sync-deployment-maintainer-iteration
+  [leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout]
+  `(->>
+     (trigger-sync-deployment-maintainer-iteration
+       ~leader?-fn @~service-id->out-of-sync-state-store ~marathon-scheduler ~trigger-timeout)
+     (reset! ~service-id->out-of-sync-state-store)))
+
+(let [marathon-api {:identifier (str "marathon-api-" (rand-int 10000))}
+      make-marathon-scheduler (fn [service-id->out-of-sync-state-store]
+                                {:identifier (str "marathon-scheduler-" (rand-int 10000))
+                                 :is-waiter-app?-fn (fn [id] (str/starts-with? id "ws-"))
+                                 :marathon-api marathon-api
+                                 :service-id->out-of-sync-state-store service-id->out-of-sync-state-store})
+      interval-ms 2000
+      timeout-cycles 3
+      interval-timeout (t/millis interval-ms)
+      trigger-timeout (t/millis (* interval-ms timeout-cycles))
+      initial-state {}
+      make-app-entry (fn [deployment-ids service-id instances task-ids]
+                       {:deployments (map (fn [deployment-id] [{:id deployment-id}]) deployment-ids)
+                        :id (str "/" service-id)
+                        :instances instances
+                        :tasks (map (fn [task-id] [{:id task-id}]) task-ids)})]
+
+  (deftest test-sync-deployment-maintainer-no-pending-sync-deployment
+    (let [current-time (t/now)]
+      (with-redefs [marathon/get-apps
+                    (fn [in-marathon-api in-query-params]
+                      (is (= marathon-api in-marathon-api))
+                      (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
+                      {:apps [(make-app-entry [] "ts-s1" 4 ["ts-s1.t1"])
+                              (make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])
+                              (make-app-entry [] "ws-s2" 2 ["ws-s2.t1" "ws-s2.t2"])]})
+                    t/now (constantly current-time)]
+        (let [leader?-fn (constantly true)
+              service-id->out-of-sync-state-store (atom initial-state)
+              marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
+          (run-sync-deployment-maintainer-iteration
+            leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+          (is (= {:last-update-time current-time
+                  :service-id->out-of-sync-state {}}
+                 @service-id->out-of-sync-state-store))))))
+
+  (deftest test-sync-deployment-maintainer-ignore-service-with-pending-deployment
+    (let [current-time (t/now)]
+      (with-redefs [marathon/get-apps
+                    (fn [in-marathon-api in-query-params]
+                      (is (= marathon-api in-marathon-api))
+                      (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
+                      {:apps [(make-app-entry [] "ts-s1" 4 ["ts-s1.t1"])
+                              (make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])
+                              (make-app-entry ["s2a.d12"] "ws-s2a" 2 ["ws-s2a.t1"])
+                              (make-app-entry [] "ws-s2a" 2 ["ws-s2a.t1"])]})
+                    t/now (constantly current-time)]
+        (let [leader?-fn (constantly true)
+              service-id->out-of-sync-state-store (atom initial-state)
+              marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
+          (run-sync-deployment-maintainer-iteration
+            leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+          (is (= {:last-update-time current-time
+                  :service-id->out-of-sync-state
+                  {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time current-time}}}
+                 @service-id->out-of-sync-state-store))))))
+
+  (deftest test-sync-deployment-maintainer-leadership-changes
+    (let [time-0 (t/now)
+          current-time-atom (atom time-0)]
+      (with-redefs [marathon/get-apps
+                    (fn [in-marathon-api in-query-params]
+                      (is (= marathon-api in-marathon-api))
+                      (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
+                      {:apps [(make-app-entry [] "ts-s1" 4 ["ts-s1.t1"])
+                              (make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])
+                              (make-app-entry [] "ws-s2a" 2 ["ws-s2a.t1"])]})
+                    t/now (fn [] (deref current-time-atom))]
+        (let [leader-atom (atom true)
+              leader?-fn (fn [] (deref leader-atom))
+              service-id->out-of-sync-state-store (atom initial-state)
+              marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
+          ;; check we ignore sync-ed services
+          (run-sync-deployment-maintainer-iteration
+            leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+          (is (= {:last-update-time time-0
+                  :service-id->out-of-sync-state
+                  {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-0}}}
+                 @service-id->out-of-sync-state-store))
+
+          ;; check we reset state when we lose leadership
+          (let [time-1 (t/plus time-0 interval-timeout)]
+            (reset! leader-atom false)
+            (reset! current-time-atom time-1)
+            (run-sync-deployment-maintainer-iteration
+              leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+            (is (= {:last-update-time time-1
+                    :service-id->out-of-sync-state {}}
+                   @service-id->out-of-sync-state-store))
+
+
+            ;; check we update state when we regain leadership
+            (let [time-2 (t/plus time-1 interval-timeout)]
+              (reset! leader-atom true)
+              (reset! current-time-atom time-2)
+              (run-sync-deployment-maintainer-iteration
+                leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+              (is (= {:last-update-time time-2
+                      :service-id->out-of-sync-state
+                      {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-2}}}
+                     @service-id->out-of-sync-state-store))))))))
+
+  (deftest test-sync-deployment-maintainer-forget-previous-out-of-sync-services
+    (let [time-0 (t/now)
+          current-time-atom (atom time-0)
+          app-entries-atom (atom [(make-app-entry [] "ts-s1" 4 ["ts-s1.t1"])
+                                  (make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])])]
+      (with-redefs [marathon/get-apps
+                    (fn [in-marathon-api in-query-params]
+                      (is (= marathon-api in-marathon-api))
+                      (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
+                      {:apps (deref app-entries-atom)})
+                    t/now (fn [] (deref current-time-atom))]
+        (let [leader-atom (atom true)
+              leader?-fn (fn [] (deref leader-atom))
+              service-id->out-of-sync-state-store (atom initial-state)
+              marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
+
+          ;; check we ignore sync-ed services
+          (run-sync-deployment-maintainer-iteration
+            leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+          (is (= {:last-update-time time-0
+                  :service-id->out-of-sync-state {}}
+                 @service-id->out-of-sync-state-store))
+
+          ;; check we detect out-of-sync services
+          (let [time-1 (t/plus time-0 interval-timeout)]
+            (swap! app-entries-atom conj (make-app-entry [] "ws-s2a" 2 ["ws-s2a.t1"]))
+            (swap! app-entries-atom conj (make-app-entry [] "ws-s2b" 2 ["ws-s2b.t1"]))
+            (swap! app-entries-atom conj (make-app-entry [] "ws-s2c" 2 ["ws-s2c.t1"]))
+            (reset! current-time-atom time-1)
+            (run-sync-deployment-maintainer-iteration
+              leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+            (is (= {:last-update-time time-1
+                    :service-id->out-of-sync-state
+                    {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}
+                     "ws-s2b" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}
+                     "ws-s2c" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}}}
+                   @service-id->out-of-sync-state-store))
+
+            ;; check we forget previously out-of-sync services
+            (let [time-2 (t/plus time-1 interval-timeout)]
+              (swap! app-entries-atom (fn [app-entries] (remove #(= "/ws-s2b" (:id %)) app-entries)))
+              (swap! app-entries-atom (fn [app-entries] (remove #(= "/ws-s2c" (:id %)) app-entries)))
+              (swap! app-entries-atom conj (make-app-entry [] "ws-s2b" 3 ["ws-s2b.t1" "ws-s2b.t2" "ws-s2b.t3"]))
+              (reset! current-time-atom time-2)
+              (run-sync-deployment-maintainer-iteration
+                leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+              (is (= {:last-update-time time-2
+                      :service-id->out-of-sync-state
+                      {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}}}
+                     @service-id->out-of-sync-state-store))))))))
+
+  (deftest test-sync-deployment-maintainer-detect-new-out-of-sync-deployment
+    (let [time-0 (t/now)
+          current-time-atom (atom time-0)
+          app-entries-atom (atom [(make-app-entry [] "ts-s1" 4 ["ts-s1.t1"])
+                                  (make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])])]
+      (with-redefs [marathon/get-apps
+                    (fn [in-marathon-api in-query-params]
+                      (is (= marathon-api in-marathon-api))
+                      (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
+                      {:apps (deref app-entries-atom)})
+                    t/now (fn [] (deref current-time-atom))]
+        (let [leader-atom (atom true)
+              leader?-fn (fn [] (deref leader-atom))
+              service-id->out-of-sync-state-store (atom initial-state)
+              marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
+
+          ;; check we ignore sync-ed services
+          (run-sync-deployment-maintainer-iteration
+            leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+          (is (= {:last-update-time time-0
+                  :service-id->out-of-sync-state {}}
+                 @service-id->out-of-sync-state-store))
+
+          ;; check we detect out-of-sync services
+          (let [time-1 (t/plus time-0 interval-timeout)]
+            (swap! app-entries-atom conj (make-app-entry [] "ws-s2a" 2 ["ws-s2a.t1"]))
+            (reset! current-time-atom time-1)
+            (run-sync-deployment-maintainer-iteration
+              leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+            (is (= {:last-update-time time-1
+                    :service-id->out-of-sync-state
+                    {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}}}
+                   @service-id->out-of-sync-state-store))
+
+            ;; check we detect new out-of-sync services
+            (let [time-2 (t/plus time-1 interval-timeout)]
+              (swap! app-entries-atom conj (make-app-entry [] "ws-s4a" 4 ["ws-s4a.t1" "ws-s4a.t2"]))
+              (reset! current-time-atom time-2)
+              (run-sync-deployment-maintainer-iteration
+                leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+              (is (= {:last-update-time time-2
+                      :service-id->out-of-sync-state
+                      {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}
+                       "ws-s4a" {:data {:instances-requested 4 :instances-scheduled 2} :last-modified-time time-2}}}
+                     @service-id->out-of-sync-state-store))))))))
+
+  (deftest test-sync-deployment-maintainer-some-pending-sync-deployments
+    (let [time-0 (t/now)
+          time-1 (t/plus time-0 interval-timeout)
+          time-2 (t/plus time-1 interval-timeout)
+          time-3 (t/plus time-2 interval-timeout)
+          time-4 (t/plus time-3 interval-timeout)
+          time-5 (t/plus time-4 interval-timeout)
+          time-6 (t/plus time-5 interval-timeout)
+          time-7 (t/plus time-6 interval-timeout)
+          current-time-atom (atom time-6)
+          scheduler-operations-atom (atom [])
+          app-entries-atom (atom [(make-app-entry [] "ts-s1" 4 ["ts-s1.t1"])
+                                  (make-app-entry [] "ws-s1" 1 ["ws-s1.t1"])
+                                  (make-app-entry [] "ws-s2a" 2 ["ws-s2a.t1"])
+                                  (make-app-entry [] "ws-s4a" 4 ["ws-s4a.t1" "ws-s4a.t2"])])]
+      (with-redefs [marathon/get-apps
+                    (fn [in-marathon-api in-query-params]
+                      (is (= marathon-api in-marathon-api))
+                      (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
+                      {:apps (deref app-entries-atom)})
+                    scheduler/scale-app (fn [_ in-service-id in-target in-force]
+                                          (swap! scheduler-operations-atom conj [in-service-id in-target in-force]))
+                    t/now (fn [] (deref current-time-atom))]
+        (let [leader-atom (atom true)
+              leader?-fn (fn [] (deref leader-atom))
+              service-id->out-of-sync-state-store
+              (atom {:last-update-time time-6
+                     :service-id->out-of-sync-state
+                     {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}
+                      "ws-s4a" {:data {:instances-requested 4 :instances-scheduled 2} :last-modified-time time-3}}})
+              marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
+
+          (testing "do not trigger scale on 'active' out-of-sync services"
+            (reset! current-time-atom time-4)
+            (run-sync-deployment-maintainer-iteration
+              leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+            (is (= {:last-update-time time-4
+                    :service-id->out-of-sync-state
+                    {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}
+                     "ws-s4a" {:data {:instances-requested 4 :instances-scheduled 2} :last-modified-time time-3}}}
+                   @service-id->out-of-sync-state-store)))
+
+          (testing "trigger scale on out-of-sync services"
+            (reset! current-time-atom time-5)
+            (run-sync-deployment-maintainer-iteration
+              leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+            (is (= {:last-update-time time-5
+                    :service-id->out-of-sync-state
+                    {"ws-s4a" {:data {:instances-requested 4 :instances-scheduled 2} :last-modified-time time-3}}}
+                   @service-id->out-of-sync-state-store))
+            (is (= [["ws-s2a" 1 false]] (deref scheduler-operations-atom))))
+
+          (testing "trigger scale remaining out-of-sync services"
+
+            (swap! app-entries-atom (fn [app-entries] (remove #(= "/ws-s2a" (:id %)) app-entries)))
+            (reset! current-time-atom time-6)
+            (run-sync-deployment-maintainer-iteration
+              leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+            (is (= {:last-update-time time-6
+                    :service-id->out-of-sync-state
+                    {"ws-s4a" {:data {:instances-requested 4 :instances-scheduled 2} :last-modified-time time-3}}}
+                   @service-id->out-of-sync-state-store))
+            (is (= [["ws-s2a" 1 false]] (deref scheduler-operations-atom)))
+
+            (reset! current-time-atom time-7)
+            (run-sync-deployment-maintainer-iteration
+              leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+            (is (= {:last-update-time time-7
+                    :service-id->out-of-sync-state {}}
+                   @service-id->out-of-sync-state-store))
+            (is (= [["ws-s2a" 1 false] ["ws-s4a" 2 false]] (deref scheduler-operations-atom)))))))))

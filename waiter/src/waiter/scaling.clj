@@ -87,18 +87,20 @@
     {:executor-multiplexer-chan executor-multiplexer-chan
      :query-chan query-chan}))
 
-(defn- execute-scale-up-request
-  "Helper function to scale-up instances of a service."
-  [scheduler service-id scale-to-instances]
-  (try
-    (scheduler/suppress-transient-server-exceptions
-      "autoscaler"
-      (log/info "scaling service to" scale-to-instances "instances")
-      (scheduler/scale-app scheduler service-id scale-to-instances)
-      (counters/inc! (metrics/service-counter service-id "scaling" "scale-up" "success")))
-    (catch Exception e
-      (counters/inc! (metrics/service-counter service-id "scaling" "scale-up" "fail"))
-      (log/warn e "unexpected error when trying to scale" service-id "to" scale-to-instances "instances"))))
+(defn- execute-scale-service-request
+  "Helper function to scale instances of a service.
+   The force? flag can be used to detmerine whether we will make a best effort or a forced scale operation."
+  [scheduler service-id scale-to-instances force?]
+  (let [mode (if force? "scale-force" "scale-up")]
+    (try
+      (scheduler/suppress-transient-server-exceptions
+        "autoscaler"
+        (log/info mode "service to" scale-to-instances "instances")
+        (scheduler/scale-app scheduler service-id scale-to-instances force?)
+        (counters/inc! (metrics/service-counter service-id "scaling" mode "success")))
+      (catch Exception e
+        (counters/inc! (metrics/service-counter service-id "scaling" mode "fail"))
+        (log/warn e "unexpected error when trying to scale" service-id "to" scale-to-instances "instances")))))
 
 (defn- execute-scale-down-request
   "Helper function to scale-down instances of a service.
@@ -227,7 +229,7 @@
                             (do
                               (log/info "allowing previous scale operation to complete before scaling up again")
                               (counters/inc! (metrics/service-counter service-id "scaling" "scale-up" "ignore")))
-                            (execute-scale-up-request scheduler service-id scale-to-instances))
+                            (execute-scale-service-request scheduler service-id scale-to-instances false))
                           executor-state)
 
                         (pos? num-instances-to-kill)
@@ -243,9 +245,18 @@
                               (assoc executor-state :last-scale-down-time (t/now))
                               executor-state)
                             (do
-                              (log/debug "skipping scale-down as" inter-kill-request-wait-time-ms "ms has not elapsed since last scale down operation")
+                              (log/debug "skipping scale-down as" inter-kill-request-wait-time-ms
+                                         "ms has not elapsed since last scale down operation")
                               (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "ignore"))
                               executor-state)))
+
+                        (and (neg? scale-amount) (< task-count scale-to-instances))
+                        (do
+                          (log/info "potential overshoot detected, triggering scale-force for service"
+                                    {:scale-to-instances scale-to-instances :task-count task-count})
+                          (counters/inc! (metrics/service-counter service-id "scaling" "scale-force" "total"))
+                          (execute-scale-service-request scheduler service-id scale-to-instances true)
+                          executor-state)
 
                         :else
                         (do

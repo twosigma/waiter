@@ -116,9 +116,10 @@
                             :max-blacklist-time-ms 60000}
             make-scheduler (fn [operation-tracker-atom]
                              (reify scheduler/ServiceScheduler
-                               (scale-app [_ service-id scale-to-instances]
+                               (scale-app [_ service-id scale-to-instances force]
                                  (swap! operation-tracker-atom conj [:scale-app service-id scale-to-instances])
                                  (is (= test-service-id service-id))
+                                 (is (false? force))
                                  (when (neg? scale-to-instances)
                                    (throw (Exception. "throwing exception as required by test")))
                                  (is (pos? scale-to-instances))
@@ -230,8 +231,8 @@
                             :max-blacklist-time-ms 60000}
             make-scheduler (fn [operation-tracker-atom]
                              (reify scheduler/ServiceScheduler
-                               (scale-app [_ service-id scale-to-instances]
-                                 (swap! operation-tracker-atom conj [:scale-app service-id scale-to-instances])
+                               (scale-app [_ service-id scale-to-instances force]
+                                 (swap! operation-tracker-atom conj [:scale-app service-id scale-to-instances force])
                                  (is (= test-service-id service-id))
                                  (when (neg? scale-to-instances)
                                    (throw (Exception. "throwing exception as required by test")))
@@ -300,7 +301,22 @@
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
-            (is (= [[:scale-app "test-service-id" 30]] @scheduler-operation-tracker-atom))
+            (is (= [[:scale-app "test-service-id" 30 false]] @scheduler-operation-tracker-atom))
+            (async/>!! exit-chan :exit)))
+
+        (testing "scale-force:trigger"
+          (let [instance-rpc-chan (async/chan 1)
+                peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
+                scheduler-operation-tracker-atom (atom [])
+                scheduler (make-scheduler scheduler-operation-tracker-atom)
+                {:keys [executor-chan exit-chan query-chan]}
+                (service-scaling-executor
+                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
+                  delegate-instance-kill-request-fn timeout-config)]
+            (mock-reservation-system instance-rpc-chan [])
+            (async/>!! executor-chan (make-scaling-message test-service-id -5 25 20 20 nil))
+            (is (= equilibrium-state (retrieve-state-fn query-chan)))
+            (is (= [[:scale-app "test-service-id" 25 true]] @scheduler-operation-tracker-atom))
             (async/>!! exit-chan :exit)))
 
         (testing "scale-down:no-instance-globally"
@@ -720,7 +736,7 @@
                                          initial-timeout-chan (async/chan 1)
                                          scheduler (reify scheduler/ServiceScheduler
                                                      (get-apps [_] scheduler-data)
-                                                     (scale-app [_ _ _] {}))
+                                                     (scale-app [_ _ _ _] {}))
                                          autoscaler-chans-map
                                          (autoscaler-goroutine (assoc initial-state
                                                                  :previous-cycle-start-time (t/minus (t/now) (t/seconds 10))

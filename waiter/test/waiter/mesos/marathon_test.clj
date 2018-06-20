@@ -14,25 +14,30 @@
 ;; limitations under the License.
 ;;
 (ns waiter.mesos.marathon-test
-  (:require [clojure.string :as str]
-            [clojure.test :refer :all]
+  (:require [clojure.test :refer :all]
             [waiter.mesos.marathon :refer :all]
             [waiter.util.http-utils :as http-utils]))
 
+(def ^:private http-client (Object.))
+
+(def ^:private marathon-url "http://marathon.localtest.me:1234")
+
+(defn- assert-endpoint-request-method
+  ([expected-method expected-url]
+    (assert-endpoint-request-method expected-method expected-url nil))
+  ([expected-method expected-url expected-query-string]
+    (fn [in-http-client in-request-url & {:keys [query-string request-method]}]
+      (is (= http-client in-http-client))
+      (is (= expected-method request-method))
+      (when expected-query-string
+        (is (= expected-query-string query-string)))
+      (let [expected-absolute-url (str marathon-url expected-url)]
+        (is (= expected-absolute-url in-request-url))))))
+
 (deftest test-marathon-rest-api-endpoints
-  (let [http-client (Object.)
-        marathon-url "http://www.marathon.com:1234"
-        app-id "test-app-id"
+  (let [app-id "test-app-id"
         task-id "test-app-id.test-task-id"
-        marathon-api (api-factory http-client {} marathon-url)
-        assert-endpoint-request-method (fn [expected-method expected-url]
-                                         (fn [in-http-client in-request-url & {:keys [request-method]}]
-                                           (is (= http-client in-http-client))
-                                           (is (= expected-method request-method))
-                                           (let [expected-absolute-url (if (str/starts-with? expected-url "http://")
-                                                                         expected-url
-                                                                         (str marathon-url expected-url))]
-                                             (is (= expected-absolute-url in-request-url)))))]
+        marathon-api (api-factory http-client {} marathon-url)]
 
     (testing "create-app"
       (with-redefs [http-utils/http-request (assert-endpoint-request-method :post "/v2/apps")]
@@ -42,9 +47,17 @@
       (with-redefs [http-utils/http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id))]
         (delete-app marathon-api app-id)))
 
+    (testing "delete-deployment"
+      (let [deployment-id "d1234"
+            endpoint (str "/v2/deployments/" deployment-id)
+            query-string {"force" true}]
+        (with-redefs [http-utils/http-request (assert-endpoint-request-method :delete endpoint query-string)]
+          (delete-deployment marathon-api deployment-id))))
+
     (testing "get-apps"
-      (with-redefs [http-utils/http-request (assert-endpoint-request-method :get "/v2/apps")]
-        (get-apps marathon-api)))
+      (let [query-string {"embed" ["apps.lastTaskFailure" "apps.tasks"]}]
+        (with-redefs [http-utils/http-request (assert-endpoint-request-method :get "/v2/apps" query-string)]
+          (get-apps marathon-api query-string))))
 
     (testing "get-deployments"
       (with-redefs [http-utils/http-request (assert-endpoint-request-method :get "/v2/deployments")]
@@ -55,9 +68,13 @@
         (get-info marathon-api)))
 
     (testing "kill-task"
-      (with-redefs [http-utils/http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id "/tasks/" task-id))]
-        (kill-task marathon-api app-id task-id false true)))
+      (let [endpoint (str "/v2/apps/" app-id "/tasks/" task-id)
+            query-string {"force" true "scale" false}]
+        (with-redefs [http-utils/http-request (assert-endpoint-request-method :delete endpoint query-string)]
+          (kill-task marathon-api app-id task-id false true))))
 
     (testing "update-app"
-      (with-redefs [http-utils/http-request (assert-endpoint-request-method :put (str "/v2/apps/" app-id))]
-        (update-app marathon-api app-id {})))))
+      (let [endpoint (str "/v2/apps/" app-id)
+            query-string {"force" true}]
+        (with-redefs [http-utils/http-request (assert-endpoint-request-method :put endpoint query-string)]
+          (update-app marathon-api app-id {}))))))

@@ -249,6 +249,17 @@
                                ;; How long (milliseconds) to cache the framework id:
                                :framework-id-ttl 900000
 
+                               ;; Controls the rate at which any mismatch in task count and instances is
+                               ;; corrected by triggering new deployments
+                               :sync-deployment {;; Specifies the intervals at which the syncer runs to
+                                                 ;; check for mismatches in task and instance counts.
+                                                 :interval-ms 15000
+
+                                                 ;; Specifies the number of cycles for which a service is
+                                                 ;; determined to be in need of a sync deployment before
+                                                 ;; such a deployment is actually triggered.
+                                                 :timeout-cycles 4}
+
                                ;; The URL for your Marathon HTTP API:
                                :url "http://marathon.example.com:8080"}
 

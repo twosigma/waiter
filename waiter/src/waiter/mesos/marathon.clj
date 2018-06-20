@@ -42,6 +42,15 @@
                            :request-method :delete
                            :spnego-auth spnego-auth))
 
+(defn delete-deployment
+  "Cancel the deployment with deployment-id.
+   No rollback deployment is created to revert the changes of deployment."
+  [{:keys [http-client marathon-url spnego-auth]} deployment-id]
+  (http-utils/http-request http-client (str marathon-url "/v2/deployments/" deployment-id)
+                           :query-string {"force" true}
+                           :request-method :delete
+                           :spnego-auth spnego-auth))
+
 (defn get-app
   "List the app specified by app-id."
   [{:keys [http-client marathon-url spnego-auth]} app-id]
@@ -51,9 +60,9 @@
 
 (defn get-apps
   "List all running apps including running and failed tasks."
-  [{:keys [http-client marathon-url spnego-auth]}]
+  [{:keys [http-client marathon-url spnego-auth]} query-params]
   (http-utils/http-request http-client (str marathon-url "/v2/apps")
-                           :query-string {"embed" ["apps.lastTaskFailure" "apps.tasks"]}
+                           :query-string query-params
                            :request-method :get
                            :spnego-auth spnego-auth))
 

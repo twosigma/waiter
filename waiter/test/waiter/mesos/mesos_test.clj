@@ -21,7 +21,7 @@
 
 (deftest test-mesos-api
   (let [http-client (Object.)
-        marathon-url "http://www.marathon.com:1234"
+        marathon-url "http://marathon.localtest.me:1234"
         slave-port 9876
         slave-directory "/some/directory"
         mesos-api (api-factory http-client {} slave-port slave-directory)

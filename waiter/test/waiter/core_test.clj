@@ -287,7 +287,7 @@
 
 (deftest test-service-view-logs-handler
   (let [scheduler (marathon/->MarathonScheduler (Object.) {:slave-port 5051} (fn [] nil) "/home/path/"
-                                                (atom {}) (atom {}) {} 0 (constantly true))
+                                                (atom {}) (atom {}) (atom {}) {} 0 (constantly true) (atom nil))
         configuration {:routines {:generate-log-url-fn (partial handler/generate-log-url identity)}
                        :scheduler {:scheduler scheduler}
                        :wrap-secure-request-fn utils/wrap-identity}

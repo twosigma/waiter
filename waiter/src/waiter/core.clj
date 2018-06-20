@@ -606,12 +606,14 @@
                      latch))})
 
 (def scheduler
-  {:scheduler (pc/fnk [[:settings scheduler-config]
+  {:scheduler (pc/fnk [[:curator leader?-fn]
+                       [:settings scheduler-config]
                        [:state service-id-prefix]
                        service-id->service-description-fn*]
                 (let [is-waiter-app?-fn (fn is-waiter-app? [^String service-id]
                                           (str/starts-with? service-id service-id-prefix))]
                   (utils/create-component scheduler-config :context {:is-waiter-app?-fn is-waiter-app?-fn
+                                                                     :leader?-fn leader?-fn
                                                                      :service-id->service-description-fn service-id->service-description-fn*})))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
