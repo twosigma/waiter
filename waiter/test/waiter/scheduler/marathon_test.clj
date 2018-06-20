@@ -422,12 +422,12 @@
                                 (cond-> {:service-id appId
                                          :host host
                                          :health-check-path health-check-url}
-                                        (and framework-id slaveId)
-                                        (assoc :log-directory
-                                               (str slave-directory "/" slaveId "/frameworks/" framework-id
-                                                    "/executors/" instance-id "/runs/latest"))
-                                        message
-                                        (assoc :message (str/trim message)))))
+                                  (and framework-id slaveId)
+                                  (assoc :log-directory
+                                         (str slave-directory "/" slaveId "/frameworks/" framework-id
+                                              "/executors/" instance-id "/runs/latest"))
+                                  message
+                                  (assoc :message (str/trim message)))))
         service-id-1 "test-service-id-failed-instances-1"
         service-id-2 "test-service-id-failed-instances-2"
         service-id->failed-instances-transient-store (atom {})]
@@ -990,10 +990,10 @@
 
 (defmacro run-sync-deployment-maintainer-iteration
   [leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout]
-  `(do
-    (trigger-sync-deployment-maintainer-iteration
-      ~leader?-fn ~service-id->out-of-sync-state-store ~marathon-scheduler ~trigger-timeout)
-    (await ~service-id->out-of-sync-state-store)))
+  `(->>
+     (trigger-sync-deployment-maintainer-iteration
+       ~leader?-fn @~service-id->out-of-sync-state-store ~marathon-scheduler ~trigger-timeout)
+     (reset! ~service-id->out-of-sync-state-store)))
 
 (let [marathon-api {:identifier (str "marathon-api-" (rand-int 10000))}
       make-marathon-scheduler (fn [service-id->out-of-sync-state-store]
@@ -1023,7 +1023,7 @@
                               (make-app-entry [] "ws-s2" 2 ["ws-s2.t1" "ws-s2.t2"])]})
                     t/now (constantly current-time)]
         (let [leader?-fn (constantly true)
-              service-id->out-of-sync-state-store (agent initial-state)
+              service-id->out-of-sync-state-store (atom initial-state)
               marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
           (run-sync-deployment-maintainer-iteration
             leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
@@ -1043,7 +1043,7 @@
                               (make-app-entry [] "ws-s2a" 2 ["ws-s2a.t1"])]})
                     t/now (constantly current-time)]
         (let [leader?-fn (constantly true)
-              service-id->out-of-sync-state-store (agent initial-state)
+              service-id->out-of-sync-state-store (atom initial-state)
               marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
           (run-sync-deployment-maintainer-iteration
             leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
@@ -1065,7 +1065,7 @@
                     t/now (fn [] (deref current-time-atom))]
         (let [leader-atom (atom true)
               leader?-fn (fn [] (deref leader-atom))
-              service-id->out-of-sync-state-store (agent initial-state)
+              service-id->out-of-sync-state-store (atom initial-state)
               marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
           ;; check we ignore sync-ed services
           (run-sync-deployment-maintainer-iteration
@@ -1110,7 +1110,7 @@
                     t/now (fn [] (deref current-time-atom))]
         (let [leader-atom (atom true)
               leader?-fn (fn [] (deref leader-atom))
-              service-id->out-of-sync-state-store (agent initial-state)
+              service-id->out-of-sync-state-store (atom initial-state)
               marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
 
           ;; check we ignore sync-ed services
@@ -1161,7 +1161,7 @@
                     t/now (fn [] (deref current-time-atom))]
         (let [leader-atom (atom true)
               leader?-fn (fn [] (deref leader-atom))
-              service-id->out-of-sync-state-store (agent initial-state)
+              service-id->out-of-sync-state-store (atom initial-state)
               marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
 
           ;; check we ignore sync-ed services
@@ -1220,17 +1220,16 @@
         (let [leader-atom (atom true)
               leader?-fn (fn [] (deref leader-atom))
               service-id->out-of-sync-state-store
-              (agent {:last-update-time time-6
-                      :service-id->out-of-sync-state
-                      {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}
-                       "ws-s4a" {:data {:instances-requested 4 :instances-scheduled 2} :last-modified-time time-3}}})
+              (atom {:last-update-time time-6
+                     :service-id->out-of-sync-state
+                     {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}
+                      "ws-s4a" {:data {:instances-requested 4 :instances-scheduled 2} :last-modified-time time-3}}})
               marathon-scheduler (make-marathon-scheduler service-id->out-of-sync-state-store)]
 
           (testing "do not trigger scale on 'active' out-of-sync services"
             (reset! current-time-atom time-4)
             (run-sync-deployment-maintainer-iteration
               leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
-            (await service-id->out-of-sync-state-store)
             (is (= {:last-update-time time-4
                     :service-id->out-of-sync-state
                     {"ws-s2a" {:data {:instances-requested 2 :instances-scheduled 1} :last-modified-time time-1}

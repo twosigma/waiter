@@ -507,30 +507,36 @@
       (assoc current-state :last-update-time current-time))))
 
 (defn trigger-sync-deployment-maintainer-iteration
-  "Triggers an agent send-off to run an individual iteration of the sync-deployment-maintainer."
-  [leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout]
+  "Runs an individual iteration of the sync-deployment-maintainer.
+   On non-leader routers it returns the reset state.
+   On the leader it processes out-of-sync services and returns the updated state."
+  [leader?-fn service-id->out-of-sync-state marathon-scheduler trigger-timeout]
   (if (leader?-fn)
     (let [current-time (t/now)]
       (cid/with-correlation-id
         (str "sync-deployment." (tc/to-long current-time))
-        (send-off service-id->out-of-sync-state-store
-                  process-out-of-sync-services! marathon-scheduler current-time trigger-timeout)))
-    (->> (fn reset-state-fn [current-state]
-           (assoc current-state
-             :last-update-time (t/now)
-             :service-id->out-of-sync-state {}))
-         (send service-id->out-of-sync-state-store))))
+        (process-out-of-sync-services! service-id->out-of-sync-state marathon-scheduler current-time trigger-timeout)))
+    (assoc service-id->out-of-sync-state
+      :last-update-time (t/now)
+      :service-id->out-of-sync-state {})))
 
 (defn- start-sync-deployment-maintainer
   "Launches the sync-deployment maintainer which triggers new deployments for services which have a mismatch
    in the counts for requested and scheduled instances."
   [leader?-fn service-id->out-of-sync-state-store marathon-scheduler {:keys [interval-ms timeout-cycles]}]
-  (let [trigger-timeout (t/millis (* interval-ms timeout-cycles))]
+  (let [trigger-timeout (t/millis (* interval-ms timeout-cycles))
+        processing-mutex (atom ::idle)]
     (du/start-timer-task
       (t/millis interval-ms)
       (fn sync-deployment-maintainer-timer-task []
-        (trigger-sync-deployment-maintainer-iteration
-          leader?-fn service-id->out-of-sync-state-store marathon-scheduler trigger-timeout))
+        (if (compare-and-set! processing-mutex ::idle ::busy)
+          (try
+            (->> (trigger-sync-deployment-maintainer-iteration
+                   leader?-fn @service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
+                 (reset! service-id->out-of-sync-state-store))
+            (finally
+              (reset! processing-mutex ::idle)))
+          (log/warn "sync-deployment-maintainer is busy processing previous iteration")))
       :delay-ms interval-ms)))
 
 (defn- retrieve-framework-id
@@ -562,7 +568,7 @@
         mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})
         service-id->last-force-kill-store (atom {})
-        service-id->out-of-sync-state-store (agent {})
+        service-id->out-of-sync-state-store (atom {})
         retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)
         sync-deployment-maintainer-atom (atom nil)
         marathon-scheduler (->MarathonScheduler
