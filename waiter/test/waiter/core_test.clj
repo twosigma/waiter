@@ -383,7 +383,7 @@
           (is (= 200 status) body)
           (is (every? #(str/includes? body %) ["test.host.com" "5051" "file" "directory" "name" "url" "download"])))))))
 
-(deftest test-apps-handler-delete
+(deftest test-service-handler-delete
   (let [user "test-user"
         service-id "test-service-1"
         kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -395,7 +395,8 @@
         configuration {:curator {:kv-store nil}
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
-                                  :make-inter-router-requests-sync-fn nil}
+                                  :make-inter-router-requests-sync-fn nil
+                                  :service-id->service-description-fn (constantly {})}
                        :scheduler {:scheduler (Object.)}
                        :state {:router-id "router-id"}
                        :wrap-secure-request-fn utils/wrap-identity}
@@ -460,14 +461,15 @@
           (is (= 500 status))
           (is (= {"content-type" "application/json"} headers)))))))
 
-(deftest test-apps-handler-get
+(deftest test-service-handler-get
   (let [user "waiter-user"
         service-id "test-service-1"
         waiter-request?-fn (fn [_] true)
         configuration {:curator {:kv-store nil}
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
-                                  :make-inter-router-requests-sync-fn nil}
+                                  :make-inter-router-requests-sync-fn nil
+                                  :service-id->service-description-fn (constantly {})}
                        :scheduler {:scheduler (Object.)}
                        :state {:router-id "router-id"}
                        :wrap-secure-request-fn utils/wrap-identity}

@@ -303,7 +303,8 @@
 
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
-  [router-id service-id core-service-description scheduler kv-store generate-log-url-fn make-inter-router-requests-fn]
+  [router-id service-id core-service-description scheduler kv-store generate-log-url-fn make-inter-router-requests-fn
+   service-id->service-description-fn request]
   (let [service-instance-maps (try
                                 (let [assoc-log-url-to-instances
                                       (fn assoc-log-url-to-instances [instances]
@@ -341,8 +342,12 @@
                                   (sd/service-id->suspended-state kv-store service-id :refresh true)
                                   (catch Exception e
                                     (log/error e "Error in retrieving service suspended state for" service-id)))
+        request-params (-> request ru/query-params-request :query-params)
+        include-effective-parameters? (utils/request-flag request-params "effective-parameters")
         result-map (walk/stringify-keys
                      (cond-> {:router-id router-id, :num-routers (count router->metrics)}
+                             include-effective-parameters?
+                             (assoc :effective-parameters (service-id->service-description-fn service-id :effective? true))
                              (not-empty service-instance-maps)
                              (assoc :instances service-instance-maps
                                     :num-active-instances (count (:active-instances service-instance-maps)))
@@ -364,7 +369,8 @@
    It supports the following request methods:
      :delete deletes the service from the scheduler (after authorization checks).
      :get returns details about the service such as the service description, metrics, instances, etc."
-  [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn request]
+  [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
+   service-id->service-description-fn request]
   (try
     (when (not service-id)
       (throw (ex-info "Missing service-id" {:status 400})))
@@ -374,12 +380,13 @@
         (case (:request-method request)
           :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn request)
           :get (get-service-handler router-id service-id core-service-description scheduler kv-store
-                                    generate-log-url-fn make-inter-router-requests-fn))))
+                                    generate-log-url-fn make-inter-router-requests-fn service-id->service-description-fn
+                                    request))))
     (catch Exception ex
       (utils/exception->response ex request))))
 
 (defn- trigger-service-refresh
-  "Makes interrouter calls to refresh service caches in kv-store."
+  "Makes inter-router calls to refresh service caches in kv-store."
   [make-inter-router-requests-fn service-id]
   (make-inter-router-requests-fn (str "apps/" service-id "/refresh") :method :get))
 
