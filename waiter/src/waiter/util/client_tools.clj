@@ -390,9 +390,12 @@
         settings-json (try-parse-json (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 
-(defn service-settings [waiter-url service-id & {:keys [keywordize-keys] :or {keywordize-keys true}}]
+(defn service-settings
+  "Fetches and returns the service data at the /apps/<service-id> endpoint."
+  [waiter-url service-id & {:keys [keywordize-keys query-params]
+                            :or {keywordize-keys true query-params {}}}]
   (let [settings-path (str "/apps/" service-id)
-        settings-result (make-request waiter-url settings-path)]
+        settings-result (make-request waiter-url settings-path :query-params query-params)]
     (log/debug "service" service-id ":" settings-result)
     (cond-> (some-> settings-result :body try-parse-json)
             keywordize-keys walk/keywordize-keys)))

@@ -135,7 +135,8 @@
             (assert-response-status response 200))))
 
       (testing "metric group should be waiter_kitchen"
-        (is (= "waiter_kitchen" (service-id->metric-group waiter-url service-id))))
+        (is (= "waiter_kitchen" (service-id->metric-group waiter-url service-id))
+            (str "Invalid metric group for " service-id)))
 
       (delete-service waiter-url service-id))))
 
@@ -184,15 +185,24 @@
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-cmd (kitchen-cmd "-p $PORT0")}
-          {:keys [status service-id]} (make-request-with-debug-info headers #(make-shell-request waiter-url %))
-          _ (is (not (nil? service-id)))
-          _ (is (= 200 status))
-          service-settings (service-settings waiter-url service-id)
-          command (get-in service-settings [:service-description :cmd])]
-      (is (= (:x-waiter-cmd headers) command))
+          {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
+      (is (not (nil? service-id)))
+      (assert-response-status response 200)
+
+      (let [service-settings (service-settings waiter-url service-id)]
+        (is (= (:x-waiter-cmd headers) (get-in service-settings [:service-description :cmd])))
+        (is (nil? (get service-settings :effective-parameters))))
+
+      (let [service-settings (service-settings waiter-url service-id
+                                               :query-params {"effective-parameters" "true"})]
+        (is (= (:x-waiter-cmd headers) (get-in service-settings [:service-description :cmd])))
+        (is (not-empty (get service-settings :effective-parameters)))
+        (is (= (:x-waiter-cmd headers) (get-in service-settings [:effective-parameters :cmd])))
+        (is (= "other" (get-in service-settings [:effective-parameters :metric-group])) service-id))
 
       (testing "metric group should be other"
-        (is (= "other" (service-id->metric-group waiter-url service-id))))
+        (is (= "other" (service-id->metric-group waiter-url service-id))
+            (str "Invalid metric group for " service-id)))
 
       (delete-service waiter-url service-id))))
 
