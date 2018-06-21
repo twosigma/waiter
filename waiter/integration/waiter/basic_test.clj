@@ -170,7 +170,7 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-logs
   (testing-using-waiter-url
-    (if (using-marathon? waiter-url)
+    (if (or (using-cook? waiter-url) (using-marathon? waiter-url))
       (let [waiter-headers {:x-waiter-name (rand-name)}
             {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
         (let [active-instances (get-in (service-settings waiter-url service-id) [:instances :active-instances])
@@ -183,9 +183,12 @@
               log-files-list (walk/keywordize-keys (json/read-str body))
               stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
               stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
-          (is (every? #(str/includes? body %) ["stderr" "stdout" service-id])
-              (str "Directory listing is missing entries: stderr, stdout, and " service-id
-                   ": got response: " logs-response))
+          (is (every? #(str/includes? body %) ["stderr" "stdout"])
+              (str "Directory listing is missing entries: stderr and stdout, got response: " logs-response))
+          (when (using-marathon? waiter-url)
+            (is (str/includes? body service-id)
+                (str "Directory listing is missing entries: " service-id
+                     ": got response: " logs-response)))
           (let [stdout-response (make-request-fn stdout-file-link)]
             (is (= 200 (:status stdout-response))
                 (str "Expected 200 while getting stdout, got response: " stdout-response)))

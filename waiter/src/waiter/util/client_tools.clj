@@ -862,6 +862,11 @@
         app-info-map (walk/keywordize-keys (try-parse-json (:body app-info-response)))]
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 
+(defn using-cook?
+  "Returns true if Waiter is configured to use Marathon for scheduling"
+  [waiter-url]
+  (= "cook" (scheduler-kind waiter-url :verbose true)))
+
 (defn using-marathon?
   "Returns true if Waiter is configured to use Marathon for scheduling"
   [waiter-url]
