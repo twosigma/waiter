@@ -292,6 +292,7 @@
               (log/info "creating configuration using token" token)
               (let [{:keys [body status]}
                     (post-token waiter-url {:health-check-url "/probe"
+                                            :metric-group token-prefix
                                             :name service-id-prefix
                                             :token token})]
                 (when (not= 200 status)
@@ -303,6 +304,7 @@
                 (is (contains? response-body "last-update-time"))
                 (is (= {"health-check-url" "/probe"
                         "last-update-user" (retrieve-username)
+                        "metric-group" token-prefix
                         "name" service-id-prefix
                         "owner" (retrieve-username)
                         "previous" {}
