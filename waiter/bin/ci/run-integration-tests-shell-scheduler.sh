@@ -18,20 +18,12 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
 KITCHEN_DIR=${WAITER_DIR}/../kitchen
 
-# Build kitchen if needed
-JAR=${KITCHEN_DIR}/target/uberjar/kitchen-0.1.0-SNAPSHOT-standalone.jar
-if [ ! -f ${JAR} ]; then
-    echo "The kitchen jar file was not found! Attempting to build it now."
-    export PATH=${KITCHEN_DIR}/..:$PATH
-    ${KITCHEN_DIR}/bin/build-uberjar.sh
-fi
-
 # Start waiter
 WAITER_PORT=9091
 ${WAITER_DIR}/bin/run-using-shell-scheduler.sh ${WAITER_PORT} &
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/run.sh WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
+WAITER_TEST_KITCHEN_CMD=${KITCHEN_DIR}/bin/kitchen WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
 
 # If there were failures, dump the logs
 if [ "$test_failures" = true ]; then

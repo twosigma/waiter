@@ -1,2 +1,3 @@
-kitchen.iml
-target
+.cache
+__pycache__
+kitchen.log

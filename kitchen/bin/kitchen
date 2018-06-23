@@ -1,0 +1,961 @@
+#!/usr/bin/env python3
+#
+#  Copyright (c) 2018 Two Sigma Open Source, LLC
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy
+#  of this software and associated documentation files (the "Software"), to
+#  deal in the Software without restriction, including without limitation the
+#  rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+#  sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in
+#  all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+#  IN THE SOFTWARE.
+#
+
+import argparse
+import base64
+import datetime
+import hashlib
+import http.server
+import itertools
+import json
+import logging
+import os
+import random
+import socket
+import socketserver
+import ssl
+import string
+import struct
+import sys
+import threading
+import time
+import urllib.parse
+import uuid
+import zlib
+
+ascii_bytes = range(128)
+ascii_uppercase_bytes = string.ascii_uppercase.encode('ascii')
+lorem_ipsum = b'Lorem ipsum dolor sit amet, proin in nibh tellus penatibus, viverra nunc risus ligula proin ligula.'
+
+default_chunk_size = 2**12  # 4KiB
+max_response_size = 50 * 2**20  # 50MiB
+max_ws_response_size = 2**27  # 128MiB
+
+_auth_handler = None
+
+_async_state_lock = threading.Lock()
+_async_state = {}
+
+_counter_lock = threading.Lock()
+_pending_http_requests = 0
+_total_http_requests = 0
+_pending_ws_requests = 0
+_total_ws_requests = 0
+
+def split2(string, delimiter, *options, default=None):
+    """Split string with at least 2 results"""
+    components = string.split(delimiter, *options)
+    if len(components) < 2:
+        components = (components + [default, default])[:2]
+    return components
+
+def run_after_ms(millis_delay, f, *args, **kwargs):
+    """Asynchronously execute function `f(*args, **kwargs)` after millis_delay."""
+    threading.Timer(millis_delay / 1000.0, f, args, kwargs).start()
+
+def random_generator(items):
+    """Return an infinite sequence of elements randomly selected from `items`."""
+    while True:
+        yield random.choice(items)
+
+def random_chunks_generator(items, total_length, chunk_size=default_chunk_size):
+    """Return a lazy sequence of `length` elements randomly selected from `items`."""
+    seq = random_generator(items)
+    bytes_remaining = total_length
+    while bytes_remaining > 0:
+        yield itertools.islice(seq, min(chunk_size, bytes_remaining))
+        bytes_remaining -= chunk_size
+
+def terminate(source):
+    """Forcefully terminate this server process."""
+    kitchen_logger.info('Killed by {}'.format(source))
+    os._exit(1)
+
+_gzip_window_bits = 16 + zlib.MAX_WBITS
+
+def gzip_compress(in_data):
+    """Compress HTTP payload in gzip format"""
+    gzip_compresser = zlib.compressobj(wbits=_gzip_window_bits)
+    out_data = gzip_compresser.compress(in_data)
+    out_data += gzip_compresser.flush()
+    return out_data
+
+class LoggerMixin():
+    def logger(self):
+        return logging.getLogger()
+
+'''
+WebSocket server code, adapted from Python 2 version on GitHub:
+https://github.com/SevenW/httpwebsockethandler
+
+The MIT License (MIT)
+Copyright (C) 2014, 2015 Seven Watt <info@sevenwatt.com>
+<http://www.sevenwatt.com>
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+'''
+
+class WebSocketError(Exception):
+    pass
+
+class HTTPWebSocketsHandler(http.server.BaseHTTPRequestHandler, LoggerMixin):
+
+    _ws_GUID = b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+    _opcode_continuation = 0x0
+    _opcode_text = 0x1
+    _opcode_binary = 0x2
+    _opcode_close = 0x8
+    _opcode_ping = 0x9
+    _opcode_pong = 0xa
+
+    def on_ws_message(self, message):
+        """Override this handler to process incoming websocket messages."""
+        pass
+
+    def on_ws_connected(self):
+        """Override this handler."""
+        pass
+
+    def on_ws_closed(self):
+        """Override this handler."""
+        pass
+
+    def send_message(self, message, opcode=_opcode_text, length=None):
+        self._send_message(opcode, message, length)
+
+    def setup(self):
+        super().setup()
+        self.connected = False
+
+    def checkAuthentication(self):
+        auth = self.headers.get('Authorization')
+        if auth != "Basic {}".format(self.server.auth):
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="Plugwise"')
+            self.end_headers();
+            return False
+        return True
+
+    def do_GET(self):
+        if self.headers.get("Upgrade", None) == "websocket":
+            self._handshake()
+            # This handler is in websocket mode now.
+            # _read_messages() only returns after client close or socket error.
+            self._read_messages()
+        else:
+            self._empty_response(200)
+
+    def _empty_response(self, code):
+        self.send_response(code)
+        self.send_header('Connection', 'close')
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
+    def _read_messages(self):
+        while self.connected == True:
+            try:
+                self._read_next_message()
+            except (socket.error, WebSocketError) as e:
+                #websocket content error, time-out or disconnect.
+                self.logger().exception("RCV: Close connection: Socket Error {}".format(e.args))
+                self._ws_close()
+            except Exception as err:
+                #unexpected error in websocket connection.
+                self.logger().exception("RCV: Exception: in _read_messages: {}".format(err.args))
+                self._ws_close()
+
+    def _read_next_message(self):
+        #self.rfile.read(n) is blocking.
+        #it returns however immediately when the socket is closed.
+        try:
+            x = ord(self.rfile.read(1))
+            final = (x & 0x80) != 0
+            opcode = x & 0x0F
+            x = ord(self.rfile.read(1))
+            masked = (x & 0x80) != 0
+            length = x & 0x7F
+            if length == 126:
+                length = struct.unpack(">H", self.rfile.read(2))[0]
+            elif length == 127:
+                length = struct.unpack(">Q", self.rfile.read(8))[0]
+            if masked:
+                masks = bytes(self.rfile.read(4))
+            self.logger().debug("Got message type={:x}, length={}, masked={}".format(opcode, length, masked))
+            decoded = bytearray(self.rfile.read(length))
+            if masked:
+                for i in range(length):
+                    decoded[i] ^= masks[i % 4]
+            self._on_message(opcode, decoded)
+        except (struct.error, TypeError) as e:
+            self.logger().exception('Error reading message')
+            #catch exceptions from ord() and struct.unpack()
+            if self.connected:
+                self.logger().debug("No bytes available? {}".format(len(self.request.recv(1)) == 0))
+                raise WebSocketError("Websocket read aborted while listening")
+            else:
+                #the socket was closed while waiting for input
+                self.logger().error("RCV: _read_next_message aborted after closed connection")
+                pass
+
+    def _send_message(self, opcode, message, length=None):
+        msg_header = bytearray()
+        try:
+            #use of self.wfile.write gives socket exception after socket is closed. Avoid.
+            msg_header.append(0x80 + opcode)
+            if length is None:
+                length = len(message)
+            if length <= 125:
+                msg_header.append(length)
+            elif 126 <= length <= 65535:
+                msg_header.append(126)
+                msg_header.extend(struct.pack(">H", length))
+            else:
+                msg_header.append(127)
+                msg_header.extend(struct.pack(">Q", length))
+            self.request.send(msg_header)
+            # TODO - handle chunking and lazy generation
+            if length > 0 and message is not None:
+                self.request.send(message)
+            self.logger().debug("Sent message type {:x} length {}".format(opcode, length))
+        except socket.error as e:
+            #websocket content error, time-out or disconnect.
+            self.logger().exception("SND: Close connection: Socket Error {}".format(e.args))
+            self._ws_close()
+        except Exception as err:
+            #unexpected error in websocket connection.
+            self.logger().exception("SND: Exception: in _send_message: {}".format(err.args))
+            self._ws_close()
+
+    def _handshake(self):
+        headers=self.headers
+        assert headers.get("Upgrade", None) == "websocket"
+        key = headers['Sec-WebSocket-Key']
+        sha1_hash = hashlib.sha1(key.encode('ascii') + self._ws_GUID)
+        digest = base64.b64encode(sha1_hash.digest()).decode('ascii')
+        self.send_response(101, 'Switching Protocols')
+        self.send_header('Upgrade', 'websocket')
+        self.send_header('Connection', 'Upgrade')
+        self.send_header('Sec-WebSocket-Accept', digest)
+        self.end_headers()
+        self.connected = True
+        self.on_ws_connected()
+
+    def _ws_close(self, code=None, message=b''):
+        # avoid closing a single socket two time for send and receive.
+        if self.connected:
+            self.connected = False
+            # signal to base class that the connection should be closed
+            # (HTTP/1.1 supports multiple requests on a single connection)
+            self.close_connection = 1
+            #send close and ignore exceptions. An error may already have occurred.
+            try:
+                self._send_close(code, message)
+            except:
+                self.logger().error("Failed to send close frame.")
+            self.on_ws_closed()
+        else:
+            self.logger().debug("_ws_close websocket in closed state. Ignore.")
+            pass
+
+    def _on_message(self, opcode, message):
+        #self.logger().message("_on_message: opcode: %02X msg: %s" % (opcode, message))
+
+        # close
+        if opcode == self._opcode_close:
+            self.connected = False
+            # signal to base class that the connection should be closed
+            # (HTTP/1.1 supports multiple requests on a single connection)
+            self.close_connection = 1
+            try:
+                self._send_close(1000, b'Connection closed by client')
+            except:
+                pass
+            self.on_ws_closed()
+        # ping
+        elif opcode == self._opcode_ping:
+            _send_message(self._opcode_pong, message)
+        # pong
+        elif opcode == self._opcode_pong:
+            pass
+        # data
+        elif opcode in (self._opcode_continuation, self._opcode_text, self._opcode_binary):
+            self.on_ws_message(opcode, message)
+
+    def _send_close(self, code, message):
+        #Dedicated _send_close allows for catch all exception handling
+        if code is None:
+            self._send_message(_opcode_close, b'')
+        else:
+            self._send_message(_opcode_close, struct.pack(">H", code) + message)
+
+'''
+End MIT Licensed Code
+'''
+
+def make_default_response_headers(request_headers):
+    cid = request_headers.get('x-cid') or str(uuid.uuid4())
+    return { 'Connection': 'close', 'Content-Type': 'text/plain', 'x-cid': cid }
+
+class Kitchen(HTTPWebSocketsHandler):
+    def do_COPY(self):
+        self.do_http_action('copy')
+
+    def do_DELETE(self):
+        self.do_http_action('delete')
+
+    def do_GET(self):
+        self.do_http_action('get')
+
+    def do_HEAD(self):
+        self.do_http_action('head')
+
+    def do_MOVE(self):
+        self.do_http_action('move')
+
+    def do_PATCH(self):
+        self.do_http_action('patch')
+
+    def do_POST(self):
+        self.do_http_action('post')
+
+    def do_PUT(self):
+        self.do_http_action('put')
+
+    def do_http_action(self, method):
+        self.__logger = kitchen_logger
+        self.__method = method
+        self.__path, self.__query = split2(self.path, '?', 1)
+        self.protocol_version = 'HTTP/1.1'
+
+        if not self.__check_auth():
+            self._empty_response(403)
+        elif self.headers.get('Upgrade') == 'websocket':
+            self._handshake()
+            self._read_messages()
+        else:
+            self.__handle_http_request()
+
+    def logger(self):
+        return self.__logger
+
+    def log_message(self, format, *args):
+        kitchen_logger.info(format % args)
+
+    def log_error(self, format, *args):
+        kitchen_logger.error(format % args)
+
+    def on_ws_connected(self):
+        """WebSocket connected handler (called once per WebSocket)."""
+        global _pending_ws_requests, _total_ws_requests
+        with _counter_lock:
+            _pending_ws_requests += 1
+            _total_ws_requests += 1
+            self.__connection_id = _total_ws_requests
+        self.__logger = kitchen_logger.getChild('ws{:03d}'.format(self.__connection_id))
+        self.logger().info('Opened WebSocket connection')
+        self.send_message(b'Connected to kitchen')
+
+    def on_ws_closed(self):
+        """WebSocket connection-close handler (called once per WebSocket)."""
+        global _pending_ws_requests
+        with _counter_lock:
+            _pending_ws_requests -= 1
+        self.logger().info('Closed WebSocket connection')
+
+    def on_ws_message(self, opcode, in_data):
+        """WebSocket message handler (called once per WebSocket frame received)."""
+        if len(in_data) > 1000:
+            self.logger().debug('Got data on websocket: <{}>'.format(len(in_data)))
+        else:
+            self.logger().debug('Got data on websocket: {}'.format(in_data))
+
+        if opcode == self._opcode_binary:
+            self.send_message(in_data, opcode)
+            self.logger().debug('Sent echo bytes response')
+
+        elif opcode == self._opcode_text:
+            if in_data == b'request-info':
+                info = self.__request_info()
+                self.send_message(info.encode('utf-8'))
+                self.logger().debug('Sent request info json')
+
+            elif in_data == b'kitchen-state':
+                state = self.__state()
+                self.send_message(self.__state())
+                self.logger().debug('Sent state info json')
+
+            elif in_data.startswith(b'bytes-'):
+                response_size = int(in_data[6:])
+                self.logger().debug('Sending {} random bytes (max is {})'.format(response_size, binary_max_size))
+
+                if response_size > binary_max_size:
+                    error_msg = ('Requested binary payload of {} bytes exceeds maximum size {}.'
+                            .format(response_size, binary_max_size))
+                    self.logger().error(error_msg)
+                    self._ws_close(1011, error_msg)
+                    return
+
+                else:
+                    self.send_message(None, self._opcode_binary, length=response_size)
+                    for msg_chunk in random_chunks_generator(ascii_bytes, response_size):
+                        self.request.send(bytes(msg_chunk))
+                    self.logger().debug('Sent random {} bytes'.format(response_size))
+
+            elif in_data.startswith(b'chars-'):
+                response_size = int(in_data[6:])
+                self.logger().debug('Sending {} random chars (max is {})'.format(response_size, text_max_size))
+
+                if response_size > text_max_size:
+                    error_msg = ('Requested text payload of {} chars exceeds maximum size {}.'
+                            .format(response_size, text_max_size))
+                    self.logger().error(error_msg)
+                    self._ws_close(1011, error_msg)
+                    return
+
+                else:
+                    self.send_message(None, length=response_size)
+                    for msg_chunk in random_chunks_generator(ascii_uppercase_bytes, response_size):
+                        self.request.send(bytes(msg_chunk))
+                    self.logger().debug('Sent random {} char string'.format(response_size))
+
+            else:
+                self.send_message(in_data)
+                self.logger().debug('Sent echo string response')
+
+        else:
+            error_msg = 'Unsupported frame type {:x}.'.format(opcode)
+            self.logger().error(error_msg)
+            self._ws_close(1003, error_msg)
+
+    def __check_auth(self):
+        """Validate user authentication credentials, with exceptions for excluded endpoints."""
+        if _auth_handler is None:
+            return True
+        elif self.__path in ['/bad-status', '/sleep', '/status']:
+            return True
+        else:
+            auth_string = self.headers.get('Authorization')
+            return auth_string and _auth_handler(auth_string)
+
+    def __handle_http_request(self):
+        """Core logic for a Kitchen HTTP request (all verbs delegate to this handler)."""
+        global _pending_http_requests, _total_http_requests
+        with _counter_lock:
+            _pending_http_requests += 1
+            _total_http_requests += 1
+            self.__connection_id = _total_http_requests
+
+        try:
+            # Annotate logging with this connection's unique ID
+            self.__logger = kitchen_logger.getChild('http{:04d}'.format(self.__connection_id))
+
+            # Defaults
+            self.__async_req = None
+            self.__chunked = False
+            self.__chunk_delay_secs = 0
+            self.__chunk_size = default_chunk_size
+            self.__cookies = {}
+            self.__data_transform = None
+            self.__excluded_headers = set()
+            self.__exit_process = False
+            self.__headers = make_default_response_headers(self.headers)
+            self.__response_bytes = None
+            self.__response_length = max_response_size
+            self.__status = 200
+            self.__truncated_length = max_response_size + 1
+
+            # Process Kitchen request options
+            self.__process_path()
+            self.__process_headers()
+
+            # Handle async resource requests
+            if self.__async_req is not None:
+                if self.__async_req['type'] == 'create':
+                    self.__resource_async_create()
+                elif self.__async_req['type'] == 'status':
+                    self.__resource_async_status()
+                elif self.__async_req['type'] == 'result':
+                    self.__resource_async_result()
+
+            # Optionally transform (e.g., compress) response bytes
+            response_bytes = self.__response_bytes
+            if self.__data_transform is not None:
+                response_bytes = itertools.islice(response_bytes, self.__response_length)
+                response_bytes = self.__data_transform(bytes(response_bytes))
+                self.__response_length = len(response_bytes)
+
+            # Handle no content / content length / chunking
+            if self.__status == 204:
+                response_bytes = None  # HTTP 204 No Content
+            elif self.__chunked:
+                self.__headers['Transfer-Encoding'] = 'chunked'
+                if self.__chunk_size <= 0:
+                    self.__chunk_size = default_chunk_size
+            else:
+                self.__headers['Content-Length'] = self.__response_length
+
+            # Send response headers
+            self.send_response(self.__status)
+            for k, v in sorted(self.__cookies.items()):
+                k = urllib.parse.quote_plus(k)
+                v = urllib.parse.quote_plus(v)
+                self.send_header('Set-Cookie', '{}={}'.format(k, v))
+            for k, v in self.__headers.items():
+                if k.lower() not in self.__excluded_headers:
+                    self.send_header(k, v)
+            self.end_headers()
+
+            if response_bytes is not None:
+
+                # Handle response length and truncation from failures
+                actual_response_length = min(self.__truncated_length, self.__response_length)
+                response_bytes = itertools.islice(response_bytes, actual_response_length)
+
+                # Send response body
+                bytes_written = 0
+                while True:
+                    chunk = bytes(itertools.islice(response_bytes, self.__chunk_size))
+                    if len(chunk) == 0:
+                        if self.__chunked:
+                            self.wfile.write(b'0\r\n\r\n')
+                        break
+                    else:
+                        if self.__chunked:
+                            chunk_header = '{:X}\r\n'.format(len(chunk))
+                            self.wfile.write(chunk_header.encode('ascii'))
+                        self.wfile.write(chunk)
+                        bytes_written += len(chunk)
+                        if bytes_written == self.__truncated_length:
+                            break
+                        if self.__chunked:
+                            self.wfile.write(b'\r\n')
+                            if self.__chunk_delay_secs > 0:
+                                time.sleep(self.__chunk_delay_secs)
+                        self.wfile.flush()
+
+        finally:
+            # Optionally trigger a fatal server error (exit)
+            if self.__exit_process:
+                terminate('failure header')
+
+            with _counter_lock:
+                _pending_http_requests -= 1
+
+            self.logger().debug('Closed')
+
+    def __process_headers(self):
+        """Handle logic for all supported Kitchen HTTP header values."""
+        assert self.__path is not None, 'Processes headers AFTER processing the request path.'
+
+        # Respond with chunked encoding when request is chunked
+        if self.headers.get('transfer-encoding') == 'chunked':
+            self.__chunked = True
+
+        # Asynchronous resource request id
+        cancel_204 = self.headers.get('x-kitchen-204-on-async-cancel')
+        if cancel_204 and self.__async_req:
+            if cancel_204.lower() == 'false':
+                self.__async_req['cancel_code'] = 200
+
+        # Send "busy" response code
+        act_busy = self.headers.get('x-kitchen-act-busy')
+        if act_busy is not None:
+            self.__status = 503
+
+        # Asynchronous resource request id
+        allow_cancel = self.headers.get('x-kitchen-allow-async-cancel')
+        if allow_cancel and self.__async_req:
+            if allow_cancel.lower() == 'false':
+                self.__async_req['disallow_cancel'] = True
+
+        # Chunk encoding
+        if self.headers.get('x-kitchen-chunked', 'false').lower() == 'true':
+            self.__chunked = True
+
+        # Chunked encoding chunk per-chunk response delay
+        chunk_delay = self.headers.get('x-kitchen-chunk-delay')
+        if chunk_delay is not None:
+            self.__chunk_delay_secs = int(chunk_delay) / 1000.0
+            self.__chunked = True
+
+        # Chunked encoding chunk size
+        chunk_size = self.headers.get('x-kitchen-chunk-size')
+        if chunk_size is not None:
+            self.__chunk_size = int(chunk_size)
+            self.__chunked = True
+
+        # Content-Type of response
+        content_type = self.headers.get('x-kitchen-content-type')
+        if content_type is not None:
+            self.__headers['Content-Type'] = content_type
+
+        # Cookies
+        cookies = self.headers.get('x-kitchen-cookies')
+        if cookies is not None:
+            self.__cookies = dict(split2(item, '=', 1) for item in cookies.split(','))
+
+        # Response delay
+        delay_value = self.headers.get('x-kitchen-delay-ms')
+        if delay_value:
+            delay_ms = int(delay_value)
+            if self.__async_req:
+                self.__async_req['delay-ms'] = delay_ms
+            else:
+                time.sleep(delay_ms / 1000.0)
+
+        # Kill this server (after some delay)
+        die_value = self.headers.get('x-kitchen-die-after-ms')
+        if die_value:
+            termination_delay_ms = int(die_value)
+            if termination_delay_ms >= 0:
+                source = 'header after {} milliseconds'.format(termination_delay_ms)
+                run_after_ms(termination_delay_ms, terminate, source)
+
+        # Check if client requested echo server mode
+        echo_server = self.headers.get('x-kitchen-echo') is not None
+        echo_buffer = bytearray() if echo_server else None
+
+        # Slurp any posted data
+        content_length = self.headers.get('content-length')
+        if content_length is not None:
+            self.__slurp_bytes(int(content_length), echo_buffer)
+
+        elif self.headers.get('transfer-encoding') == 'chunked':
+            while True:
+                chunk_header = self.rfile.read(3)  # shortest possible header is b'0\r\n'
+
+                if not chunk_header:
+                    raise Exception('Connection closed early')
+
+                while not chunk_header.endswith(b'\r\n'):
+                    chunk_header += self.rfile.read(1)
+
+                # read the payload + '\r\n'
+                chunk_size = int(chunk_header[:-2], base=16)
+                self.__slurp_bytes(chunk_size, echo_buffer)
+                self.rfile.read(2)
+
+                if chunk_size == 0:
+                    break
+
+        # Echo request body back to client
+        if echo_server:
+            self.__set_response(echo_buffer)
+
+        # Exclude some headers from response
+        excluded_headers = self.headers.get('x-kitchen-exclude-headers')
+        if excluded_headers:
+            self.__excluded_headers = set(x.lower() for x in excluded_headers.split(','))
+
+        # Response payload length
+        truncated_size = self.headers.get('x-kitchen-fail-after')
+        if truncated_size:
+            self.__truncated_length = int(truncated_size)
+
+        # Kill the whole server on failure
+        if self.headers.get('x-kitchen-fail-by-terminating-jvm') is not None:
+            self.__exit_process = True
+
+        # Asynchronous resource request id
+        req_id = self.headers.get('x-kitchen-request-id')
+        if req_id and self.__async_req:
+            self.__async_req['id'] = req_id
+
+        # Response payload length
+        response_size = self.headers.get('x-kitchen-response-size')
+        if response_size:
+            self.__response_length = int(response_size)
+
+        # Response payload length
+        async_expire_ms = self.headers.get('x-kitchen-store-async-response-ms')
+        if async_expire_ms and self.__async_req:
+            self.__async_req['expire-ms'] = int(async_expire_ms)
+
+    def __process_path(self):
+        """Handle logic for all supported Kitchen endpoint paths."""
+        path = self.__path
+        query_string = self.__query
+        self.logger().debug('Handling {} request {}: {}'.format(self.__method, self.__headers['x-cid'], path))
+
+        if query_string:
+            query_params = dict(split2(param, '=', 1) for param in query_string.split('&'))
+        else:
+            query_params = {}
+
+        if path == '/async/request':
+            self.__async_req = {
+                    'delay-ms': 20000,
+                    'expire-ms': 10000,
+                    'type': 'create',
+                    }
+
+        if path == '/async/status':
+            self.__async_req = {
+                    'id': query_params.get('request-id'),
+                    'type': 'status',
+                    }
+
+        if path == '/async/result':
+            self.__async_req = {
+                    'id': query_params.get('request-id'),
+                    'type': 'result',
+                    }
+
+        elif path == '/bad-status':
+            self.__status = int(query_params.get('status', 500))
+
+        elif path == '/chunked':
+            self.__chunked = True
+            self.__set_response(itertools.cycle(lorem_ipsum), max_response_size)
+
+        elif path == '/die':
+            terminate('/die endpoint')
+
+        elif path == '/environment':
+            env = { k: v for k, v in os.environ.items() if 'password' not in k.lower() }
+            self.__set_response(json.dumps(env, sort_keys=True).encode('utf-8'))
+            self.__headers['Content-Type'] = 'application/json'
+
+        elif path == '/gzip':
+            self.__data_transform = gzip_compress
+            self.__headers['Content-Encoding'] = 'gzip'
+            self.__set_response(itertools.cycle(lorem_ipsum), max_response_size)
+
+        elif path == '/kitchen-state':
+            self.__set_response(self.__state(True))
+
+        elif path == '/request-info':
+            self.__headers['Content-Type'] = 'application/json'
+            info = self.__request_info()
+            self.__set_response(info.encode('utf-8'))
+
+        elif path == '/sleep':
+            self.__status = int(query_params.get('status', 200))
+            sleep_ms = int(query_params.get('sleep-ms', 0))
+            time.sleep(sleep_ms / 1000.0)
+
+        elif path == '/unchunked':
+            self.__set_response(itertools.cycle(lorem_ipsum), max_response_size)
+
+        if self.__response_bytes is None:
+            # Set default response
+            self.__set_response(b'Hello World')
+
+    def __resource_async_create(self):
+        req_id = self.__async_req.get('id') or str(uuid.uuid4())
+        delay_ms = self.__async_req['delay-ms']
+        expire_ms = self.__async_req['expire-ms']
+        now = datetime.datetime.now()
+        expire_time = now + datetime.timedelta(milliseconds=expire_ms)
+        req_meta_data = {
+                'cid': self.__headers['x-cid'],
+                'done': False,
+                'expires': expire_time.isoformat(),
+                'linger-ms': expire_ms,
+                'processing-time': delay_ms,
+                'received': now.isoformat(),
+                }
+
+        with _async_state_lock:
+            _async_state[req_id] = req_meta_data
+
+        def async_complete_callback():
+            with _async_state_lock:
+                _async_state[req_id]['done'] = True
+            run_after_ms(expire_ms, self.__resource_async_delete, req_id)
+
+        run_after_ms(delay_ms, async_complete_callback)
+
+        self.__status = 202
+        self.__headers['x-kitchen-request-id'] = req_id
+        self.__headers['Location'] = '/async/status?request-id={}'.format(req_id)
+        self.__set_response('Accepted request {}'.format(req_id).encode('utf-8'))
+
+
+    def __resource_async_delete(self, req_id):
+        with _async_state_lock:
+            if req_id in _async_state:
+                del _async_state[req_id]
+
+    def __resource_async_status(self):
+        req_id = self.__async_req.get('id')
+        if req_id is None:
+            self.__status = 400
+            self.__set_response(b'Missing request-id')
+        else:
+            with _async_state_lock:
+                req_data = _async_state.get(req_id)
+            if req_data is None:
+                self.__status = 410
+                msg = 'No data found for request-id {}'.format(req_id)
+                self.__set_response(msg.encode('utf-8'))
+            elif self.__method == 'delete':
+                if self.__async_req.get('disallow_cancel'):
+                    self.__status = 405
+                    self.__set_response(b'Cancellation not supported!')
+                else:
+                    self.__resource_async_delete(req_id)
+                    self.__status = self.__async_req.get('cancel_code', 204)
+                    msg = 'Deleted request-id {}'.format(req_id)
+                    self.__set_response(msg.encode('utf-8'))
+            else:
+                req_done = req_data and req_data['done']
+                if req_done:
+                    self.__status = 303
+                    self.__headers['Location'] = '/async/result?request-id={}'.format(req_id)
+                    msg = 'Processing complete for request-id {}'.format(req_id)
+                    self.__set_response(msg.encode('utf-8'))
+                else:
+                    msg = 'Still processing request-id {}'.format(req_id)
+                    self.__set_response(msg.encode('utf-8'))
+
+    def __resource_async_result(self):
+        req_id = self.__async_req.get('id')
+        if req_id is None:
+            self.__status = 400
+            self.__set_response(b'Missing request-id')
+        else:
+            with _async_state_lock:
+                req_data = _async_state.get(req_id, {})
+            if not req_data:
+                self.__status = 404
+            response_json = json.dumps(dict(status=self.__status, **req_data))
+            self.__headers['Content-Type'] = 'application/json'
+            self.__set_response(response_json.encode('utf-8'))
+
+    def __request_info(self):
+        """Build request-info endpoint dict data JSON response."""
+        info = { 'request-method': self.__method, 'uri': self.__path }
+        if len(self.headers) > 0:
+            info['headers'] = { k.lower(): v for k, v in self.headers.items() }
+        if self.__query is not None:
+            info['query-string'] = self.__query
+        return json.dumps(info, sort_keys=True)
+
+    def __set_response(self, response_bytes, response_length=None):
+        """Set response payload, and update the content length accordingly."""
+        self.__response_bytes = response_bytes
+        if response_length is None:
+            self.__response_length = len(response_bytes)
+        else:
+            self.__response_length = response_length
+        # Limit response length to the maximum supported size
+        self.__response_length = min(max_response_size, self.__response_length)
+
+    def __slurp_bytes(self, bytes_to_read, output_buffer=None):
+        """Consume (and throw away) data from the request body."""
+        self.logger().debug('Consuming {} bytes from request payload'.format(bytes_to_read))
+        while bytes_to_read > 0:
+            n = min(bytes_to_read, default_chunk_size)
+            data = self.rfile.read(n)
+            bytes_to_read -= len(data)
+            if output_buffer is not None:
+                output_buffer.extend(data)
+
+    def __state(self, subtract_current_http_request=True):
+        """Build kitchen-state endpoint dict data JSON response."""
+        with _async_state_lock, _counter_lock:
+            state = {
+                'async-requests': _async_state,
+                'pending-http-requests': _pending_http_requests,
+                'pending-ws-requests': _pending_ws_requests,
+                'total-http-requests': _total_http_requests,
+                'total-ws-requests': _total_ws_requests,
+                }
+        if subtract_current_http_request:
+            state['pending-http-requests'] -= 1
+        self.__headers['Content-Type'] = 'application/json'
+        return json.dumps(state, sort_keys=True).encode('utf-8')
+
+class MultiThreadedServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    """Serve each HTTP request on separate thread"""
+    pass
+
+class BasicAuthHandler():
+    """Functor for verifying Waiter BasicAuth credentials."""
+    def __init__(self, username, password):
+        b64_creds = base64.b64encode(':'.join([username, password]).encode('utf-8'))
+        self.expected_auth = 'Basic {}'.format(b64_creds.decode())
+    def __call__(self, auth_string):
+        return auth_string == self.expected_auth
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='A toy HTTP Service for testing the Waiter platform')
+    parser.add_argument('--hostname', metavar='HOSTNAME', default='', help='Server host name')
+    parser.add_argument('-p', '--port', metavar='PORT_NUMBER', type=int, default=8080, help='Server port number')
+    parser.add_argument('--ssl', action='store_true', help='Enable HTTPS (TLS) mode')
+    parser.add_argument('--start-up-sleep-ms', metavar='MILLIS', type=int, default=0, help='Delay before starting server')
+    parser.add_argument('--ws-max-binary-message-size', metavar='BYTES', type=int, default=max_ws_response_size,
+            help='Maximum binary message response size (in bytes) allowed by the WebSocket server')
+    parser.add_argument('--ws-max-text-message-size', metavar='CHARS', type=int, default=max_ws_response_size,
+            help='Maximum text message response size (in characters) allowed by the WebSocket server')
+    args = parser.parse_args()
+
+    log_file_path = '{}/kitchen.log'.format(os.environ.get('MESOS_SANDBOX', '.'))
+    logging.basicConfig(filename=log_file_path, level=logging.DEBUG)
+    kitchen_logger = logging.getLogger('kitchen')
+    kitchen_logger.setLevel(logging.DEBUG)
+
+    username = os.environ.get('WAITER_USERNAME')
+    password = os.environ.get('WAITER_PASSWORD')
+
+    if username and password:
+        kitchen_logger.info('Basic Authentication Enabled')
+        _auth_handler = BasicAuthHandler(username, password)
+
+    if args.ssl:
+        keystore_path = os.environ.get('KEYSTORE')
+        keystore_password = os.environ.get('KEYSTORE_PASSWORD')
+        if not (keystore_path and keystore_password):
+            error_msg = 'Must set both KEYSTORE and KEYSTORE_PASSWORD environment variables for HTTPS mode.'
+            kitchen_logger.error(error_msg)
+            sys.exit(error_msg)
+
+    if args.start_up_sleep_ms > 0:
+        kitchen_logger.info('Sleeping for {}ms...'.format(args.start_up_sleep_ms))
+        time.sleep(args.start_up_sleep_ms / 1000.0)
+
+    binary_max_size = args.ws_max_binary_message_size
+    text_max_size = args.ws_max_text_message_size
+
+    try:
+        kitchen = MultiThreadedServer((args.hostname, args.port), Kitchen)
+
+        if args.ssl:
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.load_cert_chain(keystore_path, password=keystore_password)
+            kitchen.socket = ssl_context.wrap_socket(kitchen.socket, server_side=True)
+            protocol = 'HTTPS'
+        else:
+            protocol = 'HTTP'
+
+        kitchen_logger.info('Starting {} server on {}:{}...'.format(protocol, args.hostname or '*', args.port))
+        kitchen.serve_forever()
+
+    except KeyboardInterrupt:
+        kitchen.server_close()
+
+    finally:
+        kitchen_logger.info('Server is exiting.')

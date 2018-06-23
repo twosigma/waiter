@@ -122,7 +122,7 @@
                      ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"]}
              :test {:jvm-opts
                     [~(str "-Dwaiter.test.kitchen.cmd=" (or (System/getenv "WAITER_TEST_KITCHEN_CMD")
-                                                            (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/run.sh"))))]
+                                                            (.getCanonicalPath (clojure.java.io/file "../kitchen/bin/kitchen"))))]
                     :parallel-test {:pools {:serial (constantly 1)
                                             :parallel (fn []
                                                         (or (some-> (System/getenv "LEIN_TEST_THREADS") Long/valueOf)

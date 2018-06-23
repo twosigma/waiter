@@ -47,7 +47,7 @@ Once Waiter has started:
 
 ```bash
 # Assuming you're using the provided minimesos support:
-$ export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh
+$ export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
 
 # Run a very basic integration test:
 $ lein test :only waiter.basic-test/test-basic-shell-command

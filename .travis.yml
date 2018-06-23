@@ -12,7 +12,7 @@ branches:
 cache:
   directories:
     - $HOME/.lein
-    - $HOME/.local/bin
+    - $HOME/.local
     - $HOME/.m2
     - $HOME/.voom-repos
 
@@ -27,8 +27,8 @@ install:
 matrix:
   include:
     - env: NAME='Kitchen tests'
-      before_script: cd kitchen && voom-build
-      script: lein test
+      before_script: cd kitchen && ./bin/ci/setup.sh
+      script: ./bin/ci/run.sh
 
     - env: NAME='Token syncer tests'
       before_script: cd token-syncer && voom-build
