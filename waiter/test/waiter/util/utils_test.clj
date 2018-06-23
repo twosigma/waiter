@@ -117,7 +117,8 @@
 
     (testing "should convert regex patterns to strings"
       (is (= (json/write-str {"bar" "foo"}) (:body (map->json-response {:bar #"foo"}))))
-      (is (= (json/write-str {"bar" ["foo" "baz"]}) (:body (map->json-response {:bar [#"foo" #"baz"]}))))
+      (is (= (json/write-str {"bar" ["foo" "baz"] "foo/bar" "baz"})
+             (:body (map->json-response {:bar [#"foo" #"baz"] :foo/bar :baz}))))
       (is (= (json/write-str {"bar" ["foo" "baz"]}) (:body (map->json-response {:bar ["foo" #"baz"]}))))
       (is (= (json/write-str {"bar" [["foo" "baz"]]}) (:body (map->json-response {:bar [["foo" #"baz"]]})))))))
 

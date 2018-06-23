@@ -114,6 +114,13 @@
     (log/debug "generate-secret-word" [src-id dest-id] "->" secret-word)
     secret-word))
 
+(defn- stringify-keys
+  [k]
+  (cond
+    (keyword? k) (str (.-sym k))
+    (nil? k) (throw (Exception. "JSON object properties may not be nil"))
+    :else (str k)))
+
 (defn stringify-elements
   [k v]
   (cond
@@ -132,7 +139,7 @@
 (defn map->json
   "Convert the input data into a json string."
   [data-map]
-  (json/write-str data-map :value-fn stringify-elements))
+  (json/write-str data-map :key-fn stringify-keys :value-fn stringify-elements))
 
 (defn map->json-response
   "Convert the input data into a json response."
