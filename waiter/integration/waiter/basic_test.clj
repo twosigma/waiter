@@ -46,17 +46,45 @@
 
       (testing "empty-body"
         (log/info "Basic test for empty body in request")
-        (let [{:keys [body]} (make-kitchen-request
-                               waiter-url
-                               (assoc request-headers :accept "text/plain")
-                               :path "/request-info")
+        (let [request-headers (assoc request-headers :accept "text/plain")
+              {:keys [body headers]} (make-kitchen-request waiter-url request-headers :path "/request-info")
               body-json (json/read-str (str body))]
-          (is (get-in body-json ["headers" "authorization"]) (str body))
-          (is (get-in body-json ["headers" "x-waiter-auth-principal"]) (str body))
-          (is (get-in body-json ["headers" "x-cid"]) (str body))
-          (is (str/blank? (get-in body-json ["headers" "content-type"])) (str body))
+          (is (= "application/json" (get headers "content-type")) (str headers))
+          (is (every? #(get-in body-json ["headers" %]) ["authorization" "x-cid" "x-waiter-auth-principal"]) (str body))
+          (is (nil? (get-in body-json ["headers" "content-type"])) (str body))
           (is (= "0" (get-in body-json ["headers" "content-length"])) (str body))
           (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body))))
+
+      (testing "string-body"
+        (let [body-content "Hello.World.Lorem.Ipsum"]
+          (log/info "Basic test for string body in request")
+          (let [request-headers (assoc request-headers :accept "text/plain")
+                {:keys [body headers]} (make-kitchen-request waiter-url request-headers :body body-content :path "/request-info")
+                body-json (json/read-str (str body))]
+            (is (= "application/json" (get headers "content-type")) (str headers))
+            (is (every? #(get-in body-json ["headers" %]) ["authorization" "x-cid" "x-waiter-auth-principal"]) (str body))
+            (is (nil? (get-in body-json ["headers" "content-type"])) (str body))
+            (is (= (-> body-content count str) (get-in body-json ["headers" "content-length"])) (str body))
+            (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body)))
+
+          (let [request-headers (assoc request-headers :accept "text/plain" :content-type "text/plain")
+                {:keys [body headers]} (make-kitchen-request waiter-url request-headers :body body-content :path "/request-info")
+                body-json (json/read-str (str body))]
+            (is (= "application/json" (get headers "content-type")) (str headers))
+            (is (every? #(get-in body-json ["headers" %]) ["authorization" "x-cid" "x-waiter-auth-principal"]) (str body))
+            (is (= "text/plain" (get-in body-json ["headers" "content-type"])) (str body))
+            (is (= (-> body-content count str) (get-in body-json ["headers" "content-length"])) (str body))
+            (is (= "text/plain" (get-in body-json ["headers" "accept"])) (str body)))
+
+          (let [request-headers (assoc request-headers :x-kitchen-content-type "text/plain" :x-kitchen-echo "true")
+                {:keys [body headers]} (make-kitchen-request waiter-url request-headers :body body-content :path "/echo-data")]
+            (is (= "text/plain" (get headers "content-type")) (str headers))
+            (is (= body-content (str body)) (str body)))
+
+          (let [request-headers (assoc request-headers :x-kitchen-content-type "text/foo-bar" :x-kitchen-echo "true")
+                {:keys [body headers]} (make-kitchen-request waiter-url request-headers :body body-content :path "/echo-data")]
+            (is (= "text/foo-bar" (get headers "content-type")) (str headers))
+            (is (= body-content (str body)) (str body)))))
 
       (testing "query-string with special characters"
         (log/info "Basic test for query-string with special characters")

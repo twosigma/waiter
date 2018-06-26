@@ -161,6 +161,7 @@
   []
   (let [client (http/client)]
     (.setCookieStore client (HttpCookieStore$Empty.))
+    (.setDefaultRequestContentType client nil)
     client))
 
 (defn current-test-name

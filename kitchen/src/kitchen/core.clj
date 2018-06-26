@@ -398,8 +398,11 @@
   (Thread/sleep (Integer/parseInt (get headers "x-kitchen-delay-ms" "1")))
   (when (contains? headers "x-kitchen-throw")
     (throw (ex-info "Instructed by header to throw" {})))
-  (let [response {:status (if (contains? headers "x-kitchen-act-busy") 503 200)
-                  :body (if (contains? headers "x-kitchen-echo") body "Hello World")}
+  (let [response {:body (if (contains? headers "x-kitchen-echo") body "Hello World")
+                  :headers (cond-> {}
+                             (contains? headers "x-kitchen-content-type")
+                             (assoc "content-type" (get headers "x-kitchen-content-type")))
+                  :status (if (contains? headers "x-kitchen-act-busy") 503 200)}
         cookies (get headers "x-kitchen-cookies")]
     (cond-> response cookies (add-cookies cookies))))
 

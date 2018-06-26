@@ -474,9 +474,10 @@
   "Creates an instance of HttpClient with the specified timeout."
   [connection-timeout-ms]
   (let [client (http/client {:connect-timeout connection-timeout-ms
-                             :follow-redirects? false})
-        _ (.clear (.getContentDecoderFactories client))
-        _ (.setCookieStore client (HttpCookieStore$Empty.))]
+                             :follow-redirects? false})]
+    (.clear (.getContentDecoderFactories client))
+    (.setCookieStore client (HttpCookieStore$Empty.))
+    (.setDefaultRequestContentType client nil)
     client))
 
 ;; PRIVATE API
