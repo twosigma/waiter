@@ -18,6 +18,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
+            [metrics.meters :as meters]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
@@ -164,8 +165,11 @@
               (log/info "decrementing outstanding requests as an async request has completed:" status)
               (counters/dec! (metrics/service-counter service-id "request-counts" "async"))
               (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
-              (when (= :success status)
-                (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
+              (if (= :success status)
+                (do
+                  (counters/inc! (metrics/service-counter service-id "request-counts" "successful"))
+                  (meters/mark! (metrics/service-meter service-id "request" "success")))
+                (meters/mark! (metrics/service-meter service-id "request" "fail")))
               (statsd/gauge-delta! metric-group "request_outstanding" -1)
               (service/release-instance-go instance-rpc-chan instance {:status status, :cid correlation-id, :request-id request-id}))
             (complete-async-request-fn [status]

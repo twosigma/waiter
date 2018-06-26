@@ -154,7 +154,10 @@
                           (let [status @reservation-status-promise]
                             (cid/cinfo correlation-id "done processing request" status)
                             (when (= :success status)
-                              (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
+                              (counters/inc! (metrics/service-counter service-id "request-counts" "successful"))
+                              (meters/mark! (metrics/service-meter service-id "request" "success")))
+                            (when (and (not= :success status) (not= :success-async status))
+                              (meters/mark! (metrics/service-meter service-id "request" "fail")))
                             (when (= :generic-error status)
                               (cid/cerror correlation-id "there was a generic error in processing the request;"
                                           "if this is a client or server related issue, the code needs to be updated."))
@@ -449,6 +452,7 @@
                 (when-let [auth-user (:authorization/user request)]
                   (statsd/unique! metric-group "auth_users" auth-user))
                 (counters/inc! (metrics/service-counter service-id "request-counts" "outstanding"))
+                (meters/mark! (metrics/service-meter service-id "request" "arrive"))
                 (statsd/gauge-delta! metric-group "request_outstanding" +1)
                 (metrics/with-timer!
                   (metrics/service-timer service-id "process")
@@ -511,6 +515,7 @@
                         (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
+                (meters/mark! (metrics/service-meter service-id "request" "fail"))
                 (statsd/gauge-delta! metric-group "request_outstanding" -1)
                 (handle-process-exception e request)))))))))
 
