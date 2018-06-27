@@ -14,7 +14,7 @@
 ;; limitations under the License.
 ;;
 (defproject kitchen "0.1.0-SNAPSHOT"
-  :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "untyped-content-provider-default"}}
+  :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
                  [cc.qbits/jet "0.7.10-20180626_194651-g716c5e0"]
                  [log4j/log4j "1.2.17" :exclusions [javax.mail/mail
                                                     javax.jms/jms

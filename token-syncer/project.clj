@@ -14,7 +14,7 @@
 ;; limitations under the License.
 ;;
 (defproject token-syncer "0.1.0-SNAPSHOT"
-  :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "untyped-content-provider-default"}}
+  :dependencies [^{:voom {:repo "https://github.com/twosigma/jet.git" :branch "waiter-patch"}}
                  [cc.qbits/jet "0.7.10-20180626_194651-g716c5e0"]
                  [clj-time "0.12.0"]
                  [commons-codec/commons-codec "1.10"]
