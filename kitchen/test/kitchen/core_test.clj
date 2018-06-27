@@ -51,9 +51,11 @@
 (deftest default-handler-test
   (testing "Default handler"
     (testing "should echo request body when x-kitchen-echo is present"
-      (let [handle-echo #(default-handler {:headers {"x-kitchen-echo" true} :body %})]
-        (is (= {:body "foo" :status 200} (handle-echo "foo")))
-        (is (= {:body "bar" :status 200} (handle-echo "bar")))))
+      (let [handle-echo #(default-handler {:headers %1 :body %2})]
+        (is (= {:body "foo" :headers {} :status 200}
+               (handle-echo {"x-kitchen-echo" true} "foo")))
+        (is (= {:body "bar" :headers {"content-type" "feefiefoe"} :status 200}
+               (handle-echo {"x-kitchen-echo" true "x-kitchen-content-type" "feefiefoe"} "bar")))))
     (testing "should set cookies when x-kitchen-cookies is present"
       (let [handle-cookies #(sort (get-in (default-handler {:headers {"x-kitchen-cookies" %}}) [:headers "Set-Cookie"]))]
         (is (= ["a=b" "c=d"] (handle-cookies "a=b,c=d")))

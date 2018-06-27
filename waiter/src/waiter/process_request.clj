@@ -218,9 +218,6 @@
         ; Also remove hop-by-hop headers https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
         headers (-> (dissoc passthrough-headers "authorization" "expect")
                     (headers/dissoc-hop-by-hop-headers)
-                    ;; ensure a value (potentially nil) is available for content-type to prevent Jetty from generating a default content-type
-                    ;; please see org.eclipse.jetty.client.HttpConnection#normalizeRequest(request) for the control-flow for content-type header
-                    (assoc "content-type" (get passthrough-headers "content-type"))
                     (assoc "cookie" (auth/remove-auth-cookie (get passthrough-headers "cookie"))))
         waiter-debug-enabled? (utils/request->debug-enabled? request)]
     (try
