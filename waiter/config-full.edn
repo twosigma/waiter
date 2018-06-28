@@ -250,7 +250,14 @@
                                :framework-id-ttl 900000
 
                                ;; The port on which the mesos agents are listening.
+                               ;; This is an optional parameter.
+                               ;; When absent log directory and log url support will be disabled.
                                :mesos-slave-port 5051
+
+                               ;; The base directory where the agent directories are being written.
+                               ;; This is an optional parameter.
+                               ;; When absent log directory and log url support will be disabled.
+                               :slave-directory "/home/mesos/agent/workspace/"
 
                                ;; Controls the rate at which any mismatch in task count and instances is
                                ;; corrected by triggering new deployments
