@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.mesos.mesos
-  (:require [waiter.util.http-utils :as http-utils])
+  (:require [clojure.string :as str]
+            [waiter.util.http-utils :as http-utils])
   (:import org.eclipse.jetty.client.HttpClient))
 
 (defrecord MesosApi [^HttpClient http-client spnego-auth slave-port slave-directory])
@@ -46,6 +47,23 @@
   (when (and slave-port host directory)
     (str "http://" host ":" slave-port "/files/download?path=" directory)))
 
+(defn- process-directory-entry
+  "Converts an individual directory entry into a map representing the entry."
+  [mesos-api host directory {:keys [nlink path size]}]
+  (-> (if (= nlink 1)
+        {:type "file"
+         :url (build-directory-download-link mesos-api host path)}
+        {:path path
+         :type "directory"})
+      (assoc :name (subs path (inc (count directory)))
+             :size size)))
+
+(defn retrieve-directory-content-from-host
+  "Retrieve the content of the directory for the given instance on the specified agent."
+  [mesos-api host directory]
+  (->> (list-directory-content mesos-api host directory)
+       (map #(process-directory-entry mesos-api host directory %))))
+
 (defn get-agent-state
   "Returns information about the frameworks, executors and the agent’s master."
   [{:keys [http-client slave-port spnego-auth]} host]
@@ -54,3 +72,14 @@
                              :request-method :get
                              :spnego-auth spnego-auth
                              :throw-exceptions false)))
+
+(defn retrieve-log-url
+  "Retrieve the directory path for the specified task running on the specified agent."
+  [mesos-api task-id host framework-name]
+  (let [response-parsed (get-agent-state mesos-api host)
+        matching-frameworks (->> (concat (:completed_frameworks response-parsed) (:frameworks response-parsed))
+                                 (filter #(or (-> % :name str str/lower-case (str/includes? framework-name))
+                                              (-> % :role str str/lower-case (str/includes? framework-name)))))
+        executors (mapcat #(concat (:completed_executors %) (:executors %)) matching-frameworks)
+        log-directory (str (:directory (first (filter #(= (:id %) task-id) executors))))]
+    log-directory))

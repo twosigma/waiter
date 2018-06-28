@@ -261,36 +261,6 @@
      :labels {:source "waiter"
               :user run-as-user}}))
 
-(defn retrieve-log-url
-  "Retrieve the directory path for the specified instance running on the specified host."
-  [mesos-api instance-id host]
-  (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
-  (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
-  (let [response-parsed (mesos/get-agent-state mesos-api host)
-        frameworks (concat (:completed_frameworks response-parsed) (:frameworks response-parsed))
-        marathon-framework (first (filter #(or (= (:role %) "marathon") (= (:name %) "marathon")) frameworks))
-        marathon-executors (concat (:completed_executors marathon-framework) (:executors marathon-framework))
-        log-directory (str (:directory (first (filter #(= (:id %) instance-id) marathon-executors))))]
-    log-directory))
-
-(defn retrieve-directory-content-from-host
-  "Retrieve the content of the directory for the given instance on the specified host"
-  [mesos-api service-id instance-id host directory]
-  (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {})))
-  (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
-  (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
-  (when (str/blank? directory) (throw (ex-info "No directory found for instance!" {})))
-  (let [response-parsed (mesos/list-directory-content mesos-api host directory)]
-    (map (fn [entry]
-           (merge {:name (subs (:path entry) (inc (count directory)))
-                   :size (:size entry)}
-                  (if (= (:nlink entry) 1)
-                    {:type "file"
-                     :url (mesos/build-directory-download-link mesos-api host (:path entry))}
-                    {:type "directory"
-                     :path (:path entry)})))
-         response-parsed)))
-
 (defrecord MarathonScheduler [marathon-api mesos-api retrieve-framework-id-fn
                               home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store service-id->out-of-sync-state-store
@@ -414,8 +384,12 @@
         (log/debug (:throwable &throw-context) "[autoscaler] Marathon unavailable"))))
 
   (retrieve-directory-content [_ service-id instance-id host directory]
-    (let [log-directory (or directory (retrieve-log-url mesos-api instance-id host))]
-      (retrieve-directory-content-from-host mesos-api service-id instance-id host log-directory)))
+    (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {})))
+    (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
+    (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
+    (let [log-directory (or directory (mesos/retrieve-log-url mesos-api instance-id host "marathon"))]
+      (when (str/blank? log-directory) (throw (ex-info "No directory found for instance!" {})))
+      (mesos/retrieve-directory-content-from-host mesos-api host log-directory)))
 
   (service-id->state [_ service-id]
     {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)

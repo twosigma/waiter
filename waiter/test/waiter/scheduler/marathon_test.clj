@@ -502,12 +502,10 @@
                                                    }]
                                     }"]
                       (-> response-body json/read-str walk/keywordize-keys)))]
-      (is (= "/path/to/instance2/directory" (retrieve-log-url mesos-api instance-id host))))))
+      (is (= "/path/to/instance2/directory" (mesos/retrieve-log-url mesos-api instance-id host "marathon"))))))
 
 (deftest test-retrieve-directory-content-from-host
-  (let [service-id "service-id-1"
-        instance-id "service-id-1.instance-id-2"
-        host "www.example.com"
+  (let [host "www.example.com"
         mesos-slave-port 5051
         directory "/path/to/instance2/directory"
         mesos-api (mesos/api-factory (Object.) {} mesos-slave-port directory)]
@@ -538,7 +536,7 @@
                                    :size 4000
                                    :type "directory"
                                    :path "/path/to/instance2/directory/dir4"})]
-        (is (= expected-result (retrieve-directory-content-from-host mesos-api service-id instance-id host directory)))))))
+        (is (= expected-result (mesos/retrieve-directory-content-from-host mesos-api host directory)))))))
 
 (deftest test-marathon-descriptor
   (let [service-id->password-fn (fn [service-id] (str service-id "-password"))]
