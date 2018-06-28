@@ -550,6 +550,12 @@
                                   (max 1)
                                   int)
         responder-timer (metrics/service-timer service-id "service-chan-responder-iteration")
+        responder-reserve-timer (metrics/service-timer service-id "service-chan-responder-reserve")
+        responder-release-timer (metrics/service-timer service-id "service-chan-responder-release")
+        responder-kill-timer (metrics/service-timer service-id "service-chan-responder-kill")
+        responder-update-timer (metrics/service-timer service-id "service-chan-responder-update")
+        responder-blacklist-timer (metrics/service-timer service-id "service-chan-responder-blacklist")
+        responder-unblacklist-timer (metrics/service-timer service-id "service-chan-responder-unblacklist")
         slots-available-counter (metrics/service-counter service-id "instance-counts" "slots-available")
         slots-assigned-counter (metrics/service-counter service-id "instance-counts" "slots-assigned")
         slots-in-use-counter (metrics/service-counter service-id "instance-counts" "slots-in-use")
@@ -642,21 +648,28 @@
 
                          reserve-instance-chan
                          (let [{:keys [current-state' response-chan response]}
-                               (handle-reserve-instance-request current-state service-id update-slot-state-fn data)]
+                               (timers/start-stop-time!
+                                 responder-reserve-timer
+                                 (handle-reserve-instance-request current-state service-id update-slot-state-fn data))]
                            (async/>! response-chan response)
                            current-state')
 
                          kill-instance-chan
                          (let [{:keys [current-state' response-chan response]}
-                               (handle-kill-instance-request current-state update-status-tag-fn lingering-request-threshold-ms data)]
+                               (timers/start-stop-time!
+                                 responder-kill-timer
+                                 (handle-kill-instance-request current-state update-status-tag-fn lingering-request-threshold-ms data))]
                            (async/>! response-chan response)
                            current-state')
 
                          release-instance-chan
-                         (handle-release-instance-request current-state service-id update-slot-state-fn update-status-tag-fn
-                                                          update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
-                                                          work-stealing-received-in-flight-counter max-blacklist-time-ms
-                                                          blacklist-backoff-base-time-ms max-backoff-exponent data)
+                         (timers/start-stop-time!
+                           responder-release-timer
+                           (handle-release-instance-request
+                             current-state service-id update-slot-state-fn update-status-tag-fn
+                             update-state-by-blacklisting-instance-fn update-instance-id->blacklist-expiry-time-fn
+                             work-stealing-received-in-flight-counter max-blacklist-time-ms
+                             blacklist-backoff-base-time-ms max-backoff-exponent data))
 
                          query-state-chan
                          (let [{:keys [cid response-chan service-id]} data]
@@ -666,31 +679,39 @@
                            current-state)
 
                          update-state-chan
-                         (let [[_ data-time] data]
-                           (-> current-state
-                               (handle-update-state-request
-                                 data update-responder-state-timer update-responder-state-meter slots-assigned-counter
-                                 slots-available-counter slots-in-use-counter)
-                               ;; cleanup items from blacklist map in-case they have not been cleaned
-                               (handle-unblacklist-cleanup-request
-                                 data-time update-status-tag-fn update-instance-id->blacklist-expiry-time-fn)))
+                         (timers/start-stop-time!
+                           responder-update-timer
+                           (let [[_ data-time] data]
+                             (-> current-state
+                                 (handle-update-state-request
+                                   data update-responder-state-timer update-responder-state-meter slots-assigned-counter
+                                   slots-available-counter slots-in-use-counter)
+                                 ;; cleanup items from blacklist map in-case they have not been cleaned
+                                 (handle-unblacklist-cleanup-request
+                                   data-time update-status-tag-fn update-instance-id->blacklist-expiry-time-fn))))
 
                          blacklist-instance-chan
                          (let [{:keys [current-state' response-chan response]}
-                               (handle-blacklist-request
-                                 current-state update-status-tag-fn update-state-by-blacklisting-instance-fn
-                                 lingering-request-threshold-ms data)]
+                               (timers/start-stop-time!
+                                 responder-blacklist-timer
+                                 (handle-blacklist-request
+                                   current-state update-status-tag-fn update-state-by-blacklisting-instance-fn
+                                   lingering-request-threshold-ms data))]
                            (async/put! response-chan response)
                            current-state')
 
                          unblacklist-instance-chan
-                         (handle-unblacklist-request current-state update-status-tag-fn update-instance-id->blacklist-expiry-time-fn data))
+                         (timers/start-stop-time!
+                           responder-unblacklist-timer
+                           (handle-unblacklist-request
+                             current-state update-status-tag-fn update-instance-id->blacklist-expiry-time-fn data)))
 
                        ;; cleanup items from work-stealing queue one at a time if they are not needed
                        (and (seq work-stealing-queue)
                             (not (contains? #{query-state-chan, reserve-instance-chan, work-stealing-chan} chan-selected)))
-                       (release-unneeded-work-stealing-offers! service-id slots-in-use-counter slots-available-counter
-                                                               work-stealing-received-in-flight-counter requests-outstanding-counter)))]
+                       (release-unneeded-work-stealing-offers!
+                         service-id slots-in-use-counter slots-available-counter
+                         work-stealing-received-in-flight-counter requests-outstanding-counter)))]
             (do
               (metrics/reset-counter in-use-instance-counter (count (:instance-id->request-id->use-reason-map new-state)))
               (timers/stop timer-context)
