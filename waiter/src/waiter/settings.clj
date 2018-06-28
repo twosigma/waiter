@@ -276,6 +276,7 @@
                                                 :spnego-auth true}
                                  :force-kill-after-ms 60000
                                  :framework-id-ttl 900000
+                                 :mesos-slave-port 5051
                                  :sync-deployment {:interval-ms (-> 15 t/seconds t/in-millis)
                                                    :timeout-cycles 4}}
                       :shell {:factory-fn 'waiter.scheduler.shell/shell-scheduler
