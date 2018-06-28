@@ -586,13 +586,28 @@
                                         {:service-id service-id, :service-description service-description})]
         (is (= expected actual))))))
 
+(defn- create-marathon-scheduler
+  [& {:as marathon-config}]
+  (-> (merge {:force-kill-after-ms 1000
+              :home-path-prefix "/home/path/"
+              :is-waiter-app?-fn (constantly true)
+              :marathon-api {}
+              :mesos-api {}
+              :retrieve-framework-id-fn (constantly nil)
+              :service-id->failed-instances-transient-store (atom {})
+              :service-id->kill-info-store (atom {})
+              :service-id->out-of-sync-state-store (atom {})
+              :service-id->password-fn #(str % ".password")
+              :service-id->service-description (constantly nil)
+              :sync-deployment-maintainer-atom (atom nil)}
+             marathon-config)
+      map->MarathonScheduler))
+
 (deftest test-kill-instance-last-force-kill-time-store
   (let [current-time (t/now)
         service-id "service-1"
         instance-id "service-1.A"
-        make-marathon-scheduler #(->MarathonScheduler {} {} (constantly nil) "/home/path/"
-                                                      (atom {}) %1 (atom {}) (constantly nil) %2
-                                                      (constantly true) (atom nil))
+        make-marathon-scheduler #(create-marathon-scheduler :service-id->kill-info-store %1 :force-kill-after-ms %2)
         successful-kill-result {:instance-id instance-id :killed? true :service-id service-id}
         failed-kill-result {:instance-id instance-id :killed? false :service-id service-id}]
     (with-redefs [t/now (fn [] current-time)]
@@ -643,11 +658,9 @@
 
 (deftest test-service-id->state
   (let [service-id "service-id"
-        marathon-scheduler (->MarathonScheduler {} {} (constantly nil) "/home/path/"
-                                                (atom {service-id [:failed-instances]})
-                                                (atom {service-id :kill-call-info})
-                                                (atom {})
-                                                (constantly nil) 100 (constantly true) (atom nil))
+        marathon-scheduler (create-marathon-scheduler
+                             :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]})
+                             :service-id->kill-info-store (atom {service-id :kill-call-info}))
         state (scheduler/service-id->state marathon-scheduler service-id)]
     (is (= {:failed-instances [:failed-instances]
             :killed-instances []
@@ -659,9 +672,7 @@
   (let [current-time (t/now)
         current-time-str (du/date-to-str current-time)
         marathon-api (Object.)
-        marathon-scheduler (->MarathonScheduler marathon-api {} (constantly nil) "/home/path/"
-                                                (atom {}) (atom {}) (atom {}) (constantly nil) 60000
-                                                (constantly true) (atom nil))
+        marathon-scheduler (create-marathon-scheduler :force-kill-after-ms 60000 :marathon-api marathon-api)
         make-instance (fn [service-id instance-id]
                         {:id instance-id
                          :service-id service-id})]
@@ -825,7 +836,7 @@
                (process-kill-instance-request marathon-api service-id instance-id {})))))))
 
 (deftest test-delete-app
-  (let [scheduler (->MarathonScheduler {} {} nil nil (atom {}) (atom {}) (atom {}) (constantly nil) nil nil (atom nil))]
+  (let [scheduler (create-marathon-scheduler)]
 
     (with-redefs [marathon/delete-app (constantly {:deploymentId 12345})]
       (is (= {:result :deleted
@@ -901,9 +912,7 @@
 
 (deftest test-scale-app
   (let [marathon-api (Object.)
-        marathon-scheduler (->MarathonScheduler marathon-api {} (constantly nil) "/home/path/"
-                                                (atom {}) (atom {}) (atom {}) (constantly nil) 60000
-                                                (constantly true) (atom nil))
+        marathon-scheduler (create-marathon-scheduler :force-kill-after-ms 60000 :marathon-api marathon-api)
         service-id "test-service-id"]
 
     (testing "unforced scale of service"

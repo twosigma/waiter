@@ -532,7 +532,8 @@
 ;   :shell-scheduler/working-directory
 ;   :shell-scheduler/pid
 ;
-(defrecord ShellScheduler [work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range]
+(defrecord ShellScheduler [work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
+                           service-id->password-fn]
 
   scheduler/ServiceScheduler
 
@@ -572,7 +573,7 @@
   (app-exists? [_ service-id]
     (contains? @id->service-agent service-id))
 
-  (create-app-if-new [this service-id->password-fn {:keys [service-id service-description] :as descriptor}]
+  (create-app-if-new [this {:keys [service-id service-description]}]
     (if-not (scheduler/app-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent create-service service-id service-description
@@ -636,7 +637,10 @@
 (s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the
   configuration against shell-scheduler-schema and throws if it's not valid."
-  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range work-directory]}]
+  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms
+           port-range work-directory
+           ;; functions provided in the context
+           service-id->password-fn]}]
   {:pre [(utils/pos-int? failed-instance-retry-interval-ms)
          (utils/pos-int? health-check-interval-ms)
          (utils/pos-int? health-check-timeout-ms)
@@ -653,7 +657,8 @@
                       id->service-agent
                       port->reservation-atom
                       port-grace-period-ms
-                      port-range)))
+                      port-range
+                      service-id->password-fn)))
 
 (defn shell-scheduler
   "Creates and starts shell scheduler with loops"
