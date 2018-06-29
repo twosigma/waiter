@@ -588,19 +588,19 @@
 
 (defn- create-marathon-scheduler
   [& {:as marathon-config}]
-  (-> (merge {:force-kill-after-ms 1000
-              :home-path-prefix "/home/path/"
-              :is-waiter-app?-fn (constantly true)
-              :marathon-api {}
-              :mesos-api {}
-              :retrieve-framework-id-fn (constantly nil)
-              :service-id->failed-instances-transient-store (atom {})
-              :service-id->kill-info-store (atom {})
-              :service-id->out-of-sync-state-store (atom {})
-              :service-id->password-fn #(str % ".password")
-              :service-id->service-description (constantly nil)
-              :sync-deployment-maintainer-atom (atom nil)}
-             marathon-config)
+  (-> {:force-kill-after-ms 1000
+       :home-path-prefix "/home/path/"
+       :is-waiter-app?-fn (constantly true)
+       :marathon-api {}
+       :mesos-api {}
+       :retrieve-framework-id-fn (constantly nil)
+       :service-id->failed-instances-transient-store (atom {})
+       :service-id->kill-info-store (atom {})
+       :service-id->out-of-sync-state-store (atom {})
+       :service-id->password-fn #(str % ".password")
+       :service-id->service-description (constantly nil)
+       :sync-deployment-maintainer-atom (atom nil)}
+      (merge marathon-config)
       map->MarathonScheduler))
 
 (deftest test-kill-instance-last-force-kill-time-store
