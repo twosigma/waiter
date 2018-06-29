@@ -71,13 +71,17 @@
 (defprotocol ServiceScheduler
 
   (get-apps->instances [this]
-    "Returns a map of scheduler/Service records -> scheduler/ServiceInstance records.")
+    "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records.
+     The nested map has the following keys: :active-instances, :failed-instances and :killed-instances.
+     The active-instances should not be assumed to be healthy (or live).
+     The failed-instances are guaranteed to be dead.")
 
   (get-apps [this]
     "Returns a list of scheduler/Service records")
 
   (get-instances [this ^String service-id]
-    "Retrieve a {:active-instances [...]. :failed-instances [...]} map of scheduler/ServiceInstance records for the given service-id.
+    "Retrieve a {:active-instances [...] :failed-instances [...] :killed-instances [...]} map of
+     scheduler/ServiceInstance records for the given service-id.
      The active-instances should not be assumed to be healthy (or live).
      The failed-instances are guaranteed to be dead.")
 
@@ -89,7 +93,7 @@
   (app-exists? [this ^String service-id]
     "Returns truth-y value if the app exists and nil otherwise.")
 
-  (create-app-if-new [this service-id->password-fn descriptor]
+  (create-app-if-new [this descriptor]
     "Sends a call to Scheduler to start an app with the descriptor if the app does not already exist.
      Returns truth-y value if the app creation was successful and nil otherwise.")
 

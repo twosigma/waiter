@@ -289,7 +289,7 @@
 (defn start-new-service
   "Sends a call to the scheduler to start an app with the descriptor.
    Cached to prevent too many duplicate requests going to the scheduler."
-  [scheduler service-id->password-fn descriptor cache-atom ^ExecutorService start-app-threadpool
+  [scheduler descriptor cache-atom ^ExecutorService start-app-threadpool
    & {:keys [pre-start-fn start-fn] :or {pre-start-fn nil, start-fn nil}}]
   (let [cache-key (:service-id descriptor)]
     (when-not (cache/has? @cache-atom cache-key)
@@ -307,7 +307,7 @@
                                (try
                                  (when pre-start-fn
                                    (pre-start-fn))
-                                 (scheduler/create-app-if-new scheduler service-id->password-fn descriptor)
+                                 (scheduler/create-app-if-new scheduler descriptor)
                                  (catch Exception e
                                    (log/warn e "Error starting new app")))))]
             (.submit start-app-threadpool

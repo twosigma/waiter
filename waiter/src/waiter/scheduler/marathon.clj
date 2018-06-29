@@ -264,8 +264,8 @@
 (defrecord MarathonScheduler [marathon-api mesos-api retrieve-framework-id-fn
                               home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store service-id->out-of-sync-state-store
-                              service-id->service-description force-kill-after-ms is-waiter-app?-fn
-                              sync-deployment-maintainer-atom]
+                              service-id->password-fn service-id->service-description
+                              force-kill-after-ms is-waiter-app?-fn sync-deployment-maintainer-atom]
 
   scheduler/ServiceScheduler
 
@@ -313,7 +313,7 @@
       (catch [:status 404] _
         (log/warn "app-exists?: service" service-id "does not exist!"))))
 
-  (create-app-if-new [this service-id->password-fn descriptor]
+  (create-app-if-new [this descriptor]
     (timers/start-stop-time!
       (metrics/waiter-timer "core" "create-app")
       (let [service-id (:service-id descriptor)
@@ -524,8 +524,9 @@
   "Returns a new MarathonScheduler with the provided configuration.
    Validates the configuration against marathon-scheduler-schema and throws if it's not valid."
   [{:keys [home-path-prefix http-options force-kill-after-ms framework-id-ttl mesos-slave-port
-           sync-deployment service-id->service-description-fn slave-directory url
-           is-waiter-app?-fn leader?-fn]}]
+           slave-directory sync-deployment url
+           ;; functions provided in the context
+           is-waiter-app?-fn leader?-fn service-id->password-fn service-id->service-description-fn]}]
   {:pre [(not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
          (or (nil? mesos-slave-port) (utils/pos-int? mesos-slave-port))
@@ -548,8 +549,9 @@
         marathon-scheduler (->MarathonScheduler
                              marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store
-                             service-id->out-of-sync-state-store service-id->service-description-fn
-                             force-kill-after-ms is-waiter-app?-fn sync-deployment-maintainer-atom)
+                             service-id->out-of-sync-state-store service-id->password-fn
+                             service-id->service-description-fn force-kill-after-ms is-waiter-app?-fn
+                             sync-deployment-maintainer-atom)
         sync-deployment-maintainer (start-sync-deployment-maintainer
                                      leader?-fn service-id->out-of-sync-state-store marathon-scheduler sync-deployment)]
     (reset! sync-deployment-maintainer-atom sync-deployment-maintainer)

@@ -243,13 +243,12 @@
                             atom))
         start-app-threadpool (Executors/newFixedThreadPool 20)
         scheduler (Object.)
-        descriptor {:id "test-service-id"}
-        service-id->password-fn #(str % "-password")]
+        descriptor {:id "test-service-id"}]
     (testing "start-new-service"
       (let [cache-atom (make-cache-fn 100 20)
             start-called-atom (atom false)
             start-fn (fn [] (reset! start-called-atom (not @start-called-atom)))
-            start-app-result (start-new-service scheduler service-id->password-fn descriptor cache-atom start-app-threadpool :start-fn start-fn)]
+            start-app-result (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
         (is (not (nil? start-app-result)))
         (.get ^Future start-app-result)
         (is @start-called-atom)))
@@ -257,23 +256,23 @@
       (let [cache-atom (make-cache-fn 100 1000)
             start-called-atom (atom false)
             start-fn (fn [] (reset! start-called-atom (not @start-called-atom)))]
-        (let [start-app-result-1 (start-new-service scheduler service-id->password-fn descriptor cache-atom start-app-threadpool :start-fn start-fn)]
+        (let [start-app-result-1 (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
           (is (not (nil? start-app-result-1)))
           (.get ^Future start-app-result-1)
           (is @start-called-atom))
-        (let [start-app-result-2 (start-new-service scheduler service-id->password-fn descriptor cache-atom start-app-threadpool :start-fn start-fn)]
+        (let [start-app-result-2 (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
           (is (nil? start-app-result-2)))))
     (testing "app-starting-after-cache-eviction"
       (let [cache-atom (make-cache-fn 100 20)
             start-called-atom (atom 0)]
         (let [start-fn (fn [] (reset! start-called-atom 1))
-              start-app-result-1 (start-new-service scheduler service-id->password-fn descriptor cache-atom start-app-threadpool :start-fn start-fn)]
+              start-app-result-1 (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
           (is (not (nil? start-app-result-1)))
           (.get ^Future start-app-result-1)
           (is (= 1 @start-called-atom)))
         (Thread/sleep 30)
         (let [start-fn (fn [] (reset! start-called-atom 2))
-              start-app-result-2 (start-new-service scheduler service-id->password-fn descriptor cache-atom start-app-threadpool :start-fn start-fn)]
+              start-app-result-2 (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
           (is (not (nil? start-app-result-2)))
           (.get ^Future start-app-result-2))
         (is (= 2 @start-called-atom))))
@@ -288,7 +287,7 @@
                     service-id (str "test-service-id-" app-num)
                     descriptor {:id service-id}
                     start-fn (fn [] (swap! start-called-atom assoc service-id (not (get @start-called-atom service-id))))
-                    start-app-result (start-new-service scheduler service-id->password-fn descriptor cache-atom start-app-threadpool :start-fn start-fn)]
+                    start-app-result (start-new-service scheduler descriptor cache-atom start-app-threadpool :start-fn start-fn)]
                 (if-not (nil? start-app-result)
                   (do
                     (.get ^Future start-app-result)

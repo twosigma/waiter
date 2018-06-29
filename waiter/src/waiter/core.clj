@@ -610,12 +610,20 @@
   {:scheduler (pc/fnk [[:curator leader?-fn]
                        [:settings scheduler-config]
                        [:state service-id-prefix]
+                       service-id->password-fn*
                        service-id->service-description-fn*]
                 (let [is-waiter-app?-fn (fn is-waiter-app? [^String service-id]
                                           (str/starts-with? service-id service-id-prefix))]
                   (utils/create-component scheduler-config :context {:is-waiter-app?-fn is-waiter-app?-fn
                                                                      :leader?-fn leader?-fn
+                                                                     :service-id->password-fn service-id->password-fn*
                                                                      :service-id->service-description-fn service-id->service-description-fn*})))
+   ; This function is only included here for initializing the scheduler above.
+   ; Prefer accessing the non-starred version of this function through the routines map.
+   :service-id->password-fn* (pc/fnk [[:state passwords]]
+                               (fn service-id->password [service-id]
+                                 (log/debug "generating password for" service-id)
+                                 (digest/md5 (str service-id (first passwords)))))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
    :service-id->service-description-fn* (pc/fnk [[:curator kv-store]
@@ -766,20 +774,18 @@
                                  (sd/service-id->idle-timeout
                                    service-id->service-description-fn token->token-hash token->token-metadata
                                    token-defaults service-id)))
-   :service-id->password-fn (pc/fnk [[:state passwords]]
-                              (fn service-id->password [service-id]
-                                (log/debug "generating password for" service-id)
-                                (digest/md5 (str service-id (first passwords)))))
+   :service-id->password-fn (pc/fnk [[:scheduler service-id->password-fn*]]
+                              service-id->password-fn*)
    :service-id->service-description-fn (pc/fnk [[:scheduler service-id->service-description-fn*]]
                                          service-id->service-description-fn*)
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
                                   [:state authenticator start-app-cache-atom task-threadpool]
-                                  service-id->password-fn store-service-description-fn]
+                                  store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
                              (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
                                (auth/check-user authenticator run-as-user service-id))
                              (service/start-new-service
-                               scheduler service-id->password-fn descriptor start-app-cache-atom task-threadpool
+                               scheduler descriptor start-app-cache-atom task-threadpool
                                :pre-start-fn #(store-service-description-fn descriptor))))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]
