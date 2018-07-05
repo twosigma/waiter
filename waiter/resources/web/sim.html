@@ -1,178 +1,218 @@
 <!doctype html>
 <html>
     <head>
-	<title>Autoscaler Simulator</title>
-	<style>
-#chart {height: 300px; width: 100%;}
-body {font-family:Lato, sans-serif;}
-button {font-family:Lato, sans-serif;}
-html {height:100%;}
-input[type=number] {width:55px;}
-.config-box {background-color:#ddd;border:solid 1px #333;float:left; margin-right:5px; padding:3px;}
-.config-box label { display:block; }
-.config-box h4 { margin: 0; }
-.clearfix { clear: both; }
-.hide { display:none; }
-	</style>
+		<title>Autoscaler Simulator</title>
+		<style>
+#chart {
+    height: 300px;
+     width: 100%;
+}
+ body {
+    font-family:Lato, sans-serif;
+}
+ button {
+    font-family:Lato, sans-serif;
+}
+ html {
+    height:100%;
+}
+ input[type=number] {
+    width:55px;
+}
+ .config-box {
+    background-color:#ddd;
+    border:solid 1px #333;
+    float:left;
+     margin-right:5px;
+     padding:3px;
+}
+ .config-box label {
+     display:block;
+}
+ .config-box h4 {
+     margin: 0;
+}
+ .clearfix {
+     clear: both;
+}
+ .hide {
+     display:none;
+}
+		</style>
     </head>
 
-    <body>
+	<body>
+		<div id="config">
+			<div class="config-box">
+				<h4>Client Settings</h4>
+				<label>client curve <textarea id="client-curve">{600 50 1800 -50}</textarea></label>
+				<label>time between requests (secs) <input id="idle-ticks" value="1" type="number"> </label>
+				<label>request time (secs) <input id="request-ticks" value="5" type="number"> </label>
+			</div>
+			<div class="config-box">
+				<h4>Service Settings</h4>
+				<label>startup time (secs) <input id="startup-ticks" value="30" type="number"> </label>
+				<label>min-instances <input id="min-instances" value="1" type="number"> </label>
+				<label>max-instances <input id="max-instances" value="500" type="number"> </label>
+				<label>scale up factor <input id="scale-up-factor" value="0.01" type="number" step="0.001"> </label>
+				<label>scale down factor <input id="scale-down-factor" value="0.001" type="number" step="0.001"> </label>
+				<label>jitter threshold <input id="jitter-threshold" value="0.5" type="number" step="0.01"> </label>
+			</div>
+			<div class="config-box">
+				<h4>Scaler Settings</h4>
+				<label>scale every (secs) <input id="scale-ticks" value="5" type="number"> </label>
+				<label>simulation length (secs) <input id="total-ticks" value="3600" type="number"> </label>
+			</div>
+			<div class="clearfix"></div>
+		</div>
+		<button id="sim-button">Sim</button>
+		<div id="chart"></div>
+		<label>
+			<div id="metrics-controls"></div>
+		</label>
+	</body>
 
-	<div id"config">
-	    <div class="config-box">
-		<h4>Client Settings</h4>
-		<label>client curve <textarea id="client-curve">{600 50 1800 -50}</textarea></label>
-		<label>time between requests (secs) <input id="idle-ticks" value="1" type="number"> </label>
-		<label>request time (secs) <input id="request-ticks" value="5" type="number"> </label>
-	    </div>
-	    <div class="config-box">
-		<h4>Service Settings</h4>
-		<label>startup time (secs) <input id="startup-ticks" value="30" type="number"> </label>
-		<label>min-instances <input id="min-instances" value="1" type="number"> </label>
-		<label>max-instances <input id="max-instances" value="500" type="number"> </label>
-		<label>scale up factor <input id="scale-up-factor" value="0.01" type="number" step="0.001"> </label>
-		<label>scale down factor <input id="scale-down-factor" value="0.001" type="number" step="0.001"> </label>
-		<label>jitter threshold <input id="jitter-threshold" value="0.5" type="number" step="0.01"> </label>
-	    </div>
-	    <div class="config-box">
-		<h4>Scaler Settings</h4>
-		<label>scale every (secs) <input id="scale-ticks" value="5" type="number"> </label>
-		<label>simulation length (secs) <input id="total-ticks" value="3600" type="number"> </label>
-	    </div>
-	    <div class="clearfix"></div>
-	</div>
-
-	<button id="sim-button">Sim</button>
-
-	<div id="chart"></div>
-	<label>
-	    <div id="metrics-controls"></div>
-	</label>
-
-    </body>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.time.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.time.min.js"></script>
     <script>
 
-    $(function() {
+$(function() {
 
-	if (window.location.hash) {
-	    var data = JSON.parse(window.location.hash.substr(1));
-	    var simConfig = data["config"] || {};
-	    $("#client-curve").val(data["client-curve"]);
-	    $("#idle-ticks").val(simConfig["idle-ticks"]);
-	    $("#request-ticks").val(simConfig["request-ticks"]);
-	    $("#startup-ticks").val(simConfig["startup-ticks"]);
-	    $("#scale-ticks").val(simConfig["scale-ticks"]);
-	    if (simConfig["min-instances"])
-		$("#min-instances").val(simConfig["min-instances"]);
-	    if (simConfig["max-instances"])
-		$("#max-instances").val(simConfig["max-instances"]);
-	    $("#scale-up-factor").val(simConfig["scale-up-factor"]);
-	    $("#scale-down-factor").val(simConfig["scale-down-factor"]);
-	    $("#jitter-threshold").val(simConfig["jitter-threshold"]);
-	    $("#total-ticks").val(simConfig["total-ticks"]);
-	}
+    if (window.location.hash) {
+        var data = JSON.parse(window.location.hash.substr(1));
+        var simConfig = data["config"] || {};
+        $("#client-curve").val(data["client-curve"]);
+        $("#idle-ticks").val(simConfig["idle-ticks"]);
+        $("#request-ticks").val(simConfig["request-ticks"]);
+        $("#startup-ticks").val(simConfig["startup-ticks"]);
+        $("#scale-ticks").val(simConfig["scale-ticks"]);
+        if (simConfig["min-instances"])
+            $("#min-instances").val(simConfig["min-instances"]);
+        if (simConfig["max-instances"])
+            $("#max-instances").val(simConfig["max-instances"]);
+        $("#scale-up-factor").val(simConfig["scale-up-factor"]);
+        $("#scale-down-factor").val(simConfig["scale-down-factor"]);
+        $("#jitter-threshold").val(simConfig["jitter-threshold"]);
+        $("#total-ticks").val(simConfig["total-ticks"]);
+    }
 
-	$("#sim-button").click(function() {
+    $("#sim-button").click(function() {
 
-	    var simConfig = {
-		"idle-ticks": parseInt($("#idle-ticks").val(), 10),
-		"request-ticks": parseInt($("#request-ticks").val(), 10),
-		"startup-ticks": parseInt($("#startup-ticks").val(), 10),
-		"scale-ticks": parseInt($("#scale-ticks").val(), 10),
-		"max-instances": parseInt($("#max-instances").val(), 10),
-		"min-instances": parseInt($("#min-instances").val(), 10),
-		"scale-up-factor": parseFloat($("#scale-up-factor").val()),
-		"scale-down-factor": parseFloat($("#scale-down-factor").val()),
-		"jitter-threshold": parseFloat($("#jitter-threshold").val()),
-		"total-ticks": parseInt($("#total-ticks").val(), 10)
-	    };
+        var simConfig = {
+            "idle-ticks": parseInt($("#idle-ticks").val(), 10),
+            "request-ticks": parseInt($("#request-ticks").val(), 10),
+            "startup-ticks": parseInt($("#startup-ticks").val(), 10),
+            "scale-ticks": parseInt($("#scale-ticks").val(), 10),
+            "max-instances": parseInt($("#max-instances").val(), 10),
+            "min-instances": parseInt($("#min-instances").val(), 10),
+            "scale-up-factor": parseFloat($("#scale-up-factor").val()),
+            "scale-down-factor": parseFloat($("#scale-down-factor").val()),
+            "jitter-threshold": parseFloat($("#jitter-threshold").val()),
+            "total-ticks": parseInt($("#total-ticks").val(), 10)
+        };
 
-	    var data = {
-		"config": simConfig,
-		"client-curve": $("#client-curve").val()
-	    };
+        var data = {
+            "config": simConfig,
+            "client-curve": $("#client-curve").val()
+        };
 
-	    window.location.hash = JSON.stringify(data);
+        window.location.hash = JSON.stringify(data);
 
-	    $.ajax("/sim", { 
-		data: JSON.stringify(data),
-		contentType: "application/json",
-		type: "POST"
-	    }).success(function(data) {
+        $.ajax("/sim", {
+            data: JSON.stringify(data),
+            contentType: "application/json",
+            type: "POST"
+        }).success(function(data) {
 
-		var colors = ["red", "green", "blue", "cyan", "fuchsia",
-			      "brown", "purple", "orange", "olive",
-			      "navy", "teal", "aqua", "lime", "deeppink",
-			      "coral", "mediumpurple", "tomato", "seagreen", "rosybrown",
-			      "lightskyblue", "darkkhaki", "slategray", "firebrick", "darkgreen"];
-		var colorMap = {"outstanding-requests": "grey", "total-instances": "blue", "healthy-instances": "green"};
-		var defaultChecked = { "outstanding-requests": true, "total-instances": true, "healthy-instances": true };
+            var colors = ["red", "green", "blue", "cyan", "fuchsia",
+                "brown", "purple", "orange", "olive",
+                "navy", "teal", "aqua", "lime", "deeppink",
+                "coral", "mediumpurple", "tomato", "seagreen", "rosybrown",
+                "lightskyblue", "darkkhaki", "slategray", "firebrick", "darkgreen"
+            ];
+            var colorMap = {
+                "outstanding-requests": "grey",
+                "total-instances": "blue",
+                "healthy-instances": "green"
+            };
+            var defaultChecked = {
+                "outstanding-requests": true,
+                "total-instances": true,
+                "healthy-instances": true
+            };
 
-		var plot = function() {
-		    var dataSets = {};
+            var plot = function() {
+                var dataSets = {};
 
-		    var selectedMetrics = [];
+                var selectedMetrics = [];
 
-		    $("#metrics-controls input:checked")
-			.each(function(index, el) {
-			    selectedMetrics[$(el).data("metric-name")] = true;
-			});
+                $("#metrics-controls input:checked")
+                    .each(function(index, el) {
+                        selectedMetrics[$(el).data("metric-name")] = true;
+                    });
 
-		    for (var tick = 0; tick < data.length; tick++) {
-			state = data[tick];
-			$.each(state, function(key, value) {
-			    if (!selectedMetrics[key])
-				return;
-			    if (!dataSets[key])
-				dataSets[key] = { label: key, data: [], color: colorMap[key] };
-			    dataSets[key].data.push([tick * 1000, $.isArray(value) ? value.length : value]);
-			});
-		    }
+                for (var tick = 0; tick < data.length; tick++) {
+                    state = data[tick];
+                    $.each(state, function(key, value) {
+                        if (!selectedMetrics[key])
+                            return;
+                        if (!dataSets[key])
+                            dataSets[key] = {
+                                label: key,
+                                data: [],
+                                color: colorMap[key]
+                            };
+                        dataSets[key].data.push([tick * 1000, $.isArray(value) ? value.length : value]);
+                    });
+                }
 
-		    $.plot("#chart", $.map(dataSets, function(value) { return [value]; }), {
-			legend: { show: false },
-			xaxis: { mode: "time" },
-			series: { lines: { lineWidth: 1 } },
-			shadowSize: 0
-		    });
-		};
+                $.plot("#chart", $.map(dataSets, function(value) {
+                    return [value];
+                }), {
+                    legend: {
+                        show: false
+                    },
+                    xaxis: {
+                        mode: "time"
+                    },
+                    series: {
+                        lines: {
+                            lineWidth: 1
+                        }
+                    },
+                    shadowSize: 0
+                });
+            };
 
-		$("#metrics-controls").empty();
-		var colorIndex = 0;
-		var metrics = [];
-		$.each(data[1], function (key, value) {
-		   metrics.push(key); 
-		});
-		metrics.sort();
-		$.each(metrics, function(index, metric) {
-		    if (!colorMap[metric]) {
-			colorMap[metric] = colors[colorIndex++];
-		    }
-		    var input = $('<input type="checkbox">').data("metric-name", metric).click(function() {
-			plot();
-		    });
-		    if (defaultChecked[metric])
-			input.attr("checked", true);
-		    $("#metrics-controls")
-			.append($("<label/>").css("font-weight", "bold").css("color", colorMap[metric])
-			    .append(input)
-			    .append(metric));
-		});
+            $("#metrics-controls").empty();
+            var colorIndex = 0;
+            var metrics = [];
+            $.each(data[1], function(key, value) {
+                metrics.push(key);
+            });
+            metrics.sort();
+            $.each(metrics, function(index, metric) {
+                if (!colorMap[metric]) {
+                    colorMap[metric] = colors[colorIndex++];
+                }
+                var input = $('<input type="checkbox">').data("metric-name", metric).click(function() {
+                    plot();
+                });
+                if (defaultChecked[metric])
+                    input.attr("checked", true);
+                $("#metrics-controls")
+                    .append($("<label/>").css("font-weight", "bold").css("color", colorMap[metric])
+                        .append(input)
+                        .append(metric));
+            });
 
-		$(window).resize(plot);
+            $(window).resize(plot);
 
-		plot();
+            plot();
 
-
-	    }, "json");
-	});
+        }, "json");
     });
-
-
+});
     </script>
-
 </html>
