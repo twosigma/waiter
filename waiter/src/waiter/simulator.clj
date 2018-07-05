@@ -112,7 +112,11 @@
         active-requests' (vec (concat (drop requests-to-cancel (filter #(< tick %) active-requests))
                                       (map (fn [_] (+ tick (randomized request-ticks))) (range requests-created))))
         queued-clients' (max 0 (- interested-clients available-servers))
-        idle-servers' (+ (max 0 (- available-servers interested-clients)) requests-to-cancel)]
+        idle-servers' (+ (max 0 (- available-servers interested-clients)) requests-to-cancel)
+        total-instances (+ (count starting-servers') (count active-requests') idle-servers')
+        utilization (if (pos? total-instances)
+                      (* 100.0 (/ (count active-requests') total-instances))
+                      0.0)]
     (assoc current-state :idle-clients idle-clients'
                          :interested-clients interested-clients
                          :activating-clients activating-clients
@@ -126,9 +130,10 @@
                          :starting-servers starting-servers'
                          :outstanding-requests (+ (count active-requests') queued-clients')
                          :total-clients (+ (count active-requests') (count idle-clients') queued-clients')
-                         :total-instances (+ (count starting-servers') (count active-requests') idle-servers')
+                         :total-instances total-instances
                          :total-queue-time (+ total-queue-time queued-clients)
                          :total-idle-server-time (+ total-idle-server-time idle-servers)
+                         :utilization utilization
                          :healthy-instances (+ (count active-requests') idle-servers')
                          :scale-amount scale-amount
                          :target-instances target-instances
