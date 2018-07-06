@@ -239,7 +239,6 @@
                                     :x-waiter-name (rand-name))
                              (update :x-waiter-cmd
                                      (fn [cmd] (str cmd ;; on-the-fly doesn't support x-waiter-env
-                                                    (str " --mem " kitchen-mem "M")
                                                     " --ws-max-binary-message-size " ws-max-binary-message-size'
                                                     " --ws-max-text-message-size " ws-max-text-message-size'))))
           middleware (fn middleware [_ ^UpgradeRequest request]
@@ -307,7 +306,7 @@
                 (let [backend-string (async/<! in)]
                   (async/>! out (.getBytes (str backend-string) "utf-8"))
                   (let [^ByteBuffer backend-bytes (async/<! in)
-                        bytes-string (-> backend-bytes (.array) (String. "utf-8"))]
+                        bytes-string (some-> backend-bytes (.array) (String. "utf-8"))]
                     (reset! uncorrupted-data-streamed-atom
                             (and (= message-length (count backend-string)) (= backend-string bytes-string)))))
                 (async/>! out "exit")
