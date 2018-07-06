@@ -1,7 +1,7 @@
 minimesos {
     clusterName = "waiter"
     loggingLevel = "INFO"
-    mapAgentSandboxVolume = false
+    mapAgentSandboxVolume = true
     mapPortsToHost = true
     mesosVersion = "1.0.0"
     timeout = 60
