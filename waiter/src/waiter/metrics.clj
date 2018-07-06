@@ -318,8 +318,12 @@
   [router->codahale-metrics]
   (assoc
     (apply merge-codahale-metrics
-           (map #(-> (dissoc % "metrics-version")
-                     (utils/dissoc-in ["counters" "instance-counts"]))
+           (map (fn codahale-metrics-sanitizer [codahale-metrics]
+                  (let [instance-counts (get-in codahale-metrics ["counters" "instance-counts"])]
+                    (-> (dissoc codahale-metrics "metrics-version")
+                        (assoc-in ["counters" "instance-counts"]
+                                  (select-keys instance-counts
+                                               ["slots-assigned" "slots-available" "slots-in-use"])))))
                 (vals router->codahale-metrics)))
     :routers-sent-requests-to (count router->codahale-metrics)))
 

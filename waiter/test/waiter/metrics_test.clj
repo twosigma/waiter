@@ -232,7 +232,8 @@
       (.removeMatching metrics-registry (reify MetricFilter (matches [_ _ _] true))))))
 
 (deftest test-aggregate-router-codahale-metrics
-  (let [router->metrics {"router-a" {"counters" {"instance-counts" {"a" 10, "b" 20}
+  (let [router->metrics {"router-a" {"counters" {"instance-counts" {"a" 10, "b" 20 "in-use" 2 "my-instances" 1
+                                                                    "slots-assigned" 5 "slots-available" 3 "slots-in-use" 2}
                                                  "request-counts" {"total" 20}
                                                  "item-a" 100}
                                      "histogram" {"quantile-a" {"count" 10
@@ -244,7 +245,8 @@
                                      "timers" {"nested" {"inner" {"quantile-c" {"count" 30
                                                                                 "value" {"0.0" 10, "0.25" 10, "0.5" 10, "0.75" 10}}}}}
                                      "metrics-version" 1}
-                         "router-b" {"counters" {"instance-counts" {"a" 30, "b" 70}
+                         "router-b" {"counters" {"instance-counts" {"a" 30, "b" 70
+                                                                    "slots-assigned" 3 "slots-available" 2 "slots-in-use" 1}
                                                  "request-counts" {"total" 30}
                                                  "item-a" 200}
                                      "histogram" {"quantile-a" {"count" 10
@@ -256,7 +258,7 @@
                                      "timers" {"nested" {"inner" {"quantile-b" {"count" 10
                                                                                 "value" {"0.0" 30, "0.25" 20, "0.5" 30, "0.75" 10}}}}}
                                      "metrics-version" 2}
-                         "router-c" {"counters" {"instance-counts" {"a" 10, "b" 50}
+                         "router-c" {"counters" {"instance-counts" {"a" 10, "b" 50 "in-use" 1 "my-instances" 2}
                                                  "request-counts" {"total" 40}
                                                  "item-a" 300}
                                      "histogram" {"quantile-a" {"count" 20
@@ -270,7 +272,8 @@
                                      "meters" {"request-rate" {"count" 25, "value" 10}
                                                "response-rate" {"count" 50, "value" 20}}
                                      }}
-        expected {"counters" {"item-a" 600
+        expected {"counters" {"instance-counts" {"slots-assigned" 8 "slots-available" 5 "slots-in-use" 3}
+                              "item-a" 600
                               "request-counts" {"total" 100}}
                   "histogram" {"quantile-a" {"count" 40
                                              "value" {"0.0" 20, "0.25" 60, "0.5" 25, "0.75" 15}}
