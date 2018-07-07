@@ -114,10 +114,15 @@
     (log/debug "generate-secret-word" [src-id dest-id] "->" secret-word)
     secret-word))
 
+(defn- keyword->str
+  "Converts keyword to string including the namespace."
+  [k]
+  (str (.-sym k)))
+
 (defn- stringify-keys
   [k]
   (cond
-    (keyword? k) (str (.-sym k))
+    (keyword? k) (keyword->str k)
     (nil? k) (throw (Exception. "JSON object properties may not be nil"))
     :else (str k)))
 
@@ -125,6 +130,7 @@
   [k v]
   (cond
     (vector? v) (mapv (partial stringify-elements k) v)
+    (keyword? v) (keyword->str v)
     (instance? DateTime v) (du/date-to-str v)
     (instance? UUID v) (str v)
     (instance? Pattern v) (str v)
@@ -157,7 +163,7 @@
      :body (fn [^ServletResponse resp]
              (let [writer (OutputStreamWriter. (.getOutputStream resp))]
                (try
-                 (json/write data-map writer :value-fn stringify-elements)
+                 (json/write data-map writer :key-fn stringify-keys :value-fn stringify-elements)
                  (catch Exception e
                    (log/error e "Exception creating streaming json response")
                    (throw e))
@@ -231,7 +237,7 @@
     {:body (case content-type
              "application/json"
              (-> {:waiter-error error-context}
-                 (json/write-str :value-fn stringify-elements :escape-slash false))
+                 (json/write-str :key-fn stringify-keys :value-fn stringify-elements :escape-slash false))
              "text/html"
              (-> error-context
                  (update :message #(urls->html-links %))
