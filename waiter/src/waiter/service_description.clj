@@ -220,7 +220,7 @@
       (str
         (when-let [bad-keys (seq (map #(.value %) (get metadata-error :bad-keys)))]
           (str "The following metadata keys are invalid: " (str/join ", " bad-keys)
-               ". Keys must be made up of letters, numbers, and hyphens and must start with a letter. "))
+               ". Keys must be made up of lower-case letters, numbers, and hyphens and must start with a letter. "))
         (when-let [bad-key-values (seq (get metadata-error :bad-key-values))]
           (str "The following metadata keys did not have string values: " (str/join ", " bad-key-values)
                ". Metadata values must be strings. "))

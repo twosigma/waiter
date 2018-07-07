@@ -1828,8 +1828,9 @@
     (testing "invalid keys"
       (let [error-msg (generate-friendly-metadata-error-message
                         (s/check service-description-schema
-                                 (assoc service-description "metadata" {1 "a", 2 "b"})))]
-        (is (str/includes? error-msg "The following metadata keys are invalid: 1, 2") error-msg)
+                                 (assoc service-description "metadata" {1 "a" 2 "b" "C" "c"})))]
+        (is (str/includes? error-msg "Keys must be made up of lower-case letters, numbers, and hyphens") error-msg)
+        (is (str/includes? error-msg "The following metadata keys are invalid: 1, 2, C") error-msg)
         (is (not (str/includes? error-msg "Metadata values must be strings.")) error-msg)))
     (testing "invalid keys and values"
       (let [error-msg (generate-friendly-metadata-error-message
