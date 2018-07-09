@@ -132,11 +132,19 @@
     (let [{:keys [status]} (map->streaming-json-response {} :status 404)]
       (is (= status 404))))
   (testing "converts regex patters to strings"
-    (is (= {"foo" ["bar"]} (-> {:foo [#"bar"]}
-                               map->streaming-json-response
-                               :body
-                               json-response->str
-                               json/read-str)))))
+    (is (= {"foo" ["bar"]}
+           (-> {:foo [#"bar"]}
+               map->streaming-json-response
+               :body
+               json-response->str
+               json/read-str))))
+  (testing "converts namespaced keywords"
+    (is (= {"foo/bar" "fuu/baz"}
+           (-> {:foo/bar :fuu/baz}
+               map->streaming-json-response
+               :body
+               json-response->str
+               json/read-str)))))
 
 (defrecord TestResponse [status friendly-error-message])
 
