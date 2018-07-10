@@ -19,7 +19,6 @@ SYNCER_DIR=${WAITER_DIR}/../token-syncer
 
 pushd ${WAITER_DIR}
 
-lein voom build-deps
 lein do clean, compile
 
 # Start waiter servers
