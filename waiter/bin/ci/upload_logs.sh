@@ -45,8 +45,8 @@ tar -cJf $tarball --transform="s|\\./[^/]*/\\.*|${dump_name}/|" --warning=no-fil
 # 0 = Successful termination
 # 1 = Some files differ (we're OK with this)
 # 2 = Fatal error
-if [ $exitcode == 2 ]; then
-  echo "The tar command exited with exit code $exitcode, exiting..."
+if [ "$exitcode" == 2 ]; then
+  echo "The tar command exited with a fatal error (exit code $exitcode), exiting..."
   exit $exitcode
 fi
 ./waiter/bin/ci/gdrive_upload "travis-${dump_name}" $tarball
