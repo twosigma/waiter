@@ -311,7 +311,6 @@
         (meters/mark! update-responder-state-meter)
         (assoc current-state
           :deployment-error deployment-error
-          :oom-instability oom-instability
           :id->instance id->instance'
           :instance-id->state instance-id->state'
           :instance-id->consecutive-failures instance-id->consecutive-failures'
@@ -600,7 +599,6 @@
         ; :expired => instance has exceeded its age and is being prepared to be replaced
         ; :starting => instance is starting up and has the potential to be healthy
         (loop [{:keys [deployment-error
-                       oom-instability
                        id->instance
                        instability-issue
                        instance-id->blacklist-expiry-time
@@ -613,7 +611,6 @@
                        work-stealing-queue]
                 :as current-state}
                (merge {:deployment-error nil
-                       :oom-instability false
                        :id->instance {}
                        :instability-issue nil
                        :instance-id->blacklist-expiry-time {}
