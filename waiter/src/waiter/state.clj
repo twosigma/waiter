@@ -246,11 +246,7 @@
    update-responder-state-meter slots-assigned-counter slots-available-counter slots-in-use-counter]
   (timers/start-stop-time!
     update-responder-state-timer
-<<<<<<< HEAD
     (when-let [[{:keys [healthy-instances unhealthy-instances my-instance->slots expired-instances starting-instances deployment-error instability-issue]} _] data]
-=======
-    (when-let [[{:keys [healthy-instances unhealthy-instances my-instance->slots expired-instances starting-instances deployment-error oom-instability]} _] data]
->>>>>>> added flagging for services with a oom instance
       ; instances that are expired *might also* appear in healthy-instances, depending on whether
       ; or not this router has been assigned the expired instance
       ; stated differently, healthy-instances contains only instances that are both healthy
@@ -1255,6 +1251,10 @@
                                      :service-id->failed-instances service-id->failed-instances'
                                      :service-id->instance-counts service-id->instance-counts'
                                      :service-id->deployment-error service-id->deployment-error'
+<<<<<<< HEAD
+=======
+                                     :service-id->instability-issue service-id->instability-issue'
+>>>>>>> created service-id->instability-issue (only looking at oom failures for now), added shams/pauls comments
                                      :time scheduler-sync-time))
 
                                  :update-service-instances
