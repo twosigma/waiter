@@ -99,7 +99,7 @@
   `(is (nil? (s/check ~metrics-schema ~metrics-data))
        (str ~metrics-data)))
 
-(deftest ^:parallel ^:integration-fast test-metrics-output
+(deftest ^:parallel ^:integration-slow test-metrics-output
   (testing-using-waiter-url
     (let [router->endpoint (routers waiter-url)
           router-urls (vec (vals router->endpoint))
@@ -174,7 +174,7 @@
       (get-in ["state" "service-id->launch-tracker" service-id])
       some?))
 
-(deftest ^:parallel ^:integration-slow test-launch-metrics-output
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-launch-metrics-output
   (testing-using-waiter-url
     (let [waiter-settings (waiter-settings waiter-url)
           metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])
