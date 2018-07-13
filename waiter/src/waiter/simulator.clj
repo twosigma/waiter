@@ -53,6 +53,7 @@
   Stats:
     total-queue-time       The total amount of ticks that clients have been sitting in the queue.
     total-idle-server-time The total amount of ticks that servers have been sitting idle.
+    utilization            The percentage of servers that are in use during the current tick.
     scale-ups              The total number of scale up operations.
     scale-downs            The total number of scale down operations."
   [{:strs [idle-ticks request-ticks startup-ticks]}
