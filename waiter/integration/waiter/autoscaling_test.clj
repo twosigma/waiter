@@ -37,7 +37,7 @@
       (is (wait-for #(= 1 (count-instances)) :timeout 300) "Never scaled back down to 1 instance")
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-slow test-scaling-healthy-app
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-scaling-healthy-app
   (testing-using-waiter-url
     (let [concurrency-level 3
           custom-headers {:x-kitchen-delay-ms 5000
@@ -48,7 +48,7 @@
       (scaling-for-service-test "Scaling healthy app" waiter-url 3 concurrency-level
                                 #(make-kitchen-request waiter-url custom-headers)))))
 
-(deftest ^:parallel ^:integration-slow test-scaling-unhealthy-app
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-scaling-unhealthy-app
   (testing-using-waiter-url
     (let [concurrency-level 3
           custom-headers {:x-waiter-concurrency-level concurrency-level
@@ -87,7 +87,7 @@
     (log/info "waiting for" num-threads "threads to complete")
     (await-futures futures)))
 
-(deftest ^:parallel ^:integration-slow test-scale-factor
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-scale-factor
   (testing-using-waiter-url
     (let [delay-secs 5
           num-threads 10
@@ -112,7 +112,7 @@
           waiter-url cookies request-fn requests-per-thread delay-secs service-id
           num-threads expected-instances)))))
 
-(deftest ^:parallel ^:integration-slow test-concurrency-level
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-concurrency-level
   (testing-using-waiter-url
     (let [delay-secs 5
           requests-per-thread 50
@@ -142,7 +142,7 @@
             waiter-url cookies request-fn requests-per-thread delay-secs service-id
             num-threads expected-instances))))))
 
-(deftest ^:parallel ^:integration-slow test-expired-instance
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-expired-instance
   (testing-using-waiter-url
     (let [extra-headers {:x-waiter-instance-expiry-mins 1 ;; can't set it any lower :(
                          :x-waiter-name (rand-name)}

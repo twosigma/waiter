@@ -513,7 +513,7 @@
       (is (str/includes? set-cookie "HttpOnly=true"))
       (is (= (System/getProperty "user.name") (str body))))))
 
-(deftest ^:parallel ^:integration-slow test-killed-instances
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-killed-instances
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-max-instances 5

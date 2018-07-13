@@ -44,7 +44,7 @@
 
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-slow test-new-app-gc
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-new-app-gc
   (testing-using-waiter-url
     (let [idle-timeout-in-mins 1
           {:keys [service-id]} (make-request-with-debug-info

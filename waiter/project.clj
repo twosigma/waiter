@@ -25,6 +25,8 @@
                    :integration (every-pred (some-fn :integration-slow :integration-fast) (complement :explicit))
                    :integration-slow (every-pred :integration-slow (complement :explicit))
                    :integration-fast (every-pred :integration-fast (complement :explicit))
+                   :integration-heavy (every-pred :resource-heavy (some-fn :integration-slow :integration-fast) (complement :explicit))
+                   :integration-lite (every-pred (complement :resource-heavy) (some-fn :integration-slow :integration-fast) (complement :explicit))
                    :dev :dev
                    :perf (every-pred :perf (complement :explicit))}
 
