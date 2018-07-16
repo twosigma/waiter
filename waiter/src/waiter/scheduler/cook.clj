@@ -96,6 +96,7 @@
   (defn- instance-healthy?
     "Performs health check if an entry does not exist in the healthy-instance-cache."
     [task-id health-check-url]
+    ;; TODO Move health check out of critical path, e.g. by storing a future in the cache
     (let [health-result (utils/atom-cache-get-or-load
                           healthy-instance-cache
                           task-id
@@ -142,7 +143,7 @@
     [service-id service-description service-id->password-fn home-path-prefix instance-priority]
     (let [{:strs [backend-proto cmd cpus health-check-url instance-expiry-mins mem metadata name ports
                   run-as-user version]} service-description
-          job-uuid (str (UUID/randomUUID))
+          job-uuid (str (UUID/randomUUID)) ;; TODO Use "less random" UUIDs for better Cook cache performance.
           home-path (str home-path-prefix run-as-user)
           environment (scheduler/environment service-id service-description service-id->password-fn home-path)
           cook-backend-port (get metadata "cook-backend-port")
@@ -201,11 +202,13 @@
 (defn determine-instance-priority
   "Determines the instance priority based on allowed (sorted by highest first) priorities and unavailable priorities."
   [allowed-priorities unavailable-priorities]
+  ;; The and clause in some is used to return the priority instead of a boolean.
   (or (some #(and (not (contains? unavailable-priorities %)) %) allowed-priorities)
       (last allowed-priorities)))
 
 (defn launch-jobs
-  "Launch num-instances jobs specified by the service-description."
+  "Launch num-instances jobs specified by the service-description.
+   The instance priority is determined by finding the first unused value in allowed priorities or the lowest priority."
   [cook-api service-id service-description service-id->password-fn
    home-path-prefix num-instances allowed-priorities reserved-priorities]
   (loop [iteration 0
