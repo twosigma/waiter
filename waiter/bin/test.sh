@@ -34,7 +34,7 @@ else
 fi
 
 if [ -z ${WAITER_TEST_KITCHEN_CMD+x} ]; then
-    export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/container-run.sh
+    export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
     echo "WAITER_TEST_KITCHEN_CMD is unset, defaulting to ${WAITER_TEST_KITCHEN_CMD}"
 else
     echo "WAITER_TEST_KITCHEN_CMD is set to ${WAITER_TEST_KITCHEN_CMD}"
