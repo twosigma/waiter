@@ -9,16 +9,10 @@ Prerequisites:
 * Java 8
 * [Leiningen](http://leiningen.org/) v2.8.1
 
-Waiter uses [voom](https://github.com/LonoCloud/lein-voom) to pull in dependencies that are not available in clojars:
+If you want to override the default directories for local maven repos:
 
 ```bash
-$ lein voom build-deps
-```
-
-If you want to override the default directories for local maven and voom repos:
-
-```bash
-$ WAITER_MAVEN_LOCAL_REPO=... VOOM_REPOS=... lein with-profile +override-maven voom build-deps
+$ WAITER_MAVEN_LOCAL_REPO=... lein with-profile +override-maven deps
 ```
 
 Once you have fetched dependencies:
