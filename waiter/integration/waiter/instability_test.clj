@@ -22,8 +22,8 @@
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-mem 100}
           response (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/oom-instability"))]
-      (Thread/sleep 30000)
-      (with-service-cleanup (response->service-id response))
+      (wait-for #(= "not-enough-memory" ((((service-state waiter-url (response->service-id response))
+                                           :state) :responder-state) :instability-issue)))
       (assert-response-status response 502)
       (is (= "not-enough-memory" ((((service-state waiter-url (response->service-id response))
                                      :state) :responder-state) :instability-issue))))))

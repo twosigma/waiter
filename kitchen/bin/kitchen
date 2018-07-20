@@ -760,7 +760,6 @@ class Kitchen(HTTPWebSocketsHandler):
 
         elif path =='/oom-instability':
             l = []
-            # time.sleep(30)
             for i in range(10**3):
                 l.append(bytearray(10**6))
             time.sleep(30)
