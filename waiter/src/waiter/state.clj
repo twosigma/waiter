@@ -1251,10 +1251,7 @@
                                      :service-id->failed-instances service-id->failed-instances'
                                      :service-id->instance-counts service-id->instance-counts'
                                      :service-id->deployment-error service-id->deployment-error'
-<<<<<<< HEAD
-=======
                                      :service-id->instability-issue service-id->instability-issue'
->>>>>>> created service-id->instability-issue (only looking at oom failures for now), added shams/pauls comments
                                      :time scheduler-sync-time))
 
                                  :update-service-instances
