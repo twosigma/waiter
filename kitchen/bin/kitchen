@@ -758,6 +758,12 @@ class Kitchen(HTTPWebSocketsHandler):
         elif path == '/unchunked':
             self.__set_response(itertools.cycle(lorem_ipsum), max_response_size)
 
+        elif path =='/oom-instability':
+            l = []
+            for i in range(10**3):
+                l.append(bytearray(10**6))
+            time.sleep(30)
+
         if self.__response_bytes is None:
             # Set default response
             self.__set_response(b'Hello World')

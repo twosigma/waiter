@@ -980,6 +980,23 @@
       (testing (str "Test " name)
         (is (= expected (get-deployment-error healthy-instances unhealthy-instances failed-instances config)))))))
 
+(deftest test-get-instability-issue
+  (let [test-cases (list {:name "multiple-oom-flags", :failed-instances
+                                [{:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
+                                 {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
+                          :expected :not-enough-memory}
+                         {:name "no-failed-instances", :failed-instances [], :expected nil}
+                         {:name "no-oom-flags-failed-instances", :failed-instances
+                                [{:message "Command exited with status" :exit-code 1}], :expected nil}
+                         {:name "single-oom-flag", :failed-instances
+                                [{:message "Command exited with status" :exit-code 1}
+                                 {:message "Command exited with status" :exit-code 1}
+                                 {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
+                          :expected :not-enough-memory})]
+    (doseq [{:keys [name failed-instances expected]} test-cases]
+      (testing (str "Test " name)
+        (is (= expected (get-instability-issue failed-instances)))))))
+
 (deftest test-router-state-maintainer-scheduler-state
   (testing "router-state-maintainer-removes-expired-instances"
     (let [scheduler-state-chan (async/chan 1)
@@ -1094,6 +1111,7 @@
                                       :service-id->failed-instances
                                       (pc/map-from-keys #(failed-instances-fn % (index-fn %)) expected-services)
                                       :service-id->deployment-error {} ; should be no deployment errors
+                                      :service-id->instability-issue {}
                                       :service-id->expired-instances
                                       (pc/map-from-keys
                                         (fn [service]
@@ -1206,7 +1224,9 @@
                                               (map #(failed-instances-fn % (index-fn %)) expected-services))
                                       :service-id->deployment-error
                                       (into {} (filter second (zipmap expected-services
-                                                                      (map #(deployment-error-fn % (index-fn %)) expected-services))))})
+                                                                      (map #(deployment-error-fn % (index-fn %)) expected-services))))
+                                      :service-id->instability-issue {}})
+
                     state (async/<!! router-state-push-chan)
                     actual-state (dissoc state :iteration :service-id->healthy-instances :service-id->expired-instances :service-id->starting-instances
                                           :service-id->instance-counts :service-id->my-instance->slots :routers :time)]
@@ -1375,7 +1395,8 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-1.A" 11, "service-1.B" 12}
-                 :deployment-error nil}
+                 :deployment-error nil
+                 :instability-issue nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-1"} :update-state))))
         (is (= [{:healthy-instances ["service-3.A" "service-3.B"]
@@ -1383,7 +1404,8 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-3.A" 6, "service-3.B" 8}
-                 :deployment-error nil}
+                 :deployment-error nil
+                 :instability-issue nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-3"} :update-state))))
         (is (= [{:healthy-instances ["service-4.B"]
@@ -1391,7 +1413,8 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-4.B" 3}
-                 :deployment-error nil}
+                 :deployment-error nil
+                 :instability-issue nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-4"} :update-state))))
         (is (= [{:healthy-instances ["service-5.A"]
@@ -1399,7 +1422,8 @@
                  :unhealthy-instances nil
                  :starting-instances nil
                  :my-instance->slots {"service-5.A" 5}
-                 :deployment-error nil}
+                 :deployment-error nil
+                 :instability-issue nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-5"} :update-state))))
 
