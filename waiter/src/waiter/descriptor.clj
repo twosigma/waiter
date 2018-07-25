@@ -43,6 +43,11 @@
   [fallback-state service-id]
   (-> fallback-state :healthy-service-ids (contains? service-id)))
 
+(defn service-instable?
+  "Returns true if the requested service-id exists as per the state in the instable-state."
+  [instable-state service-id]
+  (-> instable-state :instability-service-ids (contains? service-id)))
+
 (defn missing-run-as-user?
   "Returns true if the exception is due to a missing run-as-user validation on the service description."
   [exception]
