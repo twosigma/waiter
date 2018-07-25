@@ -147,9 +147,13 @@
           home-path (str home-path-prefix run-as-user)
           environment (scheduler/environment service-id service-description service-id->password-fn home-path)
           cook-backend-port (get metadata "cook-backend-port")
-          docker-image-label (get metadata "docker-image-label")
-          docker-image-name (get metadata "docker-image-name")
-          docker-image-namespace (get metadata "docker-image-namespace")]
+          container-type (get metadata "container-type")
+          [image-namespace image-name-and-label] (str/split version #"/" 2)
+          [image-name image-label] (str/split (str image-name-and-label) #":" 2)
+          container-support-enabled? (and (seq container-type)
+                                          (seq image-namespace)
+                                          (seq image-name)
+                                          (seq image-label))]
       (when cook-backend-port
         (try
           (when-not (pos? (Integer/parseInt cook-backend-port))
@@ -160,6 +164,16 @@
           (catch Exception ex
             (throw (ex-info "cook-backend-port metadata must parse to a positive integer"
                             {:cook-backend-port cook-backend-port} ex)))))
+      (when (seq container-type)
+        (let [container-data {:container-type container-type
+                              :image-label image-label
+                              :image-name image-name
+                              :image-namespace image-namespace
+                              :service-id service-id
+                              :version version}]
+          (if container-support-enabled?
+            (log/info "container support enabled" container-data)
+            (throw (ex-info "to use container support format version as namespace/name:label" container-data)))))
       {:jobs [(cond-> {:application {:name name
                                      :version version}
                        :command cmd
@@ -184,13 +198,13 @@
                        :ports ports
                        :priority instance-priority
                        :uuid job-uuid}
-                (and docker-image-namespace docker-image-name docker-image-label)
-                (assoc :container {:docker {:force-pull-image false
-                                            :image (str "namespace:" docker-image-namespace ","
-                                                        "name:" docker-image-name ","
-                                                        "label:" docker-image-label)
-                                            :network "HOST"}
-                                   :type "docker"}))]})))
+                container-support-enabled?
+                (assoc :container {(keyword container-type) {:force-pull-image false
+                                                             :image (str "namespace:" image-namespace ","
+                                                                         "name:" image-name ","
+                                                                         "label:" image-label)
+                                                             :network "HOST"}
+                                   :type container-type}))]})))
 
 (defn create-job
   "Create and start a new Cook job specified by the service-description."

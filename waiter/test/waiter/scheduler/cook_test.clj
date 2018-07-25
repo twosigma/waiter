@@ -337,20 +337,29 @@
 
     (testing "basic-test-with-docker-image"
       (let [service-description (assoc service-description
-                                  "metadata" {"docker-image-label" "baz"
-                                              "docker-image-name" "bar"
-                                              "docker-image-namespace" "foo"})
+                                  "metadata" {"container-type" "fie"}
+                                  "version" "foo/bar:baz")
             actual (create-job-description
                      service-id service-description service-id->password-fn home-path-prefix instance-priority)
             job-uuid (-> actual :jobs first :uuid)
             expected {:jobs [(assoc expected-job
-                               :container {:docker {:force-pull-image false
-                                                    :image "namespace:foo,name:bar,label:baz"
-                                                    :network "HOST"}
-                                           :type "docker"}
+                               :application {:name "test-service"
+                                             :version "foo/bar:baz"}
+                               :container {:fie {:force-pull-image false
+                                                 :image "namespace:foo,name:bar,label:baz"
+                                                 :network "HOST"}
+                                           :type "fie"}
                                :name (str "test-service-1." job-uuid)
                                :uuid job-uuid)]}]
-        (is (= expected actual))))))
+        (is (= expected actual)))
+
+      (is (thrown-with-msg?
+            ExceptionInfo #"to use container support format version as namespace/name:label"
+            (let [service-description (assoc service-description
+                                        "metadata" {"container-type" "fie"}
+                                        "version" "foo/bar-baz")]
+              (create-job-description
+                service-id service-description service-id->password-fn home-path-prefix instance-priority)))))))
 
 (deftest test-determine-instance-priority
   (let [allowed-priorities [75 70 65 60 55]]
