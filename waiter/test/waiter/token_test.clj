@@ -380,7 +380,7 @@
           (doseq [key json-keys]
             (is (str/includes? body (json/write-str (get service-description-1 key)))))))
 
-      (testing "post:update-service-description"
+      (testing "post:update-service-description:with-changes"
         (let [existing-service-description (kv/fetch kv-store token :refresh true)
               {:keys [body status]}
               (run-handle-token-request
@@ -399,6 +399,60 @@
                     "last-update-user" "tu1"
                     "owner" "tu1"
                     "previous" existing-service-description
+                    "root" token-root}
+                   token-metadata)))
+          (is (empty? (sd/fetch-core kv-store service-id-1)))
+          (is (empty? (sd/fetch-core kv-store service-id-2)))))
+
+      (testing "post:update-service-description:no-changes"
+        (let [_ (kv/store kv-store token (-> service-description-1
+                                             (dissoc "token")
+                                             (assoc "owner" auth-user)))
+              existing-service-parameter-template (kv/fetch kv-store token :refresh true)
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str (assoc existing-service-parameter-template "token" token)))
+                 :headers {}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (str/includes? body (str "No changes detected for " token)))
+          (is (= (-> existing-service-parameter-template
+                     (dissoc "owner")
+                     (select-keys sd/token-data-keys))
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc existing-service-parameter-template "owner") service-parameter-template))
+            (is (= {"owner" auth-user
+                    "previous" {}}
+                   token-metadata)))
+          (is (empty? (sd/fetch-core kv-store service-id-1)))
+          (is (empty? (sd/fetch-core kv-store service-id-2)))))
+
+      (testing "post:update-service-description:no-changes-except-owner"
+        (let [_ (kv/store kv-store token (-> service-description-1
+                                             (assoc "owner" (str auth-user "-a"))
+                                             (dissoc "token")))
+              existing-service-parameter-template (kv/fetch kv-store token :refresh true)
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str (assoc existing-service-parameter-template "owner" auth-user "token" token)))
+                 :headers {}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (str/includes? body (str "Successfully updated " token)))
+          (is (= (-> (dissoc existing-service-parameter-template "owner")
+                     (select-keys sd/token-data-keys))
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc existing-service-parameter-template "owner") service-parameter-template))
+            (is (= {"last-update-time" (clock-millis)
+                    "last-update-user" auth-user
+                    "owner" auth-user
+                    "previous" existing-service-parameter-template
                     "root" token-root}
                    token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id-1)))
@@ -439,17 +493,12 @@
                  :request-method :post})]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
-          (is (str/includes? body (str "Successfully updated " token)))
+          (is (str/includes? body (str "No changes detected for " token)))
           (is (= (select-keys service-description-2 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-2 "token") service-parameter-template))
-            (is (= {"last-update-time" (clock-millis)
-                    "last-update-user" "tu1"
-                    "owner" "tu2"
-                    "previous" existing-service-description
-                    "root" token-root}
-                   token-metadata)))
+            (is (= (select-keys existing-service-description sd/token-metadata-keys) token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id-1)))
           (is (empty? (sd/fetch-core kv-store service-id-2)))))
 
@@ -633,7 +682,7 @@
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description-1 (walk/stringify-keys
                                       {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
-                                       :fallback-period-secs 120
+                                       :fallback-period-secs 100
                                        :last-update-time (- (clock-millis) 1000) :owner auth-user
                                        :token token})
               _ (kv/store kv-store token service-description-1)
@@ -660,6 +709,30 @@
                             "previous" service-description-1
                             "root" token-root))
                  (kv/fetch kv-store token)))))
+
+      (testing "post:edit-user-metadata:fallback-period-secs-no-changes"
+        (let [token (str token (rand-int 100000))
+              kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description-1 (walk/stringify-keys
+                                      {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
+                                       :fallback-period-secs 120
+                                       :last-update-time (- (clock-millis) 1000) :owner auth-user
+                                       :token token})
+              _ (kv/store kv-store token service-description-1)
+              service-description-2 (-> service-description-1
+                                        (dissoc "last-update-time" "owner"))
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (json/write-str service-description-2))
+                 :headers {}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (str/includes? body (str "No changes detected for " token)))
+          (is (= (-> service-description-2 (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
+                 (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
+          (is (= service-description-1 (kv/fetch kv-store token)))))
 
       (testing "post:update-service-description:edit-star-run-as-user"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))

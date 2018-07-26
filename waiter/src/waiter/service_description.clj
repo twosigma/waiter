@@ -139,6 +139,9 @@
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
 
+; keys editable by users in the token data
+(def ^:const token-user-editable-keys (set/union service-parameter-keys user-metadata-keys))
+
 ; keys allowed in the token data
 (def ^:const token-data-keys (set/union service-parameter-keys token-metadata-keys))
 
