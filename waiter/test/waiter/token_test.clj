@@ -55,6 +55,10 @@
   (handle-token-request clock synchronize-fn kv-store token-root history-length waiter-hostnames entitlement-manager
                         make-peer-requests-fn validate-service-description-fn request))
 
+(def optional-metadata-keys (disj sd/user-metadata-keys "owner"))
+
+(def required-metadata-keys (conj sd/system-metadata-keys "owner"))
+
 (deftest test-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-parameter-keys))))]
     (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -462,9 +466,9 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key (disj sd/system-metadata-keys "deleted")]
+            (doseq [key (disj required-metadata-keys "deleted")]
               (is (contains? body-map key) (str "Missing entry for " key)))
-            (doseq [key sd/user-metadata-keys]
+            (doseq [key (conj optional-metadata-keys "deleted")]
               (is (not (contains? body-map key)) (str "Existing entry for " key)))
             (is (not (contains? body-map "deleted"))))))
 
@@ -497,9 +501,9 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key (disj sd/system-metadata-keys "deleted")]
+            (doseq [key (disj required-metadata-keys "deleted")]
               (is (contains? body-map key) (str "Missing entry for " key)))
-            (doseq [key sd/user-metadata-keys]
+            (doseq [key (conj optional-metadata-keys "deleted")]
               (is (not (contains? body-map key)) (str "Existing entry for " key)))
             (is (not (contains? body-map "deleted"))))))
 
