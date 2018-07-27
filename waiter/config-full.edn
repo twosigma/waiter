@@ -230,6 +230,7 @@
                     :kind :marathon
 
                     ;; :kind :cook uses Cook (https://github.com/twosigma/Cook) for scheduling instances:
+                    ;; support for the cook scheduler is experimental and the config is subject to changes.
                     :cook {
                            ;; Custom implementations should specify a :factory-fn
                            ;; that returns an instance of waiter.scheduler.ServiceScheduler:
@@ -238,8 +239,11 @@
                            ;; The interval (milliseconds) at which instance failed jobs will be checked:
                            :failed-tracker-interval-ms 10000
 
-                           ;; Deprecated! The users who are allowed to launch services via the Cook Scheduler.
+                           ;; The users who are allowed to launch services via the Cook Scheduler.
                            :allowed-users #{"cook-user"}
+
+                           ;; The hardcoded port, when configured, to use as PORT0 for service instances
+                           :backend-port nil
 
                            ;; The location of home directories on your Mesos agents;
                            ;; the HOME environment variable is set by joining this and the run-as-user:

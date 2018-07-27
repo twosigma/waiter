@@ -140,27 +140,16 @@
 (let [instance-expiry-adjustment-mins 5]
   (defn create-job-description
     "Create the Cook job description for a service."
-    [service-id service-description service-id->password-fn home-path-prefix instance-priority]
+    [service-id service-description service-id->password-fn home-path-prefix instance-priority backend-port]
     (let [{:strs [backend-proto cmd cpus health-check-url instance-expiry-mins mem metadata name ports
                   run-as-user version]} service-description
           job-uuid (str (UUID/randomUUID)) ;; TODO Use "less random" UUIDs for better Cook cache performance.
           home-path (str home-path-prefix run-as-user)
           environment (scheduler/environment service-id service-description service-id->password-fn home-path)
-          cook-backend-port (get metadata "cook-backend-port")
           container-type (get metadata "container-type")
           [_ image-namespace image-name image-label] (when (not (str/blank? container-type))
                                                        (re-matches #"(.*)/(.*):(.*)" version))
           container-support-enabled? (and image-namespace image-name image-label)]
-      (when cook-backend-port
-        (try
-          (when-not (pos? (Integer/parseInt cook-backend-port))
-            (throw (ex-info "cook-backend-port metadata parsed to a non-positive integer"
-                            {:cook-backend-port cook-backend-port})))
-          (catch ExceptionInfo ex
-            (throw ex))
-          (catch Exception ex
-            (throw (ex-info "cook-backend-port metadata must parse to a positive integer"
-                            {:cook-backend-port cook-backend-port} ex)))))
       (when (seq container-type)
         (let [container-data {:container-type container-type
                               :image-label image-label
@@ -183,7 +172,7 @@
                                         :service-id service-id
                                         :source "waiter"
                                         :user run-as-user}
-                                 cook-backend-port (assoc :backend-port cook-backend-port))
+                                 backend-port (assoc :backend-port (str backend-port)))
                        :max-retries 1
                        ;; extend max runtime past instance expiry as there may be a delay in killing it
                        :max-runtime (-> instance-expiry-mins
@@ -205,9 +194,11 @@
 
 (defn create-job
   "Create and start a new Cook job specified by the service-description."
-  [cook-api service-id service-description service-id->password-fn home-path-prefix instance-priority]
+  [cook-api service-id service-description service-id->password-fn home-path-prefix instance-priority
+   backend-port]
   (log/info "creating a new job for" service-id)
-  (->> (create-job-description service-id service-description service-id->password-fn home-path-prefix instance-priority)
+  (->> (create-job-description service-id service-description service-id->password-fn home-path-prefix
+                               instance-priority backend-port)
        (post-jobs cook-api)))
 
 (defn determine-instance-priority
@@ -221,14 +212,14 @@
   "Launch num-instances jobs specified by the service-description.
    The instance priority is determined by finding the first unused value in allowed priorities or the lowest priority."
   [cook-api service-id service-description service-id->password-fn
-   home-path-prefix num-instances allowed-priorities reserved-priorities]
+   home-path-prefix num-instances allowed-priorities reserved-priorities backend-port]
   (loop [iteration 0
          unavailable-priorities reserved-priorities]
     (when (< iteration num-instances)
       ;; TODO introduce new sort-position field in ServiceInstance for use in sorting
       (let [instance-priority (determine-instance-priority allowed-priorities unavailable-priorities)]
         (create-job cook-api service-id service-description service-id->password-fn
-                    home-path-prefix instance-priority)
+                    home-path-prefix instance-priority backend-port)
         (recur (inc iteration)
                (conj unavailable-priorities instance-priority))))))
 
@@ -333,7 +324,7 @@
 ;; Scheduler Interface and Factory Methods
 
 (defrecord CookScheduler [service-id->password-fn service-id->service-description-fn
-                          cook-api allowed-priorities allowed-users home-path-prefix
+                          cook-api allowed-priorities allowed-users backend-port home-path-prefix
                           search-interval service-id->failed-instances-transient-store]
 
   scheduler/ServiceScheduler
@@ -424,7 +415,7 @@
                             (throw (ex-info "User not allowed to launch service via cook scheduler"
                                             {:service-id service-id :user run-as-user})))
                           (launch-jobs cook-api service-id service-description service-id->password-fn
-                                       home-path-prefix min-instances allowed-priorities #{})
+                                       home-path-prefix min-instances allowed-priorities #{} backend-port)
                           true)
                         (catch Exception ex
                           (log/error ex "unable to create service" service-id)
@@ -470,7 +461,8 @@
                        (if (pos? scale-amount)
                          (let [reserved-priorities (->> jobs (map :priority) set)]
                            (launch-jobs cook-api service-id service-description service-id->password-fn
-                                        home-path-prefix scale-amount allowed-priorities reserved-priorities)
+                                        home-path-prefix scale-amount allowed-priorities reserved-priorities
+                                        backend-port)
                            :scaled)
                          :scaling-not-needed))
                      (catch Exception ex
@@ -506,10 +498,11 @@
 
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."
-  [{:keys [allowed-users home-path-prefix instance-priorities search-interval-days
+  [{:keys [allowed-users backend-port home-path-prefix instance-priorities search-interval-days
            service-id->password-fn service-id->service-description-fn]}
    cook-api service-id->failed-instances-transient-store]
   {:pre [(seq allowed-users)
+         (or (nil? backend-port) (pos? backend-port))
          (not (str/blank? home-path-prefix))
          (> (:max instance-priorities) (:min instance-priorities))
          (pos? (:delta instance-priorities))
@@ -519,7 +512,7 @@
                                   (unchecked-negate-int (:delta instance-priorities)))
         search-interval (t/days search-interval-days)]
     (->CookScheduler service-id->password-fn service-id->service-description-fn
-                     cook-api allowed-priorities allowed-users home-path-prefix
+                     cook-api allowed-priorities allowed-users backend-port home-path-prefix
                      search-interval service-id->failed-instances-transient-store)))
 
 (defn cook-scheduler

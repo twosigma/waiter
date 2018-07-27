@@ -292,8 +292,10 @@
                       :priority 75}]
 
     (testing "basic-test-with-defaults"
-      (let [actual (create-job-description
-                     service-id service-description service-id->password-fn home-path-prefix instance-priority)
+      (let [backend-port nil
+            actual (create-job-description
+                     service-id service-description service-id->password-fn home-path-prefix
+                     instance-priority backend-port)
             job-uuid (-> actual :jobs first :uuid)
             expected {:jobs [(assoc expected-job
                                :name (str "test-service-1." job-uuid)
@@ -301,46 +303,25 @@
         (is (= expected actual))))
 
     (testing "basic-test-custom-port"
-      (let [service-description (assoc service-description
-                                  "metadata" {"cook-backend-port" "4567"})
+      (let [service-description service-description
+            backend-port 4567
             actual (create-job-description
-                     service-id service-description service-id->password-fn home-path-prefix instance-priority)
+                     service-id service-description service-id->password-fn home-path-prefix
+                     instance-priority backend-port)
             job-uuid (-> actual :jobs first :uuid)
             expected {:jobs [(-> expected-job
                                  (assoc :name (str "test-service-1." job-uuid) :uuid job-uuid)
                                  (update :labels assoc :backend-port "4567"))]}]
-        (is (= expected actual)))
-
-      (is (thrown-with-msg?
-            ExceptionInfo #"cook-backend-port metadata parsed to a non-positive integer"
-            (let [service-description (assoc service-description
-                                        "metadata" {"cook-backend-port" "0"})
-                  actual (create-job-description
-                           service-id service-description service-id->password-fn home-path-prefix instance-priority)
-                  job-uuid (-> actual :jobs first :uuid)
-                  expected {:jobs [(-> expected-job
-                                       (assoc :name (str "test-service-1." job-uuid) :uuid job-uuid)
-                                       (update :labels assoc :backend-port "4567"))]}]
-              (is (= expected actual)))))
-
-      (is (thrown-with-msg?
-            ExceptionInfo #"cook-backend-port metadata must parse to a positive integer"
-            (let [service-description (assoc service-description
-                                        "metadata" {"cook-backend-port" "abcd"})
-                  actual (create-job-description
-                           service-id service-description service-id->password-fn home-path-prefix instance-priority)
-                  job-uuid (-> actual :jobs first :uuid)
-                  expected {:jobs [(-> expected-job
-                                       (assoc :name (str "test-service-1." job-uuid) :uuid job-uuid)
-                                       (update :labels assoc :backend-port "4567"))]}]
-              (is (= expected actual))))))
+        (is (= expected actual))))
 
     (testing "basic-test-with-docker-image"
       (let [service-description (assoc service-description
                                   "metadata" {"container-type" "fie"}
                                   "version" "foo/bar:baz")
+            backend-port nil
             actual (create-job-description
-                     service-id service-description service-id->password-fn home-path-prefix instance-priority)
+                     service-id service-description service-id->password-fn home-path-prefix
+                     instance-priority backend-port)
             job-uuid (-> actual :jobs first :uuid)
             expected {:jobs [(assoc expected-job
                                :application {:name "test-service"
@@ -357,9 +338,11 @@
             ExceptionInfo #"to use container support format version as namespace/name:label"
             (let [service-description (assoc service-description
                                         "metadata" {"container-type" "fie"}
-                                        "version" "foo/bar-baz")]
+                                        "version" "foo/bar-baz")
+                  backend-port nil]
               (create-job-description
-                service-id service-description service-id->password-fn home-path-prefix instance-priority)))))))
+                service-id service-description service-id->password-fn home-path-prefix
+                instance-priority backend-port)))))))
 
 (deftest test-determine-instance-priority
   (let [allowed-priorities [75 70 65 60 55]]
@@ -373,7 +356,7 @@
 
 (deftest test-launch-jobs
   (let [posted-jobs-atom (atom [])]
-    (with-redefs [create-job-description (fn [service-id _ _ _ instance-priority]
+    (with-redefs [create-job-description (fn [service-id _ _ _ instance-priority _]
                                            {:priority instance-priority
                                             :service-id service-id})
                   post-jobs (fn [_ job] (swap! posted-jobs-atom conj job))]
@@ -384,9 +367,10 @@
             home-path-prefix "/home/path/"
             num-instances 3
             allowed-priorities [75 70 65 60 55]
-            reserved-priorities #{75 65}]
+            reserved-priorities #{75 65}
+            backend-port nil]
         (launch-jobs cook-api service-id service-description service-id->password-fn
-                     home-path-prefix num-instances allowed-priorities reserved-priorities)
+                     home-path-prefix num-instances allowed-priorities reserved-priorities backend-port)
         (is (= [{:priority 70 :service-id service-id}
                 {:priority 60 :service-id service-id}
                 {:priority 55 :service-id service-id}]
@@ -973,6 +957,7 @@
 (deftest test-cook-scheduler
   (testing "Creating a CookScheduler"
     (let [valid-config {:allowed-users #{"test-user"}
+                        :backend-port 7890
                         :cook-api {}
                         :home-path-prefix "/home/path/"
                         :instance-priorities {:delta 5
@@ -988,6 +973,8 @@
 
       (testing "should throw on invalid configuration"
         (is (thrown? Throwable (create-cook-scheduler-helper (assoc valid-config :allowed-users #{}))))
+        (is (thrown? Throwable (create-cook-scheduler-helper (assoc valid-config :backend-port -5))))
+        (is (thrown? Throwable (create-cook-scheduler-helper (assoc valid-config :backend-port 0))))
         (is (thrown? Throwable (create-cook-scheduler-helper (assoc valid-config :home-path-prefix nil))))
         (is (thrown? Throwable (create-cook-scheduler-helper (assoc valid-config :instance-priorities {}))))
         (is (thrown? Throwable (create-cook-scheduler-helper (assoc valid-config :search-interval-days 0)))))
