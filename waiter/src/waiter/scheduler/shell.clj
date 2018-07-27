@@ -229,6 +229,12 @@
         (deliver completion-promise :already-exists)
         id->service)
       (do
+        (let [cmd-type (get service-description "cmd-type")]
+          (when (= "docker" cmd-type)
+            (throw (ex-info "Unsupported command type on service"
+                            {:cmd-type cmd-type
+                             :service-description service-description
+                             :service-id service-id}))))
         (log/info "creating service" service-id ":" service-description)
         (let [{:keys [service instance]}
               (launch-service service-id service-description service-id->password-fn

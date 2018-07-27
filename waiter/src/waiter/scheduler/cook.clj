@@ -29,8 +29,7 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
-  (:import (clojure.lang ExceptionInfo)
-           (java.util UUID)))
+  (:import (java.util UUID)))
 
 ;; Interactions with Cook API
 
@@ -141,17 +140,17 @@
   (defn create-job-description
     "Create the Cook job description for a service."
     [service-id service-description service-id->password-fn home-path-prefix instance-priority backend-port]
-    (let [{:strs [backend-proto cmd cpus health-check-url instance-expiry-mins mem metadata name ports
+    (let [{:strs [backend-proto cmd cmd-type cpus health-check-url instance-expiry-mins mem name ports
                   run-as-user version]} service-description
           job-uuid (str (UUID/randomUUID)) ;; TODO Use "less random" UUIDs for better Cook cache performance.
           home-path (str home-path-prefix run-as-user)
           environment (scheduler/environment service-id service-description service-id->password-fn home-path)
-          container-type (get metadata "container-type")
-          [_ image-namespace image-name image-label] (when (not (str/blank? container-type))
+          container-mode? (= "docker" cmd-type)
+          [_ image-namespace image-name image-label] (when container-mode?
                                                        (re-matches #"(.*)/(.*):(.*)" version))
           container-support-enabled? (and image-namespace image-name image-label)]
-      (when (seq container-type)
-        (let [container-data {:container-type container-type
+      (when container-mode?
+        (let [container-data {:cmd-type cmd-type
                               :image-label image-label
                               :image-name image-name
                               :image-namespace image-namespace
@@ -185,12 +184,12 @@
                        :priority instance-priority
                        :uuid job-uuid}
                 container-support-enabled?
-                (assoc :container {(keyword container-type) {:force-pull-image false
-                                                             :image (str "namespace:" image-namespace ","
-                                                                         "name:" image-name ","
-                                                                         "label:" image-label)
-                                                             :network "HOST"}
-                                   :type container-type}))]})))
+                (assoc :container {:docker {:force-pull-image false
+                                            :image (str "namespace:" image-namespace ","
+                                                        "name:" image-name ","
+                                                        "label:" image-label)
+                                            :network "HOST"}
+                                   :type "docker"}))]})))
 
 (defn create-job
   "Create and start a new Cook job specified by the service-description."

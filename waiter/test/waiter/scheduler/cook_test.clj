@@ -316,7 +316,7 @@
 
     (testing "basic-test-with-docker-image"
       (let [service-description (assoc service-description
-                                  "metadata" {"container-type" "fie"}
+                                  "cmd-type" "docker"
                                   "version" "foo/bar:baz")
             backend-port nil
             actual (create-job-description
@@ -326,10 +326,10 @@
             expected {:jobs [(assoc expected-job
                                :application {:name "test-service"
                                              :version "foo/bar:baz"}
-                               :container {:fie {:force-pull-image false
+                               :container {:docker {:force-pull-image false
                                                  :image "namespace:foo,name:bar,label:baz"
                                                  :network "HOST"}
-                                           :type "fie"}
+                                           :type "docker"}
                                :name (str "test-service-1." job-uuid)
                                :uuid job-uuid)]}]
         (is (= expected actual)))
@@ -337,7 +337,7 @@
       (is (thrown-with-msg?
             ExceptionInfo #"to use container support format version as namespace/name:label"
             (let [service-description (assoc service-description
-                                        "metadata" {"container-type" "fie"}
+                                        "cmd-type" "docker"
                                         "version" "foo/bar-baz")
                   backend-port nil]
               (create-job-description
