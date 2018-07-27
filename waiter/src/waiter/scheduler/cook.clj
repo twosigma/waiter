@@ -148,12 +148,9 @@
           environment (scheduler/environment service-id service-description service-id->password-fn home-path)
           cook-backend-port (get metadata "cook-backend-port")
           container-type (get metadata "container-type")
-          [image-namespace image-name-and-label] (str/split version #"/" 2)
-          [image-name image-label] (str/split (str image-name-and-label) #":" 2)
-          container-support-enabled? (and (seq container-type)
-                                          (seq image-namespace)
-                                          (seq image-name)
-                                          (seq image-label))]
+          [_ image-namespace image-name image-label] (when (not (str/blank? container-type))
+                                                       (re-matches #"(.*)/(.*):(.*)" version))
+          container-support-enabled? (and image-namespace image-name image-label)]
       (when cook-backend-port
         (try
           (when-not (pos? (Integer/parseInt cook-backend-port))
