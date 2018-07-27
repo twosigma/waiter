@@ -270,9 +270,7 @@
              :inter-kill-request-wait-time-ms 1000}
    :scheduler-config {:kind :marathon
                       :kubernetes {; Default values are not provided below for the following keys:
-                                   ; :authentication :edn-readers :replicaset-spec-file-path :url
-                                   :edn-params {:fn 'waiter.scheduler.kubernetes/options-as-params
-                                                :options nil}
+                                   ; :authentication :url
                                    :factory-fn 'waiter.scheduler.kubernetes/kubernetes-scheduler
                                    :http-options {:conn-timeout 10000
                                                   :socket-timeout 10000}
@@ -280,7 +278,9 @@
                                    :max-name-length 63
                                    :orchestrator-name "waiter"
                                    :pod-base-port 31000
-                                   :replicaset-api-version "extensions/v1beta1"}
+                                   :replicaset-api-version "extensions/v1beta1"
+                                   :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
+                                                             :container-image-spec "twosigma/kitchen:latest"}}
                       :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                  :home-path-prefix "/home/"
                                  :http-options {:conn-timeout 10000

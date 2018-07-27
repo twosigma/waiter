@@ -288,21 +288,15 @@
                                                   ;; The sample function given below simply returns the string from the WAITER_K8S_AUTH_STRING environment variable.
                                                   :refresh-fn waiter.scheduler.kubernetes/authorization-from-environment}
 
-                                 :edn-params {;; Optional function for making more values available to the #waiter/param EDN reader (see :replicaset-spec-file-path below).
-                                              ;; The :fn should be a function name (symbol) identifying a binary function: (params, options) -> extra-params
-                                              ;; The default waiter-params values are passed as the first argument, and the optional :options map is the second.
-                                              ;; A new map should be returned containing the additional parameters. The new map needn't include the original values,
-                                              ;; since it will be merged into the default-parameters map by waiter.
-                                              ;; Since this function is invoked each time a new ReplicaSet is created, the result values can be customized to each service.
-                                              ;; The implementation below simply returns the :options value as its result,
-                                              ;; which in this case defines a single new parameter called :temp-dir.
-                                              ;; The value `#waiter/params :temp-dir` would thus resolve to `"/scratch"` in the ReplicaSet specification.
-                                              :fn waiter.scheduler.kubernetes/options-as-params
-                                              :options {:temp-dir "/scratch"}}
-
-                                 :edn-readers {;; Optional map of symbol -> symbol, where the keys are reader macro names for use in parsing specs in EDN format
-                                               ;; (see :replicaset-spec-file-path below), and the values are the symbols for corresponding function implementations.
-                                               waiter/stringify clojure.core/str}
+                                 :replicaset-spec-builder {;; Factory function which creates a Kubernetes ReplicaSet spec
+                                                           ;; (with an embedded Pod spec) for the given Waiter Service.
+                                                           ;; The referenced factory function takes the current Kubernetes scheduler,
+                                                           ;; the Waiter service-id, the Waiter service description, and this context map as arguments.
+                                                           ;; Since this map is passed as the context argument to the factory function,
+                                                           ;; any additional configuration data needed for the implementation should be included here.
+                                                           :factory-fn waiter.scheduler.kubernetes/default-replicaset-builder
+                                                           ;; The default factory function accepts an option for the docker container to use in the pod.
+                                                           :container-image-spec "twosigma/kitchen:latest"}
 
                                  ;; HTTP options that will be used when accessing the Kubernetes API:
                                  :http-options {:conn-timeout 10000
@@ -326,10 +320,6 @@
 
                                  ;; Version string used for creating and operating on ReplicaSet objects:
                                  :replicaset-api-version "extensions/v1beta1"
-
-                                 ;; Path to an EDN file containing a ReplicaSet object specification template
-                                 ;; used to create ReplicaSets and Pods for Waiter services:
-                                 :replicaset-spec-file-path "./specs/k8s-default-pod.edn"
 
                                  ;; Base URL for accessing the Kubernetes API server.
                                  ;; The URL used below is the default proxy URL bound to by the `kubectl proxy` command:

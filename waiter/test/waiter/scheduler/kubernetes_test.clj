@@ -39,13 +39,14 @@
   ([service-ids] (make-dummy-scheduler service-ids {}))
   ([service-ids args]
    (->
-     {:edn-params-fn (constantly nil)
-      :max-patch-retries 5
+     {:max-patch-retries 5
       :max-name-length 63
       :orchestrator-name "waiter"
       :pod-base-port 8080
       :replicaset-api-version "extensions/v1beta1"
-      :replicaset-spec-file-path default-rs-spec-path
+      :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
+                                     %1 %2 %3
+                                     {:container-image-spec "twosigma/kitchen:latest"})
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"run-as-user" "myself"})
@@ -834,7 +835,6 @@
 
 (deftest test-kubernetes-scheduler
   (let [base-config {:authentication nil
-                     :edn-params {:fn 'clojure.core/merge}
                      :http-options {:conn-timeout 10000
                                     :socket-timeout 10000}
                      :max-patch-retries 5
@@ -842,8 +842,9 @@
                      :orchestrator-name "waiter"
                      :pod-base-port 8080
                      :replicaset-api-version "extensions/v1beta1"
-                     :replicaset-spec-file-path default-rs-spec-path
-                     :url "http://127.0.0.1:8001"}]
+                     :url "http://127.0.0.1:8001"
+                     :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
+                                               :container-image-spec "twosigma/kitchen:latest"}}]
     (testing "Creating a KubernetesScheduler"
 
       (testing "should throw on invalid configuration"
@@ -858,10 +859,11 @@
           (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :max-patch-retries -1)))))
         (testing "bad max name length"
           (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :max-name-length 0)))))
-        (testing "bad ReplicaSet spec path"
-          (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :replicaset-spec-file-path nil))))
-          (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :replicaset-spec-file-path ""))))
-          (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :replicaset-spec-file-path "/does/not/exist.edn")))))
+        (testing "bad ReplicaSet spec factory function"
+          (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] nil))))
+          (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] "not a symbol"))))
+          (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] :not-a-symbol))))
+          (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:replicaset-spec-builder :factory-fn] 'not.a.namespace/not-a-fn)))))
         (testing "bad base port number"
           (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port -1))))
           (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port "8080"))))

@@ -33,12 +33,6 @@
   (log/info "called waiter.scheduler.kubernetes/authorization-from-environment")
   (System/getenv "WAITER_K8S_AUTH_STRING"))
 
-(defn options-as-params
-  "Sample implementation of the edn-params function, which ignores the base parameters,
-   and returns the options map as a new map of extra parameters for the #waiter/param EDN reader."
-  [params options]
-  options)
-
 (def k8s-api-auth-str
   "Atom containing authentication string for the Kubernetes API server.
    This value may be periodically refreshed asynchronously."
@@ -363,69 +357,12 @@
     (comment "Success! Even if the scale-down or force-kill operation failed,
               the pod will be force-killed after the grace period is up.")))
 
-(defn- service-spec
-  "Creates a Kubernetes ReplicaSet spec (with an embedded Pod spec) for the given Waiter Service."
-  [{:keys [edn-params-fn edn-readers orchestrator-name pod-base-port replicaset-api-version
-           replicaset-spec-file-path service-id->password-fn] :as scheduler}
-   service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
-           health-check-max-consecutive-failures mem min-instances ports run-as-user] :as service-description}]
-  (let [home-path (str "/home/" run-as-user)
-        common-env (scheduler/environment service-id service-description
-                                          service-id->password-fn home-path)
-        ;; Randomize $PORT0 value to ensure clients can't hardcode it.
-        ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (-> (rand-int 100) (* 10) (+ pod-base-port))
-        template-env (into [;; We set these two "MESOS_*" variables to improve interoperability.
-                            ;; New clients should prefer using WAITER_SANDBOX.
-                            {:name "MESOS_DIRECTORY" :value home-path}
-                            {:name "MESOS_SANDBOX" :value home-path}]
-                           (concat
-                             (for [[k v] common-env]
-                               {:name k :value v})
-                             (for [i (range ports)]
-                               {:name (str "PORT" i) :value (str (+ port0 i))})))
-        base-params (into {:k8s-name (service-id->k8s-app-name scheduler service-id)
-                           :backend-protocol backend-proto
-                           :backend-protocol-caps (string/upper-case backend-proto)
-                           :cmd cmd
-                           :cpus cpus
-                           :env template-env
-                           :grace-period-secs grace-period-secs
-                           :health-check-interval-secs health-check-interval-secs
-                           :health-check-max-consecutive-failures health-check-max-consecutive-failures
-                           :health-check-url (sd/service-description->health-check-url service-description)
-                           :home-path home-path
-                           :memory  (str mem "Mi")
-                           :min-instances min-instances
-                           :orchestrator-name orchestrator-name
-                           :port-count ports
-                           :replicaset-api-version replicaset-api-version
-                           :run-as-user run-as-user
-                           :service-id service-id
-                           :ssl? (= "https" backend-proto)}
-                          (for [i (range ports)]
-                            [(keyword (str "port" i)) (+ port0 i)]))
-        extra-params (edn-params-fn base-params)
-        params (merge base-params extra-params)
-        edn-opts {:readers (merge
-                             {'waiter/param params
-                              'waiter/param-str (comp str params)}
-                             edn-readers)}]
-    (try
-      (->> replicaset-spec-file-path
-           slurp
-           (edn/read-string edn-opts))
-      (catch Throwable e
-        (log/error e "Error creating ReplicaSet specification for" service-id)
-        (throw e)))))
-
 (defn- create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [service-id] :as descriptor}
-   {:keys [api-server-url http-client replicaset-api-version] :as scheduler}]
+   {:keys [api-server-url http-client replicaset-api-version replicaset-spec-builder-fn] :as scheduler}]
   (let [{:strs [run-as-user] :as service-description} (:service-description descriptor)
-        spec-json (service-spec scheduler service-id service-description)
+        spec-json (replicaset-spec-builder-fn scheduler service-id service-description)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/"
                          (service-description->namespace service-description) "/replicasets")
         response-json (api-request http-client request-url
@@ -466,15 +403,14 @@
              replicaset->Service)))
 
 ; The Waiter Scheduler protocol implementation for Kubernetes
-(defrecord KubernetesScheduler [api-server-url http-client
-                                edn-params-fn
-                                edn-readers
+(defrecord KubernetesScheduler [api-server-url
+                                http-client
                                 max-patch-retries
                                 max-name-length
                                 orchestrator-name
                                 pod-base-port
                                 replicaset-api-version
-                                replicaset-spec-file-path
+                                replicaset-spec-builder-fn
                                 service-id->failed-instances-transient-store
                                 service-id->password-fn
                                 service-id->service-description-fn]
@@ -588,9 +524,79 @@
   (state [_]
     {:service-id->failed-instances @service-id->failed-instances-transient-store}))
 
+(defn default-replicaset-builder
+  "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
+  [{:keys [orchestrator-name pod-base-port replicaset-api-version
+           service-id->password-fn] :as scheduler}
+   service-id
+   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
+           health-check-max-consecutive-failures mem min-instances ports
+           run-as-user] :as service-description}
+   {:keys [container-image-spec] :as context}]
+  (let [home-path (str "/home/" run-as-user)
+        base-env (scheduler/environment service-id service-description
+                                        service-id->password-fn home-path)
+        ;; Randomize $PORT0 value to ensure clients can't hardcode it.
+        ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
+        port0 (-> (rand-int 100) (* 10) (+ pod-base-port))
+        env (into [;; We set these two "MESOS_*" variables to improve interoperability.
+                   ;; New clients should prefer using WAITER_SANDBOX.
+                   {:name "MESOS_DIRECTORY" :value home-path}
+                   {:name "MESOS_SANDBOX" :value home-path}]
+                  (concat
+                    (for [[k v] base-env]
+                      {:name k :value v})
+                    (for [i (range ports)]
+                      {:name (str "PORT" i) :value (str (+ port0 i))})))
+        k8s-name (service-id->k8s-app-name scheduler service-id)
+        backend-protocol-lower (string/lower-case backend-proto)
+        backend-protocol-upper (string/upper-case backend-proto)
+        health-check-url (sd/service-description->health-check-url service-description)
+        memory  (str mem "Mi")
+        ssl? (= "https" backend-protocol-lower)]
+    {:kind "ReplicaSet"
+     :apiVersion replicaset-api-version
+     :metadata {:name k8s-name
+                :labels {:app k8s-name
+                         :managed-by orchestrator-name}
+                :annotations {:waiter-service-id service-id}}
+     :spec {:replicas min-instances
+            :selector {:matchLabels {:app k8s-name
+                                     :managed-by orchestrator-name}}
+            :template {:metadata {:labels {:app k8s-name
+                                           :managed-by orchestrator-name}
+                                  :annotations {:waiter-port-count (str ports)
+                                                :waiter-protocol backend-protocol-lower
+                                                :waiter-service-id service-id}}
+                       :spec {:containers [{:command ["/bin/sh" "-c" cmd]
+                                            :env env
+                                            :image container-image-spec
+                                            :imagePullPolicy "IfNotPresent"
+                                            :livenessProbe {:httpGet {:path health-check-url
+                                                                      :port port0
+                                                                      :scheme backend-protocol-upper}
+                                                            :failureThreshold health-check-max-consecutive-failures
+                                                            :initialDelaySeconds grace-period-secs
+                                                            :periodSeconds health-check-interval-secs
+                                                            :timeoutSeconds 1}
+                                            :name k8s-name
+                                            :ports [{:containerPort port0}]
+                                            :readinessProbe {:httpGet {:path health-check-url
+                                                                       :port port0
+                                                                       :scheme backend-protocol-upper}
+                                                             :failureThreshold 1
+                                                             :periodSeconds health-check-interval-secs
+                                                             :timeoutSeconds 1}
+                                            :resources {:limits {:cpu cpus
+                                                                 :memory memory}
+                                                        :requests {:cpu cpus
+                                                                   :memory memory}}
+                                            :workingDir home-path}]
+                              :terminationGracePeriodSeconds 0}}}}))
+
 (defn- start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
-   and optionally start a chime to periodically referesh the value."
+   and optionally start a chime to periodically refresh the value."
   [{:keys [refresh-delay-mins refresh-fn]}]
   {:pre [(or (nil? refresh-delay-mins)
              (utils/pos-int? refresh-delay-mins))
@@ -599,7 +605,7 @@
         auth-update-fn (fn auth-update []
                          (if-let [auth-str' (refresh)]
                            (reset! k8s-api-auth-str auth-str')))]
-    (assert (fn? refresh))
+    (assert (fn? refresh) "Refresh function must be a Clojure fn")
     (auth-update-fn)
     (when refresh-delay-mins
       (du/start-timer-task
@@ -610,10 +616,9 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication edn-params edn-readers http-options max-patch-retries
-           max-name-length orchestrator-name pod-base-port replicaset-api-version
-           replicaset-spec-file-path service-id->service-description-fn
-           service-id->password-fn url]}]
+  [{:keys [authentication http-options max-patch-retries max-name-length orchestrator-name
+           pod-base-port replicaset-api-version replicaset-spec-builder
+           service-id->service-description-fn service-id->password-fn url]}]
   {:pre [(utils/pos-int? (:socket-timeout http-options))
          (utils/pos-int? (:conn-timeout http-options))
          (utils/non-neg-int? max-patch-retries)
@@ -622,26 +627,27 @@
          (integer? pod-base-port)
          (< 0 pod-base-port 65527)  ; max port is 65535, and we need to reserve up to 10 ports
          (not (string/blank? replicaset-api-version))
-         (some-> replicaset-spec-file-path io/as-file .exists)
+         (symbol? (:factory-fn replicaset-spec-builder))
          (some? (io/as-url url))]}
   (let [http-client (http-utils/http-client-factory http-options)
         service-id->failed-instances-transient-store (atom {})
-        edn-params-fn (let [{fn-sym :fn opts :options} edn-params
-                            f @(utils/resolve-symbol fn-sym)]
-                        (assert (fn? f))
-                        #(f % opts))]
+        replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
+                                               :factory-fn
+                                               utils/resolve-symbol
+                                               deref)]
+                                     (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
+                                     (fn [scheduler service-id service-description]
+                                       (f scheduler service-id service-description replicaset-spec-builder)))]
     (when authentication
       (start-auth-renewer authentication))
-    (->KubernetesScheduler url http-client
-                           edn-params-fn
-                           (pc/map-vals (comp deref utils/resolve-symbol)
-                                        edn-readers)
+    (->KubernetesScheduler url
+                           http-client
                            max-patch-retries
                            max-name-length
                            orchestrator-name
                            pod-base-port
                            replicaset-api-version
-                           replicaset-spec-file-path
+                           replicaset-spec-builder-fn
                            service-id->failed-instances-transient-store
                            service-id->password-fn
                            service-id->service-description-fn)))
