@@ -33,6 +33,8 @@
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils]))
 
+(def instability-state-atom (atom #{}))
+
 (defn service-exists?
   "Returns true if the requested service-id exists as per the state in the fallback-state."
   [fallback-state service-id]
@@ -178,21 +180,31 @@
                                 :healthy (service-healthy? fallback-state service-id)})
                     (recur (inc iteration) previous-descriptor)))))))))))
 
+(defn retrieve-instability-descriptor
+  "Computer the instability descriptor with 10% greater memory based on the provided descriptor."
+  [descriptor]
+  (update-in descriptor [:sources :headers "mem"] * 1.1))
+
 (defn resolve-descriptor
   "Resolves the descriptor that should be used based on available healthy services.
    Returns the provided latest-descriptor if it references a service with healthy instances or no valid fallback
    descriptor can be found (i.e. no descriptor in the search history which has healthy instances).
    Resolves to a different fallback descriptor which describes a services with healthy instances when the latest descriptor
    represents a service that has not started or does not have healthy instances."
-  [descriptor->previous-descriptor search-history-length request-time fallback-state latest-descriptor]
+  [descriptor->previous-descriptor search-history-length request-time fallback-state instability-state latest-descriptor]
   (let [{:keys [service-id]} latest-descriptor]
-    (if (service-healthy? fallback-state service-id)
-      latest-descriptor
-      (or (retrieve-fallback-descriptor
-            descriptor->previous-descriptor search-history-length fallback-state request-time latest-descriptor)
+    (if (service-instable? instability-state service-id)
+      (or (retrieve-instability-descriptor latest-descriptor)
           (do
-            (log/info "no fallback service found for" (:service-id latest-descriptor))
-            latest-descriptor)))))
+            (log/info "no instability replacement service found for" (:service-id latest-descriptor))
+            latest-descriptor))
+      (if (service-healthy? fallback-state service-id)
+        latest-descriptor
+        (or (retrieve-fallback-descriptor
+              descriptor->previous-descriptor search-history-length fallback-state request-time latest-descriptor)
+            (do
+              (log/info "no fallback service found for" (:service-id latest-descriptor))
+              latest-descriptor))))))
 
 (defn request-authorized?
   "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "
@@ -258,8 +270,9 @@
                 kv-store service-id-prefix token-defaults metric-group-mappings service-description-builder
                 service-approved? auth-user descriptor))
             fallback-state @fallback-state-atom
+            instability-state @instability-state-atom
             descriptor (resolve-descriptor
-                         descriptor->previous-descriptor search-history-length request-time fallback-state latest-descriptor)
+                         descriptor->previous-descriptor search-history-length request-time fallback-state instability-state latest-descriptor)
             {:keys [service-authentication-disabled service-description service-preauthorized]} descriptor
             {:strs [run-as-user permitted-user]} service-description]
         (when-not (or service-authentication-disabled
