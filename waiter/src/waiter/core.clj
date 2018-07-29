@@ -945,7 +945,6 @@
                                  http-client (http/client {:connect-timeout health-check-timeout-ms
                                                            :idle-timeout health-check-timeout-ms})
                                  timeout-chan (chime/chime-ch (du/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))]
-                             ; (clojure.pprint/pprint scheduler-state-mult-chan)
                              (assoc (scheduler/start-scheduler-syncer
                                       clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
                                       scheduler/available? http-client failed-check-threshold)
