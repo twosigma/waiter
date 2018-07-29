@@ -422,24 +422,37 @@
                                      "last-update-user" authenticated-user
                                      "owner" owner
                                      "root" (or (get existing-token-metadata "root") token-root)}
-                                    new-token-metadata)]
-      (store-service-description-for-token
-        synchronize-fn kv-store history-length token new-service-parameter-template new-token-metadata
-        :version-hash version-hash)
-      ; notify peers of token update
-      (make-peer-requests-fn "tokens/refresh"
-                             :method :post
-                             :body (json/write-str {:token token, :owner owner}))
-      (let [creation-mode (if (and (seq existing-token-metadata)
-                                   (not (get existing-token-metadata "deleted")))
-                            "updated "
-                            "created ")]
+                                    new-token-metadata)
+          new-user-editable-token-data (-> (merge new-service-parameter-template new-token-metadata)
+                                           (select-keys sd/token-user-editable-keys))
+          existing-token-description (sd/token->token-description kv-store token :include-deleted false)
+          existing-editable-token-data (-> (merge (:service-parameter-template existing-token-description)
+                                                  (:token-metadata existing-token-description))
+                                           (select-keys sd/token-user-editable-keys))]
+      (if (and (not= "admin" (get request-params "update-mode"))
+               (= existing-editable-token-data new-user-editable-token-data))
         (utils/map->json-response
-          {:message (str "Successfully " creation-mode token)
-           :service-description new-service-parameter-template}
-          :headers {"etag" (token-description->token-hash
-                             {:service-parameter-template new-service-parameter-template
-                              :token-metadata new-token-metadata})})))))
+          {:message (str "No changes detected for " token)
+           :service-description (:service-parameter-template existing-token-description)}
+          :headers {"etag" (token-description->token-hash existing-token-description)})
+        (do
+          (store-service-description-for-token
+            synchronize-fn kv-store history-length token new-service-parameter-template new-token-metadata
+            :version-hash version-hash)
+          ; notify peers of token update
+          (make-peer-requests-fn "tokens/refresh"
+                                 :method :post
+                                 :body (json/write-str {:token token, :owner owner}))
+          (let [creation-mode (if (and (seq existing-token-metadata)
+                                       (not (get existing-token-metadata "deleted")))
+                                "updated "
+                                "created ")]
+            (utils/map->json-response
+              {:message (str "Successfully " creation-mode token)
+               :service-description new-service-parameter-template}
+              :headers {"etag" (token-description->token-hash
+                                 {:service-parameter-template new-service-parameter-template
+                                  :token-metadata new-token-metadata})})))))))
 
 (defn handle-token-request
   "Ring handler for dealing with tokens.

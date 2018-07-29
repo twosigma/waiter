@@ -146,14 +146,16 @@
         (let [response (post-token waiter-url {:health-check-url "/check"
                                                :name service-id-prefix
                                                :token token})]
-          (assert-response-status response 200)))
+          (assert-response-status response 200)
+          (is (str/includes? (:body response) (str "Successfully created " token)))))
 
       (testing "update without etags"
         (doseq [token tokens-to-create]
           (let [response (post-token waiter-url {:health-check-url "/health"
                                                  :name service-id-prefix
                                                  :token token})]
-            (assert-response-status response 200))))
+            (assert-response-status response 200)
+            (is (str/includes? (:body response) (str "Successfully updated " token))))))
 
       (testing "update with etags"
         (doseq [token tokens-to-create]
@@ -165,7 +167,22 @@
                                       (assoc :health-check-url "/probe"
                                              :token token))
                 response (post-token waiter-url token-description :headers {"if-match" (get headers "etag")})]
-            (assert-response-status response 200))))
+            (assert-response-status response 200)
+            (is (str/includes? (:body response) (str "Successfully updated " token))))))
+
+      (testing "update without changes"
+        (doseq [token tokens-to-create]
+          (let [{:keys [body headers]} (get-token waiter-url token)
+                token-description (-> body
+                                      json/read-str
+                                      (select-keys sd/token-user-editable-keys)
+                                      walk/keywordize-keys
+                                      (assoc :token token))
+                current-etag (get headers "etag")
+                response (post-token waiter-url token-description :headers {"if-match" current-etag})]
+            (assert-response-status response 200)
+            (is (str/includes? (:body response) (str "No changes detected for " token)))
+            (is (= current-etag (get-in response [:headers "etag"]))))))
 
       (testing "token retrieval - presence of etag header"
         (doseq [token tokens-to-create]

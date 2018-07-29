@@ -96,6 +96,7 @@
 
 (def user-metadata-schema
   {(s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/hours 1))) 'at-most-1-hour))
+   (s/optional-key "owner") schema/non-empty-string
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
    s/Str s/Any})
 
@@ -130,13 +131,16 @@
 (def ^:const on-the-fly-service-description-keys (set/union service-parameter-keys #{"token"}))
 
 ; keys allowed in system metadata for tokens, these need to be distinct from service description keys
-(def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "owner" "previous" "root"})
+(def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
-(def ^:const user-metadata-keys #{"fallback-period-secs" "stale-timeout-mins"})
+(def ^:const user-metadata-keys #{"fallback-period-secs" "owner" "stale-timeout-mins"})
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
+
+; keys editable by users in the token data
+(def ^:const token-user-editable-keys (set/union service-parameter-keys user-metadata-keys))
 
 ; keys allowed in the token data
 (def ^:const token-data-keys (set/union service-parameter-keys token-metadata-keys))
