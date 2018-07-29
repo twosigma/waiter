@@ -876,6 +876,10 @@
                                      (metrics/transient-metrics-gc scheduler-state-chan local-usage-agent service-gc-go-routine metrics-config)]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
                                  metrics-gc-chans))
+   :instability-maintainer (pc/fnk [router-state-maintainer]
+                             (let [router-state-push-mult (get-in router-state-maintainer [:maintainer-chans :router-state-push-mult])
+                                   router-state-chan (async/tap router-state-push-mult (au/latest-chan))]
+                               (descriptor/instability-maintainer router-state-chan)))
    :interstitial-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                      [:state interstitial-state-atom]
                                      scheduler-maintainer]
@@ -941,6 +945,7 @@
                                  http-client (http/client {:connect-timeout health-check-timeout-ms
                                                            :idle-timeout health-check-timeout-ms})
                                  timeout-chan (chime/chime-ch (du/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))]
+                             ; (clojure.pprint/pprint scheduler-state-mult-chan)
                              (assoc (scheduler/start-scheduler-syncer
                                       clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
                                       scheduler/available? http-client failed-check-threshold)

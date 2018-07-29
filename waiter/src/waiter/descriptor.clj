@@ -33,7 +33,7 @@
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils]))
 
-(def instability-state-atom (atom #{}))
+(def instability-state-atom (atom {:instability-service-ids #{}}))
 
 (defn service-exists?
   "Returns true if the requested service-id exists as per the state in the fallback-state."
@@ -91,6 +91,40 @@
             ; For consistency with historical data, count errors looking up the descriptor as a "process error"
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
             (utils/exception->response e request)))))))
+
+(defn instability-maintainer
+  "Long running daemon process that listens for scheduler state updates and triggers changes in the
+   intstability state."
+  [router-state-chan]
+  (let [exit-chan (au/latest-chan)
+        channels [exit-chan router-state-chan]]
+    (async/go
+      (loop [{:keys [instability-service-ids]
+              :or {instability-service-ids #{}} :as current-state}
+             @instability-state-atom]
+        (let [next-state
+              (try
+                (let [[message selected-chan] (async/alts! channels :priority true)]
+                  (condp = selected-chan
+                    exit-chan
+                    (if (= :exit message)
+                      (log/warn "stopping fallback-maintainer")
+                      (do
+                        (log/info "received unknown message, not stopping fallback-maintainer" {:message message})
+                        current-state))
+
+                    router-state-chan
+                    (let [instable-service-ids (keys (message :service-id->instability-issue))
+                          current-state' (assoc current-state
+                                           :instability-service-ids instable-service-ids)]
+                      (reset! instability-state-atom current-state')
+                      current-state')))
+                (catch Exception e
+                  (log/error e "error in fallback-maintainer")
+                  current-state))]
+          (when next-state
+            (recur next-state)))))
+    {:exit-chan exit-chan}))
 
 (defn fallback-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
