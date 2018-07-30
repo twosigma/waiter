@@ -300,11 +300,10 @@
         conflict-handler-retry
         (fn conflict-handler-retry [error-data]
           (if-let [deployment (exception->stop-application-deployment error-data)]
-            (let [{:keys [id version]} deployment
-                  stop-application-timeout-ms (-> 5 t/minutes t/in-millis)]
+            (let [{:keys [id version]} deployment]
               (log/info "detected StopApplication deployment" {:deployment deployment :service-id service-id})
               (if (-> (du/str-to-date version formatter-marathon)
-                      (t/plus (t/millis stop-application-timeout-ms))
+                      (t/plus (t/minutes 5))
                       (t/before? (t/now)))
                 (do
                   (log/info "deleting existing StopApplication deployment" id)
