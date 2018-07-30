@@ -198,10 +198,17 @@
                                       :cmd-type "shell"})]
           (is (= 200 status) (str "Did not get a 200 response. " body)))
         (log/info "Making request for" token)
-        (let [{:keys [status body service-id]} (make-request-with-debug-info
-                                                 {:x-waiter-token token}
-                                                 #(make-request waiter-url "/secrun" :headers %))]
+        (let [{:keys [status body service-id] :as response} (make-request-with-debug-info
+                                                              {:x-waiter-token token}
+                                                              #(make-request waiter-url "/secrun" :headers %))
+              instance-acquired-delay-ms (-> response
+                                             :headers
+                                             (get "x-waiter-get-available-instance-ns")
+                                             Long/parseLong
+                                             (quot 1000000))] ; truncated nanos->millis
           (is (= 200 status) (str "Did not get a 200 response. " body))
+          (is (<= startup-delay-ms instance-acquired-delay-ms)
+              (format "Healthy instance was found in just %dms (too short)" instance-acquired-delay-ms))
           (when (and (= 200 status) (can-query-for-grace-period? waiter-url))
             (log/info "Verifying app grace period for" token)
             (is (= (t/in-seconds grace-period) (service-id->grace-period waiter-url service-id))))
