@@ -596,11 +596,11 @@
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
    and optionally start a chime to periodically refresh the value."
-  [{:keys [refresh-delay-mins refresh-fn] :as context}]
+  [{:keys [action-fn refresh-delay-mins] :as context}]
   {:pre [(or (nil? refresh-delay-mins)
              (utils/pos-int? refresh-delay-mins))
-         (symbol? refresh-fn)]}
-  (let [refresh! (-> refresh-fn utils/resolve-symbol deref)
+         (symbol? action-fn)]}
+  (let [refresh! (-> action-fn utils/resolve-symbol deref)
         auth-update-task (fn auth-update-task []
                            (if-let [auth-str' (refresh! context)]
                              (reset! k8s-api-auth-str auth-str')))]

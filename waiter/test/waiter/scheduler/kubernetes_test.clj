@@ -839,7 +839,7 @@
                  actual)))))))
 
 (defn test-auth-refresher
-  "Test implementation of the authentication refresh-fn"
+  "Test implementation of the authentication action-fn"
   [{:keys [refresh-value] :as context}]
   refresh-value)
 
@@ -889,8 +889,8 @@
               secret-value "secret-value"]
           (try
             (with-redefs [start-auth-renewer #(reset! kill-task-fn (apply orig-start-auth-renewer %&))]
-              (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :authentication {:refresh-delay-mins 1
-                                                                                                           :refresh-fn `test-auth-refresher
+              (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :authentication {:action-fn `test-auth-refresher
+                                                                                                           :refresh-delay-mins 1
                                                                                                            :refresh-value secret-value})))))
             (is (ct/wait-for #(= secret-value @k8s-api-auth-str) :interval 1 :timeout 10))
             (finally

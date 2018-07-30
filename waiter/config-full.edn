@@ -278,16 +278,16 @@
                     :kubernetes {
                                  ;; Configuration for obtaining the credentials to authenticate with the Kubernetes API server.
                                  ;; If authentication isn't required (e.g., using kubectl proxy), then this can be omitted.
-                                 :authentication {;; Number of minutes to wait between attempts to refresh the credentials.
-                                                  ;; If omitted, then the :refresh-fn value is only called once at Waiter startup.
-                                                  :refresh-delay-mins 15
-
-                                                  ;; Unary function which can be called periodically (or just once if :refresh-delay-mins is omitted)
+                                 :authentication {;; Unary function which can be called periodically (or just once if :refresh-delay-mins is omitted)
                                                   ;; to obtain an Authorization string for use when authenticating with the Kubernetes API server.
                                                   ;; This map is passed to the function as its single `context` argument.
                                                   ;; The function must return a string that can be used as the value for the Authorization HTTP header.
                                                   ;; The sample function given below simply returns the string from the WAITER_K8S_AUTH_STRING environment variable.
-                                                  :refresh-fn waiter.scheduler.kubernetes/authorization-from-environment}
+                                                  :action-fn waiter.scheduler.kubernetes/authorization-from-environment
+
+                                                  ;; Number of minutes to wait between attempts to refresh the credentials.
+                                                  ;; If omitted, then the :action-fn value is only called once at Waiter startup.
+                                                  :refresh-delay-mins 15}
 
                                  :replicaset-spec-builder {;; Factory function which creates a Kubernetes ReplicaSet spec
                                                            ;; (with an embedded Pod spec) for the given Waiter Service.
