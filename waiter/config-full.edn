@@ -318,6 +318,11 @@
                                  ;; e.g., if pod-base-port is 31000, and the random offset was 390, then $PORT0==31390 and $PORT9==31399:
                                  :pod-base-port 31000
 
+                                 ;; The number of characters (not including the preceding dash) in the unique suffix appended to each generated Pod name in a ReplicaSet.
+                                 ;; Unless you've custom-patched your Kubernetes code, then this is probably hard-coded to 5 in the controller code.
+                                 ;; https://github.com/kubernetes/kubernetes/blob/207e9d1/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L45
+                                 :pod-suffix-length 5
+
                                  ;; Version string used for creating and operating on ReplicaSet objects:
                                  :replicaset-api-version "extensions/v1beta1"
 

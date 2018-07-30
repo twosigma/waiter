@@ -54,10 +54,7 @@
   ;; If we have fewer than 48 characters, then we'll probably want to shorten the hash.
   (< k8s-max-name-length 48))
 
-;; Kubernetes Pods have a unique 5-character alphanumeric suffix preceded by a hyphen.
-(def ^:const pod-unique-suffix-length 5)
-
-(defn service-id->k8s-app-name [{:keys [max-name-length] :as scheduler} service-id]
+(defn service-id->k8s-app-name [{:keys [max-name-length pod-suffix-length] :as scheduler} service-id]
   "Shorten a full Waiter service-id to a Kubernetes-compatible application name.
    May return the service-id unmodified if it doesn't violate the
    configured name-length restrictions for this Kubernetes cluster.
@@ -69,7 +66,7 @@
      \"waiter-myapp-e8b625cc83c411e8974c38d5474b213d\")
    ==> \"myapp-e8b625cc474b213d\""
   (let [[_ app-prefix x y z] (re-find #"([^-]+)-(\w{8})(\w+)(\w{8})$" service-id)
-        k8s-max-name-length (- max-name-length pod-unique-suffix-length 1)
+        k8s-max-name-length (- max-name-length pod-suffix-length 1)
         suffix (if (use-short-service-hash? k8s-max-name-length)
                  (str \- x z)
                  (str \- x y z))
@@ -101,10 +98,10 @@
   "Construct the Waiter instance-id for the given Kubernetes pod incarnation.
    Note that a new Waiter Service Instance is created each time a pod restarts,
    and that we generate a unique instance-id by including the pod's restartCount value."
-  ([pod] (pod->instance-id pod (get-in pod [:status :containerStatuses 0 :restartCount])))
-  ([pod restart-count]
+  ([scheduler pod] (pod->instance-id scheduler pod (get-in pod [:status :containerStatuses 0 :restartCount])))
+  ([{:keys [pod-suffix-length] :as scheduler} pod restart-count]
    (let [pod-name (get-in pod [:metadata :name])
-         instance-suffix (subs pod-name (- (count pod-name) pod-unique-suffix-length))
+         instance-suffix (subs pod-name (- (count pod-name) pod-suffix-length))
          service-id (get-in pod [:metadata :annotations :waiter-service-id])]
      (str service-id \. instance-suffix \- restart-count))))
 
@@ -409,6 +406,7 @@
                                 max-name-length
                                 orchestrator-name
                                 pod-base-port
+                                pod-suffix-length
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
                                 service-id->failed-instances-transient-store
@@ -617,7 +615,7 @@
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication http-options max-patch-retries max-name-length orchestrator-name
-           pod-base-port replicaset-api-version replicaset-spec-builder
+           pod-base-port pod-suffix-length replicaset-api-version replicaset-spec-builder
            service-id->service-description-fn service-id->password-fn url]}]
   {:pre [(utils/pos-int? (:socket-timeout http-options))
          (utils/pos-int? (:conn-timeout http-options))
@@ -626,6 +624,7 @@
          (not (string/blank? orchestrator-name))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527)  ; max port is 65535, and we need to reserve up to 10 ports
+         (utils/pos-int? pod-suffix-length)
          (not (string/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
          (some? (io/as-url url))]}
@@ -646,6 +645,7 @@
                            max-name-length
                            orchestrator-name
                            pod-base-port
+                           pod-suffix-length
                            replicaset-api-version
                            replicaset-spec-builder-fn
                            service-id->failed-instances-transient-store

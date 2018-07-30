@@ -278,6 +278,7 @@
                                    :max-name-length 63
                                    :orchestrator-name "waiter"
                                    :pod-base-port 31000
+                                   :pod-suffix-length 5
                                    :replicaset-api-version "extensions/v1beta1"
                                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
                                                              :container-image-spec "twosigma/kitchen:latest"}}

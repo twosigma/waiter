@@ -35,6 +35,8 @@
      (doto (RuntimeException.)
        (.setStackTrace (make-array StackTraceElement 0)))))
 
+(def ^:const default-pod-suffix-length 5)
+
 (defn- make-dummy-scheduler
   ([service-ids] (make-dummy-scheduler service-ids {}))
   ([service-ids args]
@@ -43,6 +45,7 @@
       :max-name-length 63
       :orchestrator-name "waiter"
       :pod-base-port 8080
+      :pod-suffix-length default-pod-suffix-length
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
@@ -77,14 +80,15 @@
      (is (= expected# actual#))))
 
 (deftest test-service-id->k8s-app-name
-  (let [sample-uuid "e8b625cc83c411e8974c38d5474b213d"
+  (let [base-scheduler-spec {:pod-suffix-length default-pod-suffix-length}
+        long-app-name (apply str (repeat 200 \A))
+        sample-uuid "e8b625cc83c411e8974c38d5474b213d"
+        short-app-name "myapp"
         short-sample-uuid (str (subs sample-uuid 0 8)
                                (subs sample-uuid 24))
-        short-app-name "myapp"
-        long-app-name (apply str (repeat 200 \A))
         waiter-service-prefix "waiter-service-id-prefix-"]
-  (let [max-name-length 128
-        long-name-scheduler {:max-name-length max-name-length}]
+  (let [{:keys [max-name-length] :as long-name-scheduler}
+        (assoc base-scheduler-spec :max-name-length 128)]
     (testing "Very long name length limit maps long service-id through unmodified"
       (let [service-id (str "this_name_is_longer_than_64_chars_but_should_be_unmodified_by_the_mapping_function-"
                             sample-uuid)]
@@ -97,11 +101,11 @@
                (service-id->k8s-app-name long-name-scheduler service-id)))))
     (testing "Very long name length limit maps truncates service name, but keeps full uuid"
       (let [service-id (str waiter-service-prefix long-app-name "-" sample-uuid)]
-        (is (= (str (subs long-app-name 0 (- max-name-length 1 32 1 pod-unique-suffix-length))
+        (is (= (str (subs long-app-name 0 (- max-name-length 1 32 1 default-pod-suffix-length))
                     "-" sample-uuid)
                (service-id->k8s-app-name long-name-scheduler service-id))))))
-  (let [max-name-length 32
-        short-name-scheduler {:max-name-length max-name-length}]
+  (let [{:keys [max-name-length] :as short-name-scheduler}
+        (assoc base-scheduler-spec :max-name-length 32)]
         (assert (== 32 (count sample-uuid)))
         (assert (== 16 (count short-sample-uuid)))
         (testing "Short name length limit with short app name only shortens uuid"
@@ -114,7 +118,7 @@
                    (service-id->k8s-app-name short-name-scheduler service-id)))))
         (testing "Short name length limit with long app name truncates app name, removes prefix, and shortens uuid"
           (let [service-id (str waiter-service-prefix long-app-name "-" sample-uuid)]
-            (is (= (str (subs long-app-name 0 (- max-name-length 1 16 1 pod-unique-suffix-length))
+            (is (= (str (subs long-app-name 0 (- max-name-length 1 16 1 default-pod-suffix-length))
                         "-" short-sample-uuid)
                    (service-id->k8s-app-name short-name-scheduler service-id))))))))
 
@@ -841,6 +845,7 @@
                      :max-name-length 63
                      :orchestrator-name "waiter"
                      :pod-base-port 8080
+                     :pod-suffix-length default-pod-suffix-length
                      :replicaset-api-version "extensions/v1beta1"
                      :url "http://127.0.0.1:8001"
                      :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
