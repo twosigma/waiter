@@ -180,12 +180,13 @@
 (deftest ^:parallel ^:integration-fast test-grace-period-with-tokens
   (testing-using-waiter-url
     (let [grace-period (t/minutes 2)
+          startup-delay-ms (-> grace-period t/in-millis (* 0.75) long)
           token (rand-name)]
       (try
         (log/info "Creating token for" token)
         (let [{:keys [status body]}
               (post-token waiter-url {:cmd (kitchen-cmd (str "--port $PORT0 --start-up-sleep-ms "
-                                                             (t/in-millis grace-period)))
+                                                             startup-delay-ms))
                                       :version "not-used"
                                       :cpus 1
                                       :mem 1024
