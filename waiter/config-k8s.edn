@@ -1,0 +1,35 @@
+{
+ ; ---------- Cluster ----------
+
+ :zookeeper {;; Use an in-process ZK (not for production use):
+             :connect-string :in-process}
+
+ ; ---------- Network ----------
+
+ ;; Set the bind address to a specific IP:
+ :host "127.0.0.1"
+
+ ;; Set the port:
+ :port #config/env-int "WAITER_PORT"
+
+ ; ---------- Security ----------
+
+ :authenticator-config {:kind :one-user
+                        :one-user {;; The user account used to launch services:
+                                   :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {:kind :kubernetes
+                    :kubernetes {:url "http://localhost:8001"
+                                 :replicaset-spec-file-path "./specs/k8s-default-pod.edn"}}
+
+ ; ---------- Error Handling ----------
+
+ :deployment-error-config {:min-hosts 1}
+
+ :scheduler-gc-config {:broken-service-min-hosts 1}
+
+ ; ---------- CORS ----------
+
+ :cors-config {:kind :allow-all}}

@@ -107,6 +107,10 @@
 (defn non-neg? [x]
   (or (zero? x) (pos? x)))
 
+(defn non-neg-int? [x]
+  "Returns true if x is a non-negative integer"
+  (and (integer? x) (non-neg? x)))
+
 (defn generate-secret-word
   [src-id dest-id processed-passwords]
   (let [password (second (first processed-passwords))

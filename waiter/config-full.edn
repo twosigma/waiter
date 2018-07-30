@@ -273,6 +273,64 @@
                                ;; The URL for your Marathon HTTP API:
                                :url "http://marathon.example.com:8080"}
 
+                    ;; :kind :kubernetes uses Kubernetes (https://kubernetes.io/) for scheduling Waiter services and instances:
+                    ;:kind :kubernetes
+                    :kubernetes {
+                                 ;; Configuration for obtaining the credentials to authenticate with the Kubernetes API server.
+                                 ;; If authentication isn't required (e.g., using kubectl proxy), then this can be omitted.
+                                 :authentication {;; Unary function which can be called periodically (or just once if :refresh-delay-mins is omitted)
+                                                  ;; to obtain an Authorization string for use when authenticating with the Kubernetes API server.
+                                                  ;; This map is passed to the function as its single `context` argument.
+                                                  ;; The function must return a string that can be used as the value for the Authorization HTTP header.
+                                                  ;; The sample function given below simply returns the string from the WAITER_K8S_AUTH_STRING environment variable.
+                                                  :action-fn waiter.scheduler.kubernetes/authorization-from-environment
+
+                                                  ;; Number of minutes to wait between attempts to refresh the credentials.
+                                                  ;; If omitted, then the :action-fn value is only called once at Waiter startup.
+                                                  :refresh-delay-mins 15}
+
+                                 :replicaset-spec-builder {;; Factory function which creates a Kubernetes ReplicaSet spec
+                                                           ;; (with an embedded Pod spec) for the given Waiter Service.
+                                                           ;; The referenced factory function takes the current Kubernetes scheduler,
+                                                           ;; the Waiter service-id, the Waiter service description, and this context map as arguments.
+                                                           ;; Since this map is passed as the context argument to the factory function,
+                                                           ;; any additional configuration data needed for the implementation should be included here.
+                                                           :factory-fn waiter.scheduler.kubernetes/default-replicaset-builder
+                                                           ;; The default factory function accepts an option for the docker container to use in the pod.
+                                                           :default-container-image "twosigma/kitchen:latest"}
+
+                                 ;; HTTP options that will be used when accessing the Kubernetes API:
+                                 :http-options {:conn-timeout 10000
+                                                :socket-timeout 10000}
+
+                                 ;; Number of retry attempts to make when a PATCH request fails with a 409 Conflict:
+                                 :max-patch-retries 5
+
+                                 ;; Maximum number of characters allowed for a Kubernetes object name:
+                                 :max-name-length 63
+
+                                 ;; String value used to annotate Kubernetes objects that are orchestrated by this Waiter instantiation:
+                                 :orchestrator-name "waiter"
+
+                                 ;; Port number used to set the $PORT0 (service port) for Waiter service instances.
+                                 ;; Waiter generates a random offset in the range [0, 990] each time it creates a service,
+                                 ;; adding that offset to the pod-base-port value to get that Waiter service's $PORT0 value.
+                                 ;; If more than one port is requested, $PORT1 thru $PORT9 will be defined sequentially after $PORT0;
+                                 ;; e.g., if pod-base-port is 31000, and the random offset was 390, then $PORT0==31390 and $PORT9==31399:
+                                 :pod-base-port 31000
+
+                                 ;; The number of characters (not including the preceding dash) in the unique suffix appended to each generated Pod name in a ReplicaSet.
+                                 ;; Unless you've custom-patched your Kubernetes code, then this is probably hard-coded to 5 in the controller code.
+                                 ;; https://github.com/kubernetes/kubernetes/blob/207e9d1/staging/src/k8s.io/apiserver/pkg/storage/names/generate.go#L45
+                                 :pod-suffix-length 5
+
+                                 ;; Version string used for creating and operating on ReplicaSet objects:
+                                 :replicaset-api-version "extensions/v1beta1"
+
+                                 ;; Base URL for accessing the Kubernetes API server.
+                                 ;; The URL used below is the default proxy URL bound to by the `kubectl proxy` command:
+                                 :url "http://localhost:8001"}
+
                     ;; :kind :shell simply schedules instances on your local machine (for testing purposes only):
                     ;:kind :shell
                     :shell {

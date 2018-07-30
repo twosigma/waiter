@@ -36,6 +36,16 @@ matrix:
       before_script: cd waiter
       script: ./bin/ci/run-unit-tests.sh
 
+    - env: "NAME='Waiter integration tests: kubernetes-heavy'"
+      services: docker
+      before_script: cd waiter
+      script: ./bin/ci/run-integration-tests-k8s-scheduler.sh test integration-heavy
+
+    - env: "NAME='Waiter integration tests: kubernetes-lite'"
+      services: docker
+      before_script: cd waiter
+      script: ./bin/ci/run-integration-tests-k8s-scheduler.sh parallel-test integration-lite
+
     - env: "NAME='Waiter integration tests: marathon-fast'"
       services: docker
       before_script: cd waiter
