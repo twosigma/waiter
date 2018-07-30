@@ -180,12 +180,13 @@
 (deftest ^:parallel ^:integration-fast test-grace-period-with-tokens
   (testing-using-waiter-url
     (let [grace-period (t/minutes 2)
+          startup-delay-ms (-> grace-period t/in-millis (* 0.75) long)
           token (rand-name)]
       (try
         (log/info "Creating token for" token)
         (let [{:keys [status body]}
               (post-token waiter-url {:cmd (kitchen-cmd (str "--port $PORT0 --start-up-sleep-ms "
-                                                             (t/in-millis grace-period)))
+                                                             startup-delay-ms))
                                       :version "not-used"
                                       :cpus 1
                                       :mem 1024
@@ -197,10 +198,17 @@
                                       :cmd-type "shell"})]
           (is (= 200 status) (str "Did not get a 200 response. " body)))
         (log/info "Making request for" token)
-        (let [{:keys [status body service-id]} (make-request-with-debug-info
-                                                 {:x-waiter-token token}
-                                                 #(make-request waiter-url "/secrun" :headers %))]
+        (let [{:keys [status body service-id] :as response} (make-request-with-debug-info
+                                                              {:x-waiter-token token}
+                                                              #(make-request waiter-url "/secrun" :headers %))
+              instance-acquired-delay-ms (-> response
+                                             :headers
+                                             (get "x-waiter-get-available-instance-ns")
+                                             Long/parseLong
+                                             (quot 1000000))] ; truncated nanos->millis
           (is (= 200 status) (str "Did not get a 200 response. " body))
+          (is (<= startup-delay-ms instance-acquired-delay-ms)
+              (format "Healthy instance was found in just %dms (too short)" instance-acquired-delay-ms))
           (when (and (= 200 status) (can-query-for-grace-period? waiter-url))
             (log/info "Verifying app grace period for" token)
             (is (= (t/in-seconds grace-period) (service-id->grace-period waiter-url service-id))))
