@@ -281,7 +281,7 @@
                                    :pod-suffix-length 5
                                    :replicaset-api-version "extensions/v1beta1"
                                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
-                                                             :container-image-spec "twosigma/kitchen:latest"}}
+                                                             :default-container-image "twosigma/kitchen:latest"}}
                       :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                  :home-path-prefix "/home/"
                                  :http-options {:conn-timeout 10000

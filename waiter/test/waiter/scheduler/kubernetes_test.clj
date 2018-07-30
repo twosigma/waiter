@@ -50,7 +50,7 @@
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
-                                     {:container-image-spec "twosigma/kitchen:latest"})
+                                     {:default-container-image "twosigma/kitchen:latest"})
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"run-as-user" "myself"})
@@ -855,7 +855,7 @@
                      :replicaset-api-version "extensions/v1beta1"
                      :url "http://127.0.0.1:8001"
                      :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
-                                               :container-image-spec "twosigma/kitchen:latest"}}]
+                                               :default-container-image "twosigma/kitchen:latest"}}]
     (testing "Creating a KubernetesScheduler"
 
       (testing "should throw on invalid configuration"

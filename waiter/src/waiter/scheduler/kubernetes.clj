@@ -118,12 +118,12 @@
    when a new pod failure is listed in the given pod's lastState container status.
    Note that unique instance-ids are deterministically generated each time the pod is restarted
    by passing the pod's restartCount value to the pod->instance-id function."
-  [{:keys [service-id] :as live-instance} {:keys [service-id->failed-instances-transient-store]} pod]
+  [{:keys [service-id] :as live-instance} {:keys [service-id->failed-instances-transient-store] :as scheduler} pod]
   (when-let [newest-failure (get-in pod [:status :containerStatuses 0 :lastState :terminated])]
     (let [failure-flags (if (= "OOMKilled" (:reason newest-failure)) #{:memory-limit-exceeded} #{})
           newest-failure-start-time (-> newest-failure :startedAt timestamp-str->datetime)
           restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
-          newest-failure-id (pod->instance-id pod (dec restart-count))
+          newest-failure-id (pod->instance-id scheduler pod (dec restart-count))
           failures (-> service-id->failed-instances-transient-store deref (get service-id))]
       (when-not (contains? failures newest-failure-id)
         (let [newest-failure-instance (cond-> (assoc live-instance
@@ -140,7 +140,7 @@
 
 (defn- pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [pod]
+  [scheduler pod]
   (try
     (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])]
       (scheduler/make-ServiceInstance
@@ -148,12 +148,12 @@
                            Integer/parseInt range next (mapv #(+ port0 %)))
          :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
          :host (get-in pod [:status :podIP])
-         :id (pod->instance-id pod)
-         :log-directory (str "/home/" (get-in pod [:metadata :namespace]))
+         :id (pod->instance-id scheduler pod)
          :k8s/app-name (get-in pod [:metadata :labels :app])
          :k8s/namespace (get-in pod [:metadata :namespace])
          :k8s/pod-name (get-in pod [:metadata :name])
          :k8s/restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
+         :log-directory (str "/home/" (get-in pod [:metadata :namespace]))
          :port port0
          :protocol (get-in pod [:metadata :annotations :waiter-protocol])
          :service-id (get-in pod [:metadata :annotations :waiter-service-id])
@@ -186,8 +186,8 @@
       (ss/throw+ response))))
 
 (defn- service-description->namespace
-  [service-description]
-  (get service-description "run-as-user"))
+  [{:strs [run-as-user]}]
+  run-as-user)
 
 (defn- get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
@@ -217,20 +217,21 @@
   (and (some? (get-in pod [:status :podIP]))
        (nil? (get-in pod [:metadata :deletionTimestamp]))))
 
-(defn- get-service-instances
-  "Get all Waiter Service Instances associated with the given Waiter Service."
+(defn- get-service-instances!
+  "Get all active Waiter Service Instances associated with the given Waiter Service.
+   Also updates the service-id->failed-instances-transient-store as a side-effect."
   [{:keys [api-server-url http-client] :as scheduler} basic-service-info]
   (vec (for [pod (get-replicaset-pods scheduler basic-service-info)
              :when (live-pod? pod)]
-         (let [service-instance (pod->ServiceInstance pod)]
+         (let [service-instance (pod->ServiceInstance scheduler pod)]
            (track-failed-instances! service-instance scheduler pod)
            service-instance))))
 
-(defn instances-breakdown
+(defn instances-breakdown!
   "Get all Waiter Service Instances associated with the given Waiter Service.
    Grouped by liveness status, i.e.: {:active-instances [...] :failed-instances [...] :killed-instances [...]}"
   [{:keys [service-id->failed-instances-transient-store] :as scheduler} {service-id :id :as basic-service-info}]
-  {:active-instances (get-service-instances scheduler basic-service-info)
+  {:active-instances (get-service-instances! scheduler basic-service-info)
    :failed-instances (-> @service-id->failed-instances-transient-store (get service-id []) vals vec)
    :killed-instances (-> service-id scheduler/service-id->killed-instances vec)})
 
@@ -415,19 +416,19 @@
   scheduler/ServiceScheduler
 
   (get-apps->instances [this]
-    (pc/map-from-keys #(instances-breakdown this %)
+    (pc/map-from-keys #(instances-breakdown! this %)
                       (get-services this)))
 
   (get-apps [this]
     (get-services this))
 
   (get-instances [this service-id]
-    (instances-breakdown this
-                         {:id service-id
-                          :k8s/app-name (service-id->k8s-app-name this service-id)
-                          :k8s/namespace (-> service-id
-                                             service-id->service-description-fn
-                                             (get "run-as-user"))}))
+    (instances-breakdown! this
+                          {:id service-id
+                           :k8s/app-name (service-id->k8s-app-name this service-id)
+                           :k8s/namespace (-> service-id
+                                              service-id->service-description-fn
+                                              (get "run-as-user"))}))
 
   (kill-instance [this {:keys [id service-id] :as instance}]
     (ss/try+
@@ -530,7 +531,7 @@
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures mem min-instances ports
            run-as-user] :as service-description}
-   {:keys [container-image-spec] :as context}]
+   {:keys [default-container-image] :as context}]
   (let [home-path (str "/home/" run-as-user)
         base-env (scheduler/environment service-id service-description
                                         service-id->password-fn home-path)
@@ -554,21 +555,21 @@
         ssl? (= "https" backend-protocol-lower)]
     {:kind "ReplicaSet"
      :apiVersion replicaset-api-version
-     :metadata {:name k8s-name
+     :metadata {:annotations {:waiter-service-id service-id}
                 :labels {:app k8s-name
                          :managed-by orchestrator-name}
-                :annotations {:waiter-service-id service-id}}
+                :name k8s-name}
      :spec {:replicas min-instances
             :selector {:matchLabels {:app k8s-name
                                      :managed-by orchestrator-name}}
-            :template {:metadata {:labels {:app k8s-name
-                                           :managed-by orchestrator-name}
-                                  :annotations {:waiter-port-count (str ports)
+            :template {:metadata {:annotations {:waiter-port-count (str ports)
                                                 :waiter-protocol backend-protocol-lower
-                                                :waiter-service-id service-id}}
+                                                :waiter-service-id service-id}
+                                  :labels {:app k8s-name
+                                           :managed-by orchestrator-name}}
                        :spec {:containers [{:command ["/bin/sh" "-c" cmd]
                                             :env env
-                                            :image container-image-spec
+                                            :image default-container-image
                                             :imagePullPolicy "IfNotPresent"
                                             :livenessProbe {:httpGet {:path health-check-url
                                                                       :port port0
