@@ -261,6 +261,59 @@
      :labels {:source "waiter"
               :user run-as-user}}))
 
+(defn- start-new-service
+  "Helper function to start a service with the specified descriptor."
+  [marathon-api service-id marathon-descriptor conflict-handler]
+  (ss/try+
+    (log/info "Starting new app for" service-id "with descriptor" (dissoc marathon-descriptor :env))
+    (scheduler/retry-on-transient-server-exceptions
+      (str "create-app-if-new[" service-id "]")
+      (marathon/create-app marathon-api marathon-descriptor))
+    (catch [:status 409] e
+      (conflict-handler {:deployment-info (extract-deployment-info marathon-api e)
+                         :descriptor marathon-descriptor
+                         :error e}))))
+
+(defn- exception->stop-application-deployment
+  "Retrieves the first StopApplication deployment in the exception data."
+  [error-data]
+  (when (= 409 (some-> error-data :error :status))
+    (some->> error-data
+             :deployment-info
+             (some (fn [{:keys [currentActions] :as deployment}]
+                     (and (some (fn [{:keys [action]}]
+                                  (= "StopApplication" action))
+                                currentActions)
+                          deployment))))))
+
+(defn start-new-service-wrapper
+  "Starts the service with the specified descriptor.
+   If the service is currently under a StopApplication deployment,
+   it waits up to stop-application-timeout-ms milliseconds before deleting the deployment
+   and starting the service."
+  [marathon-api service-id marathon-descriptor]
+  (let [conflict-handler-basic
+        (fn conflict-handler-basic [error-data]
+          (log/warn (ex-info "Conflict status when trying to start app. Is app starting up?"
+                             error-data)
+                    "Exception starting new app"))
+        conflict-handler-retry
+        (fn conflict-handler-retry [error-data]
+          (if-let [deployment (exception->stop-application-deployment error-data)]
+            (let [{:keys [id version]} deployment]
+              (log/info "detected StopApplication deployment" {:deployment deployment :service-id service-id})
+              (if (-> (du/str-to-date version formatter-marathon)
+                      (t/plus (t/minutes 5))
+                      (t/before? (t/now)))
+                (do
+                  (log/info "deleting existing StopApplication deployment" id)
+                  (marathon/delete-deployment marathon-api id)
+                  (log/info "re-attempting start service" service-id)
+                  (start-new-service marathon-api service-id marathon-descriptor conflict-handler-basic))
+                (conflict-handler-basic error-data)))
+            (conflict-handler-basic error-data)))]
+    (start-new-service marathon-api service-id marathon-descriptor conflict-handler-retry)))
+
 (defrecord MarathonScheduler [marathon-api mesos-api retrieve-framework-id-fn
                               home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store service-id->out-of-sync-state-store
@@ -319,17 +372,7 @@
       (let [service-id (:service-id descriptor)
             marathon-descriptor (marathon-descriptor home-path-prefix service-id->password-fn descriptor)]
         (when-not (scheduler/app-exists? this service-id)
-          (ss/try+
-            (log/info "Starting new app for" service-id "with descriptor" (dissoc marathon-descriptor :env))
-            (scheduler/retry-on-transient-server-exceptions
-              (str "create-app-if-new[" service-id "]")
-              (marathon/create-app marathon-api marathon-descriptor))
-            (catch [:status 409] e
-              (log/warn (ex-info "Conflict status when trying to start app. Is app starting up?"
-                                 {:deployment-info (extract-deployment-info marathon-api e)
-                                  :descriptor marathon-descriptor
-                                  :error e})
-                        "Exception starting new app")))))))
+          (start-new-service-wrapper marathon-api service-id marathon-descriptor)))))
 
   (delete-app [_ service-id]
     (ss/try+

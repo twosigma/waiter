@@ -1272,3 +1272,104 @@
                     :service-id->out-of-sync-state {}}
                    @service-id->out-of-sync-state-store))
             (is (= [["ws-s2a" 1 false] ["ws-s4a" 2 false]] (deref scheduler-operations-atom)))))))))
+
+(deftest test-start-new-service-wrapper
+  (let [marathon-api (Object.)
+        service-id "test-service-id"
+        marathon-descriptor {:reference (Object.)}
+        deployment-error-response (->> {:deployments [{:id "d-1234"}]
+                                        :message "App is locked by one or more deployments."}
+                                       json/write-str
+                                       (assoc {:status 409} :body))
+        create-app-error-factory (fn [error-call-limit create-call-counter]
+                                   (fn [in-marathon-api in-marathon-descriptor]
+                                     (is (= marathon-api in-marathon-api))
+                                     (is (= marathon-descriptor in-marathon-descriptor))
+                                     (swap! create-call-counter inc)
+                                     (if (> @create-call-counter error-call-limit)
+                                       :success
+                                       (ss/throw+ deployment-error-response))))
+        delete-deployment-factory (fn [deleted-deployments]
+                                    (fn [in-marathon-api deployment-id]
+                                      (is (= marathon-api in-marathon-api))
+                                      (swap! deleted-deployments conj deployment-id)))
+        newish-version (du/date-to-str (t/minus (t/now) (t/minutes 1)) formatter-marathon)
+        outdated-version (du/date-to-str (t/minus (t/now) (t/minutes 15)) formatter-marathon)]
+
+    (testing "service starts successfully"
+      (let [create-call-counter (atom 0)]
+        (with-redefs [marathon/create-app (create-app-error-factory 0 create-call-counter)]
+          (let [result (start-new-service-wrapper marathon-api service-id marathon-descriptor)]
+            (is (= :success result))
+            (is (= 1 @create-call-counter))))))
+
+    (testing "service starts successfully despite StopApplication deployment"
+      (let [create-call-counter (atom 0)
+            deleted-deployments (atom [])]
+        (with-redefs [marathon/create-app (create-app-error-factory 1 create-call-counter)
+                      marathon/delete-deployment (delete-deployment-factory deleted-deployments)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "StopApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version outdated-version}])]
+          (is (= :success (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 2 @create-call-counter))
+          (is (= ["d-1234"] @deleted-deployments)))))
+
+    (testing "service starts fails due to repeated recent StopApplication deployment"
+      (let [create-call-counter (atom 0)]
+        (with-redefs [marathon/create-app (create-app-error-factory 10 create-call-counter)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "StopApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version newish-version}])]
+          (is (nil? (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 1 @create-call-counter)))))
+
+    (testing "service starts fails due to repeated outdated StopApplication deployment"
+      (let [create-call-counter (atom 0)
+            deleted-deployments (atom [])]
+        (with-redefs [marathon/create-app (create-app-error-factory 10 create-call-counter)
+                      marathon/delete-deployment (delete-deployment-factory deleted-deployments)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "StopApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version outdated-version}])]
+          (is (nil? (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 2 @create-call-counter))
+          (is (= ["d-1234"] @deleted-deployments)))))
+
+    (testing "service starts fails due to recent StopApplication deployments"
+      (let [create-call-counter (atom 0)]
+        (with-redefs [marathon/create-app (create-app-error-factory 10 create-call-counter)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "ScaleApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version newish-version}])]
+          (is (nil? (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 1 @create-call-counter)))))
+
+    (testing "service starts fails due to repeated conflict deployments"
+      (let [create-call-counter (atom 0)]
+        (with-redefs [marathon/create-app (create-app-error-factory 10 create-call-counter)
+                      marathon/get-deployments (fn [in-marathon-api]
+                                                 (is (= marathon-api in-marathon-api))
+                                                 [{:affectedApps ["/test-service-id"]
+                                                   :currentActions [{:action "ScaleApplication"
+                                                                     :app "/test-service-id"}]
+                                                   :id "d-1234"
+                                                   :version newish-version}])]
+          (is (nil? (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
+          (is (= 1 @create-call-counter)))))))
