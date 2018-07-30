@@ -592,23 +592,23 @@
                                             :workingDir home-path}]
                               :terminationGracePeriodSeconds 0}}}}))
 
-(defn- start-auth-renewer
+(defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
    and optionally start a chime to periodically refresh the value."
-  [{:keys [refresh-delay-mins refresh-fn]}]
+  [{:keys [refresh-delay-mins refresh-fn] :as context}]
   {:pre [(or (nil? refresh-delay-mins)
              (utils/pos-int? refresh-delay-mins))
          (symbol? refresh-fn)]}
-  (let [refresh (-> refresh-fn utils/resolve-symbol deref)
-        auth-update-fn (fn auth-update []
-                         (if-let [auth-str' (refresh)]
-                           (reset! k8s-api-auth-str auth-str')))]
-    (assert (fn? refresh) "Refresh function must be a Clojure fn")
-    (auth-update-fn)
+  (let [refresh! (-> refresh-fn utils/resolve-symbol deref)
+        auth-update-task (fn auth-update-task []
+                           (if-let [auth-str' (refresh! context)]
+                             (reset! k8s-api-auth-str auth-str')))]
+    (assert (fn? refresh!) "Refresh function must be a Clojure fn")
+    (auth-update-task)
     (when refresh-delay-mins
       (du/start-timer-task
         (t/minutes refresh-delay-mins)
-        auth-update-fn
+        auth-update-task
         :delay-ms (* 60000 refresh-delay-mins)))))
 
 (defn kubernetes-scheduler

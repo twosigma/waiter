@@ -21,6 +21,7 @@
             [slingshot.slingshot :as ss]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.kubernetes :refer :all]
+            [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du])
   (:import (waiter.scheduler Service ServiceInstance)
            (waiter.scheduler.kubernetes KubernetesScheduler)))
@@ -837,6 +838,11 @@
                   :message "Error while scaling waiter service"}
                  actual)))))))
 
+(defn test-auth-refresher
+  "Test implementation of the authentication refresh-fn"
+  [{:keys [refresh-value] :as context}]
+  refresh-value)
+
 (deftest test-kubernetes-scheduler
   (let [base-config {:authentication nil
                      :http-options {:conn-timeout 10000
@@ -875,4 +881,17 @@
           (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port 1234567890))))))
 
       (testing "should work with valid configuration"
-        (is (instance? KubernetesScheduler (kubernetes-scheduler base-config)))))))
+        (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
+
+      (testing "periodic auth-refresh task"
+        (let [kill-task-fn (atom (constantly nil))
+              orig-start-auth-renewer start-auth-renewer
+              secret-value "secret-value"]
+          (try
+            (with-redefs [start-auth-renewer #(reset! kill-task-fn (apply orig-start-auth-renewer %&))]
+              (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :authentication {:refresh-delay-mins 1
+                                                                                                           :refresh-fn `test-auth-refresher
+                                                                                                           :refresh-value secret-value})))))
+            (is (ct/wait-for #(= secret-value @k8s-api-auth-str) :interval 1 :timeout 10))
+            (finally
+              (@kill-task-fn))))))))
