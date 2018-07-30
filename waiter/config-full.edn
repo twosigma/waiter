@@ -297,7 +297,7 @@
                                                            ;; any additional configuration data needed for the implementation should be included here.
                                                            :factory-fn waiter.scheduler.kubernetes/default-replicaset-builder
                                                            ;; The default factory function accepts an option for the docker container to use in the pod.
-                                                           :container-image-spec "twosigma/kitchen:latest"}
+                                                           :default-container-image "twosigma/kitchen:latest"}
 
                                  ;; HTTP options that will be used when accessing the Kubernetes API:
                                  :http-options {:conn-timeout 10000
