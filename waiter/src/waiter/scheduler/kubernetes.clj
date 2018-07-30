@@ -534,9 +534,9 @@
   (let [home-path (str "/home/" run-as-user)
         base-env (scheduler/environment service-id service-description
                                         service-id->password-fn home-path)
-        ;; Randomize $PORT0 value to ensure clients can't hardcode it.
+        ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
-        port0 (-> (rand-int 100) (* 10) (+ pod-base-port))
+        port0 (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
                    {:name "MESOS_DIRECTORY" :value home-path}
