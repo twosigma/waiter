@@ -33,6 +33,7 @@
    (s/required-key :cors-config) (s/constrained
                                    {:kind s/Keyword
                                     (s/optional-key :ttl) schema/positive-int
+                                    (s/required-key :exposed-headers) [schema/non-empty-string]
                                     (s/required-key :max-age) schema/positive-int
                                     s/Keyword schema/require-symbol-factory-fn}
                                    schema/contains-kind-sub-map?)
@@ -207,6 +208,7 @@
                  :patterns {:factory-fn 'waiter.cors/pattern-based-validator
                             :allowed-origins []}
                  :allow-all {:factory-fn 'waiter.cors/allow-all-validator}
+                 :exposed-headers ["etag", "x-cid"]
                  :max-age 3600}
    :blacklist-config {:blacklist-backoff-base-time-ms 10000
                       :max-blacklist-time-ms 300000}
