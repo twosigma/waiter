@@ -833,7 +833,13 @@
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
    :websocket-request-authenticator (pc/fnk [[:state passwords]]
                                       (fn websocket-request-authenticator [request response]
-                                        (ws/request-authenticator (first passwords) request response)))})
+                                        (ws/request-authenticator (first passwords) request response)))
+   :wrap-cors-exposed-headers-fn (pc/fnk [[:settings cors-config]
+                                          waiter-request?-fn]
+                                   ;; cors-config schema is not a map, so we need to destructure separately
+                                   (let [{:keys [exposed-headers]} cors-config]
+                                     (fn wrap-cors-exposed-headers-fn [handler]
+                                       (cors/wrap-cors-exposed-headers handler waiter-request?-fn exposed-headers))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]

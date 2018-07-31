@@ -611,24 +611,24 @@
 
 (deftest ^:parallel ^:integration-fast test-cors-request-allowed
   (testing-using-waiter-url
-    (let [{{:keys [kind]} :cors-config} (waiter-settings waiter-url)]
+    (let [{{:keys [exposed-headers kind]} :cors-config} (waiter-settings waiter-url)]
       (if (= kind "allow-all")
         (testing "cors allowed"
           ; Hit an endpoint that is guarded by CORS validation.
           ; There's nothing special about /state, any CORS validated endpoint will do.
-          (let [{:keys [status] :as response} (make-request waiter-url "/state"
-                                                            :headers {"origin" "example.com"})]
-            (is (= 200 status) response)))
+          (let [{:keys [headers] :as response} (make-request waiter-url "/state"
+                                                             :headers {"origin" "example.com"})]
+            (assert-response-status response 200)
+            (when (seq exposed-headers)
+              (is (= (str/join ", " exposed-headers) (get headers "access-control-expose-headers"))
+                  (str response)))))
         (testing "cors not allowed"
-          (let [{:keys [status] :as response}
-                (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :get)]
-            (is (= 403 status) response))
-          (let [{:keys [status] :as response}
-                (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :post)]
-            (is (= 403 status) response))
-          (let [{:keys [status] :as response}
-                (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :options)]
-            (is (= 403 status) response)))))))
+          (let [response (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :get)]
+            (assert-response-status response 403))
+          (let [response (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :post)]
+            (assert-response-status response 403))
+          (let [response (make-request waiter-url "/state" :headers {"origin" "badorigin.com"} :method :options)]
+            (assert-response-status response 403)))))))
 
 (deftest ^:parallel ^:integration-fast test-error-handling
   (testing-using-waiter-url

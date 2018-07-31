@@ -15,8 +15,10 @@
 ;;
 (ns waiter.cors
   (:require [clojure.core.async :as async]
+            [clojure.string :as str]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
+            [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import java.util.regex.Pattern))
 
@@ -82,6 +84,22 @@
           (#(if (map? %)
               (bless %)
               (async/go (bless (async/<! %)))))))))
+
+(defn wrap-cors-exposed-headers
+  "Middleware that attaches Access-Control-Expose-Headers to CORS responses
+   for Waiter API requests to allow clients access to the exposed headers.
+   It relies on the presence of :descriptor in the response to detect a request
+   for a backend service in addition to the origin header."
+  [handler waiter-request? exposed-headers]
+  (let [exposed-headers-str (when (seq exposed-headers)
+                              (str/join ", " exposed-headers))]
+    (fn wrap-cors-exposed-headers-fn [request]
+      (cond-> (handler request)
+        (and exposed-headers-str ;; exposed headers are configured
+             (not (utils/same-origin request)) ;; CORS request
+             (waiter-request? request)) ;; request made to a waiter router
+        (ru/update-response
+          #(update % :headers assoc "Access-Control-Expose-Headers" exposed-headers-str))))))
 
 (defrecord PatternBasedCorsValidator [pattern-matches?]
   CorsValidator

@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.cors-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.string :as str]
+            [clojure.test :refer :all]
             [waiter.core :as core]
             [waiter.cors :refer :all])
   (:import waiter.cors.PatternBasedCorsValidator))
@@ -92,3 +93,59 @@
       (is (= "POST, GET, OPTIONS, DELETE" (get headers "Access-Control-Allow-Methods")))
       (is (= (str max-age) (get headers "Access-Control-Max-Age")))
       (is (= "true" (get headers "Access-Control-Allow-Credentials"))))))
+
+(deftest test-wrap-cors-exposed-headers
+  (let [base-handler (fn [_] {:status 200})
+        waiter-hostnames #{"waiter.localtest.me" "waiter.example.com"}
+        waiter-request? (fn [request]
+                          (-> (get-in request [:headers "host"] "")
+                              (str/split #":")
+                              first
+                              waiter-hostnames))]
+    (testing "CORS request with exposed headers"
+      (let [{:keys [headers status]}
+            ((wrap-cors-exposed-headers base-handler waiter-request? ["etag" "x-cid"])
+              {:headers {"host" "waiter.localtest.me:4567"
+                         "origin" "http://cors.localtest.me:1234"}
+               :scheme "http"})]
+        (is (= 200 status))
+        (is (= "etag, x-cid" (get headers "Access-Control-Expose-Headers")) (str headers))))
+
+    (testing "CORS request with exposed headers and service marker in response"
+      (let [base-handler (fn [_] {:waiter-target-type :service
+                                  :status 200})
+            {:keys [headers status]}
+            ((wrap-cors-exposed-headers base-handler waiter-request? ["etag" "x-cid"])
+              {:headers {"origin" "http://cors.localtest.me:1234"}
+               :scheme "http"})]
+        (is (= 200 status))
+        (is (nil? (get headers "Access-Control-Expose-Headers")) (str headers))))
+
+    (testing "CORS request with exposed headers and api marker in response"
+      (let [base-handler (fn [_] {:waiter-target-type :api
+                                  :status 200})
+            {:keys [headers status]}
+            ((wrap-cors-exposed-headers base-handler waiter-request? ["etag" "x-cid"])
+              {:headers {"host" "waiter.localtest.me:4567"
+                         "origin" "http://cors.localtest.me:1234"}
+               :scheme "http"})]
+        (is (= 200 status))
+        (is (= "etag, x-cid" (get headers "Access-Control-Expose-Headers")) (str headers))))
+
+    (testing "CORS request without exposed headers"
+      (let [{:keys [headers status]}
+            ((wrap-cors-exposed-headers base-handler waiter-request? [])
+              {:headers {"host" "waiter.localtest.me:4567"
+                         "origin" "http://cors.localtest.me"}
+               :scheme "http"})]
+        (is (= 200 status))
+        (is (nil? (get headers "Access-Control-Expose-Headers")))))
+
+    (testing "non-CORS request with exposed headers"
+      (let [{:keys [headers status]}
+            ((wrap-cors-exposed-headers base-handler waiter-request? ["etag" "x-cid"])
+              {:headers {"host" "waiter.localtest.me:1234"
+                         "origin" "http://waiter.localtest.me:1234"}
+               :scheme "http"})]
+        (is (= 200 status))
+        (is (nil? (get headers "Access-Control-Expose-Headers")))))))

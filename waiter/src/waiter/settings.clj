@@ -32,9 +32,9 @@
                                        (s/required-key :max-blacklist-time-ms) schema/positive-int}
    (s/required-key :cors-config) (s/constrained
                                    {:kind s/Keyword
-                                    (s/optional-key :ttl) schema/positive-int
-                                    (s/required-key :exposed-headers) [schema/non-empty-string]
+                                    (s/optional-key :exposed-headers) [schema/non-empty-string]
                                     (s/required-key :max-age) schema/positive-int
+                                    (s/optional-key :ttl) schema/positive-int
                                     s/Keyword schema/require-symbol-factory-fn}
                                    schema/contains-kind-sub-map?)
    (s/required-key :cluster-config) {(s/required-key :min-routers) schema/positive-int
