@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.cors
-  (:require [clojure.core.async :as async]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
             [waiter.util.ring-utils :as ru]
@@ -63,43 +62,31 @@
 
 (defn wrap-cors-request
   "Middleware that handles CORS request authorization.
-  This middleware needs to come after any authentication middleware as the CORS
-  validator may require the authenticated principal."
-  [handler cors-validator]
-  (fn wrap-cors-fn [request]
-    (let [{:keys [headers request-method]} request
-          {:strs [origin]} headers
-          bless #(if (and origin (request-allowed? cors-validator request))
-                   (update-in % [:headers] assoc
-                              "Access-Control-Allow-Origin" origin
-                              "Access-Control-Allow-Credentials" "true")
-                   %)]
-      (-> request
-          (#(if (or (not origin) (request-allowed? cors-validator %))
-              (handler %)
-              (throw (ex-info "Cross-origin request not allowed"
-                              {:origin origin
-                               :request-method request-method
-                               :status 403}))))
-          (#(if (map? %)
-              (bless %)
-              (async/go (bless (async/<! %)))))))))
-
-(defn wrap-cors-exposed-headers
-  "Middleware that attaches Access-Control-Expose-Headers to CORS responses
-   for Waiter API requests to allow clients access to the exposed headers.
-   It relies on the presence of :descriptor in the response to detect a request
-   for a backend service in addition to the origin header."
-  [handler waiter-request? exposed-headers]
+   This middleware needs to come after any authentication middleware as the CORS
+   validator may require the authenticated principal."
+  [handler cors-validator waiter-request? exposed-headers]
   (let [exposed-headers-str (when (seq exposed-headers)
                               (str/join ", " exposed-headers))]
-    (fn wrap-cors-exposed-headers-fn [request]
-      (cond-> (handler request)
-        (and exposed-headers-str ;; exposed headers are configured
-             (not (utils/same-origin request)) ;; CORS request
-             (waiter-request? request)) ;; request made to a waiter router
-        (ru/update-response
-          #(update % :headers assoc "Access-Control-Expose-Headers" exposed-headers-str))))))
+    (fn wrap-cors-fn [request]
+      (let [{:keys [headers request-method]} request
+            {:strs [origin]} headers
+            bless #(if (and origin (request-allowed? cors-validator request))
+                     (cond-> (update-in % [:headers] assoc
+                                        "Access-Control-Allow-Origin" origin
+                                        "Access-Control-Allow-Credentials" "true")
+                       (and exposed-headers-str ;; exposed headers are configured
+                            (not (utils/same-origin request)) ;; CORS request
+                            (waiter-request? request)) ;; request made to a waiter router
+                       (update :headers assoc "Access-Control-Expose-Headers" exposed-headers-str))
+                     %)]
+        (-> request
+            (#(if (or (not origin) (request-allowed? cors-validator %))
+                (handler %)
+                (throw (ex-info "Cross-origin request not allowed"
+                                {:origin origin
+                                 :request-method request-method
+                                 :status 403}))))
+            (ru/update-response bless))))))
 
 (defrecord PatternBasedCorsValidator [pattern-matches?]
   CorsValidator
