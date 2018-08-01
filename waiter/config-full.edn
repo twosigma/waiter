@@ -228,6 +228,52 @@
  :scheduler-config {
                     ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     :kind :marathon
+
+                    ;; :kind :cook uses Cook (https://github.com/twosigma/Cook) for scheduling instances:
+                    ;; support for the cook scheduler is experimental and the config is subject to changes.
+                    :cook {
+                           ;; Custom implementations should specify a :factory-fn
+                           ;; that returns an instance of waiter.scheduler.ServiceScheduler:
+                           :factory-fn 'waiter.scheduler.cook/cook-scheduler
+
+                           ;; The interval (milliseconds) at which instance failed jobs will be checked:
+                           :failed-tracker-interval-ms 10000
+
+                           ;; The users who are allowed to launch services via the Cook Scheduler.
+                           :allowed-users #{"cook-user"}
+
+                           ;; The hardcoded port, when configured, to use as PORT0 for service instances
+                           :backend-port nil
+
+                           ;; The location of home directories on your Mesos agents;
+                           ;; the HOME environment variable is set by joining this and the run-as-user:
+                           :home-path-prefix "/home/"
+
+                           ;; The HTTP options that will be used when accessing Cook:
+                           :http-options {:conn-timeout 10000
+                                          :socket-timeout 10000}
+
+                           ;; The range of priorities used while launching instances
+                           ;; Instances are launched with the first available priority from max, max - delta, ..., min
+                           :instance-priorities {:delta 5
+                                                 :max 75
+                                                 :min 25}
+
+                           ;; Controls whether Cook impersonation should be enabled:
+                           :impersonate true
+
+                           ;; The port on which the mesos agents are listening.
+                           ;; This is an optional parameter.
+                           ;; When absent log directory and log url support will be disabled.
+                           :mesos-slave-port 5051
+
+                           ;; The time range to use while querying for running and waiting Cook jobs
+                           :search-interval-days 10
+
+                           ;; The URL for your Cook HTTP API:
+                           :url "http://cook.example.com:12321"}
+
+                    ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     :marathon {
                                ;; Custom implementations should specify a :factory-fn
                                ;; that returns an instance of waiter.scheduler.ServiceScheduler:

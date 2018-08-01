@@ -269,6 +269,18 @@
              ; throttles the rate at which kill requests are sent to the scheduler
              :inter-kill-request-wait-time-ms 1000}
    :scheduler-config {:kind :marathon
+                      :cook {:factory-fn 'waiter.scheduler.cook/cook-scheduler
+                             :failed-tracker-interval-ms 10000
+                             :home-path-prefix "/home/"
+                             :http-options {:conn-timeout 10000
+                                            :socket-timeout 10000
+                                            :spnego-auth true}
+                             :impersonate false
+                             :instance-priorities {:delta 5
+                                                   :max 75
+                                                   :min 25}
+                             :mesos-slave-port 5051
+                             :search-interval-days 10}
                       :kubernetes {; Default values are not provided below for the following keys:
                                    ; :authentication :url
                                    :factory-fn 'waiter.scheduler.kubernetes/kubernetes-scheduler

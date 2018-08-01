@@ -239,9 +239,14 @@
   "Returns the descriptor to be used by Marathon to create new apps."
   [home-path-prefix service-id->password-fn {:keys [service-id service-description]}]
   (let [health-check-url (sd/service-description->health-check-url service-description)
-        {:strs [backend-proto cmd cpus disk grace-period-secs health-check-interval-secs
+        {:strs [backend-proto cmd cmd-type cpus disk grace-period-secs health-check-interval-secs
                 health-check-max-consecutive-failures mem ports restart-backoff-factor run-as-user]} service-description
         home-path (str home-path-prefix run-as-user)]
+    (when (= "docker" cmd-type)
+      (throw (ex-info "Unsupported command type on service"
+                      {:cmd-type cmd-type
+                       :service-description service-description
+                       :service-id service-id})))
     {:id service-id
      :env (scheduler/environment service-id service-description service-id->password-fn home-path)
      :user run-as-user

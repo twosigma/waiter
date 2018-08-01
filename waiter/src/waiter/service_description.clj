@@ -454,7 +454,7 @@
        :service-id service-id}))
 
   (validate [_ service-description args-map]
-    (->> (merge-with set/union args-map {:valid-cmd-types #{"shell"}})
+    (->> (merge-with set/union args-map {:valid-cmd-types #{"docker" "shell"}})
          (validate-schema service-description max-constraints-schema))))
 
 (defn extract-max-constraints

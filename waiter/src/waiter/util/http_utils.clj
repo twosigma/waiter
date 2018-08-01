@@ -31,8 +31,7 @@
    If the status of the response in not 2XX, the response is thrown as an exception."
   [http-client request-url & {:keys [accept body content-type headers query-string request-method
                                      spnego-auth throw-exceptions]
-                              :or {spnego-auth false
-                                   throw-exceptions true}}]
+                              :or {spnego-auth false throw-exceptions true}}]
   (let [request-map (cond-> {:as :string
                              :method (or request-method :get)
                              :url request-url}
@@ -49,9 +48,12 @@
     (when (and throw-exceptions (not (<= 200 status 299)))
       (ss/throw+ response))
     (let [response-body (-> response :body async/<!!)]
-      (cond-> response-body
-        (not-empty response-body)
-        (-> json/read-str walk/keywordize-keys)))))
+      (try
+        (cond-> response-body
+          (not-empty response-body)
+          (-> json/read-str walk/keywordize-keys))
+        (catch Exception _
+          response-body)))))
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
