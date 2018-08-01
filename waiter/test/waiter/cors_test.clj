@@ -49,23 +49,68 @@
   (is (instance? PatternBasedCorsValidator (pattern-based-validator {:allowed-origins [#"foo" #"bar" #"baz"]}))))
 
 (deftest test-wrap-cors-request
-  (testing "cors request denied"
-    (let [deny-all (deny-all-validator {})
-          request {:headers {"origin" "doesnt.matter"}}
-          handler (-> (fn [request] {:status 200})
-                      (wrap-cors-request deny-all)
-                      (core/wrap-error-handling))
-          {:keys [status] :as response} (handler request)]
-      (is (= 403 status))))
-  (testing "cors request allowed"
-    (let [allow-all (allow-all-validator {})
-          request {:headers {"origin" "doesnt.matter"}}
-          handler (-> (fn [request] {:status 200})
-                      (wrap-cors-request allow-all))
-          {:keys [headers status] :as response} (handler request)]
-      (is (= 200 status))
-      (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
-      (is (= "true" (get headers "Access-Control-Allow-Credentials"))))))
+  (let [waiter-request? (constantly false)
+        exposed-headers []]
+    (testing "cors request denied"
+      (let [deny-all (deny-all-validator {})
+            request {:headers {"origin" "doesnt.matter"}}
+            handler (-> (fn [_] {:status 200})
+                        (wrap-cors-request deny-all waiter-request? exposed-headers)
+                        (core/wrap-error-handling))
+            {:keys [status]} (handler request)]
+        (is (= 403 status))))
+
+    (testing "cors request allowed"
+      (let [allow-all (allow-all-validator {})
+            request {:headers {"origin" "doesnt.matter"}}
+            handler (-> (fn [_] {:status 200})
+                        (wrap-cors-request allow-all waiter-request? exposed-headers))
+            {:keys [headers status]} (handler request)]
+        (is (= 200 status))
+        (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
+        (is (= "true" (get headers "Access-Control-Allow-Credentials")))
+        (is (nil? (get headers "Access-Control-Expose-Headers")))))
+
+    (testing "cors request allowed to waiter api with exposed headers configured"
+      (let [waiter-request? (constantly true)
+            exposed-headers ["foo" "bar"]
+            allow-all (allow-all-validator {})
+            request {:headers {"origin" "doesnt.matter"}}
+            handler (-> (fn [_] {:status 200})
+                        (wrap-cors-request allow-all waiter-request? exposed-headers))
+            {:keys [headers status]} (handler request)]
+        (is (= 200 status))
+        (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
+        (is (= "true" (get headers "Access-Control-Allow-Credentials")))
+        (is (= "foo, bar" (get headers "Access-Control-Expose-Headers")))))
+
+    (testing "non-cors request allowed to waiter api with exposed headers configured"
+      (let [waiter-request? (constantly true)
+            exposed-headers ["foo" "bar"]
+            allow-all (allow-all-validator {})
+            request {:headers {"host" "does.matter"
+                               "origin" "http://does.matter"}
+                     :scheme "http"}
+            handler (-> (fn [_] {:status 200})
+                        (wrap-cors-request allow-all waiter-request? exposed-headers))
+            {:keys [headers status]} (handler request)]
+        (is (= 200 status))
+        (is (= "http://does.matter" (get headers "Access-Control-Allow-Origin")))
+        (is (= "true" (get headers "Access-Control-Allow-Credentials")))
+        (is (nil? (get headers "Access-Control-Expose-Headers")))))
+
+    (testing "cors request allowed to waiter api without exposed headers configured"
+      (let [waiter-request? (constantly true)
+            exposed-headers []
+            allow-all (allow-all-validator {})
+            request {:headers {"origin" "doesnt.matter"}}
+            handler (-> (fn [_] {:status 200})
+                        (wrap-cors-request allow-all waiter-request? exposed-headers))
+            {:keys [headers status]} (handler request)]
+        (is (= 200 status))
+        (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
+        (is (= "true" (get headers "Access-Control-Allow-Credentials")))
+        (is (nil? (get headers "Access-Control-Expose-Headers")))))))
 
 (deftest test-wrap-cors-preflight
   (testing "cors preflight request denied"
