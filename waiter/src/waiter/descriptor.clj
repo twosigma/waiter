@@ -97,7 +97,8 @@
    intstability state."
   [router-state-chan]
   (let [exit-chan (au/latest-chan)
-        channels [exit-chan router-state-chan]]
+        query-chan (async/chan 32)
+        channels [exit-chan router-state-chan query-chan]]
     (async/go
       (loop [{:keys [instability-service-ids]
               :or {instability-service-ids #{}} :as current-state}
@@ -108,23 +109,33 @@
                   (condp = selected-chan
                     exit-chan
                     (if (= :exit message)
-                      (log/warn "stopping fallback-maintainer")
+                      (log/warn "stopping instability-maintainer")
                       (do
-                        (log/info "received unknown message, not stopping fallback-maintainer" {:message message})
+                        (log/info "received unknown message, not stopping instability-maintainer" {:message message})
                         current-state))
 
+                    query-chan
+                    (let [{:keys [response-chan service-id]} message]
+                      (->> (if service-id
+                             {:instable (contains? instability-service-ids service-id)
+                              :service-id service-id}
+                             {:state current-state})
+                           (async/>! response-chan))
+                      current-state)
+
                     router-state-chan
-                    (let [instable-service-ids (keys (message :service-id->instability-issue))
-                          current-state' (assoc current-state
-                                           :instability-service-ids instable-service-ids)]
+                    (let [instable-service-ids (set (keys (message :service-id->instability-issue)))
+                          current-state' (merge-with set/union current-state
+                                                     {:instability-service-ids instable-service-ids})]
                       (reset! instability-state-atom current-state')
                       current-state')))
                 (catch Exception e
-                  (log/error e "error in fallback-maintainer")
+                  (log/error e "error in instability-maintainer")
                   current-state))]
           (when next-state
             (recur next-state)))))
-    {:exit-chan exit-chan}))
+    {:exit-chan exit-chan
+     :query-chan query-chan}))
 
 (defn fallback-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
@@ -217,7 +228,8 @@
 (defn retrieve-instability-descriptor
   "Computer the instability descriptor with 10% greater memory based on the provided descriptor."
   [descriptor]
-  (update-in descriptor [:sources :headers "mem"] * 1.1))
+  (let [add-mem (int (* 0.1 (get ((descriptor :sources) :headers) "mem")))]
+    (update-in descriptor [:sources :headers "mem"] + add-mem)))
 
 (defn resolve-descriptor
   "Resolves the descriptor that should be used based on available healthy services.
