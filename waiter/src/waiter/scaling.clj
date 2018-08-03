@@ -181,6 +181,17 @@
                                       :status (or status 500))
             (update :headers assoc "x-cid" correlation-id))))))
 
+(defn compute-scale-amount-restricted-by-quanta
+  "Computes the new scale amount subject to quanta restrictions.
+   The returned value is guaranteed to be at least 1."
+  [service-description quanta-constraints scale-amount]
+  {:pre [(pos? scale-amount) (integer? scale-amount)]
+   :post [(pos? %) (<= % scale-amount)]}
+  (-> scale-amount
+      (min (quot (:cpus quanta-constraints) (get service-description "cpus"))
+           (quot (:mem quanta-constraints) (get service-description "mem")))
+      (max 1)))
+
 (defn service-scaling-executor
   "The scaling executor that scales individual services up or down.
    It uses the scheduler to trigger scale up/down operations.
@@ -229,7 +240,17 @@
                             (do
                               (log/info "allowing previous scale operation to complete before scaling up again")
                               (counters/inc! (metrics/service-counter service-id "scaling" "scale-up" "ignore")))
-                            (execute-scale-service-request scheduler service-id scale-to-instances false))
+                            (let [service-description (service-id->service-description-fn service-id)
+                                  scale-amount' (compute-scale-amount-restricted-by-quanta
+                                                  service-description quanta-constraints scale-amount)
+                                  scale-adjustment (- scale-amount' scale-amount)
+                                  scale-to-instances' (+ scale-to-instances scale-adjustment)]
+                              (when-not (zero? scale-adjustment)
+                                (log/info service-id "scale amount adjusted"
+                                          {:scale-adjustment scale-adjustment
+                                           :scale-amount scale-amount
+                                           :scale-to-instances' scale-to-instances'}))
+                              (execute-scale-service-request scheduler service-id scale-to-instances' false)))
                           executor-state)
 
                         (pos? num-instances-to-kill)
