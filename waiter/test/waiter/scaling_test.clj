@@ -256,6 +256,7 @@
             delegate-instance-kill-request-fn (fn [service-id]
                                                 (is (= test-service-id service-id))
                                                 false)
+            service-id->service-description-fn (constantly {})
             equilibrium-state {}
             make-scaling-message (fn [service-id scale-amount scale-to-instances task-count total-instances response-chan]
                                    {:service-id service-id, :scale-amount scale-amount, :scale-to-instances scale-to-instances,
@@ -268,7 +269,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan {:service-id test-service-id, :scale-amount 0})
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -282,7 +283,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 30 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -297,7 +298,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -312,7 +313,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id -5 25 20 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -332,7 +333,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)]
             (mock-reservation-system
               instance-rpc-chan
               [(fn [[{:keys [reason]} response-chan]]
@@ -359,7 +360,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)]
             (mock-reservation-system
               instance-rpc-chan
               [(fn [[{:keys [reason]} response-chan]]
@@ -382,7 +383,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
                 instance-rpc-chan
@@ -416,7 +417,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
@@ -449,7 +450,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag true}]
@@ -487,7 +488,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag false}]
@@ -525,7 +526,7 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn timeout-config)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
                 instance-rpc-chan
