@@ -177,14 +177,14 @@
           (is (str/blank? (:instance-id response))))
         (.await long-request-ended-latch)))))
 
-(deftest ^:parallel ^:integration-fast test-grace-period-with-tokens
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-grace-period-with-tokens
   (testing-using-waiter-url
     (let [grace-period (t/minutes 2)
           startup-delay-ms (-> grace-period t/in-millis (* 0.75) long)
           token (rand-name)]
       (try
         (log/info "Creating token for" token)
-        (let [{:keys [status body]}
+        (let [response
               (post-token waiter-url {:cmd (kitchen-cmd (str "--port $PORT0 --start-up-sleep-ms "
                                                              startup-delay-ms))
                                       :version "not-used"
@@ -196,22 +196,23 @@
                                       :name (str "test" token)
                                       :grace-period-secs (t/in-seconds grace-period)
                                       :cmd-type "shell"})]
-          (is (= 200 status) (str "Did not get a 200 response. " body)))
+          (assert-response-status response 200))
         (log/info "Making request for" token)
-        (let [{:keys [status body service-id] :as response} (make-request-with-debug-info
-                                                              {:x-waiter-token token}
-                                                              #(make-request waiter-url "/secrun" :headers %))
-              instance-acquired-delay-ms (-> response
-                                             :headers
-                                             (get "x-waiter-get-available-instance-ns")
-                                             Long/parseLong
-                                             (quot 1000000))] ; truncated nanos->millis
-          (is (= 200 status) (str "Did not get a 200 response. " body))
-          (is (<= startup-delay-ms instance-acquired-delay-ms)
-              (format "Healthy instance was found in just %dms (too short)" instance-acquired-delay-ms))
-          (when (and (= 200 status) (can-query-for-grace-period? waiter-url))
+        (let [{:keys [status service-id] :as response} (make-request-with-debug-info
+                                                         {:x-waiter-token token}
+                                                         #(make-request waiter-url "/secrun" :headers %))]
+          (assert-response-status response 200)
+          (when (= 200 status)
             (log/info "Verifying app grace period for" token)
-            (is (= (t/in-seconds grace-period) (service-id->grace-period waiter-url service-id))))
+            (let [instance-acquired-delay-ms (-> response
+                                                 :headers
+                                                 (get "x-waiter-get-available-instance-ns" -1)
+                                                 Long/parseLong
+                                                 (quot 1000000))] ; truncated nanos->millis
+              (is (<= startup-delay-ms instance-acquired-delay-ms)
+                  (str "Healthy instance was found in just " instance-acquired-delay-ms " ms (too short)")))
+            (when (using-marathon? waiter-url)
+              (is (= (t/in-seconds grace-period) (service-id->grace-period waiter-url service-id)))))
           (delete-service waiter-url service-id))
         (finally
           (delete-token-and-assert waiter-url token))))))
