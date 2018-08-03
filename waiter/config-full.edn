@@ -442,7 +442,13 @@
            :autoscaler-interval-ms 1000
 
            ;; Throttles the rate at which kill requests are sent to the scheduler:
-           :inter-kill-request-wait-time-ms 1000}
+           :inter-kill-request-wait-time-ms 1000
+
+           ;; Individual scale-up operations are throttled so that we can minimize overshoot of instances.
+           ;; The number of new instances started per scale-up is the maximum of 1 and the resource consumed
+           ;; limit calculated based on the cpus and mem specified in the quanta-constraints.
+           :quanta-constraints {:cpus 64
+                                :mem 524288}}
 
  ; ---------- Service Descriptions ----------
 

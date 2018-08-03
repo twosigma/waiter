@@ -188,7 +188,7 @@
    Killing of an instance may be delegated to peer routers via delegate-instance-kill-request-fn if no instance is available locally.
    The executor also respects inter-kill-request-wait-time-ms between successive scale-down operations."
   [service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn delegate-instance-kill-request-fn
-   service-id->service-description-fn {:keys [inter-kill-request-wait-time-ms] :as timeout-config}]
+   service-id->service-description-fn quanta-constraints {:keys [inter-kill-request-wait-time-ms] :as timeout-config}]
   {:pre [(>= inter-kill-request-wait-time-ms 0)]}
   (log/info "[scaling-executor] starting instance killer for" service-id)
   (let [base-correlation-id (str "scaling-executor-" service-id)

@@ -850,13 +850,14 @@
    :autoscaling-multiplexer (pc/fnk [[:routines delegate-instance-kill-request-fn peers-acknowledged-blacklist-requests-fn
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]
+                                     [:settings [:scaling quanta-constraints]]
                                      [:state instance-rpc-chan scaling-timeout-config]]
                               (scaling/service-scaling-multiplexer
                                 (fn scaling-executor-factory [service-id]
                                   (scaling/service-scaling-executor
                                     service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
                                     delegate-instance-kill-request-fn service-id->service-description-fn
-                                    scaling-timeout-config))
+                                    quanta-constraints scaling-timeout-config))
                                 {}))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  scheduler-maintainer]
