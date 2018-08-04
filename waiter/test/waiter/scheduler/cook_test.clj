@@ -327,8 +327,8 @@
                                :application {:name "test-service"
                                              :version "foo/bar:baz"}
                                :container {:docker {:force-pull-image false
-                                                 :image "namespace:foo,name:bar,label:baz"
-                                                 :network "HOST"}
+                                                    :image "namespace:foo,name:bar,label:baz"
+                                                    :network "HOST"}
                                            :type "docker"}
                                :name (str "test-service-1." job-uuid)
                                :uuid job-uuid)]}]

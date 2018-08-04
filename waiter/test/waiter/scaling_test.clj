@@ -581,32 +581,32 @@
                                    10)))
         ; simple scaling function that targets outstanding-requests
         test-scale-service (fn [{:strs [min-instances max-instances]} {:keys [total-instances outstanding-requests]}]
-                         (let [scale-to-instances (max min-instances (min max-instances outstanding-requests))]
-                           {:scale-to-instances scale-to-instances
-                            :target-instances scale-to-instances
-                            :scale-amount (- scale-to-instances total-instances)}))]
+                             (let [scale-to-instances (max min-instances (min max-instances outstanding-requests))]
+                               {:scale-to-instances scale-to-instances
+                                :target-instances scale-to-instances
+                                :scale-amount (- scale-to-instances total-instances)}))]
     (let [result (scale-services ["app1" "app2" "app3" "app4"]
-                             {"app1" (merge config {})
-                              "app2" (merge config {})
-                              "app3" (merge config {"min-instances" 5})
-                              "app4" (merge config {"max-instances" 10})} ; service description
-                             {"app1" 10
-                              "app2" 5
-                              "app3" 0
-                              "app4" 15} ; outstanding requests
-                             {"app1" {:target-instances 5}
-                              "app2" {:target-instances 5}
-                              "app3" {:target-instances 0}
-                              "app4" {:target-instances 10}} ; scale state
-                             apply-scaling 5 test-scale-service
-                             {"app1" {:healthy-instances 5 :task-count 5 :expired-instances 0}
-                              "app2" {:healthy-instances 5 :task-count 5 :expired-instances 0}
-                              "app3" {:healthy-instances 0 :task-count 0 :expired-instances 0}
-                              "app4" {:healthy-instances 15 :task-count 15 :expired-instances 0}}
-                             {"app1" {:instances 5 :task-count 5}
-                              "app2" {:instances 5 :task-count 5}
-                              "app3" {:instances 0 :task-count 0}
-                              "app4" {:instances 15 :task-count 15}})]
+                                 {"app1" (merge config {})
+                                  "app2" (merge config {})
+                                  "app3" (merge config {"min-instances" 5})
+                                  "app4" (merge config {"max-instances" 10})} ; service description
+                                 {"app1" 10
+                                  "app2" 5
+                                  "app3" 0
+                                  "app4" 15} ; outstanding requests
+                                 {"app1" {:target-instances 5}
+                                  "app2" {:target-instances 5}
+                                  "app3" {:target-instances 0}
+                                  "app4" {:target-instances 10}} ; scale state
+                                 apply-scaling 5 test-scale-service
+                                 {"app1" {:healthy-instances 5 :task-count 5 :expired-instances 0}
+                                  "app2" {:healthy-instances 5 :task-count 5 :expired-instances 0}
+                                  "app3" {:healthy-instances 0 :task-count 0 :expired-instances 0}
+                                  "app4" {:healthy-instances 15 :task-count 15 :expired-instances 0}}
+                                 {"app1" {:instances 5 :task-count 5}
+                                  "app2" {:instances 5 :task-count 5}
+                                  "app3" {:instances 0 :task-count 0}
+                                  "app4" {:instances 15 :task-count 15}})]
       (is (= 10 (get-in result ["app1" :target-instances])))
       (is (= 5 (get-in result ["app2" :target-instances])))
       (is (= 5 (get-in result ["app3" :target-instances])))
@@ -636,10 +636,10 @@
                          config total-instances outstanding-requests target-instances healthy-instances expired-instances]
                       (let [{:keys [scale-amount scale-to-instances target-instances]}
                             (scale-service config {:total-instances total-instances
-                                               :outstanding-requests outstanding-requests
-                                               :target-instances target-instances
-                                               :healthy-instances healthy-instances
-                                               :expired-instances expired-instances})]
+                                                   :outstanding-requests outstanding-requests
+                                                   :target-instances target-instances
+                                                   :healthy-instances healthy-instances
+                                                   :expired-instances expired-instances})]
                         (is (> epsilon (Math/abs (double (- scale-amount expected-scale-amount))))
                             (str "scale-amount=" scale-amount " expected-scale-amount=" expected-scale-amount))
                         (is (= scale-to-instances expected-scale-to-instances)
@@ -712,19 +712,19 @@
                                                 "min-instances" 1})
       timeout-interval-ms 10000
       scale-service-fn (fn [_ state]
-                     (case (int (:total-instances state))
-                       2
-                       {:scale-to-instances 3
-                        :target-instances 3
-                        :scale-amount 1}
-                       3
-                       {:scale-to-instances 4
-                        :target-instances 4
-                        :scale-amount 2}
-                       4
-                       {:scale-to-instances 0
-                        :target-instances 0
-                        :scale-amount -4}))
+                         (case (int (:total-instances state))
+                           2
+                           {:scale-to-instances 3
+                            :target-instances 3
+                            :scale-amount 1}
+                           3
+                           {:scale-to-instances 4
+                            :target-instances 4
+                            :scale-amount 2}
+                           4
+                           {:scale-to-instances 0
+                            :target-instances 0
+                            :scale-amount -4}))
       start-autoscaler-goroutine (fn start-autoscaler-goroutine [initial-state scheduler-data]
                                    (let [metrics-chan (async/chan 1)
                                          service-id->metrics-fn (fn service-id->metrics-fn []

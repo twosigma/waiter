@@ -196,7 +196,7 @@
   [{:keys [service id->instance] :as service-entry}]
   (let [running (->> id->instance vals (filter active?) count)
         healthy (->> id->instance vals (filter healthy?) count)
-        unhealthy (->> id->instance vals (filter unhealthy?) count) ]
+        unhealthy (->> id->instance vals (filter unhealthy?) count)]
     (assoc service-entry :service (-> service
                                       (assoc :task-count running)
                                       (assoc :task-stats {:healthy healthy
@@ -240,9 +240,9 @@
               (launch-service service-id service-description service-id->password-fn
                               work-directory port->reservation-atom port-range)]
           (deliver completion-promise :created)
-          (let [service-entry (-> {:service service 
+          (let [service-entry (-> {:service service
                                    :id->instance {(:id instance) instance}}
-                                  update-task-stats)] 
+                                  update-task-stats)]
             (assoc id->service service-id service-entry)))))
     (catch Throwable e
       (log/error e "error attempting to create service" service-id)
@@ -327,7 +327,7 @@
       (release-port! port->reservation-atom port port-grace-period-ms)
       (assoc instance :healthy? false
                       :failed? (if (zero? exit-value) false true)
-                      :killed? true                          ; does not actually mean killed -- using this to mark inactive
+                      :killed? true ; does not actually mean killed -- using this to mark inactive
                       :exit-code exit-value))
     instance))
 
@@ -514,13 +514,13 @@
            (cond-> {:name (.getName file)
                     :size (.length file)
                     :type (if (.isDirectory file) "directory" "file")}
-                   (.isDirectory file)
-                   (assoc :path (-> file
-                                    (.toPath)
-                                    (.relativize (.getPath (File. (str working-directory))))
-                                    (str)))
-                   (.isFile file)
-                   (assoc :url (str (.toURL file)))))
+             (.isDirectory file)
+             (assoc :path (-> file
+                              (.toPath)
+                              (.relativize (.getPath (File. (str working-directory))))
+                              (str)))
+             (.isFile file)
+             (assoc :url (str (.toURL file)))))
          directory-content)))
 
 ; The ShellScheduler's shell-agent holds all of the state about which

@@ -1222,7 +1222,7 @@
                       (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
                       {:apps (deref app-entries-atom)})
                     scheduler/scale-service (fn [_ in-service-id in-target in-force]
-                                          (swap! scheduler-operations-atom conj [in-service-id in-target in-force]))
+                                              (swap! scheduler-operations-atom conj [in-service-id in-target in-force]))
                     t/now (fn [] (deref current-time-atom))]
         (let [leader-atom (atom true)
               leader?-fn (fn [] (deref leader-atom))

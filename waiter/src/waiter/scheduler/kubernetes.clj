@@ -10,11 +10,8 @@
 ;;
 (ns waiter.scheduler.kubernetes
   (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
             [clojure.data.json :as json]
-            [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.java.shell :as shell]
             [clojure.string :as string]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
@@ -127,10 +124,10 @@
           failures (-> service-id->failed-instances-transient-store deref (get service-id))]
       (when-not (contains? failures newest-failure-id)
         (let [newest-failure-instance (cond-> (assoc live-instance
-                                                     :flags failure-flags
-                                                     :healthy? false
-                                                     :id newest-failure-id
-                                                     :started-at newest-failure-start-time)
+                                                :flags failure-flags
+                                                :healthy? false
+                                                :id newest-failure-id
+                                                :started-at newest-failure-start-time)
                                         ;; To match the behavior of the marathon scheduler,
                                         ;; we don't include the exit code in failed instances that were killed by k8s.
                                         (not (killed-by-k8s? newest-failure))
@@ -176,7 +173,7 @@
                             :accept "application/json"
                             (cond-> options
                               auth-str (assoc-in [:headers "Authorization"] auth-str)
-                              (and (not content-type ) body) (assoc :content-type "application/json")))]
+                              (and (not content-type) body) (assoc :content-type "application/json")))]
       (scheduler/log "response from K8s API server:" (json/write-str result))
       result)
     (catch [:status 400] _
@@ -194,7 +191,7 @@
   [{:keys [api-server-url http-client orchestrator-name replicaset-api-version] :as scheduler}]
   (->> (str api-server-url "/apis/" replicaset-api-version
             "/replicasets?labelSelector=managed-by="
-             orchestrator-name)
+            orchestrator-name)
        (api-request http-client)
        :items
        (mapv replicaset->Service)))
@@ -551,7 +548,7 @@
         backend-protocol-lower (string/lower-case backend-proto)
         backend-protocol-upper (string/upper-case backend-proto)
         health-check-url (sd/service-description->health-check-url service-description)
-        memory  (str mem "Mi")
+        memory (str mem "Mi")
         ssl? (= "https" backend-protocol-lower)]
     {:kind "ReplicaSet"
      :apiVersion replicaset-api-version
@@ -624,7 +621,7 @@
          (utils/pos-int? max-name-length)
          (not (string/blank? orchestrator-name))
          (integer? pod-base-port)
-         (< 0 pod-base-port 65527)  ; max port is 65535, and we need to reserve up to 10 ports
+         (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
          (utils/pos-int? pod-suffix-length)
          (not (string/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))

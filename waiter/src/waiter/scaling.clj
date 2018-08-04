@@ -61,8 +61,8 @@
                     (log/info "service-scaling-multiplexer received" {:service-id service-id :scale-amount scale-amount})
                     (let [service-id->scaling-executor-chan
                           (cond-> service-id->scaling-executor-chan
-                                  (not (get service-id->scaling-executor-chan service-id))
-                                  (assoc service-id (scaling-executor-factory service-id)))
+                            (not (get service-id->scaling-executor-chan service-id))
+                            (assoc service-id (scaling-executor-factory service-id)))
                           {:keys [executor-chan]} (get service-id->scaling-executor-chan service-id)]
                       (if scale-amount
                         (do
@@ -382,11 +382,11 @@
               {:keys [target-instances scale-to-instances scale-amount]}
               (if (and target-instances scale-ticks)
                 (scale-service-fn (assoc service-description "scale-ticks" scale-ticks)
-                              {:healthy-instances healthy-instances
-                               :expired-instances expired-instances
-                               :outstanding-requests outstanding-requests
-                               :target-instances target-instances
-                               :total-instances instances})
+                                  {:healthy-instances healthy-instances
+                                   :expired-instances expired-instances
+                                   :outstanding-requests outstanding-requests
+                                   :target-instances target-instances
+                                   :total-instances instances})
                 (do
                   (log/info "no target instances available for service"
                             {:scheduler-state scheduler-state, :service-id service-id})
@@ -494,15 +494,15 @@
                                           (when (seq excluded-service-ids)
                                             (cid/cinfo correlation-id "services excluded this iteration" excluded-service-ids))
                                           (scale-services scalable-service-ids
-                                                      (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
-                                                      ; default to 0 outstanding requests for services without metrics
-                                                      (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
-                                                      service-id->scale-state
-                                                      apply-scaling-fn
-                                                      scale-ticks
-                                                      scale-service-fn
-                                                      service-id->router-state
-                                                      service-id->scheduler-state')))
+                                                          (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
+                                                          ; default to 0 outstanding requests for services without metrics
+                                                          (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
+                                                          service-id->scale-state
+                                                          apply-scaling-fn
+                                                          scale-ticks
+                                                          scale-service-fn
+                                                          service-id->router-state
+                                                          service-id->scheduler-state')))
                                       service-id->scale-state)]
                                 (cid/cinfo correlation-id "scaling iteration took" (difference-in-millis (t/now) cycle-start-time)
                                            "ms for" (count service->scale-state') "services.")

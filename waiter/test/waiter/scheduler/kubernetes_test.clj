@@ -10,11 +10,8 @@
 ;;
 (ns waiter.scheduler.kubernetes-test
   (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
             [clojure.data]
-            [clojure.data.json :as json]
             [clojure.pprint]
-            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [plumbing.core :as pc]
@@ -25,8 +22,6 @@
             [waiter.util.date-utils :as du])
   (:import (waiter.scheduler Service ServiceInstance)
            (waiter.scheduler.kubernetes KubernetesScheduler)))
-
-(def ^:const default-rs-spec-path "./specs/k8s-default-pod.edn")
 
 (defmacro throw-exception
   "Throw a RuntimeException with the stack trace suppressed.
@@ -88,40 +83,40 @@
         short-sample-uuid (str (subs sample-uuid 0 8)
                                (subs sample-uuid 24))
         waiter-service-prefix "waiter-service-id-prefix-"]
-  (let [{:keys [max-name-length] :as long-name-scheduler}
-        (assoc base-scheduler-spec :max-name-length 128)]
-    (testing "Very long name length limit maps long service-id through unmodified"
-      (let [service-id (str "this_name_is_longer_than_64_chars_but_should_be_unmodified_by_the_mapping_function-"
-                            sample-uuid)]
-        (is (= service-id (service-id->k8s-app-name long-name-scheduler service-id)))))
-    (testing "Very long name length limit maps long service-id through without prefix"
-      (let [service-id (str waiter-service-prefix
-                            "this_name_is_longer_than_64_chars_but_should_be_unmodified_by_the_mapping_function-"
-                            sample-uuid)]
-        (is (= (subs service-id (count waiter-service-prefix))
-               (service-id->k8s-app-name long-name-scheduler service-id)))))
-    (testing "Very long name length limit maps truncates service name, but keeps full uuid"
-      (let [service-id (str waiter-service-prefix long-app-name "-" sample-uuid)]
-        (is (= (str (subs long-app-name 0 (- max-name-length 1 32 1 default-pod-suffix-length))
-                    "-" sample-uuid)
-               (service-id->k8s-app-name long-name-scheduler service-id))))))
-  (let [{:keys [max-name-length] :as short-name-scheduler}
-        (assoc base-scheduler-spec :max-name-length 32)]
-        (assert (== 32 (count sample-uuid)))
-        (assert (== 16 (count short-sample-uuid)))
-        (testing "Short name length limit with short app name only shortens uuid"
-          (let [service-id (str short-app-name "-" sample-uuid)]
-            (is (= (str short-app-name "-" short-sample-uuid)
-                   (service-id->k8s-app-name short-name-scheduler service-id)))))
-        (testing "Short name length limit with short app name only removes prefix, shortens uuid"
-          (let [service-id (str waiter-service-prefix short-app-name "-" sample-uuid)]
-            (is (= (str short-app-name "-" short-sample-uuid)
-                   (service-id->k8s-app-name short-name-scheduler service-id)))))
-        (testing "Short name length limit with long app name truncates app name, removes prefix, and shortens uuid"
-          (let [service-id (str waiter-service-prefix long-app-name "-" sample-uuid)]
-            (is (= (str (subs long-app-name 0 (- max-name-length 1 16 1 default-pod-suffix-length))
-                        "-" short-sample-uuid)
-                   (service-id->k8s-app-name short-name-scheduler service-id))))))))
+    (let [{:keys [max-name-length] :as long-name-scheduler}
+          (assoc base-scheduler-spec :max-name-length 128)]
+      (testing "Very long name length limit maps long service-id through unmodified"
+        (let [service-id (str "this_name_is_longer_than_64_chars_but_should_be_unmodified_by_the_mapping_function-"
+                              sample-uuid)]
+          (is (= service-id (service-id->k8s-app-name long-name-scheduler service-id)))))
+      (testing "Very long name length limit maps long service-id through without prefix"
+        (let [service-id (str waiter-service-prefix
+                              "this_name_is_longer_than_64_chars_but_should_be_unmodified_by_the_mapping_function-"
+                              sample-uuid)]
+          (is (= (subs service-id (count waiter-service-prefix))
+                 (service-id->k8s-app-name long-name-scheduler service-id)))))
+      (testing "Very long name length limit maps truncates service name, but keeps full uuid"
+        (let [service-id (str waiter-service-prefix long-app-name "-" sample-uuid)]
+          (is (= (str (subs long-app-name 0 (- max-name-length 1 32 1 default-pod-suffix-length))
+                      "-" sample-uuid)
+                 (service-id->k8s-app-name long-name-scheduler service-id))))))
+    (let [{:keys [max-name-length] :as short-name-scheduler}
+          (assoc base-scheduler-spec :max-name-length 32)]
+      (assert (== 32 (count sample-uuid)))
+      (assert (== 16 (count short-sample-uuid)))
+      (testing "Short name length limit with short app name only shortens uuid"
+        (let [service-id (str short-app-name "-" sample-uuid)]
+          (is (= (str short-app-name "-" short-sample-uuid)
+                 (service-id->k8s-app-name short-name-scheduler service-id)))))
+      (testing "Short name length limit with short app name only removes prefix, shortens uuid"
+        (let [service-id (str waiter-service-prefix short-app-name "-" sample-uuid)]
+          (is (= (str short-app-name "-" short-sample-uuid)
+                 (service-id->k8s-app-name short-name-scheduler service-id)))))
+      (testing "Short name length limit with long app name truncates app name, removes prefix, and shortens uuid"
+        (let [service-id (str waiter-service-prefix long-app-name "-" sample-uuid)]
+          (is (= (str (subs long-app-name 0 (- max-name-length 1 16 1 default-pod-suffix-length))
+                      "-" short-sample-uuid)
+                 (service-id->k8s-app-name short-name-scheduler service-id))))))))
 
 (deftest test-scheduler-get-instances
   (let [test-cases [{:name "get-instances no response"
@@ -435,7 +430,7 @@
                                            :waiter-service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
-                           :startTime  "2014-09-13T00:24:46Z"
+                           :startTime "2014-09-13T00:24:46Z"
                            :containerStatuses [{:name "test-app-1234"
                                                 :ready true
                                                 :restartCount 0}]}}
@@ -599,39 +594,37 @@
         (let [actual (with-redefs [api-request (constantly {:status "OK"})]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                        :killed? true
-                        :message "Successfully killed instance"
-                        :status 200)
+                   :killed? true
+                   :message "Successfully killed instance"
+                   :status 200)
                  actual))))
       (testing "unsuccessful-delete: no such instance"
         (let [error-msg "Instance not found"
-              actual (with-redefs [api-request (fn mocked-api-request [_ url & {:keys [request-method]}]
+              actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
                                                    (ss/throw+ {:status 404})))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                        :message error-msg
-                        :status 404)
+                   :message error-msg
+                   :status 404)
                  actual))))
       (testing "successful-delete: terminated, but had patch conflict"
-        (let [error-msg "Failed to update service specification due to repeated conflicts"
-              actual (with-redefs [api-request (fn mocked-api-request [_ url & {:keys [request-method]}]
+        (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (if (= request-method :patch)
                                                    (ss/throw+ {:status 409})
                                                    {:spec {:replicas 1}}))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                        :killed? true
-                        :message "Successfully killed instance"
-                        :status 200)
+                   :killed? true
+                   :message "Successfully killed instance"
+                   :status 200)
                  actual))))
       (testing "unsuccessful-delete: internal error"
-        (let [error-msg "Unable to kill instance"
-              actual (with-redefs [api-request (fn [& _] (throw-exception))]
+        (let [actual (with-redefs [api-request (fn [& _] (throw-exception))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                        :message "Error while killing instance"
-                        :status 500)
+                   :message "Error while killing instance"
+                   :status 500)
                  actual)))))))
 
 (deftest test-scheduler-service-exists?
@@ -671,20 +664,19 @@
 (deftest test-killed-instances-transient-store
   (let [current-time (t/now)
         current-time-str (du/date-to-str current-time)
-        kubernetes-api (Object.)
         dummy-scheduler (make-dummy-scheduler ["service-1" "service-2" "service-3"])
         make-instance (fn [service-id instance-suffix]
                         (let [instance-id (str service-id \. instance-suffix)]
                           {:id instance-id
                            :k8s/namespace (-> dummy-scheduler
-                                          :service-id->service-description-fn
-                                          (get service-id)
-                                          (get "run-as-user"))
+                                              :service-id->service-description-fn
+                                              (get service-id)
+                                              (get "run-as-user"))
                            :k8s/pod-name (str instance-id "-0")
                            :service-id service-id}))
         make-killed-instance (fn [service-id instance-suffix]
                                (assoc (make-instance service-id instance-suffix)
-                                      :killed-at current-time-str))]
+                                 :killed-at current-time-str))]
     (with-redefs [api-request (constantly {:status "OK"})
                   service-id->service (fn service-id->dummy-service [_ service-id]
                                         (scheduler/make-Service
@@ -758,10 +750,10 @@
         (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
                                                  (ss/throw+ {:status 409}))]
                        (scheduler/create-service-if-new dummy-scheduler descriptor))]
-        (is (nil? actual))))
+          (is (nil? actual))))
       (testing "unsuccessful-create: internal error"
         (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
-                                                   (throw-exception))]
+                                                 (throw-exception))]
                        (scheduler/create-service-if-new dummy-scheduler descriptor))]
           (is (nil? actual))))
       (testing "successful create"
@@ -782,7 +774,7 @@
                   :result :deleted}
                  actual))))
       (testing "unsuccessful-delete: service not found"
-        (let [actual (with-redefs [api-request (fn mocked-api-request [_ url & {:keys [request-method]}]
+        (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
                                                    (ss/throw+ {:status 404})))]
                        (scheduler/delete-service dummy-scheduler service-id))]
@@ -819,7 +811,7 @@
                   :message "Failed to scale missing service"}
                  actual))))
       (testing "unsuccessful-scale: patch conflict"
-        (let [actual (with-redefs [api-request (fn mocked-api-request [_ url & {:keys [request-method]}]
+        (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (if (= request-method :patch)
                                                    (ss/throw+ {:status 409})
                                                    {:spec {:replicas 1}}))]
