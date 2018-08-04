@@ -428,7 +428,7 @@
        :result :already-exists
        :success false}))
 
-  (delete-app [this service-id]
+  (delete-service [this service-id]
     (if (scheduler/service-exists? this service-id)
       (let [success (try
                       (let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn service-id)

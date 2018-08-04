@@ -379,12 +379,12 @@
         (when-not (scheduler/service-exists? this service-id)
           (start-new-service-wrapper marathon-api service-id marathon-descriptor)))))
 
-  (delete-app [_ service-id]
+  (delete-service [_ service-id]
     (ss/try+
       (let [delete-result (scheduler/retry-on-transient-server-exceptions
-                            (str "in delete-app[" service-id "]")
+                            (str "in delete-service[" service-id "]")
                             (log/info "deleting service" service-id)
-                            (marathon/delete-app marathon-api service-id))]
+                            (marathon/delete-service marathon-api service-id))]
         (when delete-result
           (remove-failed-instances-for-service! service-id->failed-instances-transient-store service-id)
           (scheduler/remove-killed-instances-for-service! service-id)
@@ -395,7 +395,7 @@
           {:result :error
            :message "Marathon did not provide deploymentId for delete request"}))
       (catch [:status 404] {}
-        (log/warn "[delete-app] Service does not exist:" service-id)
+        (log/warn "[delete-service] Service does not exist:" service-id)
         {:result :no-such-service-exists
          :message "Marathon reports service does not exist"})
       (catch [:status 409] e
@@ -403,8 +403,8 @@
                   {:deployment-info (extract-deployment-info marathon-api e)
                    :service-id service-id}))
       (catch [:status 503] {}
-        (log/warn "[delete-app] Marathon unavailable (Error 503).")
-        (log/debug (:throwable &throw-context) "[delete-app] Marathon unavailable"))))
+        (log/warn "[delete-service] Marathon unavailable (Error 503).")
+        (log/debug (:throwable &throw-context) "[delete-service] Marathon unavailable"))))
 
   (scale-app [_ service-id scale-to-instances force]
     (ss/try+

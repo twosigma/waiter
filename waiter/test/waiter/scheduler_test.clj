@@ -130,7 +130,7 @@
                                   "service11broken" {"outstanding" 95, "total" 80}}
             deleted-services-atom (atom #{})
             scheduler (reify ServiceScheduler
-                        (delete-app [_ service-id]
+                        (delete-service [_ service-id]
                           (swap! available-services-atom disj service-id)
                           (swap! deleted-services-atom conj service-id)))
             scheduler-state-chan (async/chan 1)
@@ -189,7 +189,7 @@
     (let [available-services-atom (atom #{"service6faulty" "service7" "service8stayalive" "service9stayalive" "service10broken" "service11broken"})
           deleted-services-atom (atom #{})
           scheduler (reify ServiceScheduler
-                      (delete-app [_ service-id]
+                      (delete-service [_ service-id]
                         (swap! available-services-atom disj service-id)
                         (swap! deleted-services-atom conj service-id)))
           scheduler-state-chan (async/chan 1)

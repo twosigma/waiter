@@ -468,7 +468,7 @@
         (catch Throwable e
           (log/error e "Error starting new app." descriptor)))))
 
-  (delete-app [this service-id]
+  (delete-service [this service-id]
     (ss/try+
       (let [service (service-id->service this service-id)
             delete-result (delete-service this service)]

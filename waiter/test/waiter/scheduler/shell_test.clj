@@ -216,16 +216,16 @@
     (is (= {:success false, :result :already-exists, :message "foo already exists!"}
            (create-test-service scheduler "foo")))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-app scheduler "foo")))))
+           (scheduler/delete-service scheduler "foo")))))
 
-(deftest test-delete-app
+(deftest test-delete-service
   (let [scheduler (create-shell-scheduler common-scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))
     (ensure-agent-finished scheduler)
     (is (scheduler/service-exists? scheduler "foo"))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-app scheduler "foo")))
+           (scheduler/delete-service scheduler "foo")))
     (ensure-agent-finished scheduler)
     (is (not (scheduler/service-exists? scheduler "foo")))))
 
@@ -277,7 +277,7 @@
         (is (= {:killed? true, :success true, :result :deleted, :message (str "Deleted " (:id instance))}
                (scheduler/kill-instance scheduler instance)))
         (is (= {:success true, :result :deleted, :message "Deleted foo"}
-               (scheduler/delete-app scheduler "foo")))
+               (scheduler/delete-service scheduler "foo")))
         (ensure-agent-finished scheduler)
         (is (= {:success false, :result :no-such-service-exists, :message "foo does not exist!"}
                (scheduler/kill-instance scheduler instance)))))))
@@ -343,7 +343,7 @@
       (is (= {:running 1, :healthy 0, :unhealthy 1, :staged 0}
              (task-stats scheduler))))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-app scheduler "foo")))))
+           (scheduler/delete-service scheduler "foo")))))
 
 (deftest test-get-apps
   (let [scheduler-config common-scheduler-config
@@ -418,11 +418,11 @@
                   :shell-scheduler/mem 32}])
            (scheduler/get-apps scheduler)))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-app scheduler "foo")))
+           (scheduler/delete-service scheduler "foo")))
     (is (= {:success true, :result :deleted, :message "Deleted bar"}
-           (scheduler/delete-app scheduler "bar")))
+           (scheduler/delete-service scheduler "bar")))
     (is (= {:success true, :result :deleted, :message "Deleted baz"}
-           (scheduler/delete-app scheduler "baz")))))
+           (scheduler/delete-service scheduler "baz")))))
 
 (deftest test-service-id->state
   (let [scheduler (create-shell-scheduler common-scheduler-config)
@@ -478,7 +478,7 @@
                  (assoc-in host-keys (get-in result host-keys)))
              result)))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-app scheduler "foo")))))
+           (scheduler/delete-service scheduler "foo")))))
 
 (deftest test-port-reserved?
   (let [port->reservation-atom (atom {})
@@ -525,7 +525,7 @@
     (let [instances (scheduler/get-instances scheduler "foo")]
       (is (= 2 (count (:failed-instances instances)))))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
-           (scheduler/delete-app scheduler "foo")))))
+           (scheduler/delete-service scheduler "foo")))))
 
 (deftest test-enforce-grace-period
   (let [scheduler-config common-scheduler-config

@@ -34,7 +34,7 @@
                            :spnego-auth spnego-auth
                            :request-method :post))
 
-(defn delete-app
+(defn delete-service
   "Delete the app specified by the app-id."
   [{:keys [http-client marathon-url spnego-auth]} app-id]
   (http-utils/http-request http-client (str marathon-url "/v2/apps/" app-id)

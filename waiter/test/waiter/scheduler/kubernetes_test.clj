@@ -770,14 +770,14 @@
                        (scheduler/create-service-if-new dummy-scheduler descriptor))]
           (is (= service actual)))))))
 
-(deftest test-delete-app
+(deftest test-delete-service
   (let [service-id "test-service-id"
         service (scheduler/make-Service {:id service-id :instances 1 :k8s/app-name service-id :k8s/namespace "myself"})
         dummy-scheduler (make-dummy-scheduler [service-id])]
     (with-redefs [service-id->service (constantly service)]
       (testing "successful-delete"
         (let [actual (with-redefs [api-request (constantly {:status "OK"})]
-                       (scheduler/delete-app dummy-scheduler service-id))]
+                       (scheduler/delete-service dummy-scheduler service-id))]
           (is (= {:message (str "Kubernetes deleted ReplicaSet for " service-id)
                   :result :deleted}
                  actual))))
@@ -785,13 +785,13 @@
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ url & {:keys [request-method]}]
                                                  (when (= request-method :delete)
                                                    (ss/throw+ {:status 404})))]
-                       (scheduler/delete-app dummy-scheduler service-id))]
+                       (scheduler/delete-service dummy-scheduler service-id))]
           (is (= {:message "Kubernetes reports service does not exist"
                   :result :no-such-service-exists}
                  actual))))
       (testing "unsuccessful-delete: internal error"
         (let [actual (with-redefs [api-request (fn [& _] (throw-exception))]
-                       (scheduler/delete-app dummy-scheduler service-id))]
+                       (scheduler/delete-service dummy-scheduler service-id))]
           (is (= {:message "Internal error while deleting service"
                   :result :error}
                  actual)))))))

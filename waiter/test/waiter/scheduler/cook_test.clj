@@ -843,20 +843,20 @@
 
       (with-redefs [delete-jobs (constantly {:deploymentId 12345})]
         (is (= {:message "Deleted foo" :result :deleted :success true}
-               (scheduler/delete-app scheduler "foo"))))
+               (scheduler/delete-service scheduler "foo"))))
 
       (with-redefs [delete-jobs (constantly {})]
         (is (= {:message "Deleted foo" :result :deleted :success true}
-               (scheduler/delete-app scheduler "foo"))))
+               (scheduler/delete-service scheduler "foo"))))
 
       (with-redefs [delete-jobs (fn [_ _] (throw (ex-info "Delete error" {:status 400})))]
         (is (= {:message "Unable to delete foo" :result :failed :success false}
-               (scheduler/delete-app scheduler "foo"))))
+               (scheduler/delete-service scheduler "foo"))))
 
       (with-redefs [delete-jobs (constantly {})
                     retrieve-jobs (constantly nil)]
         (is (= {:message "foo does not exist!" :result :no-such-service-exists :success false}
-               (scheduler/delete-app scheduler "foo")))))))
+               (scheduler/delete-service scheduler "foo")))))))
 
 (deftest test-scale-service
   (let [cook-api (Object.)

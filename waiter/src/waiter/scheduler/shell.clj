@@ -596,7 +596,7 @@
        :result :already-exists
        :message (str service-id " already exists!")}))
 
-  (delete-app [this service-id]
+  (delete-service [this service-id]
     (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent delete-service service-id port->reservation-atom port-grace-period-ms completion-promise)
