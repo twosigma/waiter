@@ -384,7 +384,7 @@
       (let [delete-result (scheduler/retry-on-transient-server-exceptions
                             (str "in delete-service[" service-id "]")
                             (log/info "deleting service" service-id)
-                            (marathon/delete-service marathon-api service-id))]
+                            (marathon/delete-app marathon-api service-id))]
         (when delete-result
           (remove-failed-instances-for-service! service-id->failed-instances-transient-store service-id)
           (scheduler/remove-killed-instances-for-service! service-id)

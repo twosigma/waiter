@@ -838,17 +838,17 @@
 (deftest test-delete-service
   (let [scheduler (create-marathon-scheduler)]
 
-    (with-redefs [marathon/delete-service (constantly {:deploymentId 12345})]
+    (with-redefs [marathon/delete-app (constantly {:deploymentId 12345})]
       (is (= {:result :deleted
               :message "Marathon deleted with deploymentId 12345"}
              (scheduler/delete-service scheduler "foo"))))
 
-    (with-redefs [marathon/delete-service (constantly {})]
+    (with-redefs [marathon/delete-app (constantly {})]
       (is (= {:result :error
               :message "Marathon did not provide deploymentId for delete request"}
              (scheduler/delete-service scheduler "foo"))))
 
-    (with-redefs [marathon/delete-service (fn [_ _] (ss/throw+ {:status 404}))]
+    (with-redefs [marathon/delete-app (fn [_ _] (ss/throw+ {:status 404}))]
       (is (= {:result :no-such-service-exists
               :message "Marathon reports service does not exist"}
              (scheduler/delete-service scheduler "foo"))))))

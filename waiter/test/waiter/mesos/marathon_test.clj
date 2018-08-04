@@ -43,9 +43,9 @@
       (with-redefs [http-utils/http-request (assert-endpoint-request-method :post "/v2/apps")]
         (create-app marathon-api {})))
 
-    (testing "delete-service"
+    (testing "delete-app"
       (with-redefs [http-utils/http-request (assert-endpoint-request-method :delete (str "/v2/apps/" app-id))]
-        (delete-service marathon-api app-id)))
+        (delete-app marathon-api app-id)))
 
     (testing "delete-deployment"
       (let [deployment-id "d1234"
