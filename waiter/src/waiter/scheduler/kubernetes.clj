@@ -415,7 +415,7 @@
                                 service-id->service-description-fn]
   scheduler/ServiceScheduler
 
-  (get-apps->instances [this]
+  (get-service->instances [this]
     (pc/map-from-keys #(instances-breakdown! this %)
                       (get-services this)))
 

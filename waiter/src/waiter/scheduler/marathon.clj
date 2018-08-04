@@ -327,7 +327,7 @@
 
   scheduler/ServiceScheduler
 
-  (get-apps->instances [_]
+  (get-service->instances [_]
     (let [apps (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})]
       (response-data->service->service-instances
         apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store

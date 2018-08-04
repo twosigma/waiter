@@ -543,7 +543,7 @@
 
   scheduler/ServiceScheduler
 
-  (get-apps->instances [_]
+  (get-service->instances [_]
     (let [id->service @id->service-agent]
       (into {} (map (fn [[_ service-entry]]
                       (service-entry->instances service-entry))

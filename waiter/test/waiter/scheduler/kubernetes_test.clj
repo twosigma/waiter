@@ -395,7 +395,7 @@
                                  sanitize-k8s-service-records))]
         (assert-data-equal expected-result actual-result)))))
 
-(deftest test-scheduler-get-apps->instances
+(deftest test-scheduler-get-service->instances
   (let [services-response
         {:kind "ReplicaSetList"
          :apiVersion "extensions/v1beta1"
@@ -572,7 +572,7 @@
         response-iterator (.iterator api-server-responses)
         actual (with-redefs [api-request (fn [& _] (.next response-iterator))]
                  (->> dummy-scheduler
-                      scheduler/get-apps->instances
+                      scheduler/get-service->instances
                       sanitize-k8s-service-records))]
     (assert-data-equal expected actual)
     (scheduler/preserve-only-killed-instances-for-services! [])))

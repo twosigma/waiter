@@ -720,7 +720,7 @@
           (is (seq (service-id->failed-instances service-id->failed-instances-transient-store "S2")))
 
           (is (= {service-1 service-1-instances, service-2 service-2-instances}
-                 (scheduler/get-apps->instances scheduler))))
+                 (scheduler/get-service->instances scheduler))))
         (finally
           (scheduler/remove-killed-instances-for-service! "S1")
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))

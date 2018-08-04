@@ -53,7 +53,7 @@
   "Gets the task-stats for the first service in the given scheduler"
   [scheduler]
   (-> scheduler
-      scheduler/get-apps->instances
+      scheduler/get-service->instances
       keys
       first
       :task-stats))

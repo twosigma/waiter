@@ -328,7 +328,7 @@
 
   scheduler/ServiceScheduler
 
-  (get-apps->instances [_]
+  (get-service->instances [_]
     (let [all-jobs (mapcat #(get-jobs cook-api % ["running" "waiting"] :search-interval search-interval)
                            allowed-users)
           service-id->jobs (group-by #(-> % :labels :service-id) all-jobs)]

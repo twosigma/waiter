@@ -75,7 +75,7 @@
 
 (defprotocol ServiceScheduler
 
-  (get-apps->instances [this]
+  (get-service->instances [this]
     "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records.
      The nested map has the following keys: :active-instances, :failed-instances and :killed-instances.
      The active-instances should not be assumed to be healthy (or live).
@@ -381,7 +381,7 @@
                                           (metrics/waiter-timer "core" "scheduler" "get-apps")
                                           (retry-on-transient-server-exceptions
                                             "request-available-waiter-apps"
-                                            (get-apps->instances scheduler)))]
+                                            (get-service->instances scheduler)))]
     (log/trace "request-available-waiter-apps:apps" (keys service->service-instances))
     service->service-instances))
 
