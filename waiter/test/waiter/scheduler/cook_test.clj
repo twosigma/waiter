@@ -805,7 +805,7 @@
 
     (testing "create service - success"
       (let [updated-invoked-promise (promise)]
-        (with-redefs [scheduler/app-exists? (constantly false)
+        (with-redefs [scheduler/service-exists? (constantly false)
                       launch-jobs (fn [in-cook-api in-service-id _ _ _ num-instances & _]
                                     (deliver updated-invoked-promise :invoked)
                                     (is (= cook-api in-cook-api))
@@ -818,7 +818,7 @@
 
     (testing "create service - failure"
       (let [updated-invoked-promise (promise)]
-        (with-redefs [scheduler/app-exists? (constantly false)
+        (with-redefs [scheduler/service-exists? (constantly false)
                       launch-jobs (fn [in-cook-api in-service-id _ _ _ num-instances & _]
                                     (deliver updated-invoked-promise :invoked)
                                     (is (= cook-api in-cook-api))
@@ -831,7 +831,7 @@
 
     (testing "create service - service exists"
       (with-redefs [retrieve-jobs (fn [_ _ in-service-id & _] (= service-id in-service-id))]
-        (is (scheduler/app-exists? cook-scheduler service-id))
+        (is (scheduler/service-exists? cook-scheduler service-id))
         (is (= {:message "foo already exists!" :result :already-exists :success false}
                (scheduler/create-app-if-new cook-scheduler descriptor)))))))
 

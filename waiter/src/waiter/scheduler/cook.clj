@@ -370,7 +370,7 @@
         (log/warn "get-instances: service" service-id "does not exist!"))))
 
   (kill-instance [this {:keys [cook/job-uuid id service-id] :as instance}]
-    (if (scheduler/app-exists? this service-id)
+    (if (scheduler/service-exists? this service-id)
       (let [log-data {:instance-id id :job-uuid job-uuid :service-id service-id}
             success (try
                       (when job-uuid
@@ -394,17 +394,17 @@
        :result :no-such-service-exists
        :message (str service-id " does not exist!")}))
 
-  (app-exists? [_ service-id]
+  (service-exists? [_ service-id]
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
-        (str "app-exists?[" service-id "]")
+        (str "service-exists?[" service-id "]")
         (some->> (service-id->service-description-fn service-id)
                  (retrieve-jobs cook-api search-interval service-id)))
       (catch [:status 404] _
-        (log/warn "app-exists?: service" service-id "does not exist!"))))
+        (log/warn "service-exists?: service" service-id "does not exist!"))))
 
   (create-app-if-new [this {:keys [service-id] :as descriptor}]
-    (if-not (scheduler/app-exists? this service-id)
+    (if-not (scheduler/service-exists? this service-id)
       (timers/start-stop-time!
         (metrics/waiter-timer "core" "create-app")
         (let [success (try
@@ -429,7 +429,7 @@
        :success false}))
 
   (delete-app [this service-id]
-    (if (scheduler/app-exists? this service-id)
+    (if (scheduler/service-exists? this service-id)
       (let [success (try
                       (let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn service-id)
                             jobs (retrieve-jobs cook-api search-interval service-id service-description)
@@ -450,7 +450,7 @@
        :success false}))
 
   (scale-app [this service-id scale-to-instances _]
-    (if (scheduler/app-exists? this service-id)
+    (if (scheduler/service-exists? this service-id)
       (let [result (try
                      (let [service-description (service-id->service-description-fn service-id)
                            jobs (retrieve-jobs cook-api search-interval service-id service-description)

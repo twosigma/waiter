@@ -559,7 +559,7 @@
       (second (service-entry->instances service-entry))))
 
   (kill-instance [this {:keys [id service-id] :as instance}]
-    (if (scheduler/app-exists? this service-id)
+    (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent kill-instance service-id id
               port->reservation-atom port-grace-period-ms
@@ -576,11 +576,11 @@
        :result :no-such-service-exists
        :message (str service-id " does not exist!")}))
 
-  (app-exists? [_ service-id]
+  (service-exists? [_ service-id]
     (contains? @id->service-agent service-id))
 
   (create-app-if-new [this {:keys [service-id service-description]}]
-    (if-not (scheduler/app-exists? this service-id)
+    (if-not (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent create-service service-id service-description
               service-id->password-fn work-directory port->reservation-atom
@@ -597,7 +597,7 @@
        :message (str service-id " already exists!")}))
 
   (delete-app [this service-id]
-    (if (scheduler/app-exists? this service-id)
+    (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent delete-service service-id port->reservation-atom port-grace-period-ms completion-promise)
         (let [result (deref completion-promise)
@@ -612,7 +612,7 @@
        :message (str service-id " does not exist!")}))
 
   (scale-app [this service-id scale-to-instances _]
-    (if (scheduler/app-exists? this service-id)
+    (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent set-service-scale service-id scale-to-instances completion-promise)
         (let [result (deref completion-promise)

@@ -634,7 +634,7 @@
                         :status 500)
                  actual)))))))
 
-(deftest test-scheduler-app-exists?
+(deftest test-scheduler-service-exists?
   (let [service-id "test-app-1234"
         empty-response
         {:kind "ReplicaSetList"
@@ -665,7 +665,7 @@
     (doseq [{:keys [api-server-response expected-result]} test-cases]
       (let [dummy-scheduler (make-dummy-scheduler [service-id])
             actual-result (with-redefs [api-request (constantly api-server-response)]
-                            (scheduler/app-exists? dummy-scheduler service-id))]
+                            (scheduler/service-exists? dummy-scheduler service-id))]
         (is (= expected-result actual-result))))))
 
 (deftest test-killed-instances-transient-store

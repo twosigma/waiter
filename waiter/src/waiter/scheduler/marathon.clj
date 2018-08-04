@@ -363,20 +363,20 @@
                (fn [existing-time] (or existing-time current-time))))
       kill-result))
 
-  (app-exists? [_ service-id]
+  (service-exists? [_ service-id]
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
-        (str "app-exists?[" service-id "]")
+        (str "service-exists?[" service-id "]")
         (marathon/get-app marathon-api service-id))
       (catch [:status 404] _
-        (log/warn "app-exists?: service" service-id "does not exist!"))))
+        (log/warn "service-exists?: service" service-id "does not exist!"))))
 
   (create-app-if-new [this descriptor]
     (timers/start-stop-time!
       (metrics/waiter-timer "core" "create-app")
       (let [service-id (:service-id descriptor)
             marathon-descriptor (marathon-descriptor home-path-prefix service-id->password-fn descriptor)]
-        (when-not (scheduler/app-exists? this service-id)
+        (when-not (scheduler/service-exists? this service-id)
           (start-new-service-wrapper marathon-api service-id marathon-descriptor)))))
 
   (delete-app [_ service-id]

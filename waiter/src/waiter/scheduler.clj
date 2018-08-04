@@ -95,7 +95,7 @@
      Returns a map containing the following structure:
      {:instance-id instance-id, :killed? <boolean>, :message <string>,  :service-id service-id, :status status-code}")
 
-  (app-exists? [this ^String service-id]
+  (service-exists? [this ^String service-id]
     "Returns truth-y value if the app exists and nil otherwise.")
 
   (create-app-if-new [this descriptor]

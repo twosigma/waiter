@@ -223,11 +223,11 @@
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))
     (ensure-agent-finished scheduler)
-    (is (scheduler/app-exists? scheduler "foo"))
+    (is (scheduler/service-exists? scheduler "foo"))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
            (scheduler/delete-app scheduler "foo")))
     (ensure-agent-finished scheduler)
-    (is (not (scheduler/app-exists? scheduler "foo")))))
+    (is (not (scheduler/service-exists? scheduler "foo")))))
 
 (deftest test-scale-app
   (let [scheduler-config common-scheduler-config
@@ -240,7 +240,7 @@
       (is (= {:success true, :result :created, :message "Created foo"}
              (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
       (ensure-agent-finished scheduler)
-      (is (scheduler/app-exists? scheduler "foo"))
+      (is (scheduler/service-exists? scheduler "foo"))
       ;; Scale up, instances: 2
       (is (= {:success true, :result :scaled, :message "Scaled foo"}
              (scheduler/scale-app scheduler "foo" 2 false)))
