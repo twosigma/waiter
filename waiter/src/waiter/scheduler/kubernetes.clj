@@ -419,7 +419,7 @@
     (pc/map-from-keys #(instances-breakdown! this %)
                       (get-services this)))
 
-  (get-apps [this]
+  (get-services [this]
     (get-services this))
 
   (get-instances [this service-id]

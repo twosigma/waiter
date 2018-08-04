@@ -81,7 +81,7 @@
      The active-instances should not be assumed to be healthy (or live).
      The failed-instances are guaranteed to be dead.")
 
-  (get-apps [this]
+  (get-services [this]
     "Returns a list of scheduler/Service records")
 
   (get-instances [this ^String service-id]
@@ -378,7 +378,7 @@
   "Queries the scheduler and builds a list of available Waiter apps."
   [scheduler]
   (when-let [service->service-instances (timers/start-stop-time!
-                                          (metrics/waiter-timer "core" "scheduler" "get-apps")
+                                          (metrics/waiter-timer "core" "scheduler" "get-services")
                                           (retry-on-transient-server-exceptions
                                             "request-available-waiter-apps"
                                             (get-service->instances scheduler)))]

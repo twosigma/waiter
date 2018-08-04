@@ -345,7 +345,7 @@
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
            (scheduler/delete-service scheduler "foo")))))
 
-(deftest test-get-apps
+(deftest test-get-services
   (let [scheduler-config common-scheduler-config
         scheduler (create-shell-scheduler scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
@@ -416,7 +416,7 @@
                                         "mem" 32
                                         "ports" 1}
                   :shell-scheduler/mem 32}])
-           (scheduler/get-apps scheduler)))
+           (scheduler/get-services scheduler)))
     (is (= {:success true, :result :deleted, :message "Deleted foo"}
            (scheduler/delete-service scheduler "foo")))
     (is (= {:success true, :result :deleted, :message "Deleted bar"}

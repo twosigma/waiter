@@ -549,7 +549,7 @@
                       (service-entry->instances service-entry))
                     id->service))))
 
-  (get-apps [_]
+  (get-services [_]
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 

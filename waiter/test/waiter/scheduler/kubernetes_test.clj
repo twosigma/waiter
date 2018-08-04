@@ -326,7 +326,7 @@
               (str name))
           (scheduler/preserve-only-killed-instances-for-services! []))))))
 
-(deftest test-scheduler-get-apps
+(deftest test-scheduler-get-services
   (let [test-cases
         [{:api-server-response
           {:kind "ReplicaSetList"
@@ -391,7 +391,7 @@
       (let [dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"])
             actual-result (with-redefs [api-request (constantly api-server-response)]
                             (->> dummy-scheduler
-                                 scheduler/get-apps
+                                 scheduler/get-services
                                  sanitize-k8s-service-records))]
         (assert-data-equal expected-result actual-result)))))
 

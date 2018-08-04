@@ -735,7 +735,7 @@
                                          state-mult (async/mult state-chan)
                                          initial-timeout-chan (async/chan 1)
                                          scheduler (reify scheduler/ServiceScheduler
-                                                     (get-apps [_] scheduler-data)
+                                                     (get-services [_] scheduler-data)
                                                      (scale-service [_ _ _ _] {}))
                                          autoscaler-chans-map
                                          (autoscaler-goroutine (assoc initial-state

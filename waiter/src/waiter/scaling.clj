@@ -36,7 +36,7 @@
   (when-let [apps (try
                     (scheduler/retry-on-transient-server-exceptions
                       "get-app-instance-stats"
-                      (scheduler/get-apps scheduler))
+                      (scheduler/get-services scheduler))
                     (catch Exception ex
                       (log/warn ex "fetch failed for instance counts from scheduler")))]
     (zipmap (map :id apps)

@@ -333,7 +333,7 @@
         apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
         service-id->service-description)))
 
-  (get-apps [_]
+  (get-services [_]
     (map response->Service (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})))
 
   (get-instances [_ service-id]
