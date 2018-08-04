@@ -449,7 +449,7 @@
        :result :no-such-service-exists
        :success false}))
 
-  (scale-app [this service-id scale-to-instances _]
+  (scale-service [this service-id scale-to-instances _]
     (if (scheduler/service-exists? this service-id)
       (let [result (try
                      (let [service-description (service-id->service-description-fn service-id)

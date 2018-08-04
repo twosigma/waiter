@@ -846,7 +846,7 @@
                        {:keys [executor-multiplexer-chan]} autoscaling-multiplexer]
                    (scaling/autoscaler-goroutine
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
-                     scaling/scale-app service-id->service-description-fn router-state-push-mult)))
+                     scaling/scale-service service-id->service-description-fn router-state-push-mult)))
    :autoscaling-multiplexer (pc/fnk [[:routines delegate-instance-kill-request-fn peers-acknowledged-blacklist-requests-fn]
                                      [:scheduler scheduler]
                                      [:state instance-rpc-chan scaling-timeout-config]]

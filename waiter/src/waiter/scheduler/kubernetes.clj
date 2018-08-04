@@ -485,7 +485,7 @@
         {:result :error
          :message "Internal error while deleting service"})))
 
-  (scale-app [this service-id scale-to-instances _]
+  (scale-service [this service-id scale-to-instances _]
     (ss/try+
       (if-let [service (service-id->service this service-id)]
         (do

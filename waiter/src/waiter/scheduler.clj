@@ -109,7 +109,7 @@
       :result :deleted|:error|:no-such-service-exists
       :success true|false}")
 
-  (scale-app [this ^String service-id target-instances force]
+  (scale-service [this ^String service-id target-instances force]
     "Instructs the scheduler to scale up/down instances of the specified service to the specified number
      of instances. The force flag can be used enforce the scaling by ignoring previous pending operations.")
 

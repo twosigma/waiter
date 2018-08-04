@@ -406,10 +406,10 @@
         (log/warn "[delete-service] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[delete-service] Marathon unavailable"))))
 
-  (scale-app [_ service-id scale-to-instances force]
+  (scale-service [_ service-id scale-to-instances force]
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
-        (str "in scale-app[" service-id "]")
+        (str "in scale-service[" service-id "]")
         (when force
           (when-let [current-deployment (extract-service-deployment-info marathon-api service-id)]
             (log/info "forcefully deleting deployment" current-deployment)
@@ -428,7 +428,7 @@
                   {:deployment-info (extract-deployment-info marathon-api e)
                    :service-id service-id}))
       (catch [:status 503] {}
-        (log/warn "[scale-app] Marathon unavailable (Error 503).")
+        (log/warn "[scale-service] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[autoscaler] Marathon unavailable"))))
 
   (retrieve-directory-content [_ service-id instance-id host directory]
@@ -479,7 +479,7 @@
   [marathon-scheduler service-id {:keys [instances-scheduled] :as task-data}]
   (try
     (log/info "triggering sync deployment" {:service-id service-id :task-data task-data})
-    (scheduler/scale-app marathon-scheduler service-id instances-scheduled false)
+    (scheduler/scale-service marathon-scheduler service-id instances-scheduled false)
     (catch Exception e
       (log/error e "unable to sync marathon deployment for" service-id))))
 

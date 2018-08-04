@@ -96,7 +96,7 @@
       (scheduler/suppress-transient-server-exceptions
         "autoscaler"
         (log/info mode "service to" scale-to-instances "instances")
-        (scheduler/scale-app scheduler service-id scale-to-instances force?)
+        (scheduler/scale-service scheduler service-id scale-to-instances force?)
         (counters/inc! (metrics/service-counter service-id "scaling" mode "success")))
       (catch Exception e
         (counters/inc! (metrics/service-counter service-id "scaling" mode "fail"))
@@ -297,7 +297,7 @@
     (catch Exception e
       (log/warn e "Unexpected error when trying to scale" service-id))))
 
-(defn scale-app
+(defn scale-service
   "Scales an individual service.
   The ideal number of instances follows outstanding-requests for any given service.
   Scaling is controlled by two exponentially weighted moving averages, one for scaling up and one for scaling down.
@@ -358,11 +358,11 @@
      :target-instances target-instances'
      :scale-amount integer-delta'}))
 
-(defn scale-apps
+(defn scale-services
   "Scales a sequence of services given the scale state of each service, and returns a new scale state which
-  is fed back in the for the next call to scale-apps."
+  is fed back in the for the next call to scale-services."
   [service-ids service-id->service-description service-id->outstanding-requests service-id->scale-state apply-scaling-fn
-   scale-ticks scale-app-fn service-id->router-state service-id->scheduler-state]
+   scale-ticks scale-service-fn service-id->router-state service-id->scheduler-state]
   (try
     (log/trace "scaling apps" {:service-ids service-ids
                                :service-id->service-description service-id->service-description
@@ -381,7 +381,7 @@
               service-description (get service-id->service-description service-id)
               {:keys [target-instances scale-to-instances scale-amount]}
               (if (and target-instances scale-ticks)
-                (scale-app-fn (assoc service-description "scale-ticks" scale-ticks)
+                (scale-service-fn (assoc service-description "scale-ticks" scale-ticks)
                               {:healthy-instances healthy-instances
                                :expired-instances expired-instances
                                :outstanding-requests outstanding-requests
@@ -407,7 +407,7 @@
            :scale-amount scale-amount}))
       service-ids)
     (catch Exception e
-      (log/error e "exception in scale-apps")
+      (log/error e "exception in scale-services")
       service-id->scale-state)))
 
 (defn- difference-in-millis
@@ -418,8 +418,8 @@
 
 (defn autoscaler-goroutine
   "Autoscaler encapsulated in goroutine.
-   Acquires state of services and passes to scale-apps."
-  [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-app-fn
+   Acquires state of services and passes to scale-services."
+  [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-service-fn
    service-id->service-description-fn state-mult]
   (let [exit-chan (async/chan)
         query-chan (async/chan 10)
@@ -493,14 +493,14 @@
                                                                 int))]
                                           (when (seq excluded-service-ids)
                                             (cid/cinfo correlation-id "services excluded this iteration" excluded-service-ids))
-                                          (scale-apps scalable-service-ids
+                                          (scale-services scalable-service-ids
                                                       (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
                                                       ; default to 0 outstanding requests for services without metrics
                                                       (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
                                                       service-id->scale-state
                                                       apply-scaling-fn
                                                       scale-ticks
-                                                      scale-app-fn
+                                                      scale-service-fn
                                                       service-id->router-state
                                                       service-id->scheduler-state')))
                                       service-id->scale-state)]

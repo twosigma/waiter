@@ -445,7 +445,7 @@
             (deliver completion-promise :scaled)
             (assoc-in id->service [service-id :service :instances] scale-to-instances))
           (do
-            (log/info "received scale-app call, but current (" current-instances ") >= target (" scale-to-instances ")")
+            (log/info "received scale-service call, but current (" current-instances ") >= target (" scale-to-instances ")")
             (deliver completion-promise :scaling-not-needed)
             id->service)))
       (do
@@ -611,7 +611,7 @@
        :result :no-such-service-exists
        :message (str service-id " does not exist!")}))
 
-  (scale-app [this service-id scale-to-instances _]
+  (scale-service [this service-id scale-to-instances _]
     (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent set-service-scale service-id scale-to-instances completion-promise)

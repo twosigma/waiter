@@ -876,7 +876,7 @@
                                     (is (= service-id in-service-id))
                                     true)]
           (is (= {:message "test-service-id does not exist!" :result :no-such-service-exists :success false}
-                 (scheduler/scale-app cook-scheduler service-id instances false)))
+                 (scheduler/scale-service cook-scheduler service-id instances false)))
           (is (= :not-invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "scale of service - no-op"
@@ -897,7 +897,7 @@
                                     (is (= 20 extra-instances))
                                     true)]
           (is (= {:message "Scaled test-service-id" :result :scaling-not-needed :success true}
-                 (scheduler/scale-app cook-scheduler service-id instances false)))
+                 (scheduler/scale-service cook-scheduler service-id instances false)))
           (is (= :not-invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "scale of service - success"
@@ -918,7 +918,7 @@
                                     (is (= 20 extra-instances))
                                     true)]
           (is (= {:message "Scaled test-service-id" :result :scaled :success true}
-                 (scheduler/scale-app cook-scheduler service-id instances false)))
+                 (scheduler/scale-service cook-scheduler service-id instances false)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "scale of service - fail"
@@ -939,7 +939,7 @@
                                     (is (= 20 extra-instances))
                                     (throw (ex-info "Launch failed!" {})))]
           (is (= {:message "Unable to scale test-service-id" :result :failed :success false}
-                 (scheduler/scale-app cook-scheduler service-id instances false)))
+                 (scheduler/scale-service cook-scheduler service-id instances false)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))))
 
 (deftest test-service-id->state

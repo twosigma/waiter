@@ -910,7 +910,7 @@
         (is (= {:affectedApps ["/waiter-app-1234"] :id "1234a" :version "v1234a"}
                (extract-service-deployment-info marathon-api "waiter-app-1234")))))))
 
-(deftest test-scale-app
+(deftest test-scale-service
   (let [marathon-api (Object.)
         marathon-scheduler (create-marathon-scheduler :force-kill-after-ms 60000 :marathon-api marathon-api)
         service-id "test-service-id"]
@@ -934,7 +934,7 @@
                                             (is (= service-id in-service-id))
                                             (is (= {:cmd "tc" :cpus 2 :id service-id :instances instances :mem 4} descriptor))
                                             (deliver updated-invoked-promise :invoked))]
-          (scheduler/scale-app marathon-scheduler service-id instances false)
+          (scheduler/scale-service marathon-scheduler service-id instances false)
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "forced scale of service - fewer instances"
@@ -962,7 +962,7 @@
                                             (is (= service-id in-service-id))
                                             (is (= {:cmd "tc" :cpus 2 :id service-id :instances 15 :mem 4} descriptor))
                                             (deliver updated-invoked-promise :invoked))]
-          (scheduler/scale-app marathon-scheduler service-id instances true)
+          (scheduler/scale-service marathon-scheduler service-id instances true)
           (is (= :invoked (deref deleted-deployment-promise 0 :not-invoked)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
@@ -991,7 +991,7 @@
                                             (is (= service-id in-service-id))
                                             (is (= {:cmd "tc" :cpus 2 :id service-id :instances instances :mem 4} descriptor))
                                             (deliver updated-invoked-promise :invoked))]
-          (scheduler/scale-app marathon-scheduler service-id instances true)
+          (scheduler/scale-service marathon-scheduler service-id instances true)
           (is (= :invoked (deref deleted-deployment-promise 0 :not-invoked)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))))
 
@@ -1221,7 +1221,7 @@
                       (is (= marathon-api in-marathon-api))
                       (is (= {"embed" ["apps.deployments" "apps.tasks"]} in-query-params))
                       {:apps (deref app-entries-atom)})
-                    scheduler/scale-app (fn [_ in-service-id in-target in-force]
+                    scheduler/scale-service (fn [_ in-service-id in-target in-force]
                                           (swap! scheduler-operations-atom conj [in-service-id in-target in-force]))
                     t/now (fn [] (deref current-time-atom))]
         (let [leader-atom (atom true)

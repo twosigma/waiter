@@ -183,7 +183,7 @@
         (if (<= tick (min max-total-ticks total-ticks))
           (let [{:keys [scale-amount target-instances]}
                 (if (zero? (mod tick scale-ticks))
-                  (scaling/scale-app config state)
+                  (scaling/scale-service config state)
                   {:scale-amount 0 :target-instances target-instances})]
             (let [client-change-amount (client-curve tick 0)
                   total-clients (or total-clients 0)

@@ -116,8 +116,8 @@
                             :max-blacklist-time-ms 60000}
             make-scheduler (fn [operation-tracker-atom]
                              (reify scheduler/ServiceScheduler
-                               (scale-app [_ service-id scale-to-instances force]
-                                 (swap! operation-tracker-atom conj [:scale-app service-id scale-to-instances])
+                               (scale-service [_ service-id scale-to-instances force]
+                                 (swap! operation-tracker-atom conj [:scale-service service-id scale-to-instances])
                                  (is (= test-service-id service-id))
                                  (is (false? force))
                                  (when (neg? scale-to-instances)
@@ -231,8 +231,8 @@
                             :max-blacklist-time-ms 60000}
             make-scheduler (fn [operation-tracker-atom]
                              (reify scheduler/ServiceScheduler
-                               (scale-app [_ service-id scale-to-instances force]
-                                 (swap! operation-tracker-atom conj [:scale-app service-id scale-to-instances force])
+                               (scale-service [_ service-id scale-to-instances force]
+                                 (swap! operation-tracker-atom conj [:scale-service service-id scale-to-instances force])
                                  (is (= test-service-id service-id))
                                  (when (neg? scale-to-instances)
                                    (throw (Exception. "throwing exception as required by test")))
@@ -301,7 +301,7 @@
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
-            (is (= [[:scale-app "test-service-id" 30 false]] @scheduler-operation-tracker-atom))
+            (is (= [[:scale-service "test-service-id" 30 false]] @scheduler-operation-tracker-atom))
             (async/>!! exit-chan :exit)))
 
         (testing "scale-force:trigger"
@@ -316,7 +316,7 @@
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id -5 25 20 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
-            (is (= [[:scale-app "test-service-id" 25 true]] @scheduler-operation-tracker-atom))
+            (is (= [[:scale-service "test-service-id" 25 true]] @scheduler-operation-tracker-atom))
             (async/>!! exit-chan :exit)))
 
         (testing "scale-down:no-instance-globally"
@@ -558,7 +558,7 @@
                   [:correlation-id :scale-amount :scale-to-instances :service-id :task-count :total-instances])))
     (is (= :test-data (async/<!! executor-multiplexer-chan)))))
 
-(deftest scale-apps-test
+(deftest scale-services-test
   (let [config {"min-instances" 1
                 "max-instances" 10}
         ; assert that we are applying scaling
@@ -580,12 +580,12 @@
                                    (is (= 10 scale-to-instances))
                                    10)))
         ; simple scaling function that targets outstanding-requests
-        test-scale-app (fn [{:strs [min-instances max-instances]} {:keys [total-instances outstanding-requests]}]
+        test-scale-service (fn [{:strs [min-instances max-instances]} {:keys [total-instances outstanding-requests]}]
                          (let [scale-to-instances (max min-instances (min max-instances outstanding-requests))]
                            {:scale-to-instances scale-to-instances
                             :target-instances scale-to-instances
                             :scale-amount (- scale-to-instances total-instances)}))]
-    (let [result (scale-apps ["app1" "app2" "app3" "app4"]
+    (let [result (scale-services ["app1" "app2" "app3" "app4"]
                              {"app1" (merge config {})
                               "app2" (merge config {})
                               "app3" (merge config {"min-instances" 5})
@@ -598,7 +598,7 @@
                               "app2" {:target-instances 5}
                               "app3" {:target-instances 0}
                               "app4" {:target-instances 10}} ; scale state
-                             apply-scaling 5 test-scale-app
+                             apply-scaling 5 test-scale-service
                              {"app1" {:healthy-instances 5 :task-count 5 :expired-instances 0}
                               "app2" {:healthy-instances 5 :task-count 5 :expired-instances 0}
                               "app3" {:healthy-instances 0 :task-count 0 :expired-instances 0}
@@ -617,7 +617,7 @@
   (is (= 0.5 (normalize-factor 0.5 1)))
   (is (= 0.75 (normalize-factor 0.5 2))))
 
-(deftest scale-app-test
+(deftest scale-service-test
   (let [jitter-threshold 0.9
         default-scaling {"concurrency-level" 1
                          "expired-instance-restart-rate" 0.1
@@ -635,7 +635,7 @@
         scales-like (fn [expected-scale-amount expected-scale-to-instances expected-target-instances
                          config total-instances outstanding-requests target-instances healthy-instances expired-instances]
                       (let [{:keys [scale-amount scale-to-instances target-instances]}
-                            (scale-app config {:total-instances total-instances
+                            (scale-service config {:total-instances total-instances
                                                :outstanding-requests outstanding-requests
                                                :target-instances target-instances
                                                :healthy-instances healthy-instances
@@ -711,7 +711,7 @@
       service-id->service-description (fn [id] {:service-id id
                                                 "min-instances" 1})
       timeout-interval-ms 10000
-      scale-app-fn (fn [_ state]
+      scale-service-fn (fn [_ state]
                      (case (int (:total-instances state))
                        2
                        {:scale-to-instances 3
@@ -736,13 +736,13 @@
                                          initial-timeout-chan (async/chan 1)
                                          scheduler (reify scheduler/ServiceScheduler
                                                      (get-apps [_] scheduler-data)
-                                                     (scale-app [_ _ _ _] {}))
+                                                     (scale-service [_ _ _ _] {}))
                                          autoscaler-chans-map
                                          (autoscaler-goroutine (assoc initial-state
                                                                  :previous-cycle-start-time (t/minus (t/now) (t/seconds 10))
                                                                  :timeout-chan initial-timeout-chan)
                                                                leader?-fn service-id->metrics-fn instance-killer-multiplexer-fn scheduler
-                                                               timeout-interval-ms scale-app-fn service-id->service-description state-mult)]
+                                                               timeout-interval-ms scale-service-fn service-id->service-description state-mult)]
                                      (async/tap state-mult state-chan-reader)
                                      (merge autoscaler-chans-map
                                             {:initial-timeout-chan initial-timeout-chan
