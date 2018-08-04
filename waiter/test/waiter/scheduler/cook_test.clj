@@ -813,7 +813,7 @@
                                     (is (= min-instances num-instances))
                                     true)]
           (is (= {:message "Created foo" :result :created :success true}
-                 (scheduler/create-app-if-new cook-scheduler descriptor)))
+                 (scheduler/create-service-if-new cook-scheduler descriptor)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "create service - failure"
@@ -826,14 +826,14 @@
                                     (is (= min-instances num-instances))
                                     (throw (ex-info "Failed" {})))]
           (is (= {:message "Unable to create foo" :result :failed :success false}
-                 (scheduler/create-app-if-new cook-scheduler descriptor)))
+                 (scheduler/create-service-if-new cook-scheduler descriptor)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "create service - service exists"
       (with-redefs [retrieve-jobs (fn [_ _ in-service-id & _] (= service-id in-service-id))]
         (is (scheduler/service-exists? cook-scheduler service-id))
         (is (= {:message "foo already exists!" :result :already-exists :success false}
-               (scheduler/create-app-if-new cook-scheduler descriptor)))))))
+               (scheduler/create-service-if-new cook-scheduler descriptor)))))))
 
 (deftest test-delete-service
   (with-redefs [retrieve-jobs (constantly [{:uuid "uuid-1"}

@@ -98,7 +98,7 @@
   (service-exists? [this ^String service-id]
     "Returns truth-y value if the app exists and nil otherwise.")
 
-  (create-app-if-new [this descriptor]
+  (create-service-if-new [this descriptor]
     "Sends a call to Scheduler to start an app with the descriptor if the app does not already exist.
      Returns truth-y value if the app creation was successful and nil otherwise.")
 

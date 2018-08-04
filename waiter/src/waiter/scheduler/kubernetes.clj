@@ -458,7 +458,7 @@
       (catch [:status 404] _
         (comment "App does not exist."))))
 
-  (create-app-if-new [this {:keys [service-id] :as descriptor}]
+  (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (when-not (scheduler/service-exists? this service-id)
       (ss/try+
         (create-service descriptor this)

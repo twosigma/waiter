@@ -579,7 +579,7 @@
   (service-exists? [_ service-id]
     (contains? @id->service-agent service-id))
 
-  (create-app-if-new [this {:keys [service-id service-description]}]
+  (create-service-if-new [this {:keys [service-id service-description]}]
     (if-not (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent create-service service-id service-description

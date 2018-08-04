@@ -47,7 +47,7 @@
                                                   "ports" 1}
                                                  custom-service-description)
                      :service-id service-id}]
-     (scheduler/create-app-if-new scheduler descriptor))))
+     (scheduler/create-service-if-new scheduler descriptor))))
 
 (defn- task-stats
   "Gets the task-stats for the first service in the given scheduler"
@@ -209,7 +209,7 @@
                        :expiry-time nil}}
                @port->reservation-atom))))))
 
-(deftest test-create-app-if-new
+(deftest test-create-service-if-new
   (let [scheduler (create-shell-scheduler common-scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))

@@ -272,7 +272,7 @@
   (ss/try+
     (log/info "Starting new app for" service-id "with descriptor" (dissoc marathon-descriptor :env))
     (scheduler/retry-on-transient-server-exceptions
-      (str "create-app-if-new[" service-id "]")
+      (str "create-service-if-new[" service-id "]")
       (marathon/create-app marathon-api marathon-descriptor))
     (catch [:status 409] e
       (conflict-handler {:deployment-info (extract-deployment-info marathon-api e)
@@ -371,7 +371,7 @@
       (catch [:status 404] _
         (log/warn "service-exists?: service" service-id "does not exist!"))))
 
-  (create-app-if-new [this descriptor]
+  (create-service-if-new [this descriptor]
     (timers/start-stop-time!
       (metrics/waiter-timer "core" "create-app")
       (let [service-id (:service-id descriptor)

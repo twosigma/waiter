@@ -403,7 +403,7 @@
       (catch [:status 404] _
         (log/warn "service-exists?: service" service-id "does not exist!"))))
 
-  (create-app-if-new [this {:keys [service-id] :as descriptor}]
+  (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (if-not (scheduler/service-exists? this service-id)
       (timers/start-stop-time!
         (metrics/waiter-timer "core" "create-app")
