@@ -24,15 +24,15 @@
 
 (defn- assert-endpoint-request-method
   ([expected-method expected-url]
-    (assert-endpoint-request-method expected-method expected-url nil))
+   (assert-endpoint-request-method expected-method expected-url nil))
   ([expected-method expected-url expected-query-string]
-    (fn [in-http-client in-request-url & {:keys [query-string request-method]}]
-      (is (= http-client in-http-client))
-      (is (= expected-method request-method))
-      (when expected-query-string
-        (is (= expected-query-string query-string)))
-      (let [expected-absolute-url (str marathon-url expected-url)]
-        (is (= expected-absolute-url in-request-url))))))
+   (fn [in-http-client in-request-url & {:keys [query-string request-method]}]
+     (is (= http-client in-http-client))
+     (is (= expected-method request-method))
+     (when expected-query-string
+       (is (= expected-query-string query-string)))
+     (let [expected-absolute-url (str marathon-url expected-url)]
+       (is (= expected-absolute-url in-request-url))))))
 
 (deftest test-marathon-rest-api-endpoints
   (let [app-id "test-app-id"

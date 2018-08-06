@@ -196,7 +196,7 @@
   [{:keys [service id->instance] :as service-entry}]
   (let [running (->> id->instance vals (filter active?) count)
         healthy (->> id->instance vals (filter healthy?) count)
-        unhealthy (->> id->instance vals (filter unhealthy?) count) ]
+        unhealthy (->> id->instance vals (filter unhealthy?) count)]
     (assoc service-entry :service (-> service
                                       (assoc :task-count running)
                                       (assoc :task-stats {:healthy healthy
@@ -240,9 +240,9 @@
               (launch-service service-id service-description service-id->password-fn
                               work-directory port->reservation-atom port-range)]
           (deliver completion-promise :created)
-          (let [service-entry (-> {:service service 
+          (let [service-entry (-> {:service service
                                    :id->instance {(:id instance) instance}}
-                                  update-task-stats)] 
+                                  update-task-stats)]
             (assoc id->service service-id service-entry)))))
     (catch Throwable e
       (log/error e "error attempting to create service" service-id)
@@ -327,7 +327,7 @@
       (release-port! port->reservation-atom port port-grace-period-ms)
       (assoc instance :healthy? false
                       :failed? (if (zero? exit-value) false true)
-                      :killed? true                          ; does not actually mean killed -- using this to mark inactive
+                      :killed? true ; does not actually mean killed -- using this to mark inactive
                       :exit-code exit-value))
     instance))
 
@@ -445,7 +445,7 @@
             (deliver completion-promise :scaled)
             (assoc-in id->service [service-id :service :instances] scale-to-instances))
           (do
-            (log/info "received scale-app call, but current (" current-instances ") >= target (" scale-to-instances ")")
+            (log/info "received scale-service call, but current (" current-instances ") >= target (" scale-to-instances ")")
             (deliver completion-promise :scaling-not-needed)
             id->service)))
       (do
@@ -514,13 +514,13 @@
            (cond-> {:name (.getName file)
                     :size (.length file)
                     :type (if (.isDirectory file) "directory" "file")}
-                   (.isDirectory file)
-                   (assoc :path (-> file
-                                    (.toPath)
-                                    (.relativize (.getPath (File. (str working-directory))))
-                                    (str)))
-                   (.isFile file)
-                   (assoc :url (str (.toURL file)))))
+             (.isDirectory file)
+             (assoc :path (-> file
+                              (.toPath)
+                              (.relativize (.getPath (File. (str working-directory))))
+                              (str)))
+             (.isFile file)
+             (assoc :url (str (.toURL file)))))
          directory-content)))
 
 ; The ShellScheduler's shell-agent holds all of the state about which
@@ -543,13 +543,13 @@
 
   scheduler/ServiceScheduler
 
-  (get-apps->instances [_]
+  (get-service->instances [_]
     (let [id->service @id->service-agent]
       (into {} (map (fn [[_ service-entry]]
                       (service-entry->instances service-entry))
                     id->service))))
 
-  (get-apps [_]
+  (get-services [_]
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 
@@ -559,7 +559,7 @@
       (second (service-entry->instances service-entry))))
 
   (kill-instance [this {:keys [id service-id] :as instance}]
-    (if (scheduler/app-exists? this service-id)
+    (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent kill-instance service-id id
               port->reservation-atom port-grace-period-ms
@@ -576,11 +576,11 @@
        :result :no-such-service-exists
        :message (str service-id " does not exist!")}))
 
-  (app-exists? [_ service-id]
+  (service-exists? [_ service-id]
     (contains? @id->service-agent service-id))
 
-  (create-app-if-new [this {:keys [service-id service-description]}]
-    (if-not (scheduler/app-exists? this service-id)
+  (create-service-if-new [this {:keys [service-id service-description]}]
+    (if-not (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent create-service service-id service-description
               service-id->password-fn work-directory port->reservation-atom
@@ -596,8 +596,8 @@
        :result :already-exists
        :message (str service-id " already exists!")}))
 
-  (delete-app [this service-id]
-    (if (scheduler/app-exists? this service-id)
+  (delete-service [this service-id]
+    (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent delete-service service-id port->reservation-atom port-grace-period-ms completion-promise)
         (let [result (deref completion-promise)
@@ -611,8 +611,8 @@
        :result :no-such-service-exists
        :message (str service-id " does not exist!")}))
 
-  (scale-app [this service-id scale-to-instances _]
-    (if (scheduler/app-exists? this service-id)
+  (scale-service [this service-id scale-to-instances _]
+    (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]
         (send id->service-agent set-service-scale service-id scale-to-instances completion-promise)
         (let [result (deref completion-promise)

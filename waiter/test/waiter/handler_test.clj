@@ -531,7 +531,7 @@
 
       (testing "delete-service-handler:success-regular-user"
         (let [scheduler (reify scheduler/ServiceScheduler
-                          (delete-app [_ service-id]
+                          (delete-service [_ service-id]
                             (is (= test-service-id service-id))
                             {:result :deleted
                              :message "Worked!"}))
@@ -543,7 +543,7 @@
 
       (testing "delete-service-handler:success-regular-user-deleting-for-another-user"
         (let [scheduler (reify scheduler/ServiceScheduler
-                          (delete-app [_ service-id]
+                          (delete-service [_ service-id]
                             (is (= test-service-id service-id))
                             {:deploymentId "good"}))
               request {:authorization/user "another-user"}]

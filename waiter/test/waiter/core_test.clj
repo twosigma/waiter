@@ -403,7 +403,7 @@
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
     (testing "service-handler:delete-successful"
-      (with-redefs [scheduler/delete-app (fn [_ service-id] {:result :deleted, :service-id service-id})
+      (with-redefs [scheduler/delete-service (fn [_ service-id] {:result :deleted, :service-id service-id})
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
@@ -411,7 +411,7 @@
           (is (= {"content-type" "application/json"} headers))
           (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
     (testing "service-handler:delete-nil-response"
-      (with-redefs [scheduler/delete-app (fn [_ _] nil)
+      (with-redefs [scheduler/delete-service (fn [_ _] nil)
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
@@ -419,7 +419,7 @@
           (is (= {"content-type" "application/json"} headers))
           (is (= {"success" false, "service-id" service-id} (json/read-str body))))))
     (testing "service-handler:delete-unauthorized-user"
-      (with-redefs [scheduler/delete-app (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
+      (with-redefs [scheduler/delete-service (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" (str "another-" user), "name" (str service-id "-name")})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
@@ -430,7 +430,7 @@
           (is (= {"content-type" "application/json"} headers))
           (is (str/includes? body "User not allowed to delete service")))))
     (testing "service-handler:delete-404-response"
-      (with-redefs [scheduler/delete-app (fn [_ _] {:result :no-such-service-exists})
+      (with-redefs [scheduler/delete-service (fn [_ _] {:result :no-such-service-exists})
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
@@ -438,7 +438,7 @@
           (is (= {"content-type" "application/json"} headers))
           (is (= {"result" "no-such-service-exists", "service-id" service-id, "success" false} (json/read-str body))))))
     (testing "service-handler:delete-non-existent-service"
-      (with-redefs [scheduler/delete-app (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
+      (with-redefs [scheduler/delete-service (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
                     sd/fetch-core (fn [_ _ & _] {})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
@@ -452,7 +452,7 @@
           (is (= "Service not found" message))
           (is (= "test-service-1" service-id)))))
     (testing "service-handler:delete-throws-exception"
-      (with-redefs [scheduler/delete-app (fn [_ _] (throw (RuntimeException. "Error in deleting service")))
+      (with-redefs [scheduler/delete-service (fn [_ _] (throw (RuntimeException. "Error in deleting service")))
                     sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}

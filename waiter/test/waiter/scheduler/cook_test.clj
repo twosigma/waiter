@@ -327,8 +327,8 @@
                                :application {:name "test-service"
                                              :version "foo/bar:baz"}
                                :container {:docker {:force-pull-image false
-                                                 :image "namespace:foo,name:bar,label:baz"
-                                                 :network "HOST"}
+                                                    :image "namespace:foo,name:bar,label:baz"
+                                                    :network "HOST"}
                                            :type "docker"}
                                :name (str "test-service-1." job-uuid)
                                :uuid job-uuid)]}]
@@ -720,7 +720,7 @@
           (is (seq (service-id->failed-instances service-id->failed-instances-transient-store "S2")))
 
           (is (= {service-1 service-1-instances, service-2 service-2-instances}
-                 (scheduler/get-apps->instances scheduler))))
+                 (scheduler/get-service->instances scheduler))))
         (finally
           (scheduler/remove-killed-instances-for-service! "S1")
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
@@ -805,7 +805,7 @@
 
     (testing "create service - success"
       (let [updated-invoked-promise (promise)]
-        (with-redefs [scheduler/app-exists? (constantly false)
+        (with-redefs [scheduler/service-exists? (constantly false)
                       launch-jobs (fn [in-cook-api in-service-id _ _ _ num-instances & _]
                                     (deliver updated-invoked-promise :invoked)
                                     (is (= cook-api in-cook-api))
@@ -813,12 +813,12 @@
                                     (is (= min-instances num-instances))
                                     true)]
           (is (= {:message "Created foo" :result :created :success true}
-                 (scheduler/create-app-if-new cook-scheduler descriptor)))
+                 (scheduler/create-service-if-new cook-scheduler descriptor)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "create service - failure"
       (let [updated-invoked-promise (promise)]
-        (with-redefs [scheduler/app-exists? (constantly false)
+        (with-redefs [scheduler/service-exists? (constantly false)
                       launch-jobs (fn [in-cook-api in-service-id _ _ _ num-instances & _]
                                     (deliver updated-invoked-promise :invoked)
                                     (is (= cook-api in-cook-api))
@@ -826,14 +826,14 @@
                                     (is (= min-instances num-instances))
                                     (throw (ex-info "Failed" {})))]
           (is (= {:message "Unable to create foo" :result :failed :success false}
-                 (scheduler/create-app-if-new cook-scheduler descriptor)))
+                 (scheduler/create-service-if-new cook-scheduler descriptor)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "create service - service exists"
       (with-redefs [retrieve-jobs (fn [_ _ in-service-id & _] (= service-id in-service-id))]
-        (is (scheduler/app-exists? cook-scheduler service-id))
+        (is (scheduler/service-exists? cook-scheduler service-id))
         (is (= {:message "foo already exists!" :result :already-exists :success false}
-               (scheduler/create-app-if-new cook-scheduler descriptor)))))))
+               (scheduler/create-service-if-new cook-scheduler descriptor)))))))
 
 (deftest test-delete-service
   (with-redefs [retrieve-jobs (constantly [{:uuid "uuid-1"}
@@ -843,20 +843,20 @@
 
       (with-redefs [delete-jobs (constantly {:deploymentId 12345})]
         (is (= {:message "Deleted foo" :result :deleted :success true}
-               (scheduler/delete-app scheduler "foo"))))
+               (scheduler/delete-service scheduler "foo"))))
 
       (with-redefs [delete-jobs (constantly {})]
         (is (= {:message "Deleted foo" :result :deleted :success true}
-               (scheduler/delete-app scheduler "foo"))))
+               (scheduler/delete-service scheduler "foo"))))
 
       (with-redefs [delete-jobs (fn [_ _] (throw (ex-info "Delete error" {:status 400})))]
         (is (= {:message "Unable to delete foo" :result :failed :success false}
-               (scheduler/delete-app scheduler "foo"))))
+               (scheduler/delete-service scheduler "foo"))))
 
       (with-redefs [delete-jobs (constantly {})
                     retrieve-jobs (constantly nil)]
         (is (= {:message "foo does not exist!" :result :no-such-service-exists :success false}
-               (scheduler/delete-app scheduler "foo")))))))
+               (scheduler/delete-service scheduler "foo")))))))
 
 (deftest test-scale-service
   (let [cook-api (Object.)
@@ -876,7 +876,7 @@
                                     (is (= service-id in-service-id))
                                     true)]
           (is (= {:message "test-service-id does not exist!" :result :no-such-service-exists :success false}
-                 (scheduler/scale-app cook-scheduler service-id instances false)))
+                 (scheduler/scale-service cook-scheduler service-id instances false)))
           (is (= :not-invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "scale of service - no-op"
@@ -897,7 +897,7 @@
                                     (is (= 20 extra-instances))
                                     true)]
           (is (= {:message "Scaled test-service-id" :result :scaling-not-needed :success true}
-                 (scheduler/scale-app cook-scheduler service-id instances false)))
+                 (scheduler/scale-service cook-scheduler service-id instances false)))
           (is (= :not-invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "scale of service - success"
@@ -918,7 +918,7 @@
                                     (is (= 20 extra-instances))
                                     true)]
           (is (= {:message "Scaled test-service-id" :result :scaled :success true}
-                 (scheduler/scale-app cook-scheduler service-id instances false)))
+                 (scheduler/scale-service cook-scheduler service-id instances false)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))
 
     (testing "scale of service - fail"
@@ -939,7 +939,7 @@
                                     (is (= 20 extra-instances))
                                     (throw (ex-info "Launch failed!" {})))]
           (is (= {:message "Unable to scale test-service-id" :result :failed :success false}
-                 (scheduler/scale-app cook-scheduler service-id instances false)))
+                 (scheduler/scale-service cook-scheduler service-id instances false)))
           (is (= :invoked (deref updated-invoked-promise 0 :not-invoked))))))))
 
 (deftest test-service-id->state

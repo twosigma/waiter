@@ -154,21 +154,21 @@
                                 (cond-> {:host host
                                          :protocol backend-proto
                                          :service-id (remove-slash-prefix appId)}
-                                        log-directory
-                                        (assoc :log-directory log-directory)
+                                  log-directory
+                                  (assoc :log-directory log-directory)
 
-                                        message
-                                        (assoc :message (str/trim message))
+                                  message
+                                  (assoc :message (str/trim message))
 
-                                        (str/includes? (str message) "Memory limit exceeded:")
-                                        (assoc :flags #{:memory-limit-exceeded})
+                                  (str/includes? (str message) "Memory limit exceeded:")
+                                  (assoc :flags #{:memory-limit-exceeded})
 
-                                        (str/includes? (str message) "Task was killed since health check failed")
-                                        (assoc :flags #{:never-passed-health-checks})
+                                  (str/includes? (str message) "Task was killed since health check failed")
+                                  (assoc :flags #{:never-passed-health-checks})
 
-                                        (str/includes? (str message) "Command exited with status")
-                                        (assoc :exit-code (try (-> message (str/split #"\s+") last Integer/parseInt)
-                                                               (catch Throwable _))))))
+                                  (str/includes? (str message) "Command exited with status")
+                                  (assoc :exit-code (try (-> message (str/split #"\s+") last Integer/parseInt)
+                                                         (catch Throwable _))))))
         healthy?-fn #(let [health-checks (:healthCheckResults %)]
                        (and
                          (and (seq health-checks)
@@ -272,7 +272,7 @@
   (ss/try+
     (log/info "Starting new app for" service-id "with descriptor" (dissoc marathon-descriptor :env))
     (scheduler/retry-on-transient-server-exceptions
-      (str "create-app-if-new[" service-id "]")
+      (str "create-service-if-new[" service-id "]")
       (marathon/create-app marathon-api marathon-descriptor))
     (catch [:status 409] e
       (conflict-handler {:deployment-info (extract-deployment-info marathon-api e)
@@ -327,13 +327,13 @@
 
   scheduler/ServiceScheduler
 
-  (get-apps->instances [_]
+  (get-service->instances [_]
     (let [apps (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})]
       (response-data->service->service-instances
         apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
         service-id->service-description)))
 
-  (get-apps [_]
+  (get-services [_]
     (map response->Service (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})))
 
   (get-instances [_ service-id]
@@ -363,26 +363,26 @@
                (fn [existing-time] (or existing-time current-time))))
       kill-result))
 
-  (app-exists? [_ service-id]
+  (service-exists? [_ service-id]
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
-        (str "app-exists?[" service-id "]")
+        (str "service-exists?[" service-id "]")
         (marathon/get-app marathon-api service-id))
       (catch [:status 404] _
-        (log/warn "app-exists?: service" service-id "does not exist!"))))
+        (log/warn "service-exists?: service" service-id "does not exist!"))))
 
-  (create-app-if-new [this descriptor]
+  (create-service-if-new [this descriptor]
     (timers/start-stop-time!
       (metrics/waiter-timer "core" "create-app")
       (let [service-id (:service-id descriptor)
             marathon-descriptor (marathon-descriptor home-path-prefix service-id->password-fn descriptor)]
-        (when-not (scheduler/app-exists? this service-id)
+        (when-not (scheduler/service-exists? this service-id)
           (start-new-service-wrapper marathon-api service-id marathon-descriptor)))))
 
-  (delete-app [_ service-id]
+  (delete-service [_ service-id]
     (ss/try+
       (let [delete-result (scheduler/retry-on-transient-server-exceptions
-                            (str "in delete-app[" service-id "]")
+                            (str "in delete-service[" service-id "]")
                             (log/info "deleting service" service-id)
                             (marathon/delete-app marathon-api service-id))]
         (when delete-result
@@ -395,7 +395,7 @@
           {:result :error
            :message "Marathon did not provide deploymentId for delete request"}))
       (catch [:status 404] {}
-        (log/warn "[delete-app] Service does not exist:" service-id)
+        (log/warn "[delete-service] Service does not exist:" service-id)
         {:result :no-such-service-exists
          :message "Marathon reports service does not exist"})
       (catch [:status 409] e
@@ -403,21 +403,21 @@
                   {:deployment-info (extract-deployment-info marathon-api e)
                    :service-id service-id}))
       (catch [:status 503] {}
-        (log/warn "[delete-app] Marathon unavailable (Error 503).")
-        (log/debug (:throwable &throw-context) "[delete-app] Marathon unavailable"))))
+        (log/warn "[delete-service] Marathon unavailable (Error 503).")
+        (log/debug (:throwable &throw-context) "[delete-service] Marathon unavailable"))))
 
-  (scale-app [_ service-id scale-to-instances force]
+  (scale-service [_ service-id scale-to-instances force]
     (ss/try+
       (scheduler/suppress-transient-server-exceptions
-        (str "in scale-app[" service-id "]")
+        (str "in scale-service[" service-id "]")
         (when force
           (when-let [current-deployment (extract-service-deployment-info marathon-api service-id)]
             (log/info "forcefully deleting deployment" current-deployment)
             (marathon/delete-deployment marathon-api (:id current-deployment))))
         (let [old-descriptor (:app (marathon/get-app marathon-api service-id))
               scale-to-instances' (cond-> scale-to-instances
-                                          ;; avoid unintentional scale-down in force mode
-                                          force (max (-> old-descriptor :tasks count)))
+                                    ;; avoid unintentional scale-down in force mode
+                                    force (max (-> old-descriptor :tasks count)))
               _ (when (not= scale-to-instances scale-to-instances')
                   (log/info "adjusting scale to instances to" scale-to-instances' "in force mode"))
               new-descriptor (-> (select-keys old-descriptor [:cmd :cpus :id :mem])
@@ -428,7 +428,7 @@
                   {:deployment-info (extract-deployment-info marathon-api e)
                    :service-id service-id}))
       (catch [:status 503] {}
-        (log/warn "[scale-app] Marathon unavailable (Error 503).")
+        (log/warn "[scale-service] Marathon unavailable (Error 503).")
         (log/debug (:throwable &throw-context) "[autoscaler] Marathon unavailable"))))
 
   (retrieve-directory-content [_ service-id instance-id host directory]
@@ -479,7 +479,7 @@
   [marathon-scheduler service-id {:keys [instances-scheduled] :as task-data}]
   (try
     (log/info "triggering sync deployment" {:service-id service-id :task-data task-data})
-    (scheduler/scale-app marathon-scheduler service-id instances-scheduled false)
+    (scheduler/scale-service marathon-scheduler service-id instances-scheduled false)
     (catch Exception e
       (log/error e "unable to sync marathon deployment for" service-id))))
 

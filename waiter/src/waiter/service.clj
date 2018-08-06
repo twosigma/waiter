@@ -307,7 +307,7 @@
                                (try
                                  (when pre-start-fn
                                    (pre-start-fn))
-                                 (scheduler/create-app-if-new scheduler descriptor)
+                                 (scheduler/create-service-if-new scheduler descriptor)
                                  (catch Exception e
                                    (log/warn e "Error starting new app")))))]
             (.submit start-app-threadpool

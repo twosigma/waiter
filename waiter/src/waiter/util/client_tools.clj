@@ -488,7 +488,7 @@
     (log/debug service-id "has" instances "instances.")
     instances))
 
-(defn scale-app-to [waiter-url service-id target-instances]
+(defn scale-service-to [waiter-url service-id target-instances]
   (let [marathon-url (marathon-url waiter-url)]
     (log/info service-id "being scaled to" target-instances "task(s).")
     (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
@@ -522,7 +522,7 @@
                (throw (Exception. (str "Unable to delete" service-id)))))))
        (catch Exception _
          (try
-           (scale-app-to waiter-url service-id 0)
+           (scale-service-to waiter-url service-id 0)
            (catch Exception e
              (log/error "Error in deleting app" service-id ":" (.getMessage e)))))))))
 

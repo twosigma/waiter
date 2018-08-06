@@ -282,7 +282,7 @@
                        :current-user auth-user
                        :service-id service-id
                        :status 403})))
-    (let [delete-result (scheduler/delete-app scheduler service-id)
+    (let [delete-result (scheduler/delete-service scheduler service-id)
           response-status (case (:result delete-result)
                             :deleted 200
                             :no-such-service-exists 404

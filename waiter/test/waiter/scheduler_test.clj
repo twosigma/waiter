@@ -130,7 +130,7 @@
                                   "service11broken" {"outstanding" 95, "total" 80}}
             deleted-services-atom (atom #{})
             scheduler (reify ServiceScheduler
-                        (delete-app [_ service-id]
+                        (delete-service [_ service-id]
                           (swap! available-services-atom disj service-id)
                           (swap! deleted-services-atom conj service-id)))
             scheduler-state-chan (async/chan 1)
@@ -189,7 +189,7 @@
     (let [available-services-atom (atom #{"service6faulty" "service7" "service8stayalive" "service9stayalive" "service10broken" "service11broken"})
           deleted-services-atom (atom #{})
           scheduler (reify ServiceScheduler
-                      (delete-app [_ service-id]
+                      (delete-service [_ service-id]
                         (swap! available-services-atom disj service-id)
                         (swap! deleted-services-atom conj service-id)))
           scheduler-state-chan (async/chan 1)
@@ -242,7 +242,7 @@
         instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
         scheduler (reify ServiceScheduler
-                    (get-apps->instances [_]
+                    (get-service->instances [_]
                       {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
                                                   :failed-instances []}
                        (->Service "s2" {} {} {}) {:active-instances []

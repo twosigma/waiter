@@ -75,13 +75,13 @@
 
 (defprotocol ServiceScheduler
 
-  (get-apps->instances [this]
+  (get-service->instances [this]
     "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records.
      The nested map has the following keys: :active-instances, :failed-instances and :killed-instances.
      The active-instances should not be assumed to be healthy (or live).
      The failed-instances are guaranteed to be dead.")
 
-  (get-apps [this]
+  (get-services [this]
     "Returns a list of scheduler/Service records")
 
   (get-instances [this ^String service-id]
@@ -95,21 +95,21 @@
      Returns a map containing the following structure:
      {:instance-id instance-id, :killed? <boolean>, :message <string>,  :service-id service-id, :status status-code}")
 
-  (app-exists? [this ^String service-id]
+  (service-exists? [this ^String service-id]
     "Returns truth-y value if the app exists and nil otherwise.")
 
-  (create-app-if-new [this descriptor]
+  (create-service-if-new [this descriptor]
     "Sends a call to Scheduler to start an app with the descriptor if the app does not already exist.
      Returns truth-y value if the app creation was successful and nil otherwise.")
 
-  (delete-app [this ^String service-id]
+  (delete-service [this ^String service-id]
     "Instructs the scheduler to delete the specified service.
      Returns a map containing the following structure:
      {:message message
       :result :deleted|:error|:no-such-service-exists
       :success true|false}")
 
-  (scale-app [this ^String service-id target-instances force]
+  (scale-service [this ^String service-id target-instances force]
     "Instructs the scheduler to scale up/down instances of the specified service to the specified number
      of instances. The force flag can be used enforce the scaling by ignoring previous pending operations.")
 
@@ -275,7 +275,7 @@
   "Performs scheduler GC by tracking which services are idle (i.e. have no outstanding requests).
    The function launches a go-block that tracks the metrics state of all services currently being managed by the scheduler.
    Idle services are detected based on no changes to the metrics state past the `idle-timeout-mins` period.
-   They are then deleted by the leader using the `delete-app` function.
+   They are then deleted by the leader using the `delete-service` function.
    If an error occurs while deleting a service, there will be repeated attempts to delete it later."
   [scheduler scheduler-state-chan service-id->metrics-fn {:keys [scheduler-gc-interval-ms]} service-gc-go-routine
    service-id->idle-timeout]
@@ -305,7 +305,7 @@
           perform-gc-fn (fn [service-id]
                           (log/info "deleting idle service" service-id)
                           (try
-                            (delete-app scheduler service-id)
+                            (delete-service scheduler service-id)
                             (catch Exception e
                               (log/error e "unable to delete idle service" service-id))))]
       (log/info "starting scheduler-services-gc")
@@ -322,7 +322,7 @@
   "Performs scheduler GC by tracking which services are broken (i.e. has no healthy instance, but at least one failed instance possibly due to a broken command).
    The function launches a go-block that tracks the metrics state of all services currently being managed by the scheduler.
    Faulty services are detected based on no changes to the healthy/failed instances state past the `broken-service-timeout-mins` period, respectively.
-   They are then deleted by the leader using the `delete-app` function.
+   They are then deleted by the leader using the `delete-service` function.
    If an error occurs while deleting a service, there will be repeated attempts to delete it later."
   [scheduler scheduler-state-chan {:keys [broken-service-timeout-mins broken-service-min-hosts scheduler-gc-broken-service-interval-ms]} service-gc-go-routine]
   (let [service-data-chan (au/latest-chan)]
@@ -361,7 +361,7 @@
           perform-gc-fn (fn [service-id]
                           (log/info "deleting broken service" service-id)
                           (try
-                            (delete-app scheduler service-id)
+                            (delete-service scheduler service-id)
                             (catch Exception e
                               (log/error e "unable to delete broken service" service-id))))]
       (log/info "starting scheduler-broken-services-gc")
@@ -378,10 +378,10 @@
   "Queries the scheduler and builds a list of available Waiter apps."
   [scheduler]
   (when-let [service->service-instances (timers/start-stop-time!
-                                          (metrics/waiter-timer "core" "scheduler" "get-apps")
+                                          (metrics/waiter-timer "core" "scheduler" "get-services")
                                           (retry-on-transient-server-exceptions
                                             "request-available-waiter-apps"
-                                            (get-apps->instances scheduler)))]
+                                            (get-service->instances scheduler)))]
     (log/trace "request-available-waiter-apps:apps" (keys service->service-instances))
     service->service-instances))
 
