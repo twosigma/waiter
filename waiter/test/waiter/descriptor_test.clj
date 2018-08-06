@@ -83,9 +83,9 @@
         (is (= latest-service-id (deref started-service-id-promise 0 :no-service)))))))
 
 (deftest test-instability-maintainer
-  (let [current-instable-service-ids #{"service-1" "service-3"}
-        _ (reset! ds/instability-state-atom {:instability-service-ids current-instable-service-ids})
-        new-instable-service-ids (set/union current-instable-service-ids #{"service-2"})
+  (let [current-instable-service-ids->replacement {"service-1" nil, "service-3" nil}
+        _ (reset! ds/instability-state-atom {:instability-service-ids->replacement current-instable-service-ids->replacement})
+        new-instable-service-ids->replacement (merge current-instable-service-ids->replacement {"service-2" nil})
         router-message {:service-id->instability-issue {"service-2" :not-enough-memory}}
         latest-chan (au/latest-chan)
         {:keys [exit-chan query-chan]} (instability-maintainer latest-chan)]
@@ -93,9 +93,28 @@
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan})
           state (async/<!! response-chan)]
-      (is (= {:state {:instability-service-ids new-instable-service-ids}}
+      (is (= {:state {:instability-service-ids->replacement new-instable-service-ids->replacement}}
              state)))
     (async/>!! exit-chan :exit)))
+
+(deftest test-compute-instability-replacement
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
+        metric-group-mappings []
+        instability-service-ids->replacement {"service-1" nil,
+                                              "service-2" {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
+                                                           "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"},
+                                              "service-3" nil}
+        _ (reset! ds/instability-state-atom {:instability-service-ids->replacement instability-service-ids->replacement})
+        expected-instability-service-ids->replacement {"service-1" {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
+                                                                    "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"},
+                                                       "service-2" {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
+                                                                    "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"},
+                                                       "service-3" {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
+                                                                    "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"}}
+        _ (ds/compute-instability-replacement kv-store service-description-defaults metric-group-mappings)]
+    ; (clojure.pprint/pprint (@ds/instability-state-atom :instability-service-ids->replacement))
+    (is (= (@ds/instability-state-atom :instability-service-ids->replacement) expected-instability-service-ids->replacement))))
 
 (deftest test-fallback-maintainer
   (let [current-healthy-service-ids #{"service-1" "service-3"}

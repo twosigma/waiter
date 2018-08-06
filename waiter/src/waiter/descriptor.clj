@@ -33,7 +33,7 @@
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils]))
 
-(def instability-state-atom (atom {:instability-service-ids #{}}))
+(def instability-state-atom (atom {:instability-service-ids->replacement {}}))
 
 (defn service-exists?
   "Returns true if the requested service-id exists as per the state in the fallback-state."
@@ -100,8 +100,8 @@
         query-chan (async/chan 32)
         channels [exit-chan router-state-chan query-chan]]
     (async/go
-      (loop [{:keys [instability-service-ids]
-              :or {instability-service-ids #{}} :as current-state}
+      (loop [{:keys [instability-service-ids->replacement]
+              :or {instability-service-ids->replacement {}} :as current-state}
              @instability-state-atom]
         (let [next-state
               (try
@@ -117,7 +117,8 @@
                     query-chan
                     (let [{:keys [response-chan service-id]} message]
                       (->> (if service-id
-                             {:instable (contains? instability-service-ids service-id)
+                             {:instable (contains? instability-service-ids->replacement service-id)
+                              :has-replacement (not (= (get instability-service-ids->replacement service-id) nil))
                               :service-id service-id}
                              {:state current-state})
                            (async/>! response-chan))
@@ -125,8 +126,9 @@
 
                     router-state-chan
                     (let [instable-service-ids (set (keys (message :service-id->instability-issue)))
+                          instability-service-ids->replacement (apply array-map (mapcat (fn [x] [x nil]) instable-service-ids))
                           current-state' (merge-with set/union current-state
-                                                     {:instability-service-ids instable-service-ids})]
+                                                     {:instability-service-ids->replacement instability-service-ids->replacement})]
                       (reset! instability-state-atom current-state')
                       current-state')))
                 (catch Exception e
@@ -224,6 +226,15 @@
                                {:available (service-exists? fallback-state service-id)
                                 :healthy (service-healthy? fallback-state service-id)})
                     (recur (inc iteration) previous-descriptor)))))))))))
+
+(defn compute-instability-replacement
+  "Long running daemon process that computes replacements for instable services if they do not have one yet."
+  [kv-store service-description-defaults metric-group-mappings]
+  (let [nm (reduce (fn [m [service-id descriptor]]
+                     (assoc m service-id (if (nil? descriptor) (sd/service-id->service-description kv-store service-id service-description-defaults metric-group-mappings) descriptor)))
+                   {}
+                   (@instability-state-atom :instability-service-ids->replacement))]
+    (reset! instability-state-atom {:instability-service-ids->replacement nm})))
 
 (defn retrieve-instability-descriptor
   "Computer the instability descriptor with 10% greater memory based on the provided descriptor."

@@ -880,6 +880,9 @@
                              (let [router-state-push-mult (get-in router-state-maintainer [:maintainer-chans :router-state-push-mult])
                                    router-state-chan (async/tap router-state-push-mult (au/latest-chan))]
                                (descriptor/instability-maintainer router-state-chan)))
+   :instability-fallback (pc/fnk pc/fnk [[:curator kv-store]
+                                         [:settings service-description-defaults metric-group-mappings]]
+                           (descriptor/compute-instability-replacement kv-store service-description-defaults metric-group-mappings))
    :interstitial-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                      [:state interstitial-state-atom]
                                      scheduler-maintainer]
