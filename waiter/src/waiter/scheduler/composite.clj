@@ -26,15 +26,15 @@
 
   (get-service->instances [_]
     (->> (vals scheduler-id->scheduler)
-         (map #(future (scheduler/get-service->instances %)))
-         (map deref)
-         (apply merge)))
+         (pmap scheduler/get-service->instances)
+         doall
+         (reduce into {})))
 
   (get-services [_]
     (->> (vals scheduler-id->scheduler)
-         (map #(future (scheduler/get-services %)))
-         (map deref)
-         (apply concat)))
+         (pmap scheduler/get-services)
+         doall
+         (reduce into [])))
 
   (get-instances [_ service-id]
     (-> service-id
@@ -97,11 +97,9 @@
 (defn invoke-component-factory
   "Creates a component based on the factory-fn specified in the component-config."
   [context {:keys [factory-fn] :as component-config}]
-  (if factory-fn
-    (if-let [resolved-fn (utils/resolve-symbol factory-fn)]
-      (resolved-fn (merge context component-config))
-      (throw (ex-info "Unable to resolve factory function" (assoc component-config :ns (namespace factory-fn)))))
-    (throw (ex-info "No :factory-fn specified" component-config))))
+  (if-let [resolved-fn (utils/resolve-symbol factory-fn)]
+    (resolved-fn (merge context component-config))
+    (throw (ex-info "Unable to resolve factory function" (assoc component-config :ns (namespace factory-fn))))))
 
 (def component-schema
   {s/Keyword {(s/required-key :factory-fn) s/Symbol
@@ -110,7 +108,7 @@
 (defn initialize-component-schedulers
   "Initializes individual component schedulers."
   [{:keys [components] :as config}]
-  {:pre [(not-empty components)]}
+  {:pre [(seq components)]}
   (s/validate component-schema components)
   (let [context (dissoc config :components :default)]
     (->> components
