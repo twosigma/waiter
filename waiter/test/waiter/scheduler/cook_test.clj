@@ -24,9 +24,9 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
-  (:import (java.util UUID)
-           (waiter.scheduler.cook CookScheduler)
-           [clojure.lang ExceptionInfo]))
+  (:import (clojure.lang ExceptionInfo)
+           (java.util UUID)
+           (waiter.scheduler.cook CookScheduler)))
 
 (deftest test-post-jobs
   (let [http-client (Object.)

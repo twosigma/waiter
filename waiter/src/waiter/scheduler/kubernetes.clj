@@ -353,10 +353,15 @@
 
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
-  [{:keys [service-id] :as descriptor}
+  [{:keys [service-description service-id]}
    {:keys [api-server-url http-client replicaset-api-version replicaset-spec-builder-fn] :as scheduler}]
-  (let [{:strs [run-as-user] :as service-description} (:service-description descriptor)
-        spec-json (replicaset-spec-builder-fn scheduler service-id service-description)
+  (let [{:strs [cmd-type]} service-description]
+    (when (= "docker" cmd-type)
+      (throw (ex-info "Unsupported command type on service"
+                      {:cmd-type cmd-type
+                       :service-description service-description
+                       :service-id service-id}))))
+  (let [spec-json (replicaset-spec-builder-fn scheduler service-id service-description)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/"
                          (service-description->namespace service-description) "/replicasets")
         response-json (api-request http-client request-url
