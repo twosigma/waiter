@@ -147,9 +147,13 @@
     :else v))
 
 (defn map->json
-  "Convert the input data into a json string."
+  "Convert the input Clojure data structure into a json string."
   [data-map]
-  (json/write-str data-map :key-fn stringify-keys :value-fn stringify-elements))
+  (json/write-str
+    data-map
+    :escape-slash false  ; escaping the slashes makes the json harder to read
+    :key-fn stringify-keys
+    :value-fn stringify-elements))
 
 (defn map->json-response
   "Convert the input data into a json response."

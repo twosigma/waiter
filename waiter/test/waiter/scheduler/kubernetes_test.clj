@@ -12,6 +12,7 @@
   (:require [clj-time.core :as t]
             [clojure.data]
             [clojure.pprint]
+            [clojure.string :as string]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [plumbing.core :as pc]
@@ -52,6 +53,18 @@
                                                             service-ids)}
      (merge args)
      map->KubernetesScheduler)))
+
+(def dummy-service-description
+  {"backend-proto" "HTTP"
+   "cmd" "foo"
+   "cpus" 1.2
+   "grace-period-secs" 7
+   "health-check-interval-secs" 10
+   "health-check-max-consecutive-failures" 2
+   "mem" 1024
+   "min-instances" 1
+   "ports" 2
+   "run-as-user" "myself"})
 
 (defn- sanitize-k8s-service-records
   "Walks data structure to remove extra fields added by Kubernetes from Service and ServiceInstance records."
@@ -730,16 +743,7 @@
   (let [service-id "test-service-id"
         service {:service-id service-id}
         descriptor {:service-id service-id
-                    :service-description {"backend-proto" "HTTP"
-                                          "cmd" "foo"
-                                          "cpus" 1.2
-                                          "grace-period-secs" 7
-                                          "health-check-interval-secs" 10
-                                          "health-check-max-consecutive-failures" 2
-                                          "mem" 1024
-                                          "min-instances" 1
-                                          "ports" 2
-                                          "run-as-user" "myself"}}
+                    :service-description dummy-service-description}
         dummy-scheduler (make-dummy-scheduler [service-id])]
     (testing "unsuccessful-create: app already exists"
       (let [actual (with-redefs [service-id->service (constantly service)]
@@ -761,6 +765,23 @@
                                    replicaset->Service identity]
                        (scheduler/create-service-if-new dummy-scheduler descriptor))]
           (is (= service actual)))))))
+
+(deftest test-keywords-in-replicaset-spec
+  (testing "namespaced keywords in annotation keys and values correctly converted"
+    (let [service-id "test-service-id"
+          service {:service-id service-id}
+          descriptor {:service-id service-id
+                      :service-description dummy-service-description}
+          dummy-scheduler (-> (make-dummy-scheduler [service-id])
+                              (update :replicaset-spec-builder-fn
+                                      (fn [base-spec-builder-fn]
+                                        (fn [scheduler service-id context]
+                                          (-> (base-spec-builder-fn scheduler service-id context)
+                                              (assoc-in [:metadata :annotations] {:waiter/x :waiter/y}))))))]
+      (let [spec-json (with-redefs [api-request (fn [_ _ & {:keys [body]}] body)
+                                    replicaset->Service identity]
+                        (create-service descriptor dummy-scheduler))]
+        (is (string/includes? spec-json "\"annotations\":{\"waiter/x\":\"waiter/y\"}"))))))
 
 (deftest test-delete-service
   (let [service-id "test-service-id"
