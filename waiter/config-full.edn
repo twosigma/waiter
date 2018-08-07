@@ -239,7 +239,7 @@
                     :cook {
                            ;; Custom implementations should specify a :factory-fn
                            ;; that returns an instance of waiter.scheduler.ServiceScheduler:
-                           :factory-fn 'waiter.scheduler.cook/cook-scheduler
+                           :factory-fn waiter.scheduler.cook/cook-scheduler
 
                            ;; The interval (milliseconds) at which instance failed jobs will be checked:
                            :failed-tracker-interval-ms 10000
@@ -283,7 +283,7 @@
                     :kubernetes {
                                  ;; Custom implementations should specify a :factory-fn
                                  ;; that returns an instance of waiter.scheduler.ServiceScheduler:
-                                 :factory-fn 'waiter.scheduler.kubernetes/kubernetes-scheduler
+                                 :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler
 
                                  ;; Configuration for obtaining the credentials to authenticate with the Kubernetes API server.
                                  ;; If authentication isn't required (e.g., using kubectl proxy), then this can be omitted.
