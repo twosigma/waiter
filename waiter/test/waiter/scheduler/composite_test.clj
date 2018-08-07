@@ -20,6 +20,15 @@
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.composite :refer :all]))
 
+(deftest test-process-invalid-services
+  (let [delete-service-atom (atom [])
+        scheduler (reify scheduler/ServiceScheduler
+                    (delete-service [_ service-id] (swap! delete-service-atom conj service-id)))]
+
+    (process-invalid-services scheduler ["foobar-service1" "feefie-service2"])
+
+    (is (= ["foobar-service1" "feefie-service2"] @delete-service-atom))))
+
 (defn- compute-service
   [service-id]
   (scheduler/make-Service {:id service-id :instance 2}))
@@ -85,7 +94,7 @@
         service-id->password-fn (constantly "password")
         scheduler-config {:components {:lorem {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
                                                :scheduler-id "lorem"
-                                               :service-ids ["lorem-fie" "lorem-foe"]}
+                                               :service-ids ["lorem-fie" "lorem-foe" "ipsum-bar"]}
                                        :ipsum {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
                                                :scheduler-id "ipsum"
                                                :service-ids ["ipsum-fee" "ipsum-foo" "ipsum-fuu"]}}

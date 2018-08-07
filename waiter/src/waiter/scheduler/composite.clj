@@ -14,10 +14,49 @@
 ;; limitations under the License.
 ;;
 (ns waiter.scheduler.composite
-  (:require [plumbing.core :as pc]
+  (:require [clojure.tools.logging :as log]
+            [plumbing.core :as pc]
             [schema.core :as s]
             [waiter.scheduler :as scheduler]
             [waiter.util.utils :as utils]))
+
+(defn process-invalid-services
+  "Deletes the provided services on the specified scheduler."
+  [scheduler service-ids]
+  (log/info "found" (count service-ids) "misplaced services in" scheduler)
+  (doseq [service-id service-ids]
+    (log/info "deleting misplaced service" service-id "in" scheduler)
+    (scheduler/delete-service scheduler service-id))
+  (log/info "deleted" (count service-ids) "misplaced services in" scheduler))
+
+(defn retrieve-service->instances
+  "Retrieves the service->instances for services that are configured to be running on the specified scheduler.
+   If any service is found (e.g. due to default scheduler being changed) which does not belong in the
+   specified scheduler, it is promptly deleted."
+  [scheduler service-id->scheduler]
+  (let [service->instances (scheduler/get-service->instances scheduler)
+        valid-service? #(-> % key :id service-id->scheduler (= scheduler))
+        {valid-service->instances true invalid-service->instances false} (group-by valid-service? service->instances)]
+    (when (seq invalid-service->instances)
+      (->> invalid-service->instances
+           keys
+           (map :id)
+           (process-invalid-services scheduler)))
+    (into {} valid-service->instances)))
+
+(defn retrieve-services
+  "Retrieves the services for services that are configured to be running on the specified scheduler.
+   If any service is found (e.g. due to default scheduler being changed) which does not belong in the
+   specified scheduler, it is promptly deleted."
+  [scheduler service-id->scheduler]
+  (let [services (scheduler/get-services scheduler)
+        valid-service? #(-> % :id service-id->scheduler (= scheduler))
+        {valid-services true invalid-services false} (group-by valid-service? services)]
+    (when (seq invalid-services)
+      (->> invalid-services
+           (map :id)
+           (process-invalid-services scheduler)))
+    (into [] valid-services)))
 
 (defrecord CompositeScheduler [service-id->scheduler scheduler-id->scheduler]
 
@@ -25,13 +64,13 @@
 
   (get-service->instances [_]
     (->> (vals scheduler-id->scheduler)
-         (pmap scheduler/get-service->instances)
+         (pmap #(retrieve-service->instances % service-id->scheduler))
          doall
          (reduce into {})))
 
   (get-services [_]
     (->> (vals scheduler-id->scheduler)
-         (pmap scheduler/get-services)
+         (pmap #(retrieve-services % service-id->scheduler))
          doall
          (reduce into [])))
 
