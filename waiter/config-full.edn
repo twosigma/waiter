@@ -233,6 +233,25 @@
                     ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     :kind :marathon
 
+                    ;; :kind :composite uses a composite scheduler that in this example has two component
+                    ;; schedulers: kubernetes and marathon. The composite scheduler delegates to one of these
+                    ;; schedulers based on the "schedyler" service parameters.
+                    ;:kind :composite
+                    :composite {
+                                ;; Custom implementations should specify a :factory-fn
+                                ;; that returns an instance of waiter.scheduler.ServiceScheduler:
+                                :factory-fn waiter.scheduler.composite/create-composite-scheduler
+
+                                ;; The components schedulers to which the scheduler operations will be delegated.
+                                ;; The scheduler parameter in the service description must match the scheduler keys
+                                ;; for one of the component schedulers, e.g. "marathon" or "kubernetes".
+                                :components {:marathon {;; a factory function must be provided
+                                                        ;; see the :marathon entry for other configuration options
+                                                        :factory-fn waiter.scheduler.marathon/marathon-scheduler}
+                                             :kubernetes {;; a factory function must be provided
+                                                          ;; see the :kubernetes entry for other configuration options
+                                                          :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler}}}
+
                     ;; :kind :cook uses Cook (https://github.com/twosigma/Cook) for scheduling instances:
                     ;; support for the cook scheduler is experimental and the config is subject to changes.
                     ;:kind :cook
@@ -503,7 +522,8 @@
                                 "restart-backoff-factor" 2
                                 "scale-down-factor" 0.001
                                 "scale-factor" 1
-                                "scale-up-factor" 0.1}
+                                "scale-up-factor" 0.1
+                                "scheduler" "default"}
 
  ; ---------- Timeouts ----------
 

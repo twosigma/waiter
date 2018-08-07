@@ -1,0 +1,51 @@
+{
+ ; ---------- Cluster ----------
+
+ :zookeeper {
+             ;; Use an in-process ZK (not for production use):
+             :connect-string :in-process}
+
+ ; ---------- Network ----------
+
+ ;; Set the bind address to a specific IP:
+ :host "127.0.0.1"
+
+ ;; Set the port:
+ :port #config/env-int "WAITER_PORT"
+
+ ; ---------- Security ----------
+
+ :authenticator-config {:kind :one-user
+                        :one-user {;; The user account used to launch services:
+                                   :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {
+                    ;; :kind :composite simply uses a shell scheduler that schedules instances
+                    ;; on your local machine (for testing purposes only):
+                    :kind :composite
+                    :composite {:factory-fn waiter.scheduler.composite/create-composite-scheduler
+                                :components {:shell {:factory-fn waiter.scheduler.shell/shell-scheduler
+                                                     :failed-instance-retry-interval-ms 5000
+                                                     :health-check-interval-ms 10000
+                                                     :health-check-timeout-ms 200
+                                                     :port-grace-period-ms 120000
+                                                     :port-range [10000 10999]
+                                                     :work-directory "scheduler"}
+                                             :shell-light {:factory-fn waiter.scheduler.shell/shell-scheduler
+                                                           :failed-instance-retry-interval-ms 5000
+                                                           :health-check-interval-ms 5000
+                                                           :health-check-timeout-ms 200
+                                                           :port-grace-period-ms 120000
+                                                           :port-range [10000 10999]
+                                                           :work-directory "scheduler"}}}}
+
+ ;; The default scheduler should match one of the components in the composite scheduler
+ :service-description-defaults {"scheduler" "shell"}
+
+ ; ---------- CORS ----------
+ :cors-config {:kind :allow-all}
+
+;; Require fewer failed health checks
+:health-check-config {:failed-check-threshold 2}}

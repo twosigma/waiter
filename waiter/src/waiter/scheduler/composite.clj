@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.scheduler.composite
-  (:require [clojure.string :as str]
-            [plumbing.core :as pc]
+  (:require [plumbing.core :as pc]
             [schema.core :as s]
             [waiter.scheduler :as scheduler]
             [waiter.util.utils :as utils]))
@@ -35,11 +34,6 @@
          (pmap scheduler/get-services)
          doall
          (reduce into [])))
-
-  (get-instances [_ service-id]
-    (-> service-id
-        service-id->scheduler
-        (scheduler/get-instances service-id)))
 
   (kill-instance [_ instance]
     (-> instance
@@ -89,7 +83,7 @@
         scheduler-id (get service-description "scheduler" default-scheduler-id)]
     (if-let [scheduler (scheduler-id->scheduler scheduler-id)]
       scheduler
-      (throw (ex-info "Invalid scheduler specified!"
+      (throw (ex-info "No matching scheduler found!"
                       {:available-schedulers (-> scheduler-id->scheduler keys sort)
                        :service-id service-id
                        :specified-scheduler scheduler-id})))))
@@ -117,10 +111,11 @@
 
 (defn create-composite-scheduler
   "Creates and starts composite scheduler with components using their respective factory functions."
-  [{:keys [default service-id->service-description-fn] :as config}]
-  {:pre [(not (str/blank? default))]}
+  [{:keys [service-description-defaults service-id->service-description-fn] :as config}]
   (let [scheduler-id->scheduler (initialize-component-schedulers config)
+        default-scheduler-id (get service-description-defaults "scheduler")
         service-id->scheduler-fn (fn service-id->scheduler-fn [service-id]
                                    (service-id->scheduler
-                                     service-id->service-description-fn scheduler-id->scheduler default service-id))]
+                                     service-id->service-description-fn scheduler-id->scheduler
+                                     default-scheduler-id service-id))]
     (->CompositeScheduler service-id->scheduler-fn scheduler-id->scheduler)))

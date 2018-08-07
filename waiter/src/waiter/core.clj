@@ -611,7 +611,7 @@
 
 (def scheduler
   {:scheduler (pc/fnk [[:curator leader?-fn]
-                       [:settings scheduler-config scheduler-syncer-interval-secs]
+                       [:settings scheduler-config scheduler-syncer-interval-secs service-description-defaults]
                        [:state scheduler-state-chan service-id-prefix]
                        service-id->password-fn*
                        service-id->service-description-fn*
@@ -624,6 +624,7 @@
                                          :scheduler-state-chan scheduler-state-chan
                                          ;; TODO scheduler-syncer-interval-secs should be inside the scheduler's config
                                          :scheduler-syncer-interval-secs scheduler-syncer-interval-secs
+                                         :service-description-defaults service-description-defaults
                                          :service-id->password-fn service-id->password-fn*
                                          :service-id->service-description-fn service-id->service-description-fn*
                                          :start-scheduler-syncer-fn start-scheduler-syncer-fn}]

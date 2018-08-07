@@ -45,9 +45,6 @@
   (get-services [_]
     (map compute-service service-ids))
 
-  (get-instances [_ service-id]
-    (compute-service-instances service-id))
-
   (kill-instance [_ instance]
     {:identifier (:id instance) :operation :kill :scheduler-id scheduler-id})
 
@@ -92,7 +89,7 @@
                                        :ipsum {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
                                                :scheduler-id "ipsum"
                                                :service-ids ["ipsum-fee" "ipsum-foo" "ipsum-fuu"]}}
-                          :default "lorem"
+                          :service-description-defaults {"scheduler" "lorem"}
                           :service-id->service-description-fn service-id->service-description-fn
                           :service-id->password-fn service-id->password-fn}
         all-service-ids ["lorem-fie" "lorem-foe" "ipsum-fee" "ipsum-foo" "ipsum-fuu"]
@@ -106,7 +103,8 @@
           (is (= (service-id->scheduler-id service-id) (-> service-id service-id->scheduler :scheduler-id))))
         (testing "default"
           (is (nil? (service-id->scheduler-id "foo")))
-          (is (= (:default scheduler-config) (-> "foo" service-id->scheduler :scheduler-id))))))
+          (is (= (-> scheduler-config :service-description-defaults (get "scheduler"))
+                 (-> "foo" service-id->scheduler :scheduler-id))))))
 
     (testing "get-service->instances"
       (is (= (compute-service->instances all-service-ids)
@@ -115,11 +113,6 @@
     (testing "get-services"
       (is (= (map compute-service all-service-ids)
              (scheduler/get-services composite-scheduler))))
-
-    (testing "get-instances"
-      (doseq [service-id all-service-ids]
-        (is (= (compute-service-instances service-id)
-               (scheduler/get-instances composite-scheduler service-id)))))
 
     (testing "kill-instance"
       (doseq [service-id all-service-ids]
