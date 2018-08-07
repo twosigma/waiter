@@ -371,11 +371,10 @@
       (catch [:status 404] _
         (log/warn "service-exists?: service" service-id "does not exist!"))))
 
-  (create-service-if-new [this descriptor]
+  (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (timers/start-stop-time!
       (metrics/waiter-timer "core" "create-app")
-      (let [service-id (:service-id descriptor)
-            marathon-descriptor (marathon-descriptor home-path-prefix service-id->password-fn descriptor)]
+      (let [marathon-descriptor (marathon-descriptor home-path-prefix service-id->password-fn descriptor)]
         (when-not (scheduler/service-exists? this service-id)
           (start-new-service-wrapper marathon-api service-id marathon-descriptor)))))
 

@@ -742,8 +742,8 @@
 (deftest test-create-app
   (let [service-id "test-service-id"
         service {:service-id service-id}
-        descriptor {:service-id service-id
-                    :service-description dummy-service-description}
+        descriptor {:service-description dummy-service-description
+                    :service-id service-id}
         dummy-scheduler (make-dummy-scheduler [service-id])]
     (testing "unsuccessful-create: app already exists"
       (let [actual (with-redefs [service-id->service (constantly service)]
@@ -769,9 +769,8 @@
 (deftest test-keywords-in-replicaset-spec
   (testing "namespaced keywords in annotation keys and values correctly converted"
     (let [service-id "test-service-id"
-          service {:service-id service-id}
-          descriptor {:service-id service-id
-                      :service-description dummy-service-description}
+          descriptor {:service-description dummy-service-description
+                      :service-id service-id}
           dummy-scheduler (-> (make-dummy-scheduler [service-id])
                               (update :replicaset-spec-builder-fn
                                       (fn [base-spec-builder-fn]
@@ -866,9 +865,9 @@
                      :pod-base-port 8080
                      :pod-suffix-length default-pod-suffix-length
                      :replicaset-api-version "extensions/v1beta1"
-                     :url "http://127.0.0.1:8001"
                      :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
-                                               :default-container-image "twosigma/kitchen:latest"}}]
+                                               :default-container-image "twosigma/kitchen:latest"}
+                     :url "http://127.0.0.1:8001"}]
     (testing "Creating a KubernetesScheduler"
 
       (testing "should throw on invalid configuration"
