@@ -37,6 +37,19 @@
             {:x-waiter-name (rand-name)}
             #(make-kitchen-request waiter-url % :path "/hello"))]
 
+      (testing "explicitly specifying default parameter resolves to different service"
+        (let [{:keys [service-description-defaults]} (waiter-settings waiter-url)
+              request-headers (walk/stringify-keys request-headers)]
+          (doseq [[k v] service-description-defaults]
+            (let [parameter-key (str "x-waiter-" (name k))]
+              (when-not (or (contains? request-headers parameter-key)
+                            (map? v)
+                            (vector? v))
+                (let [new-request-headers (assoc request-headers parameter-key v)
+                      new-service-id (retrieve-service-id waiter-url new-request-headers)]
+                  (is (not= service-id new-service-id)
+                      (str {:new-parameter [k v] :request-headers request-headers}))))))))
+
       (testing "secrun"
         (log/info (str "Basic test using endpoint: /secrun"))
         (let [{:keys [body] :as response}
