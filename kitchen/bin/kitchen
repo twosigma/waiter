@@ -950,7 +950,11 @@ if __name__ == '__main__':
         kitchen = MultiThreadedServer((args.hostname, args.port), Kitchen)
 
         if args.ssl:
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            try:
+                ssl_protocol = ssl.PROTOCOL_TLS_SERVER  # added in python3.6
+            except AttributeError:
+                ssl_protocol = ssl.PROTOCOL_TLSv1_2
+            ssl_context = ssl.SSLContext(ssl_protocol)
             ssl_context.load_cert_chain(keystore_path, password=keystore_password)
             kitchen.socket = ssl_context.wrap_socket(kitchen.socket, server_side=True)
             protocol = 'HTTPS'
