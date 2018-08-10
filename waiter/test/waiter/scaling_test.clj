@@ -679,20 +679,25 @@
                                                    :healthy-instances healthy-instances
                                                    :expired-instances expired-instances})]
                         (is (> epsilon (Math/abs (double (- scale-amount expected-scale-amount))))
-                            (str "scale-amount=" scale-amount " expected-scale-amount=" expected-scale-amount))
+                            (str (last *testing-contexts*) ": scale-amount=" scale-amount
+                                 " expected-scale-amount=" expected-scale-amount))
                         (is (= scale-to-instances expected-scale-to-instances)
-                            (str "scale-to-instances=" scale-to-instances " expected-scale-to-instances=" expected-scale-to-instances))
+                            (str (last *testing-contexts*) ": scale-to-instances=" scale-to-instances
+                                 " expected-scale-to-instances=" expected-scale-to-instances))
                         (is (> epsilon (Math/abs (double (- target-instances expected-target-instances))))
-                            (str "target-instances=" target-instances " expected-target-instances=" expected-target-instances))))]
+                            (str (last *testing-contexts*) ": target-instances=" target-instances
+                                 " expected-target-instances=" expected-target-instances))))]
     (testing "scale whole way"
       (scales-like 5 10 10, fast-scaling 5 10 5 5 0))
+    (testing "don't scale up if there are enough instances for outstanding requests"
+      (scales-like 0 5 7, (assoc default-scaling "scale-up-factor" 0.999) 5 4 10 5 0))
     (testing "scale half way"
       (scales-like 5 15 15, default-scaling 10 20 10 10 0))
     (testing "scale three-quarters way (two ticks @ 50% each)"
       (scales-like 15 15 15, (assoc default-scaling "scale-ticks" 2) 0 20 0 0 0))
-    (testing "dont scale above max"
+    (testing "don't scale above max"
       (scales-like 0 50 50, default-scaling 50 100 50 50 0))
-    (testing "dont scale below min"
+    (testing "don't scale below min"
       (scales-like 0 1 1, default-scaling 1 0 1 1 0))
     (testing "scale down to max"
       (scales-like -10 50 50, default-scaling 60 100 60 60 0))

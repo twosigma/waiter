@@ -323,7 +323,7 @@
   The ideal number of instances follows outstanding-requests for any given service.
   Scaling is controlled by two exponentially weighted moving averages, one for scaling up and one for scaling down.
   Scaling up dominates scaling down.
-  The exponential moving average is recursive, and works by applying a smoothing factor, such that:
+  The Exponential Moving Average (EMA) is recursive, and works by applying a smoothing factor, such that:
     target-instances' = outstanding-requests * smoothing-factor + ((1 - smoothing-factor) * target-instances)
   The ideal number of instances, target-instances, is a continuous (float) number.
   The scheduler needs a whole number (int) of instances, total-instances, which is mapped from target-instances
@@ -359,25 +359,29 @@
                                (min max-instances)
                                (max min-instances))
         ^double delta (- target-instances' total-instances)
-        integer-delta (if (>= (Math/abs delta) jitter-threshold)
-                        (int (Math/ceil (- delta epsilon)))
-                        0)
-        scale-to-instances (+ total-instances integer-delta)
+        ;; constrain scaling-up when there are enough instances, but continue to compute the EMA
+        scale-amount (if (or (and (pos? delta)
+                                  (<= ideal-instances total-instances)
+                                  (>= total-instances min-instances))
+                             (< (Math/abs delta) jitter-threshold))
+                       0
+                       (int (Math/ceil (- delta epsilon))))
+        scale-to-instances (+ total-instances scale-amount)
         ; number of expired instances already replaced by healthy instances
         excess-instances (max 0 (- healthy-instances scale-to-instances))
         expired-instances-to-replace (int (Math/ceil (* expired-instances expired-instance-restart-rate)))
         ; if we are scaling down and all instances are healthy, do not account for expired instances
         ; since the instance killer will kill the expired instances
-        scaling-down (< integer-delta 0)
+        scaling-down (< scale-amount 0)
         all-instances-are-healthy (= total-instances healthy-instances)
         scale-to-instances' (cond-> scale-to-instances
                               (and (pos? expired-instances)
                                    (not (and scaling-down all-instances-are-healthy)))
                               (+ (- expired-instances-to-replace excess-instances)))
-        integer-delta' (int (- scale-to-instances' total-instances))]
-    {:scale-to-instances scale-to-instances'
-     :target-instances target-instances'
-     :scale-amount integer-delta'}))
+        scale-amount' (int (- scale-to-instances' total-instances))]
+    {:scale-amount scale-amount'
+     :scale-to-instances scale-to-instances'
+     :target-instances target-instances'}))
 
 (defn scale-services
   "Scales a sequence of services given the scale state of each service, and returns a new scale state which
