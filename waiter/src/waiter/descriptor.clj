@@ -239,8 +239,11 @@
 (defn retrieve-instability-descriptor
   "Computer the instability descriptor with 10% greater memory based on the provided descriptor."
   [descriptor]
-  (let [add-mem (int (* 0.1 (get ((descriptor :sources) :headers) "mem")))]
-    (update-in descriptor [:sources :headers "mem"] + add-mem)))
+  (if (contains? descriptor "mem")
+    (let [add-mem (int (* 0.1 (get descriptor "mem")))]
+      (update-in descriptor ["mem"] + add-mem))
+    (let [add-mem (int (* 0.1 (get ((descriptor :sources) :headers) "mem")))]
+      (update-in descriptor [:sources :headers "mem"] + add-mem))))
 
 (defn resolve-descriptor
   "Resolves the descriptor that should be used based on available healthy services.

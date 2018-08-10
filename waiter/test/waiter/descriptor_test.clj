@@ -171,9 +171,12 @@
                       :sources {:headers {"mem" 102
                                           "cpus" 1
                                           "cmd" "/bin/kitchen -p $PORT0"
-                                          "version" "foobar"}}}]
-
-    (testing "simple test"
+                                          "version" "foobar"}}}
+        descriptor-3 {"cmd" "tc", "cpus" 1, "mem" 60, "version" "a1b2c3",
+                      "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"}
+        descriptor-4 {"cmd" "tc", "cpus" 1, "mem" 102, "version" "a1b2c3",
+                      "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"}]
+    (testing "simple test, sources case"
       (let [expected-descriptor {:service-id "service-1"
                          :sources {:headers {"mem" 66
                                              "cpus" 1
@@ -181,13 +184,23 @@
                                              "version" "foobar"}}}
            result-descriptor (retrieve-instability-descriptor descriptor-1)]
       (is (= expected-descriptor result-descriptor))))
-    (testing "mem increment by value not divisible 10 test"
+    (testing "mem increment by value not divisible 10 test, sources case"
       (let [expected-descriptor {:service-id "service-1"
                                  :sources {:headers {"mem" 112
                                                      "cpus" 1
                                                      "cmd" "/bin/kitchen -p $PORT0"
                                                      "version" "foobar"}}}
             result-descriptor (retrieve-instability-descriptor descriptor-2)]
+        (is (= expected-descriptor result-descriptor))))
+    (testing "simple test, kv-store case"
+      (let [expected-descriptor {"cmd" "tc", "cpus" 1, "mem" 66, "version" "a1b2c3",
+                                 "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"}
+            result-descriptor (retrieve-instability-descriptor descriptor-3)]
+        (is (= expected-descriptor result-descriptor))))
+    (testing "mem increment by value not divisble by 10 test, kv-store case"
+      (let [expected-descriptor {"cmd" "tc", "cpus" 1, "mem" 112, "version" "a1b2c3",
+                                 "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"}
+            result-descriptor (retrieve-instability-descriptor descriptor-4)]
         (is (= expected-descriptor result-descriptor))))))
 
 (deftest test-retrieve-fallback-descriptor
