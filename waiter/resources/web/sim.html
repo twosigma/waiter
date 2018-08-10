@@ -4,72 +4,102 @@
 		<title>Autoscaler Simulator</title>
 		<style>
 #chart {
-    height: 300px;
-     width: 100%;
+    height: 400px;
+    width: 100%;
 }
- body {
+body {
     font-family:Lato, sans-serif;
 }
- button {
+button {
     font-family:Lato, sans-serif;
 }
- html {
+html {
     height:100%;
 }
- input[type=number] {
-    width:55px;
+.left-align {
+    float:left;
 }
- .config-box {
+.right-align {
+    float:right;
+}
+.config-box {
     background-color:#ddd;
     border:solid 1px #333;
-    float:left;
-     margin-right:5px;
-     padding:3px;
+    margin:5px;
+    padding:5px;
 }
- .config-box label {
-     display:block;
+.config-box label {
+    display:block;
 }
- .config-box h4 {
-     margin: 0;
+.config-box input {
+    float:right;
+    text-align: right;
+    width:55px;
 }
- .clearfix {
-     clear: both;
+.config-box h4 {
+    margin: 0;
 }
- .hide {
-     display:none;
+.clearfix {
+    clear: both;
+}
+.hide {
+    display:none;
+}
+textarea {
+    width: 100%;
+    height: 70px;
+    padding: 10px;
+    box-sizing: border-box;
+    border: 2px solid #ccc;
+    border-radius: 4px;
 }
 		</style>
     </head>
 
 	<body>
 		<div id="config">
-			<div class="config-box">
+			<div class="config-box left-align">
 				<h4>Client Settings</h4>
-				<label>client curve <textarea id="client-curve">{600 50 1800 -50}</textarea></label>
-				<label>time between requests (secs) <input id="idle-ticks" value="1" type="number"> </label>
-				<label>request time (secs) <input id="request-ticks" value="5" type="number"> </label>
+				<label>time between requests (secs) <input id="idle-ticks" value="1" type="number"/></label>
+				<label>request time (secs) <input id="request-ticks" value="5" type="number"/></label>
+				<label>randomize times (gaussian) <input id="randomize-times" checked type="checkbox"/></label>
+				<label>clients exit immediately <input id="clients-exit-immediately" checked type="checkbox"/></label>
+				<label>client curve <br/><textarea id="client-curve">{600 100 1800 -100}</textarea></label>
 			</div>
-			<div class="config-box">
+			<div class="config-box left-align">
 				<h4>Service Settings</h4>
-				<label>startup time (secs) <input id="startup-ticks" value="30" type="number"> </label>
-				<label>min-instances <input id="min-instances" value="1" type="number"> </label>
-				<label>max-instances <input id="max-instances" value="500" type="number"> </label>
-				<label>scale up factor <input id="scale-up-factor" value="0.01" type="number" step="0.001"> </label>
-				<label>scale down factor <input id="scale-down-factor" value="0.001" type="number" step="0.001"> </label>
-				<label>jitter threshold <input id="jitter-threshold" value="0.5" type="number" step="0.01"> </label>
+				<label>cpus <input id="cpus" value="2" type="number"/></label>
+				<label>memory (in MB) <input id="mem" value="512" type="number"/></label>
+				<label>startup time (secs) <input id="startup-ticks" value="30" type="number"/></label>
+				<label>min-instances <input id="min-instances" value="1" type="number"/></label>
+				<label>max-instances <input id="max-instances" value="500" type="number"/></label>
+				<label>scale up factor <input id="scale-up-factor" value="0.01" type="number" step="0.001"/></label>
+				<label>scale down factor <input id="scale-down-factor" value="0.001" type="number" step="0.001"/></label>
+				<label>jitter threshold <input id="jitter-threshold" value="0.5" type="number" step="0.01"/></label>
 			</div>
-			<div class="config-box">
+			<div class="config-box left-align">
 				<h4>Scaler Settings</h4>
-				<label>scale every (secs) <input id="scale-ticks" value="5" type="number"> </label>
-				<label>simulation length (secs) <input id="total-ticks" value="3600" type="number"> </label>
+				<label>scale every (secs) <input id="scale-ticks" value="5" type="number"/></label>
+				<label>simulation length (secs) <input id="total-ticks" value="3600" type="number"/></label>
+			</div>
+        </div>
+        <div id="summary">
+			<div id="simulation-summary" class="config-box right-align">
+				<h4>Simulation Summary</h4>
+				<label>total queue time &nbsp; <input id="res-total-queue-time" value="0" type="text" readonly/></label>
+				<label>total idle server time &nbsp; <input id="res-total-idle-server-time" value="0" type="text" readonly/></label>
+				<label>average utilization &nbsp; <input id="res-average-utilization" value="0" type="text" readonly/></label>
+				<label>average waste &nbsp; <input id="res-average-waste" value="0" type="text" readonly/></label>
 			</div>
 			<div class="clearfix"></div>
 		</div>
 		<button id="sim-button">Sim</button>
+		<button id="image-button"
+				title="Downloads the chart as a png image excluding the legend and axis values">Download Image</button>
 		<div id="chart"></div>
-		<label>
+		<div>
 			<div id="metrics-controls"></div>
-		</label>
+		</div>
 	</body>
 
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
@@ -77,45 +107,96 @@
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.time.min.js"></script>
     <script>
 
+const numberWithCommas = (x) => {
+  return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+const showTooltip = (x, y, contents) => {
+    $('<div id="tooltip">' + contents + '</div>')
+    .css({
+        position: 'absolute',
+        display: 'none',
+        top: y + 5,
+        left: x + 5,
+        border: '1px solid #fdd',
+        padding: '2px',
+        'background-color': '#fee',
+        opacity: 0.80
+    })
+    .appendTo("body")
+    .fadeIn(200);
+}
+
 $(function() {
 
+	$("#simulation-summary").hide();
+
+	var plotObject = null;
+	$("#image-button").hide();
+	$("#image-button").click(function() {
+		if (plotObject != null) {
+			var plotCanvas = plotObject.getCanvas();
+			var plotImage = plotCanvas.toDataURL();
+			plotImage = plotImage.replace("image/png","image/octet-stream");
+			document.location.href = plotImage;
+		}
+	});
+
     if (window.location.hash) {
-        var data = JSON.parse(window.location.hash.substr(1));
+    	var configStr = window.location.hash.substr(1).replace(/%22/g, "\"").replace(/%20/g, " ");
+    	var data = JSON.parse(configStr);
         var simConfig = data["config"] || {};
         $("#client-curve").val(data["client-curve"]);
-        $("#idle-ticks").val(simConfig["idle-ticks"]);
-        $("#request-ticks").val(simConfig["request-ticks"]);
-        $("#startup-ticks").val(simConfig["startup-ticks"]);
-        $("#scale-ticks").val(simConfig["scale-ticks"]);
-        if (simConfig["min-instances"])
-            $("#min-instances").val(simConfig["min-instances"]);
-        if (simConfig["max-instances"])
-            $("#max-instances").val(simConfig["max-instances"]);
-        $("#scale-up-factor").val(simConfig["scale-up-factor"]);
-        $("#scale-down-factor").val(simConfig["scale-down-factor"]);
-        $("#jitter-threshold").val(simConfig["jitter-threshold"]);
-        $("#total-ticks").val(simConfig["total-ticks"]);
+        $.map($("#config input"),
+            function(el) {
+            	var metricName = $(el).attr("id");
+                if (simConfig[metricName] != null) {
+					var inputType = $(el).attr("type");
+					if (inputType == "number") {
+						$(el).val(simConfig[metricName]);
+					} else if (inputType == "checkbox") {
+						$(el).prop("checked", simConfig[metricName]);
+					}
+                }
+                return el;
+            });
     }
 
     $("#sim-button").click(function() {
 
-        var simConfig = {
-            "idle-ticks": parseInt($("#idle-ticks").val(), 10),
-            "request-ticks": parseInt($("#request-ticks").val(), 10),
-            "startup-ticks": parseInt($("#startup-ticks").val(), 10),
-            "scale-ticks": parseInt($("#scale-ticks").val(), 10),
-            "max-instances": parseInt($("#max-instances").val(), 10),
-            "min-instances": parseInt($("#min-instances").val(), 10),
-            "scale-up-factor": parseFloat($("#scale-up-factor").val()),
-            "scale-down-factor": parseFloat($("#scale-down-factor").val()),
-            "jitter-threshold": parseFloat($("#jitter-threshold").val()),
-            "total-ticks": parseInt($("#total-ticks").val(), 10)
-        };
+        var simConfig = {};
+        $.map($("#config input"),
+            function(el) {
+                var metricName = $(el).attr("id");
+                var inputType = $(el).attr("type");
+                if (inputType == "number") {
+                	var metricValue = $(el).val();
+                	if (metricValue.indexOf(".") >= 0) {
+                		simConfig[metricName] = parseFloat(metricValue);
+                	} else {
+                		simConfig[metricName] = parseInt(metricValue, 10);
+                	}
+                } else if (inputType == "checkbox") {
+                    simConfig[metricName] = $(el).is(":checked");
+                }
+                return el;
+            });
 
         var data = {
             "config": simConfig,
             "client-curve": $("#client-curve").val()
         };
+
+		var currentSelectedMetrics = {};
+		$("#metrics-controls input:checked")
+			.each(function(index, el) {
+				currentSelectedMetrics[$(el).data("metric-name")] = true;
+			});
+		if ($.isEmptyObject(currentSelectedMetrics)) {
+			currentSelectedMetrics["outstanding-requests"] = true;
+            currentSelectedMetrics["total-instances"] = true;
+            currentSelectedMetrics["healthy-instances"] = true;
+		}
 
         window.location.hash = JSON.stringify(data);
 
@@ -136,24 +217,19 @@ $(function() {
                 "total-instances": "blue",
                 "healthy-instances": "green"
             };
-            var defaultChecked = {
-                "outstanding-requests": true,
-                "total-instances": true,
-                "healthy-instances": true
-            };
 
             var plot = function() {
                 var dataSets = {};
 
-                var selectedMetrics = [];
-
+                var selectedMetrics = currentSelectedMetrics;
                 $("#metrics-controls input:checked")
                     .each(function(index, el) {
                         selectedMetrics[$(el).data("metric-name")] = true;
                     });
 
-                for (var tick = 0; tick < data.length; tick++) {
-                    state = data[tick];
+				var numTicks = data.length;
+                for (var tick = 0; tick < numTicks; tick++) {
+                    var state = data[tick];
                     $.each(state, function(key, value) {
                         if (!selectedMetrics[key])
                             return;
@@ -167,22 +243,46 @@ $(function() {
                     });
                 }
 
-                $.plot("#chart", $.map(dataSets, function(value) {
+                var totalUtilization = 0.0;
+                var totalWaste = 0.0;
+                for (var tick = 0; tick < numTicks; tick++) {
+                	var state = data[tick];
+                	totalUtilization += state["utilization"];
+                	totalWaste += state["waste"];
+                }
+                var averageUtilization = totalUtilization / numTicks;
+                $("#res-average-utilization").val(averageUtilization.toFixed(2));
+                var averageWaste = totalWaste / numTicks;
+                $("#res-average-waste").val(averageWaste.toFixed(2));
+                $("#res-total-queue-time").val(numberWithCommas(data[numTicks - 1]["total-queue-time"]));
+                $("#res-total-idle-server-time").val(numberWithCommas(data[numTicks - 1]["total-idle-server-time"]));
+
+                plotObject = $.plot("#chart", $.map(dataSets, function(value) {
                     return [value];
                 }), {
+                    grid: { hoverable: true },
                     legend: {
-                        show: false
+                        backgroundColor: "white",
+                        noColumns: 0
                     },
-                    xaxis: {
-                        mode: "time"
-                    },
-                    series: {
-                        lines: {
-                            lineWidth: 1
-                        }
-                    },
-                    shadowSize: 0
+                    series: { lines: { lineWidth: 2 } },
+                    shadowSize: 0,
+                    xaxis: { mode: "time" }
                 });
+
+                var previousPoint = null;
+				$("#chart").bind("plothover", function (event, pos, item) {
+					if (item) {
+						if (previousPoint != item.datapoint) {
+							previousPoint = item.datapoint;
+							$("#tooltip").remove();
+							showTooltip(item.pageX, item.pageY, item.datapoint[1]);
+						}
+					} else {
+						$("#tooltip").remove();
+						previousPoint = null;
+					}
+				});
             };
 
             $("#metrics-controls").empty();
@@ -197,19 +297,27 @@ $(function() {
                     colorMap[metric] = colors[colorIndex++];
                 }
                 var input = $('<input type="checkbox">').data("metric-name", metric).click(function() {
+                	currentSelectedMetrics[$(this).data("metric-name")] = $(this).is(":checked");
                     plot();
                 });
-                if (defaultChecked[metric])
+                if (currentSelectedMetrics[metric])
                     input.attr("checked", true);
                 $("#metrics-controls")
-                    .append($("<label/>").css("font-weight", "bold").css("color", colorMap[metric])
-                        .append(input)
-                        .append(metric));
+                    .append($("<div/>")
+                    .css("color", colorMap[metric])
+                    .css("font-weight", "bold")
+                    .css("float", "left")
+                    .css("width", "250px")
+                    .append(input)
+                    .append(metric));
             });
 
             $(window).resize(plot);
 
             plot();
+
+            $("#image-button").show();
+            $("#simulation-summary").show();
 
         }, "json");
     });
