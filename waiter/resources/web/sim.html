@@ -298,7 +298,8 @@ $(function() {
             metrics.sort();
             $.each(metrics, function(index, metric) {
                 if (!colorMap[metric]) {
-                    colorMap[metric] = colors[colorIndex++];
+                    colorMap[metric] = colors[colorIndex];
+                    colorIndex = (colorIndex + 1) % colors.length;
                 }
                 var input = $('<input type="checkbox">').data("metric-name", metric).click(function() {
                     currentSelectedMetrics[$(this).data("metric-name")] = $(this).is(":checked");
