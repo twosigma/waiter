@@ -103,10 +103,11 @@ textarea {
         <div id="summary">
             <div id="simulation-summary" class="config-box right-align">
                 <h4>Simulation Summary</h4>
+                <label>total requests &nbsp; <span id="res-total-requests" class="right-align">0</span></label>
                 <label>total queue time &nbsp; <span id="res-total-queue-time" class="right-align">0</span></label>
                 <label>total idle server time &nbsp; <span id="res-total-idle-server-time" class="right-align">0</span></label>
-                <label>total utilization time &nbsp; <span id="res-total-utilization" class="right-align">0</span></label>
                 <label>total waste time &nbsp; <span id="res-total-waste" class="right-align">0</span></label>
+                <label>total utilization time &nbsp; <span id="res-total-utilization" class="right-align">0</span></label>
             </div>
             <div class="clearfix"></div>
         </div>
@@ -254,6 +255,7 @@ $(function() {
                 }
 
                 // add the results
+                $("#res-total-requests").text(numberWithCommas(data[numTicks - 1]["total-requests"]));
                 $("#res-total-queue-time").text(numberWithCommas(data[numTicks - 1]["total-queue-time"]));
                 $("#res-total-idle-server-time").text(numberWithCommas(data[numTicks - 1]["total-idle-server-time"]));
                 $("#res-total-utilization").text(numberWithCommas(data[numTicks - 1]["total-utilization"]));

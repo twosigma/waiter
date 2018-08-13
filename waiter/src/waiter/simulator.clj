@@ -55,6 +55,7 @@
 
   Stats:
     total-queue-time       The total amount of ticks that clients have been sitting in the queue.
+    total-requests         The total number of requests made so far.
     total-idle-server-time The total amount of ticks that servers have been sitting idle.
     total-utilization      The total number of server ticks that have been used to process requests.
     total-waste            The total number of server ticks that have been wasted as the servers were idle.
@@ -67,7 +68,7 @@
   [{:strs [clients-exit-immediately idle-ticks randomize-times request-ticks startup-ticks]}
    {:keys [clients-to-kill idle-clients queued-clients wait-time-max wait-time-max-ema idle-servers
            active-requests starting-servers total-queue-time scale-ups scale-downs total-idle-server-time
-           total-utilization total-waste]
+           total-requests total-utilization total-waste]
     :as current-state}
    tick scale-amount target-instances client-change-amount]
   {:pre [(non-neg? clients-to-kill)
@@ -177,6 +178,7 @@
       :total-idle-server-time (+ total-idle-server-time idle-servers)
       :total-instances total-instances
       :total-queue-time (+ total-queue-time (count queued-clients))
+      :total-requests (+ total-requests remaining-activating-clients)
       :total-utilization (+ total-utilization num-active-requests)
       :total-waste (+ total-waste (- total-instances num-active-requests))
       :utilization utilization
@@ -199,6 +201,7 @@
                              :target-instances 0
                              :scale-ups 0
                              :scale-downs 0
+                             :total-requests 0
                              :total-utilization 0
                              :total-waste 0
                              :utilization 0.0
