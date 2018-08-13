@@ -59,10 +59,10 @@
     total-idle-server-time The total amount of ticks that servers have been sitting idle.
     total-utilization      The total number of server ticks that have been used to process requests.
     total-waste            The total number of server ticks that have been wasted as the servers were idle.
-    utilization            The percentage of servers that are in use during the current tick.
+    utilization-percent    The percentage of servers that are in use during the current tick.
     wait-time-max          The maximum wait time of any queued request during the current tick.
     wait-time-max-ema      The EMA of the maximum wait time with a weight coefficient of 0.1.
-    waste                  The percentage of servers that are not in use during the current tick.
+    waste-percent          The percentage of servers that are not in use during the current tick.
     scale-ups              The total number of scale up operations.
     scale-downs            The total number of scale down operations."
   [{:strs [clients-exit-immediately idle-ticks randomize-times request-ticks startup-ticks]}
@@ -148,12 +148,12 @@
         idle-servers' (+ (max 0 (- available-servers interested-clients)) requests-to-cancel)
         num-active-requests (count active-requests')
         total-instances (+ (count starting-servers') num-active-requests idle-servers')
-        utilization (if (pos? total-instances)
-                      (* 100.0 (/ num-active-requests total-instances))
-                      0.0)
-        waste (if (pos? total-instances)
-                (- 100.0 utilization)
-                0.0)]
+        utilization-percent (if (pos? total-instances)
+                              (* 100.0 (/ num-active-requests total-instances))
+                              0.0)
+        waste-percent (if (pos? total-instances)
+                        (- 100.0 utilization-percent)
+                        0.0)]
     (assoc current-state
       :activating-clients activating-clients
       :active-requests active-requests'
@@ -181,10 +181,10 @@
       :total-requests (+ total-requests remaining-activating-clients)
       :total-utilization (+ total-utilization num-active-requests)
       :total-waste (+ total-waste (- total-instances num-active-requests))
-      :utilization utilization
+      :utilization-percent utilization-percent
       :wait-time-max wait-time-max'
       :wait-time-max-ema wait-time-max-ema'
-      :waste waste)))
+      :waste-percent waste-percent)))
 
 (let [default-initial-state {:clients-to-kill 0
                              :idle-clients []
@@ -204,10 +204,10 @@
                              :total-requests 0
                              :total-utilization 0
                              :total-waste 0
-                             :utilization 0.0
+                             :utilization-percent 0.0
                              :wait-time-max 0
                              :wait-time-max-ema 0.0
-                             :waste 0.0}
+                             :waste-percent 0.0}
       simulation-defaults {"clients-exit-immediately" true
                            "concurrency-level" 1
                            "cpus" 2
