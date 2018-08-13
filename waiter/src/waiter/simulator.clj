@@ -209,21 +209,21 @@
                              :wait-time-max-ema 0.0
                              :waste-percent 0.0}
       simulation-defaults {"clients-exit-immediately" true
-                           "concurrency-level" 1
                            "cpus" 2
-                           "expired-instance-restart-rate" 0.1
-                           "idle-ticks" 2
-                           "jitter-threshold" 0.5
-                           "max-instances" 1000
+                           "concurrency-level" 1
                            "mem" 256
-                           "min-instances" 1
+                           "idle-ticks" 2
                            "request-ticks" 5
+                           "startup-ticks" 500
                            "scale-factor" 1
                            "scale-up-factor" 0.1
                            "scale-down-factor" 0.01
                            "scale-ticks" 1
-                           "startup-ticks" 500
-                           "total-ticks" 3600}]
+                           "jitter-threshold" 0.5
+                           "min-instances" 1
+                           "max-instances" 1000
+                           "total-ticks" 3600
+                           "expired-instance-restart-rate" 0.1}]
   (defn simulate
     "Simulates traffic in order to test out the scaling function.
     client-curve is a function from tick to client-change-amount."
