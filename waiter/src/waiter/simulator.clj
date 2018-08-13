@@ -33,13 +33,16 @@
   "Simulates a tick of traffic.  Takes in a state map and returns the state after the tick.
 
   Configuration:
+    clients-exit-immediately  When clients exit, do they do so immediately or wait for the current requests to complete.
     idle-ticks      The mean number of ticks a client waits between requests.
+    randomize-times Whether to randomize the event times (e.g. startup, request) or use the face value.
     request-ticks   The mean number of ticks that it takes to make and complete a request.
     startup-ticks   The mean amount of time it takes for a instance to start.
 
   State:
+    clients-to-kill   A count of the clients to kill in this tick.
     idle-clients      A vector of clients, represented by the tick at which they activate (start a request).
-    queued-clients    A count of clients that are sitting in the queue waiting for an instance.
+    queued-clients    A vector of clients that are sitting in the queue waiting for an instance, represented by the tick at which they arrived.
     idle-servers      A count of servers that are idle waiting for requests.
     active-requests   A vector of requests, represented by the tick at which they complete.
     starting-servers  A vector servers that are starting up, represented by the tick at which their startup is complete.
@@ -53,12 +56,18 @@
   Stats:
     total-queue-time       The total amount of ticks that clients have been sitting in the queue.
     total-idle-server-time The total amount of ticks that servers have been sitting idle.
+    total-utilization      The total number of server ticks that have been used to process requests.
+    total-waste            The total number of server ticks that have been wasted as the servers were idle.
     utilization            The percentage of servers that are in use during the current tick.
+    wait-time-max          The maximum wait time of any queued request during the current tick.
+    wait-time-max-ema      The EMA of the maximum wait time with a weight coefficient of 0.1.
+    waste                  The percentage of servers that are not in use during the current tick.
     scale-ups              The total number of scale up operations.
     scale-downs            The total number of scale down operations."
   [{:strs [clients-exit-immediately idle-ticks randomize-times request-ticks startup-ticks]}
    {:keys [clients-to-kill idle-clients queued-clients wait-time-max wait-time-max-ema idle-servers
-           active-requests starting-servers total-queue-time scale-ups scale-downs total-idle-server-time]
+           active-requests starting-servers total-queue-time scale-ups scale-downs total-idle-server-time
+           total-utilization total-waste]
     :as current-state}
    tick scale-amount target-instances client-change-amount]
   {:pre [(non-neg? clients-to-kill)
@@ -80,6 +89,10 @@
          (every? integer? active-requests)
          (vector? starting-servers)
          (non-neg? total-queue-time)
+         (non-neg? total-utilization)
+         (integer? total-utilization)
+         (non-neg? total-waste)
+         (integer? total-waste)
          (non-neg? scale-ups)
          (non-neg? scale-downs)
          (non-neg? total-idle-server-time)
@@ -132,9 +145,10 @@
         active-requests' (vec (concat (drop requests-to-cancel (filter #(< tick %) active-requests))
                                       (map (fn [_] (+ tick (generate-data-fn request-ticks))) (range requests-created))))
         idle-servers' (+ (max 0 (- available-servers interested-clients)) requests-to-cancel)
-        total-instances (+ (count starting-servers') (count active-requests') idle-servers')
+        num-active-requests (count active-requests')
+        total-instances (+ (count starting-servers') num-active-requests idle-servers')
         utilization (if (pos? total-instances)
-                      (* 100.0 (/ (count active-requests') total-instances))
+                      (* 100.0 (/ num-active-requests total-instances))
                       0.0)
         waste (if (pos? total-instances)
                 (- 100.0 utilization)
@@ -146,11 +160,11 @@
       :clients-to-kill clients-to-kill
       :completing-requests completing-requests
       :eligible-servers eligible-servers
-      :healthy-instances (+ (count active-requests') idle-servers')
+      :healthy-instances (+ num-active-requests idle-servers')
       :idle-clients idle-clients'
       :idle-servers idle-servers'
       :interested-clients interested-clients
-      :outstanding-requests (+ (count active-requests') (count queued-clients''))
+      :outstanding-requests (+ num-active-requests (count queued-clients''))
       :queued-clients queued-clients''
       :scale-amount scale-amount
       :scale-ups (+ scale-ups (if (pos? scale-amount) 1 0))
@@ -159,30 +173,34 @@
       :starting-servers starting-servers'
       :target-instances target-instances
       :tick tick
-      :total-clients (+ (count active-requests') (count idle-clients') (count queued-clients''))
+      :total-clients (+ num-active-requests (count idle-clients') (count queued-clients''))
       :total-idle-server-time (+ total-idle-server-time idle-servers)
       :total-instances total-instances
       :total-queue-time (+ total-queue-time (count queued-clients))
+      :total-utilization (+ total-utilization num-active-requests)
+      :total-waste (+ total-waste (- total-instances num-active-requests))
       :utilization utilization
       :wait-time-max wait-time-max'
       :wait-time-max-ema wait-time-max-ema'
       :waste waste)))
 
-(let [default-initial-state {:active-requests []
-                             :clients-to-kill 0
-                             :expired-instances 0
-                             :healthy-instances 0
+(let [default-initial-state {:clients-to-kill 0
                              :idle-clients []
-                             :idle-servers 0
-                             :outstanding-requests 0
                              :queued-clients []
-                             :scale-downs 0
-                             :scale-ups 0
+                             :idle-servers 0
+                             :active-requests []
                              :starting-servers []
-                             :target-instances 0
-                             :total-idle-server-time 0
+                             :outstanding-requests 0
                              :total-instances 0
+                             :healthy-instances 0
+                             :expired-instances 0
                              :total-queue-time 0
+                             :total-idle-server-time 0
+                             :target-instances 0
+                             :scale-ups 0
+                             :scale-downs 0
+                             :total-utilization 0
+                             :total-waste 0
                              :utilization 0.0
                              :wait-time-max 0
                              :wait-time-max-ema 0.0
@@ -213,7 +231,7 @@
           initial-state (merge default-initial-state initial-state)]
       (loop [{:keys [total-clients target-instances] :as state} initial-state
              tick 0
-             tickstate []]
+             tick-state []]
         (if (<= tick (min max-total-ticks total-ticks))
           (let [{:keys [scale-amount target-instances]}
                 (if (zero? (mod tick scale-ticks))
@@ -227,8 +245,8 @@
                   state' (dotick config state tick scale-amount target-instances sane-client-change-amount)]
               (recur state'
                      (inc tick)
-                     (conj tickstate state))))
-          tickstate)))))
+                     (conj tick-state state))))
+          tick-state)))))
 
 (defn handle-sim-request
   [{:keys [request-method uri body]}]

@@ -1,8 +1,8 @@
 <!doctype html>
 <html>
     <head>
-		<title>Autoscaler Simulator</title>
-		<style>
+        <title>Autoscaler Simulator</title>
+        <style>
 #chart {
     height: 400px;
     width: 100%;
@@ -53,110 +53,108 @@ textarea {
     border: 2px solid #ccc;
     border-radius: 4px;
 }
-		</style>
+.tooltip {
+    background-color:#fee;
+    border: 1px solid #fdd;
+    display: none;
+    opacity: 0.80;
+    padding: 2px;
+    position: absolute;
+}
+#metrics-controls div {
+    font-weight; bold;
+    float: left;
+    padding: 5px;
+    width: 250px;
+}
+#metrics-controls input {
+    margin-right: 5px;
+}
+        </style>
     </head>
 
-	<body>
-		<div id="config">
-			<div class="config-box left-align">
-				<h4>Client Settings</h4>
-				<label>time between requests (secs) <input id="idle-ticks" value="1" type="number"/></label>
-				<label>request time (secs) <input id="request-ticks" value="5" type="number"/></label>
-				<label>randomize times (gaussian) <input id="randomize-times" checked type="checkbox"/></label>
-				<label>clients exit immediately <input id="clients-exit-immediately" checked type="checkbox"/></label>
-				<label>client curve <br/><textarea id="client-curve">{600 100 1800 -100}</textarea></label>
-			</div>
-			<div class="config-box left-align">
-				<h4>Service Settings</h4>
-				<label>cpus <input id="cpus" value="2" type="number"/></label>
-				<label>memory (in MB) <input id="mem" value="512" type="number"/></label>
-				<label>startup time (secs) <input id="startup-ticks" value="30" type="number"/></label>
-				<label>min-instances <input id="min-instances" value="1" type="number"/></label>
-				<label>max-instances <input id="max-instances" value="500" type="number"/></label>
-				<label>scale up factor <input id="scale-up-factor" value="0.01" type="number" step="0.001"/></label>
-				<label>scale down factor <input id="scale-down-factor" value="0.001" type="number" step="0.001"/></label>
-				<label>jitter threshold <input id="jitter-threshold" value="0.5" type="number" step="0.01"/></label>
-			</div>
-			<div class="config-box left-align">
-				<h4>Scaler Settings</h4>
-				<label>scale every (secs) <input id="scale-ticks" value="5" type="number"/></label>
-				<label>simulation length (secs) <input id="total-ticks" value="3600" type="number"/></label>
-			</div>
+    <body>
+        <div id="config">
+            <div class="config-box left-align">
+                <h4>Client Settings</h4>
+                <label>time between requests (secs) <input id="idle-ticks" value="1" type="number"/></label>
+                <label>request time (secs) <input id="request-ticks" value="5" type="number"/></label>
+                <label>randomize times (gaussian) <input id="randomize-times" checked type="checkbox"/></label>
+                <label>clients exit immediately <input id="clients-exit-immediately" checked type="checkbox"/></label>
+                <label>client curve <br/><textarea id="client-curve">{600 100 1800 -100}</textarea></label>
+            </div>
+            <div class="config-box left-align">
+                <h4>Service Settings</h4>
+                <label>cpus <input id="cpus" value="2" type="number"/></label>
+                <label>memory (in MB) <input id="mem" value="512" type="number"/></label>
+                <label>startup time (secs) <input id="startup-ticks" value="30" type="number"/></label>
+                <label>min-instances <input id="min-instances" value="1" type="number"/></label>
+                <label>max-instances <input id="max-instances" value="500" type="number"/></label>
+                <label>scale up factor <input id="scale-up-factor" value="0.01" type="number" step="0.001"/></label>
+                <label>scale down factor <input id="scale-down-factor" value="0.001" type="number" step="0.001"/></label>
+                <label>jitter threshold <input id="jitter-threshold" value="0.5" type="number" step="0.01"/></label>
+            </div>
+            <div class="config-box left-align">
+                <h4>Scaler Settings</h4>
+                <label>scale every (secs) <input id="scale-ticks" value="5" type="number"/></label>
+                <label>simulation length (secs) <input id="total-ticks" value="3600" type="number"/></label>
+            </div>
         </div>
         <div id="summary">
-			<div id="simulation-summary" class="config-box right-align">
-				<h4>Simulation Summary</h4>
-				<label>total queue time &nbsp; <input id="res-total-queue-time" value="0" type="text" readonly/></label>
-				<label>total idle server time &nbsp; <input id="res-total-idle-server-time" value="0" type="text" readonly/></label>
-				<label>average utilization &nbsp; <input id="res-average-utilization" value="0" type="text" readonly/></label>
-				<label>average waste &nbsp; <input id="res-average-waste" value="0" type="text" readonly/></label>
-			</div>
-			<div class="clearfix"></div>
-		</div>
-		<button id="sim-button">Sim</button>
-		<button id="image-button"
-				title="Downloads the chart as a png image excluding the legend and axis values">Download Image</button>
-		<div id="chart"></div>
-		<div>
-			<div id="metrics-controls"></div>
-		</div>
-	</body>
+            <div id="simulation-summary" class="config-box right-align">
+                <h4>Simulation Summary</h4>
+                <label>total queue time &nbsp; <span id="res-total-queue-time" class="right-align">0</span></label>
+                <label>total idle server time &nbsp; <span id="res-total-idle-server-time" class="right-align">0</span></label>
+                <label>total utilization time &nbsp; <span id="res-total-utilization" class="right-align">0</span></label>
+                <label>total waste time &nbsp; <span id="res-total-waste" class="right-align">0</span></label>
+            </div>
+            <div class="clearfix"></div>
+        </div>
+        <button id="sim-button">Sim</button>
+        <button id="image-button"
+                title="Downloads the chart as a png image excluding the legend and axis values">Download Image</button>
+        <div id="chart"></div>
+        <div id="tooltip" class="tooltip"></div>
+        <div>
+            <div id="metrics-controls"></div>
+        </div>
+    </body>
 
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.min.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.time.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.time.min.js"></script>
     <script>
-
-const numberWithCommas = (x) => {
-  return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
-
-const showTooltip = (x, y, contents) => {
-    $('<div id="tooltip">' + contents + '</div>')
-    .css({
-        position: 'absolute',
-        display: 'none',
-        top: y + 5,
-        left: x + 5,
-        border: '1px solid #fdd',
-        padding: '2px',
-        'background-color': '#fee',
-        opacity: 0.80
-    })
-    .appendTo("body")
-    .fadeIn(200);
-}
 
 $(function() {
 
-	$("#simulation-summary").hide();
+    $("#simulation-summary").hide();
 
-	var plotObject = null;
-	$("#image-button").hide();
-	$("#image-button").click(function() {
-		if (plotObject != null) {
-			var plotCanvas = plotObject.getCanvas();
-			var plotImage = plotCanvas.toDataURL();
-			plotImage = plotImage.replace("image/png","image/octet-stream");
-			document.location.href = plotImage;
-		}
-	});
+    var plotObject = null;
+    $("#image-button").hide();
+    $("#image-button").click(function() {
+        if (plotObject != null) {
+            var plotCanvas = plotObject.getCanvas();
+            var plotImage = plotCanvas.toDataURL();
+            plotImage = plotImage.replace("image/png","image/octet-stream");
+            document.location.href = plotImage;
+        }
+    });
 
     if (window.location.hash) {
-    	var configStr = window.location.hash.substr(1).replace(/%22/g, "\"").replace(/%20/g, " ");
-    	var data = JSON.parse(configStr);
+        var configStr = window.location.hash.substr(1).replace(/%22/g, "\"").replace(/%20/g, " ");
+        var data = JSON.parse(configStr);
         var simConfig = data["config"] || {};
         $("#client-curve").val(data["client-curve"]);
         $.map($("#config input"),
             function(el) {
-            	var metricName = $(el).attr("id");
+                var metricName = $(el).attr("id");
                 if (simConfig[metricName] != null) {
-					var inputType = $(el).attr("type");
-					if (inputType == "number") {
-						$(el).val(simConfig[metricName]);
-					} else if (inputType == "checkbox") {
-						$(el).prop("checked", simConfig[metricName]);
-					}
+                    var inputType = $(el).attr("type");
+                    if (inputType == "number") {
+                        $(el).val(simConfig[metricName]);
+                    } else if (inputType == "checkbox") {
+                        $(el).prop("checked", simConfig[metricName]);
+                    }
                 }
                 return el;
             });
@@ -170,12 +168,12 @@ $(function() {
                 var metricName = $(el).attr("id");
                 var inputType = $(el).attr("type");
                 if (inputType == "number") {
-                	var metricValue = $(el).val();
-                	if (metricValue.indexOf(".") >= 0) {
-                		simConfig[metricName] = parseFloat(metricValue);
-                	} else {
-                		simConfig[metricName] = parseInt(metricValue, 10);
-                	}
+                    var metricValue = $(el).val();
+                    if (metricValue.indexOf(".") >= 0) {
+                        simConfig[metricName] = parseFloat(metricValue);
+                    } else {
+                        simConfig[metricName] = parseInt(metricValue, 10);
+                    }
                 } else if (inputType == "checkbox") {
                     simConfig[metricName] = $(el).is(":checked");
                 }
@@ -187,18 +185,30 @@ $(function() {
             "client-curve": $("#client-curve").val()
         };
 
-		var currentSelectedMetrics = {};
-		$("#metrics-controls input:checked")
-			.each(function(index, el) {
-				currentSelectedMetrics[$(el).data("metric-name")] = true;
-			});
-		if ($.isEmptyObject(currentSelectedMetrics)) {
-			currentSelectedMetrics["outstanding-requests"] = true;
+        var currentSelectedMetrics = {};
+        $("#metrics-controls input:checked")
+            .each(function(index, el) {
+                currentSelectedMetrics[$(el).data("metric-name")] = true;
+            });
+        if ($.isEmptyObject(currentSelectedMetrics)) {
+            currentSelectedMetrics["outstanding-requests"] = true;
             currentSelectedMetrics["total-instances"] = true;
             currentSelectedMetrics["healthy-instances"] = true;
-		}
+        }
 
         window.location.hash = JSON.stringify(data);
+
+        const numberWithCommas = (x) => {
+          return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        const showTooltip = (x, y, contents) => {
+            console.log("x: " + x + " , y: " + y);
+            $("#tooltip")
+            .text(contents)
+            .css({ left: x + 5, top: y + 5 })
+            .fadeIn(200);
+        }
 
         $.ajax("/sim", {
             data: JSON.stringify(data),
@@ -227,7 +237,7 @@ $(function() {
                         selectedMetrics[$(el).data("metric-name")] = true;
                     });
 
-				var numTicks = data.length;
+                var numTicks = data.length;
                 for (var tick = 0; tick < numTicks; tick++) {
                     var state = data[tick];
                     $.each(state, function(key, value) {
@@ -243,19 +253,11 @@ $(function() {
                     });
                 }
 
-                var totalUtilization = 0.0;
-                var totalWaste = 0.0;
-                for (var tick = 0; tick < numTicks; tick++) {
-                	var state = data[tick];
-                	totalUtilization += state["utilization"];
-                	totalWaste += state["waste"];
-                }
-                var averageUtilization = totalUtilization / numTicks;
-                $("#res-average-utilization").val(averageUtilization.toFixed(2));
-                var averageWaste = totalWaste / numTicks;
-                $("#res-average-waste").val(averageWaste.toFixed(2));
-                $("#res-total-queue-time").val(numberWithCommas(data[numTicks - 1]["total-queue-time"]));
-                $("#res-total-idle-server-time").val(numberWithCommas(data[numTicks - 1]["total-idle-server-time"]));
+                // add the results
+                $("#res-total-queue-time").text(numberWithCommas(data[numTicks - 1]["total-queue-time"]));
+                $("#res-total-idle-server-time").text(numberWithCommas(data[numTicks - 1]["total-idle-server-time"]));
+                $("#res-total-utilization").text(numberWithCommas(data[numTicks - 1]["total-utilization"]));
+                $("#res-total-waste").text(numberWithCommas(data[numTicks - 1]["total-waste"]));
 
                 plotObject = $.plot("#chart", $.map(dataSets, function(value) {
                     return [value];
@@ -271,18 +273,18 @@ $(function() {
                 });
 
                 var previousPoint = null;
-				$("#chart").bind("plothover", function (event, pos, item) {
-					if (item) {
-						if (previousPoint != item.datapoint) {
-							previousPoint = item.datapoint;
-							$("#tooltip").remove();
-							showTooltip(item.pageX, item.pageY, item.datapoint[1]);
-						}
-					} else {
-						$("#tooltip").remove();
-						previousPoint = null;
-					}
-				});
+                $("#chart").bind("plothover", function (event, pos, item) {
+                    if (item) {
+                        if (previousPoint != item.datapoint) {
+                            previousPoint = item.datapoint;
+                            $("#tooltip").hide();
+                            showTooltip(item.pageX, item.pageY, item.datapoint[1]);
+                        }
+                    } else {
+                        $("#tooltip").hide();
+                        previousPoint = null;
+                    }
+                });
             };
 
             $("#metrics-controls").empty();
@@ -297,7 +299,7 @@ $(function() {
                     colorMap[metric] = colors[colorIndex++];
                 }
                 var input = $('<input type="checkbox">').data("metric-name", metric).click(function() {
-                	currentSelectedMetrics[$(this).data("metric-name")] = $(this).is(":checked");
+                    currentSelectedMetrics[$(this).data("metric-name")] = $(this).is(":checked");
                     plot();
                 });
                 if (currentSelectedMetrics[metric])
@@ -305,9 +307,6 @@ $(function() {
                 $("#metrics-controls")
                     .append($("<div/>")
                     .css("color", colorMap[metric])
-                    .css("font-weight", "bold")
-                    .css("float", "left")
-                    .css("width", "250px")
                     .append(input)
                     .append(metric));
             });
