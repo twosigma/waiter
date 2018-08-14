@@ -143,7 +143,7 @@
   [{:keys [components] :as config}]
   {:pre [(seq components)]}
   (s/validate component-schema components)
-  (let [context (dissoc config :components :default)]
+  (let [context (dissoc config :components)]
     (->> components
          (pc/map-vals #(invoke-component-factory context %))
          (pc/map-keys name))))
