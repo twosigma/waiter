@@ -840,3 +840,28 @@
                       (routers waiter-url)))
             (finally
               (delete-token-and-assert waiter-url token))))))))
+
+(deftest ^:parallel ^:integration-fast test-composite-scheduler-services
+  (testing-using-waiter-url
+    (let [{:keys [scheduler-config]} (waiter-settings waiter-url)
+          {:keys [components factory-fn]} (get scheduler-config (-> scheduler-config :kind keyword))]
+      (if (not= "waiter.scheduler.composite/create-composite-scheduler" factory-fn)
+        (log/info "skipping as scheduler is not a composite scheduler")
+        (let [service-ids
+              (for [[component _] components]
+                (let [scheduler-name (name component)
+                      _ (log/info "testing" scheduler-name "scheduler inside composite scheduler")
+                      {:keys [service-id] :as response} (make-request-with-debug-info
+                                                          {:x-waiter-name (str (rand-name) "-" scheduler-name)
+                                                           :x-waiter-scheduler scheduler-name}
+                                                          #(make-kitchen-request waiter-url % :path "/hello"))
+                      _ (assert-response-status response 200)
+                      {:keys [name scheduler] :as service-description} (service-id->service-description waiter-url service-id)]
+                  (is (= scheduler-name scheduler) (str service-description))
+                  (is (str/ends-with? name scheduler-name) (str service-description))
+                  service-id))]
+          (is (seq service-ids) "No services were created using the composite scheduler")
+          (doseq [service-id service-ids]
+            (is (service waiter-url service-id {}) (str service-id "not found in /apps endpoint")))
+          (doseq [service-id service-ids]
+            (delete-service waiter-url service-id)))))))

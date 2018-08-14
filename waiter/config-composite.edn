@@ -33,14 +33,14 @@
                                                           :health-check-timeout-ms 200
                                                           :port-grace-period-ms 120000
                                                           :port-range [10500 10999]
-                                                          :work-directory "scheduler"}
+                                                          :work-directory "scheduler/shell-high"}
                                              :shell-low {:factory-fn waiter.scheduler.shell/shell-scheduler
                                                          :failed-instance-retry-interval-ms 5000
                                                          :health-check-interval-ms 5000
                                                          :health-check-timeout-ms 200
                                                          :port-grace-period-ms 120000
                                                          :port-range [10000 10299]
-                                                         :work-directory "scheduler"}}}}
+                                                         :work-directory "scheduler/shell-low"}}}}
 
  ;; The default scheduler should match one of the components in the composite scheduler
  :service-description-defaults {"scheduler" "shell-high"}
