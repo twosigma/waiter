@@ -247,10 +247,12 @@
                                 ;; for one of the component schedulers, e.g. "marathon" or "kubernetes".
                                 :components {:marathon {;; a factory function must be provided
                                                         ;; see the :marathon entry for other configuration options
-                                                        :factory-fn waiter.scheduler.marathon/marathon-scheduler}
+                                                        :factory-fn waiter.scheduler.marathon/marathon-scheduler
+                                                        :todo :additional-config}
                                              :kubernetes {;; a factory function must be provided
                                                           ;; see the :kubernetes entry for other configuration options
-                                                          :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler}}}
+                                                          :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler
+                                                          :todo :additional-config}}}
 
                     ;; :kind :cook uses Cook (https://github.com/twosigma/Cook) for scheduling instances:
                     ;; support for the cook scheduler is experimental and the config is subject to changes.
