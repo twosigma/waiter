@@ -235,7 +235,7 @@
 
                     ;; :kind :composite uses a composite scheduler that in this example has two component
                     ;; schedulers: kubernetes and marathon. The composite scheduler delegates to one of these
-                    ;; schedulers based on the "schedyler" service parameters.
+                    ;; schedulers based on the "scheduler" service parameters.
                     ;:kind :composite
                     :composite {
                                 ;; Custom implementations should specify a :factory-fn

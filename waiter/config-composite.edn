@@ -26,20 +26,20 @@
                     ;; on your local machine (for testing purposes only):
                     :kind :composite
                     :composite {:factory-fn waiter.scheduler.composite/create-composite-scheduler
-                                :components {:shell {:factory-fn waiter.scheduler.shell/shell-scheduler
-                                                     :failed-instance-retry-interval-ms 5000
-                                                     :health-check-interval-ms 10000
-                                                     :health-check-timeout-ms 200
-                                                     :port-grace-period-ms 120000
-                                                     :port-range [10000 10999]
-                                                     :work-directory "scheduler"}
-                                             :shell-light {:factory-fn waiter.scheduler.shell/shell-scheduler
-                                                           :failed-instance-retry-interval-ms 5000
-                                                           :health-check-interval-ms 5000
-                                                           :health-check-timeout-ms 200
-                                                           :port-grace-period-ms 120000
-                                                           :port-range [10000 10999]
-                                                           :work-directory "scheduler"}}}}
+                                :components {:shell-high {:factory-fn waiter.scheduler.shell/shell-scheduler
+                                                          :failed-instance-retry-interval-ms 5000
+                                                          :health-check-interval-ms 10000
+                                                          :health-check-timeout-ms 200
+                                                          :port-grace-period-ms 120000
+                                                          :port-range [10500 10999]
+                                                          :work-directory "scheduler"}
+                                             :shell-low {:factory-fn waiter.scheduler.shell/shell-scheduler
+                                                         :failed-instance-retry-interval-ms 5000
+                                                         :health-check-interval-ms 5000
+                                                         :health-check-timeout-ms 200
+                                                         :port-grace-period-ms 120000
+                                                         :port-range [10000 10299]
+                                                         :work-directory "scheduler"}}}}
 
  ;; The default scheduler should match one of the components in the composite scheduler
  :service-description-defaults {"scheduler" "shell"}
@@ -47,5 +47,5 @@
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all}
 
-;; Require fewer failed health checks
-:health-check-config {:failed-check-threshold 2}}
+ ;; Require fewer failed health checks
+ :health-check-config {:failed-check-threshold 2}}
