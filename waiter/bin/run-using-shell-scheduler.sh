@@ -21,7 +21,7 @@ if [ "${RECOMPILE}" != "0" ]; then
   lein do clean, compile
 fi
 
-WAITER_AUTH_RUN_AS_USER=$(id -un) lein run config-shell.edn
+WAITER_AUTH_RUN_AS_USER=$(id -un) lein run config-composite.edn
 
 EXIT_CODE=$?
 

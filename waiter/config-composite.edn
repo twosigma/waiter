@@ -26,6 +26,7 @@
                     ;; on your local machine (for testing purposes only):
                     :kind :composite
                     :composite {:factory-fn waiter.scheduler.composite/create-composite-scheduler
+                                ;; two shell schedulers that have reserved comparatively high and low ports
                                 :components {:shell-high {:factory-fn waiter.scheduler.shell/shell-scheduler
                                                           :failed-instance-retry-interval-ms 5000
                                                           :health-check-interval-ms 10000
@@ -42,7 +43,7 @@
                                                          :work-directory "scheduler"}}}}
 
  ;; The default scheduler should match one of the components in the composite scheduler
- :service-description-defaults {"scheduler" "shell"}
+ :service-description-defaults {"scheduler" "shell-high"}
 
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all}
