@@ -181,6 +181,17 @@
                                       :status (or status 500))
             (update :headers assoc "x-cid" correlation-id))))))
 
+(defn compute-scale-amount-restricted-by-quanta
+  "Computes the new scale amount subject to quanta restrictions.
+   The returned value is guaranteed to be at least 1."
+  [service-description quanta-constraints scale-amount]
+  {:pre [(pos? scale-amount) (integer? scale-amount)]
+   :post [(pos? %) (<= % scale-amount)]}
+  (-> scale-amount
+      (min (quot (:cpus quanta-constraints) (get service-description "cpus"))
+           (quot (:mem quanta-constraints) (get service-description "mem")))
+      (max 1)))
+
 (defn service-scaling-executor
   "The scaling executor that scales individual services up or down.
    It uses the scheduler to trigger scale up/down operations.
@@ -188,7 +199,7 @@
    Killing of an instance may be delegated to peer routers via delegate-instance-kill-request-fn if no instance is available locally.
    The executor also respects inter-kill-request-wait-time-ms between successive scale-down operations."
   [service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn delegate-instance-kill-request-fn
-   {:keys [inter-kill-request-wait-time-ms] :as timeout-config}]
+   service-id->service-description-fn quanta-constraints {:keys [inter-kill-request-wait-time-ms] :as timeout-config}]
   {:pre [(>= inter-kill-request-wait-time-ms 0)]}
   (log/info "[scaling-executor] starting instance killer for" service-id)
   (let [base-correlation-id (str "scaling-executor-" service-id)
@@ -229,7 +240,17 @@
                             (do
                               (log/info "allowing previous scale operation to complete before scaling up again")
                               (counters/inc! (metrics/service-counter service-id "scaling" "scale-up" "ignore")))
-                            (execute-scale-service-request scheduler service-id scale-to-instances false))
+                            (let [service-description (service-id->service-description-fn service-id)
+                                  scale-amount' (compute-scale-amount-restricted-by-quanta
+                                                  service-description quanta-constraints scale-amount)
+                                  scale-adjustment (- scale-amount' scale-amount)
+                                  scale-to-instances' (+ scale-to-instances scale-adjustment)]
+                              (when-not (zero? scale-adjustment)
+                                (log/info service-id "scale amount adjusted"
+                                          {:scale-adjustment scale-adjustment
+                                           :scale-amount scale-amount
+                                           :scale-to-instances' scale-to-instances'}))
+                              (execute-scale-service-request scheduler service-id scale-to-instances' false)))
                           executor-state)
 
                         (pos? num-instances-to-kill)
@@ -302,7 +323,7 @@
   The ideal number of instances follows outstanding-requests for any given service.
   Scaling is controlled by two exponentially weighted moving averages, one for scaling up and one for scaling down.
   Scaling up dominates scaling down.
-  The exponential moving average is recursive, and works by applying a smoothing factor, such that:
+  The Exponential Moving Average (EMA) is recursive, and works by applying a smoothing factor, such that:
     target-instances' = outstanding-requests * smoothing-factor + ((1 - smoothing-factor) * target-instances)
   The ideal number of instances, target-instances, is a continuous (float) number.
   The scheduler needs a whole number (int) of instances, total-instances, which is mapped from target-instances
@@ -338,25 +359,29 @@
                                (min max-instances)
                                (max min-instances))
         ^double delta (- target-instances' total-instances)
-        integer-delta (if (>= (Math/abs delta) jitter-threshold)
-                        (int (Math/ceil (- delta epsilon)))
-                        0)
-        scale-to-instances (+ total-instances integer-delta)
+        ;; constrain scaling-up when there are enough instances, but continue to compute the EMA
+        scale-amount (if (or (and (pos? delta)
+                                  (<= ideal-instances total-instances)
+                                  (>= total-instances min-instances))
+                             (< (Math/abs delta) jitter-threshold))
+                       0
+                       (int (Math/ceil (- delta epsilon))))
+        scale-to-instances (+ total-instances scale-amount)
         ; number of expired instances already replaced by healthy instances
         excess-instances (max 0 (- healthy-instances scale-to-instances))
         expired-instances-to-replace (int (Math/ceil (* expired-instances expired-instance-restart-rate)))
         ; if we are scaling down and all instances are healthy, do not account for expired instances
         ; since the instance killer will kill the expired instances
-        scaling-down (< integer-delta 0)
+        scaling-down (< scale-amount 0)
         all-instances-are-healthy (= total-instances healthy-instances)
         scale-to-instances' (cond-> scale-to-instances
                               (and (pos? expired-instances)
                                    (not (and scaling-down all-instances-are-healthy)))
                               (+ (- expired-instances-to-replace excess-instances)))
-        integer-delta' (int (- scale-to-instances' total-instances))]
-    {:scale-to-instances scale-to-instances'
-     :target-instances target-instances'
-     :scale-amount integer-delta'}))
+        scale-amount' (int (- scale-to-instances' total-instances))]
+    {:scale-amount scale-amount'
+     :scale-to-instances scale-to-instances'
+     :target-instances target-instances'}))
 
 (defn scale-services
   "Scales a sequence of services given the scale state of each service, and returns a new scale state which

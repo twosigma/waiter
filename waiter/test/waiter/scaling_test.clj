@@ -221,6 +221,15 @@
                      (walk/keywordize-keys (json/read-str body))))
               (is (= [[:kill-instance "instance-1" "test-service-id" false]] @scheduler-operation-tracker-atom)))))))))
 
+(deftest test-compute-scale-amount-restricted-by-quanta
+  (is (= 1 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 1024} {:cpus 32 :mem 4608} 1)))
+  (is (= 3 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 1024} {:cpus 32 :mem 4608} 3)))
+  (is (= 4 (compute-scale-amount-restricted-by-quanta {"cpus" 5 "mem" 1024} {:cpus 32 :mem 4608} 8)))
+  (is (= 3 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 1024} {:cpus 32 :mem 4608} 8)))
+  (is (= 2 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 2048} {:cpus 32 :mem 4608} 8)))
+  (is (= 9 (compute-scale-amount-restricted-by-quanta {"cpus" 2 "mem" 512} {:cpus 32 :mem 4608} 10)))
+  (is (= 1 (compute-scale-amount-restricted-by-quanta {"cpus" 64 "mem" 512} {:cpus 32 :mem 4608} 10))))
+
 (deftest test-service-scaling-executor
   (let [current-time (t/now)]
     (with-redefs [t/now (fn [] current-time)]
@@ -256,6 +265,8 @@
             delegate-instance-kill-request-fn (fn [service-id]
                                                 (is (= test-service-id service-id))
                                                 false)
+            service-id->service-description-fn (constantly {"cpus" 10 "mem" 1024})
+            quanta-constraints {:cpus 64 :mem 100000}
             equilibrium-state {}
             make-scaling-message (fn [service-id scale-amount scale-to-instances task-count total-instances response-chan]
                                    {:service-id service-id, :scale-amount scale-amount, :scale-to-instances scale-to-instances,
@@ -268,7 +279,8 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan {:service-id test-service-id, :scale-amount 0})
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -282,14 +294,15 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 30 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
             (is (empty? @scheduler-operation-tracker-atom))
             (async/>!! exit-chan :exit)))
 
-        (testing "scale-up:trigger"
+        (testing "scale-up:trigger:above-quanta"
           (let [instance-rpc-chan (async/chan 1)
                 peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
@@ -297,11 +310,28 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
-            (is (= [[:scale-service "test-service-id" 30 false]] @scheduler-operation-tracker-atom))
+            (is (= [[:scale-service "test-service-id" 26 false]] @scheduler-operation-tracker-atom))
+            (async/>!! exit-chan :exit)))
+
+        (testing "scale-up:trigger:below-quanta"
+          (let [instance-rpc-chan (async/chan 1)
+                peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
+                scheduler-operation-tracker-atom (atom [])
+                scheduler (make-scheduler scheduler-operation-tracker-atom)
+                {:keys [executor-chan exit-chan query-chan]}
+                (service-scaling-executor
+                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)]
+            (mock-reservation-system instance-rpc-chan [])
+            (async/>!! executor-chan (make-scaling-message test-service-id 4 24 22 20 nil))
+            (is (= equilibrium-state (retrieve-state-fn query-chan)))
+            (is (= [[:scale-service "test-service-id" 24 false]] @scheduler-operation-tracker-atom))
             (async/>!! exit-chan :exit)))
 
         (testing "scale-force:trigger"
@@ -312,7 +342,8 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id -5 25 20 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -332,7 +363,8 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)]
             (mock-reservation-system
               instance-rpc-chan
               [(fn [[{:keys [reason]} response-chan]]
@@ -359,7 +391,8 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)]
             (mock-reservation-system
               instance-rpc-chan
               [(fn [[{:keys [reason]} response-chan]]
@@ -382,7 +415,8 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
                 instance-rpc-chan
@@ -416,7 +450,8 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
@@ -449,7 +484,8 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag true}]
@@ -487,7 +523,8 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag false}]
@@ -525,7 +562,8 @@
                 {:keys [executor-chan exit-chan query-chan]}
                 (service-scaling-executor
                   test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn timeout-config)]
+                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
+                  timeout-config)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
                 instance-rpc-chan
@@ -641,20 +679,25 @@
                                                    :healthy-instances healthy-instances
                                                    :expired-instances expired-instances})]
                         (is (> epsilon (Math/abs (double (- scale-amount expected-scale-amount))))
-                            (str "scale-amount=" scale-amount " expected-scale-amount=" expected-scale-amount))
+                            (str (last *testing-contexts*) ": scale-amount=" scale-amount
+                                 " expected-scale-amount=" expected-scale-amount))
                         (is (= scale-to-instances expected-scale-to-instances)
-                            (str "scale-to-instances=" scale-to-instances " expected-scale-to-instances=" expected-scale-to-instances))
+                            (str (last *testing-contexts*) ": scale-to-instances=" scale-to-instances
+                                 " expected-scale-to-instances=" expected-scale-to-instances))
                         (is (> epsilon (Math/abs (double (- target-instances expected-target-instances))))
-                            (str "target-instances=" target-instances " expected-target-instances=" expected-target-instances))))]
+                            (str (last *testing-contexts*) ": target-instances=" target-instances
+                                 " expected-target-instances=" expected-target-instances))))]
     (testing "scale whole way"
       (scales-like 5 10 10, fast-scaling 5 10 5 5 0))
+    (testing "don't scale up if there are enough instances for outstanding requests"
+      (scales-like 0 5 7, (assoc default-scaling "scale-up-factor" 0.999) 5 4 10 5 0))
     (testing "scale half way"
       (scales-like 5 15 15, default-scaling 10 20 10 10 0))
     (testing "scale three-quarters way (two ticks @ 50% each)"
       (scales-like 15 15 15, (assoc default-scaling "scale-ticks" 2) 0 20 0 0 0))
-    (testing "dont scale above max"
+    (testing "don't scale above max"
       (scales-like 0 50 50, default-scaling 50 100 50 50 0))
-    (testing "dont scale below min"
+    (testing "don't scale below min"
       (scales-like 0 1 1, default-scaling 1 0 1 1 0))
     (testing "scale down to max"
       (scales-like -10 50 50, default-scaling 60 100 60 60 0))

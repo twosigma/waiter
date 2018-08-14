@@ -230,7 +230,9 @@
     [config initial-state client-curve]
     (let [max-total-ticks (* 2 60 60)
           max-total-clients 100
-          {:strs [scale-ticks total-ticks] :as config} (merge simulation-defaults config)
+          {:strs [quanta-cpus quanta-mem scale-ticks total-ticks use-quanta] :as config} (merge simulation-defaults config)
+          quanta-constraints {:cpus quanta-cpus
+                              :mem quanta-mem}
           initial-state (merge default-initial-state initial-state)]
       (loop [{:keys [total-clients target-instances] :as state} initial-state
              tick 0
@@ -238,7 +240,12 @@
         (if (<= tick (min max-total-ticks total-ticks))
           (let [{:keys [scale-amount target-instances]}
                 (if (zero? (mod tick scale-ticks))
-                  (scaling/scale-service config state)
+                  (-> (scaling/scale-service config state)
+                      (update :scale-amount
+                              (fn [scale-amount]
+                                (if (and use-quanta (pos? scale-amount))
+                                  (scaling/compute-scale-amount-restricted-by-quanta config quanta-constraints scale-amount)
+                                  scale-amount))))
                   {:scale-amount 0 :target-instances target-instances})]
             (let [client-change-amount (client-curve tick 0)
                   total-clients (or total-clients 0)
