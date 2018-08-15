@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.token
-  (:require [clojure.data.json :as json]
-            [clojure.set :as set]
+  (:require [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
@@ -263,9 +262,9 @@
               :hard-delete hard-delete :version-hash version-hash)
             ; notify peers of token delete and ask them to refresh their caches
             (make-peer-requests-fn "tokens/refresh"
-                                   :body (json/write-str {:owner token-owner, :token token})
+                                   :body (utils/clj->json {:owner token-owner, :token token})
                                    :method :post)
-            (utils/map->json-response {:delete token, :hard-delete hard-delete, :success true}
+            (utils/clj->json-response {:delete token, :hard-delete hard-delete, :success true}
                                       :headers {"etag" version-hash}))
           (throw (ex-info (str "Token " token " does not exist")
                           {:status 404 :token token}))))
@@ -287,7 +286,7 @@
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
         (log/info "successfully retrieved token " token)
-        (utils/map->json-response
+        (utils/clj->json-response
           (cond-> service-parameter-template
                   show-metadata
                   (merge (cond-> (loop [loop-token-metadata token-metadata
@@ -431,7 +430,7 @@
                                            (select-keys sd/token-user-editable-keys))]
       (if (and (not= "admin" (get request-params "update-mode"))
                (= existing-editable-token-data new-user-editable-token-data))
-        (utils/map->json-response
+        (utils/clj->json-response
           {:message (str "No changes detected for " token)
            :service-description (:service-parameter-template existing-token-description)}
           :headers {"etag" (token-description->token-hash existing-token-description)})
@@ -442,12 +441,12 @@
           ; notify peers of token update
           (make-peer-requests-fn "tokens/refresh"
                                  :method :post
-                                 :body (json/write-str {:token token, :owner owner}))
+                                 :body (utils/clj->json {:token token, :owner owner}))
           (let [creation-mode (if (and (seq existing-token-metadata)
                                        (not (get existing-token-metadata "deleted")))
                                 "updated "
                                 "created ")]
-            (utils/map->json-response
+            (utils/clj->json-response
               {:message (str "Successfully " creation-mode token)
                :service-description new-service-parameter-template}
               :headers {"etag" (token-description->token-hash
@@ -515,7 +514,7 @@
   (try
     (case request-method
       :get (let [owner->owner-ref (token-owners-map kv-store)]
-             (utils/map->json-response owner->owner-ref))
+             (utils/clj->json-response owner->owner-ref))
       (throw (ex-info "Only GET supported" {:request-method request-method
                                             :status 405})))
     (catch Exception ex
@@ -533,7 +532,7 @@
       (when token
         (log/info src-router-id "is force refreshing token" token)
         (refresh-token kv-store token owner))
-      (utils/map->json-response {:success true}))
+      (utils/clj->json-response {:success true}))
     (catch Exception ex
       (utils/exception->response ex req))))
 
@@ -546,8 +545,8 @@
               (reindex-tokens synchronize-fn kv-store tokens)
               (make-peer-requests-fn "tokens/refresh"
                                      :method :post
-                                     :body (json/write-str {:index true}))
-              (utils/map->json-response {:message "Successfully re-indexed" :tokens (count tokens)}))
+                                     :body (utils/clj->json {:index true}))
+              (utils/clj->json-response {:message "Successfully re-indexed" :tokens (count tokens)}))
       (throw (ex-info "Only POST supported" {:request-method request-method
                                              :status 405})))
     (catch Exception ex

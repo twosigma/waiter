@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.metrics-output-test
-  (:require [clojure.data.json :as json]
-            [clojure.test :refer :all]
+  (:require [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [schema.core :as s]
             [waiter.schema :as schema]

@@ -17,7 +17,6 @@
   (:require [clj-time.coerce :as tc]
             [clj-time.core :as t]
             [clojure.core.cache :as cache]
-            [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
@@ -41,7 +40,7 @@
       http-client
       (str url "/jobs")
       :accept "application/json"
-      :body (json/write-str job-description)
+      :body (utils/clj->json job-description)
       :content-type "application/json"
       :headers (cond-> {} impersonate (assoc "x-cook-impersonate" run-as-user))
       :request-method :post

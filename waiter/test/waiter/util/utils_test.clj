@@ -106,21 +106,21 @@
     (is (not (str/includes? actual "dest")))
     (is (not (str/includes? actual "pass")))))
 
-(deftest test-map->json-response
+(deftest test-clj->json-response
   (testing "Conversion from map to JSON response"
 
     (testing "should convert empty map"
-      (let [{:keys [body headers status]} (map->json-response {})]
+      (let [{:keys [body headers status]} (clj->json-response {})]
         (is (= 200 status))
         (is (= {"content-type" "application/json"} headers))
         (is (not (nil? body)))))
 
     (testing "should convert regex patterns to strings"
-      (is (= (json/write-str {"bar" "foo"}) (:body (map->json-response {:bar #"foo"}))))
+      (is (= (json/write-str {"bar" "foo"}) (:body (clj->json-response {:bar #"foo"}))))
       (is (= (json/write-str {"bar" ["foo" "baz"] "foo/bar" "baz"} :escape-slash false)
-             (:body (map->json-response {:bar [#"foo" #"baz"] :foo/bar :baz}))))
-      (is (= (json/write-str {"bar" ["foo" "baz"]}) (:body (map->json-response {:bar ["foo" #"baz"]}))))
-      (is (= (json/write-str {"bar" [["foo" "baz"]]}) (:body (map->json-response {:bar [["foo" #"baz"]]})))))))
+             (:body (clj->json-response {:bar [#"foo" #"baz"] :foo/bar :baz}))))
+      (is (= (json/write-str {"bar" ["foo" "baz"]}) (:body (clj->json-response {:bar ["foo" #"baz"]}))))
+      (is (= (json/write-str {"bar" [["foo" "baz"]]}) (:body (clj->json-response {:bar [["foo" #"baz"]]})))))))
 
 (deftest test-map->streaming-json-response
   (testing "convert empty map"

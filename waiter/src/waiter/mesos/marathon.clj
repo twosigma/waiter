@@ -14,8 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.mesos.marathon
-  (:require [clojure.data.json :as json]
-            [waiter.util.http-utils :as http-utils])
+  (:require [waiter.util.http-utils :as http-utils]
+            [waiter.util.utils :as utils])
   (:import org.eclipse.jetty.client.HttpClient))
 
 (defrecord MarathonApi [^HttpClient http-client ^String marathon-url spnego-auth])
@@ -29,7 +29,7 @@
   "Create and start a new app specified by the descriptor."
   [{:keys [http-client marathon-url spnego-auth]} descriptor]
   (http-utils/http-request http-client (str marathon-url "/v2/apps")
-                           :body (json/write-str descriptor)
+                           :body (utils/clj->json descriptor)
                            :content-type "application/json"
                            :spnego-auth spnego-auth
                            :request-method :post))
@@ -92,7 +92,7 @@
   "Update the descriptor of an existing app specified by the app-id."
   [{:keys [http-client marathon-url spnego-auth]} app-id descriptor]
   (http-utils/http-request http-client (str marathon-url "/v2/apps/" app-id)
-                           :body (json/write-str descriptor)
+                           :body (utils/clj->json descriptor)
                            :content-type "application/json"
                            :query-string {"force" true}
                            :request-method :put

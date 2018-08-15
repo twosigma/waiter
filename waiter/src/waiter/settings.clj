@@ -201,7 +201,7 @@
 (defn display-settings
   "Endpoint to display the current settings in use."
   [settings]
-  (utils/map->json-response (into (sorted-map) (sanitize-settings settings))))
+  (utils/clj->json-response (into (sorted-map) (sanitize-settings settings))))
 
 (def settings-defaults
   {:authenticator-config {:kind :one-user

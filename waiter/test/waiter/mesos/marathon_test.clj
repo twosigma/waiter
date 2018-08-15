@@ -16,7 +16,8 @@
 (ns waiter.mesos.marathon-test
   (:require [clojure.test :refer :all]
             [waiter.mesos.marathon :refer :all]
-            [waiter.util.http-utils :as http-utils]))
+            [waiter.util.http-utils :as http-utils]
+            [waiter.util.utils :as utils]))
 
 (def ^:private http-client (Object.))
 

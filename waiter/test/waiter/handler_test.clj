@@ -32,7 +32,8 @@
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all]
-            [waiter.util.async-utils :as au])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
            (java.io StringBufferInputStream StringReader)))
@@ -632,7 +633,7 @@
         (let [instance-rpc-chan (instance-rpc-chan-factory response-status)
               request {:uri (str "/work-stealing")
                        :request-method :post
-                       :body (StringBufferInputStream. (json/write-str (walk/stringify-keys request-body)))}
+                       :body (StringBufferInputStream. (utils/clj->json (walk/stringify-keys request-body)))}
               {:keys [status body]} (fa/<?? (work-stealing-handler instance-rpc-chan request))]
           (is (= expected-status status))
           (is (every? #(str/includes? (str body) %) expected-body-fragments)))))))
@@ -641,7 +642,7 @@
   (let [instance-rpc-chan (async/chan)
         test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
-                         (json/write-str
+                         (utils/clj->json
                            {"cid" "test-cid"
                             "instance" {"id" "test-instance-id", "service-id" test-service-id}
                             "request-id" "test-request-id"
@@ -1187,7 +1188,7 @@
   (let [instance-rpc-chan (async/chan)
         test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
-                         (json/write-str
+                         (utils/clj->json
                            {"instance" {"id" "test-instance-id", "service-id" test-service-id}
                             "period-in-ms" 1000
                             "reason" "blacklist"}))}

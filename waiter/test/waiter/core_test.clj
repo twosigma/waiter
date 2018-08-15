@@ -232,7 +232,7 @@
     (testing "override-service-handler"
       (let [user "tu1"
             request {:authorization/user user
-                     :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
+                     :body (StringBufferInputStream. (utils/clj->json {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
                      :request-method :post
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
@@ -241,7 +241,7 @@
         (is (= {"scale-factor" 0.3} (:overrides (sd/service-id->overrides kv-store test-service-id)))))
       (let [user "tu1"
             request {:authorization/user user
-                     :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
+                     :body (StringBufferInputStream. (utils/clj->json {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
                      :request-method :get
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
@@ -250,7 +250,7 @@
         (is (= test-service-id (-> body json/read-str walk/keywordize-keys :service-id))))
       (let [user "tu1"
             request {:authorization/user user
-                     :body (StringBufferInputStream. (json/write-str {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
+                     :body (StringBufferInputStream. (utils/clj->json {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
                      :request-method :delete
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]
@@ -1064,7 +1064,7 @@
       (let [test-request {:headers {"host" "www.token-3.com", "x-waiter-run-as-user" "test-user"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
                                          :status 400)
                response))))
 
@@ -1078,7 +1078,7 @@
       (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-A", "x-waiter-authentication" "disabled"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
                                          :status 400)
                response))))
 
@@ -1092,7 +1092,7 @@
       (let [test-request {:headers {"host" "www.service.com", "x-waiter-authentication" "disabled", "x-waiter-token" "a-named-token-B"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
                                          :status 400)
                response))))
 
@@ -1100,7 +1100,7 @@
       (let [test-request {:headers {"host" "www.service.com", "x-waiter-run-as-user" "test-user", "x-waiter-token" "a-named-token-B"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
                                          :status 400)
                response))))
 
@@ -1114,7 +1114,7 @@
       (let [test-request {:headers {"host" "www.service.com", "x-waiter-authentication" "disabled", "x-waiter-token" "a-named-token-C"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
-        (is (= (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+        (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
                                          :status 400)
                response))))
 

@@ -25,7 +25,8 @@
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.scheduler :as scheduler]
-            [waiter.util.date-utils :as du])
+            [waiter.util.date-utils :as du]
+            [waiter.util.utils :as utils])
   (:import waiter.scheduler.marathon.MarathonScheduler))
 
 (deftest test-response-data->service-instances
@@ -1279,7 +1280,7 @@
         marathon-descriptor {:reference (Object.)}
         deployment-error-response (->> {:deployments [{:id "d-1234"}]
                                         :message "App is locked by one or more deployments."}
-                                       json/write-str
+                                       utils/clj->json
                                        (assoc {:status 409} :body))
         create-app-error-factory (fn [error-call-limit create-call-counter]
                                    (fn [in-marathon-api in-marathon-descriptor]

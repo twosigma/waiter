@@ -46,7 +46,7 @@
                         (is (= http-client in-http-client))
                         (is (= (str cook-url "/jobs") in-request-url))
                         (is (= {:accept "application/json"
-                                :body (utils/map->json job-description)
+                                :body (utils/clj->json job-description)
                                 :content-type "application/json"
                                 :headers {}
                                 :request-method :post
@@ -64,7 +64,7 @@
                         (is (= http-client in-http-client))
                         (is (= (str cook-url "/jobs") in-request-url))
                         (is (= {:accept "application/json"
-                                :body (utils/map->json job-description)
+                                :body (utils/clj->json job-description)
                                 :content-type "application/json"
                                 :headers {"x-cook-impersonate" "test-user"}
                                 :request-method :post

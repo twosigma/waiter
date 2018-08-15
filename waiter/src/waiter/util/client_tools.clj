@@ -882,7 +882,7 @@
   [waiter-url {:keys [token] :as token-map} &
    {:keys [headers query-params] :or {headers {}, query-params {}}}]
   (make-request waiter-url "/token"
-                :body (json/write-str token-map)
+                :body (utils/clj->json token-map)
                 :headers (assoc headers "host" token)
                 :method :post
                 :query-params query-params))
