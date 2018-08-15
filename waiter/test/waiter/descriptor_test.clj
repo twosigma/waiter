@@ -23,9 +23,13 @@
             [waiter.service-description :as sd]
             [waiter.token :as token]
             [waiter.util.async-utils :as au]
-            [waiter.descriptor :as ds])
+            [waiter.descriptor :as ds]
+            [plumbing.core :as pc]
+            [clojure.core.cache :as cache]
+            [waiter.core :as core])
   (:import (clojure.lang ExceptionInfo)
-           (org.joda.time DateTime)))
+           (org.joda.time DateTime)
+           (java.util.concurrent Executors)))
 
 (deftest test-wrap-descriptor
   (let [latest-service-id "latest-service-id"
@@ -101,20 +105,39 @@
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
         metric-group-mappings []
+        scheduler {:scheduler (Object.)}
+        task-threadpool (Executors/newFixedThreadPool 20)
+        start-app-cache-atom (-> {}
+                                    (cache/fifo-cache-factory :threshold 100)
+                                    (cache/ttl-cache-factory :ttl (-> 1 t/minutes t/in-millis))
+                                    atom)
         instability-service-ids->replacement {"service-1" nil,
                                               "service-2" {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
                                                            "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"},
                                               "service-3" nil}
         _ (reset! ds/instability-state-atom {:instability-service-ids->replacement instability-service-ids->replacement})
-        expected-instability-service-ids->replacement {"service-1" {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
+        expected-instability-service-ids->replacement {"service-1" {"cmd" "tc", "cpus" 1, "mem" 220, "version" "a1b2c3",
                                                                     "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"},
                                                        "service-2" {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
                                                                     "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"},
-                                                       "service-3" {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
+                                                       "service-3" {"cmd" "tc", "cpus" 1, "mem" 220, "version" "a1b2c3",
                                                                     "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"}}
-        _ (ds/compute-instability-replacement kv-store service-description-defaults metric-group-mappings)]
-    ; (clojure.pprint/pprint (@ds/instability-state-atom :instability-service-ids->replacement))
+        _ (ds/compute-instability-replacement kv-store service-description-defaults metric-group-mappings scheduler start-app-cache-atom task-threadpool)]
     (is (= (@ds/instability-state-atom :instability-service-ids->replacement) expected-instability-service-ids->replacement))))
+
+(deftest test-retrieve-instability-descriptor
+  (let [instability-service-ids->replacement {"service-1" nil,
+                                              "service-2" {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
+                                                           "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"},
+                                              "service-3" nil}
+        _ (reset! ds/instability-state-atom {:instability-service-ids->replacement instability-service-ids->replacement})
+        descriptor-1 (retrieve-instability-descriptor "service-1")
+        descriptor-2 (retrieve-instability-descriptor "service-2")
+        descriptor-3 (retrieve-instability-descriptor "service-3")]
+    (is (= nil descriptor-1))
+    (is (= {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3",
+            "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"} descriptor-2))
+    (is (= nil descriptor-3))))
 
 (deftest test-fallback-maintainer
   (let [current-healthy-service-ids #{"service-1" "service-3"}
@@ -145,8 +168,8 @@
   (let [healthy-service-ids #{"service-1" "service-3"}
         available-service-ids (set/union healthy-service-ids #{"service-5" "service-7"})
         fallback-state {:available-service-ids available-service-ids :healthy-service-ids healthy-service-ids}
-        instable-service-ids #{"service-8, service-9"}
-        instability-state {:instability-service-ids instable-service-ids}
+        instable-service-ids #{"service-8" "service-9"}
+        instability-state {:instability-service-ids->replacement {"service-8" nil, "service-9" nil}}
         additional-service-ids #{"service-2" "service-4" "service-6"}]
     (doseq [service-id available-service-ids]
       (is (service-exists? fallback-state service-id)))
@@ -161,7 +184,7 @@
     (doseq [service-id (set/union additional-service-ids (set/difference available-service-ids healthy-service-ids))]
       (is (not (service-healthy? fallback-state service-id))))))
 
-(deftest test-retrieve-instability-descriptor
+(deftest test-compute-instability-descriptor
   (let [descriptor-1 {:service-id "service-1"
                       :sources {:headers {"mem" 60
                                           "cpus" 1
@@ -182,7 +205,7 @@
                                              "cpus" 1
                                              "cmd" "/bin/kitchen -p $PORT0"
                                              "version" "foobar"}}}
-           result-descriptor (retrieve-instability-descriptor descriptor-1)]
+           result-descriptor (compute-instability-descriptor descriptor-1)]
       (is (= expected-descriptor result-descriptor))))
     (testing "mem increment by value not divisible 10 test, sources case"
       (let [expected-descriptor {:service-id "service-1"
@@ -190,17 +213,17 @@
                                                      "cpus" 1
                                                      "cmd" "/bin/kitchen -p $PORT0"
                                                      "version" "foobar"}}}
-            result-descriptor (retrieve-instability-descriptor descriptor-2)]
+            result-descriptor (compute-instability-descriptor descriptor-2)]
         (is (= expected-descriptor result-descriptor))))
     (testing "simple test, kv-store case"
       (let [expected-descriptor {"cmd" "tc", "cpus" 1, "mem" 66, "version" "a1b2c3",
                                  "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"}
-            result-descriptor (retrieve-instability-descriptor descriptor-3)]
+            result-descriptor (compute-instability-descriptor descriptor-3)]
         (is (= expected-descriptor result-descriptor))))
     (testing "mem increment by value not divisble by 10 test, kv-store case"
       (let [expected-descriptor {"cmd" "tc", "cpus" 1, "mem" 112, "version" "a1b2c3",
                                  "run-as-user" "tu1", "permitted-user" "tu2", "metric-group" "other"}
-            result-descriptor (retrieve-instability-descriptor descriptor-4)]
+            result-descriptor (compute-instability-descriptor descriptor-4)]
         (is (= expected-descriptor result-descriptor))))))
 
 (deftest test-retrieve-fallback-descriptor

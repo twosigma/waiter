@@ -28,6 +28,7 @@
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.middleware :as middleware]
+            [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.token :as token]
             [waiter.util.async-utils :as au]
@@ -48,7 +49,7 @@
 (defn service-instable?
   "Returns true if the requested service-id exists as per the state in the instable-state."
   [instable-state service-id]
-  (-> instable-state :instability-service-ids (contains? service-id)))
+  (-> instable-state :instability-service-ids->replacement (contains? service-id)))
 
 (defn missing-run-as-user?
   "Returns true if the exception is due to a missing run-as-user validation on the service description."
@@ -227,23 +228,31 @@
                                 :healthy (service-healthy? fallback-state service-id)})
                     (recur (inc iteration) previous-descriptor)))))))))))
 
-(defn compute-instability-replacement
-  "Long running daemon process that computes replacements for instable services if they do not have one yet."
-  [kv-store service-description-defaults metric-group-mappings]
-  (let [nm (reduce (fn [m [service-id descriptor]]
-                     (assoc m service-id (if (nil? descriptor) (sd/service-id->service-description kv-store service-id service-description-defaults metric-group-mappings) descriptor)))
-                   {}
-                   (@instability-state-atom :instability-service-ids->replacement))]
-    (reset! instability-state-atom {:instability-service-ids->replacement nm})))
-
 (defn retrieve-instability-descriptor
-  "Computer the instability descriptor with 10% greater memory based on the provided descriptor."
+  [service-id]
+  (get (@instability-state-atom :instability-service-ids->replacement) service-id))
+
+(defn compute-instability-descriptor
+  "Compute the instability descriptor with 10% greater memory based on the provided descriptor."
   [descriptor]
   (if (contains? descriptor "mem")
     (let [add-mem (int (* 0.1 (get descriptor "mem")))]
       (update-in descriptor ["mem"] + add-mem))
     (let [add-mem (int (* 0.1 (get ((descriptor :sources) :headers) "mem")))]
       (update-in descriptor [:sources :headers "mem"] + add-mem))))
+
+(defn compute-instability-replacement
+  "Long running daemon process that computes replacements for instable services if they do not have one yet."
+  [kv-store service-description-defaults metric-group-mappings scheduler start-app-cache-atom task-threadpool]
+  (let [nm (reduce (fn [m [service-id descriptor]]
+                     (assoc m service-id (if (nil? descriptor)
+                                           (let [new-descriptor (compute-instability-descriptor (sd/service-id->service-description kv-store service-id service-description-defaults metric-group-mappings))]
+                                             (service/start-new-service scheduler new-descriptor start-app-cache-atom task-threadpool)
+                                             new-descriptor)
+                                           descriptor)))
+                   {}
+                   (@instability-state-atom :instability-service-ids->replacement))]
+    (reset! instability-state-atom {:instability-service-ids->replacement nm})))
 
 (defn resolve-descriptor
   "Resolves the descriptor that should be used based on available healthy services.
@@ -254,7 +263,7 @@
   [descriptor->previous-descriptor search-history-length request-time fallback-state instability-state latest-descriptor]
   (let [{:keys [service-id]} latest-descriptor]
     (if (service-instable? instability-state service-id)
-      (or (retrieve-instability-descriptor latest-descriptor)
+      (or (retrieve-instability-descriptor service-id)
           (do
             (log/info "no instability replacement service found for" (:service-id latest-descriptor))
             latest-descriptor))
