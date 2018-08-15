@@ -78,13 +78,13 @@
   (try
     (pc/letk
       [[spec
-        [:metadata name namespace [:annotations waiter-service-id]]
+        [:metadata name namespace [:annotations waiter/service-id]]
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
        replicaset-json
        requested (get spec :replicas 0)
        staged (- (+ availableReplicas unavailableReplicas) replicas)]
         (scheduler/make-Service
-          {:id waiter-service-id
+          {:id service-id
            :instances requested
            :k8s/app-name name
            :k8s/namespace namespace
@@ -103,7 +103,7 @@
   ([scheduler pod] (pod->instance-id scheduler pod (get-in pod [:status :containerStatuses 0 :restartCount])))
   ([{:keys [pod-suffix-length] :as scheduler} pod restart-count]
    (let [pod-name (get-in pod [:metadata :name])
-         service-id (get-in pod [:metadata :annotations :waiter-service-id])]
+         service-id (get-in pod [:metadata :annotations :waiter/service-id])]
      (str service-id \. pod-name \- restart-count))))
 
 (defn- killed-by-k8s?
@@ -145,7 +145,7 @@
   (try
     (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])]
       (scheduler/make-ServiceInstance
-        {:extra-ports (->> (get-in pod [:metadata :annotations :waiter-port-count])
+        {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                            Integer/parseInt range next (mapv #(+ port0 %)))
          :healthy? (get-in pod [:status :containerStatuses 0 :ready] false)
          :host (get-in pod [:status :podIP])
@@ -156,8 +156,8 @@
          :k8s/restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
          :log-directory (str "/home/" (get-in pod [:metadata :namespace]))
          :port port0
-         :protocol (get-in pod [:metadata :annotations :waiter-protocol])
-         :service-id (get-in pod [:metadata :annotations :waiter-service-id])
+         :protocol (get-in pod [:metadata :annotations :waiter/protocol])
+         :service-id (get-in pod [:metadata :annotations :waiter/service-id])
          :started-at (-> pod
                          (get-in [:status :startTime])
                          (timestamp-str->datetime))}))
@@ -403,7 +403,7 @@
              ;; It's possible that multiple Waiter services in different namespaces
              ;; have service-ids mapping to the same Kubernetes object name,
              ;; so we filter to match the full service-id as well.
-             (filter #(= service-id (get-in % [:metadata :annotations :waiter-service-id])))
+             (filter #(= service-id (get-in % [:metadata :annotations :waiter/service-id])))
              first
              replicaset->Service)))
 
@@ -562,16 +562,16 @@
         ssl? (= "https" backend-protocol-lower)]
     {:kind "ReplicaSet"
      :apiVersion replicaset-api-version
-     :metadata {:annotations {:waiter-service-id service-id}
+     :metadata {:annotations {:waiter/service-id service-id}
                 :labels {:app k8s-name
                          :managed-by orchestrator-name}
                 :name k8s-name}
      :spec {:replicas min-instances
             :selector {:matchLabels {:app k8s-name
                                      :managed-by orchestrator-name}}
-            :template {:metadata {:annotations {:waiter-port-count (str ports)
-                                                :waiter-protocol backend-protocol-lower
-                                                :waiter-service-id service-id}
+            :template {:metadata {:annotations {:waiter/port-count (str ports)
+                                                :waiter/protocol backend-protocol-lower
+                                                :waiter/service-id service-id}
                                   :labels {:app k8s-name
                                            :managed-by orchestrator-name}}
                        :spec {:containers [{:command ["/bin/sh" "-c" cmd]

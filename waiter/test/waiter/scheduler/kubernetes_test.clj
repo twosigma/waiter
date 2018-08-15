@@ -156,9 +156,9 @@
                      {:apiVersion "v1"
                       :kind "List"
                       :metadata {}
-                      :items [{:metadata {:annotations {:waiter-port-count "1"
-                                                        :waiter-protocol "https"
-                                                        :waiter-service-id "test-app-1234"}
+                      :items [{:metadata {:annotations {:waiter/port-count "1"
+                                                        :waiter/protocol "https"
+                                                        :waiter/service-id "test-app-1234"}
                                           :labels {:app "test-app-1234"
                                                    :managed-by "waiter"}
                                           :name "test-app-1234-abcd1"
@@ -169,9 +169,9 @@
                                                              :restartCount 0}]
                                         :podIP "10.141.141.10"
                                         :startTime "2014-09-13T00:24:46Z"}}
-                              {:metadata {:annotations {:waiter-port-count "1"
-                                                        :waiter-protocol "https"
-                                                        :waiter-service-id "test-app-1234"}
+                              {:metadata {:annotations {:waiter/port-count "1"
+                                                        :waiter/protocol "https"
+                                                        :waiter/service-id "test-app-1234"}
                                           :labels {:app "test-app-1234"
                                                    :managed-by "waiter"}
                                           :name "test-app-1234-abcd2"
@@ -184,9 +184,9 @@
                                                              :restartCount 1}]
                                         :podIP "10.141.141.11"
                                         :startTime "2014-09-13T00:24:56Z"}}
-                              {:metadata {:annotations {:waiter-port-count "4"
-                                                        :waiter-protocol "https"
-                                                        :waiter-service-id "test-app-1234"}
+                              {:metadata {:annotations {:waiter/port-count "4"
+                                                        :waiter/protocol "https"
+                                                        :waiter/service-id "test-app-1234"}
                                           :labels {:app "test-app-1234"
                                                    :managed-by "waiter"}
                                           :name "test-app-1234-abcd3"
@@ -247,9 +247,9 @@
                      {:apiVersion "v1"
                       :kind "List"
                       :metadata {}
-                      :items [{:metadata {:annotations {:waiter-port-count "1"
-                                                        :waiter-protocol "http"
-                                                        :waiter-service-id "test-app-1234"}
+                      :items [{:metadata {:annotations {:waiter/port-count "1"
+                                                        :waiter/protocol "http"
+                                                        :waiter/service-id "test-app-1234"}
                                           :labels {:app "test-app-1234"
                                                    :managed-by "waiter"}
                                           :name "test-app-1234-abcd1"
@@ -260,9 +260,9 @@
                                                              :restartCount 0}]
                                         :podIP "10.141.141.11"
                                         :startTime "2014-09-13T00:24:46Z"}}
-                              {:metadata {:annotations {:waiter-port-count "1"
-                                                        :waiter-protocol "http"
-                                                        :waiter-service-id "test-app-1234"}
+                              {:metadata {:annotations {:waiter/port-count "1"
+                                                        :waiter/protocol "http"
+                                                        :waiter/service-id "test-app-1234"}
                                           :labels {:app "test-app-1234"
                                                    :managed-by "waiter"}
                                           :name "test-app-1234-abcd2"
@@ -273,9 +273,9 @@
                                                              :restartCount 0}]
                                         :podIP "10.141.141.12"
                                         :startTime "2014-09-13T00:24:47Z"}}
-                              {:metadata {:annotations {:waiter-port-count "1"
-                                                        :waiter-protocol "http"
-                                                        :waiter-service-id "test-app-1234"}
+                              {:metadata {:annotations {:waiter/port-count "1"
+                                                        :waiter/protocol "http"
+                                                        :waiter/service-id "test-app-1234"}
                                           :labels {:app "test-app-1234"
                                                    :managed-by "waiter"}
                                           :name "test-app-1234-abcd3"
@@ -349,7 +349,7 @@
                                :namespace "myself"
                                :labels {:app "test-app-1234"
                                         :managed-by "waiter"}
-                               :annotations {:waiter-service-id "test-app-1234"}}
+                               :annotations {:waiter/service-id "test-app-1234"}}
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-1234"
                                                     :managed-by "waiter"}}}
@@ -360,7 +360,7 @@
                                :namespace "myself"
                                :labels {:app "test-app-6789"
                                         :managed-by "waiter"}
-                               :annotations {:waiter-service-id "test-app-6789"}}
+                               :annotations {:waiter/service-id "test-app-6789"}}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-6789"
                                                     :managed-by "waiter"}}}
@@ -382,7 +382,7 @@
                                :namespace "myself"
                                :labels {:app "test-app-abcd"
                                         :managed-by "waiter"}
-                               :annotations {:waiter-service-id "test-app-abcd"}}
+                               :annotations {:waiter/service-id "test-app-abcd"}}
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-abcd"
                                                     :managed-by "waiter"}}}
@@ -394,7 +394,7 @@
                                :namespace "myself"
                                :labels {:app "test-app-wxyz"
                                         :managed-by "waiter"}
-                               :annotations {:waiter-service-id "test-app-wxyz"}}
+                               :annotations {:waiter/service-id "test-app-wxyz"}}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-wxyz"
                                                     :managed-by "waiter"}}}
@@ -417,7 +417,7 @@
                                :namespace "myself"
                                :labels {:app "test-app-9999"
                                         :managed-by "waiter"}
-                               :annotations {:waiter-service-id "test-app-9999"}}
+                               :annotations {:waiter/service-id "test-app-9999"}}
                     :spec {:replicas 0
                            :selector {:matchLabels {:app "test-app-9999"
                                                     :managed-by "waiter"}}}
@@ -445,7 +445,7 @@
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :managed-by "waiter"}
-                             :annotations {:waiter-service-id "test-app-1234"}}
+                             :annotations {:waiter/service-id "test-app-1234"}}
                   :spec {:replicas 2
                          :selector {:matchLabels {:app "test-app-1234"
                                                   :managed-by "waiter"}}}
@@ -456,7 +456,7 @@
                              :namespace "myself"
                              :labels {:app "test-app-6789"
                                       :managed-by "waiter"}
-                             :annotations {:waiter-service-id "test-app-6789"}}
+                             :annotations {:waiter/service-id "test-app-6789"}}
                   :spec {:replicas 3
                          :selector {:matchLabels {:app "test-app-6789"
                                                   :managed-by "waiter"}}}
@@ -472,9 +472,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :managed-by "waiter"}
-                             :annotations {:waiter-port-count "1"
-                                           :waiter-protocol "https"
-                                           :waiter-service-id "test-app-1234"}}
+                             :annotations {:waiter/port-count "1"
+                                           :waiter/protocol "https"
+                                           :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
@@ -485,9 +485,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-1234"
                                       :managed-by "waiter"}
-                             :annotations {:waiter-port-count "1"
-                                           :waiter-protocol "https"
-                                           :waiter-service-id "test-app-1234"}}
+                             :annotations {:waiter/port-count "1"
+                                           :waiter/protocol "https"
+                                           :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
@@ -502,9 +502,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-6789"
                                       :managed-by "waiter"}
-                             :annotations {:waiter-port-count "1"
-                                           :waiter-protocol "http"
-                                           :waiter-service-id "test-app-6789"}}
+                             :annotations {:waiter/port-count "1"
+                                           :waiter/protocol "http"
+                                           :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:35Z"
@@ -515,9 +515,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-6789"
                                       :managed-by "waiter"}
-                             :annotations {:waiter-port-count "1"
-                                           :waiter-protocol "http"
-                                           :waiter-service-id "test-app-6789"}}
+                             :annotations {:waiter/port-count "1"
+                                           :waiter/protocol "http"
+                                           :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.14"
                            :startTime "2014-09-13T00:24:37Z"
@@ -530,9 +530,9 @@
                              :namespace "myself"
                              :labels {:app "test-app-6789"
                                       :managed-by "waiter"}
-                             :annotations {:waiter-port-count "1"
-                                           :waiter-protocol "http"
-                                           :waiter-service-id "test-app-6789"}}
+                             :annotations {:waiter/port-count "1"
+                                           :waiter/protocol "http"
+                                           :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.15"
                            :startTime "2014-09-13T00:24:38Z"
@@ -687,7 +687,7 @@
                              :namespace "myself"
                              :labels {:app service-id
                                       :managed-by "waiter"}
-                             :annotations {:waiter-service-id service-id}}
+                             :annotations {:waiter/service-id service-id}}
                   :spec {:replicas 2
                          :selector {:matchLabels {:app service-id
                                                   :managed-by "waiter"}}}
