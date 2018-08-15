@@ -203,7 +203,7 @@
                                            {:extra-ports [],
                                             :healthy? true,
                                             :host "10.141.141.10",
-                                            :id "test-app-1234.abcd1-0",
+                                            :id "test-app-1234.test-app-1234-abcd1-0",
                                             :log-directory "/home/myself"
                                             :port 8080,
                                             :protocol "https",
@@ -213,7 +213,7 @@
                                            {:extra-ports [],
                                             :healthy? true,
                                             :host "10.141.141.11",
-                                            :id "test-app-1234.abcd2-1",
+                                            :id "test-app-1234.test-app-1234-abcd2-1",
                                             :log-directory "/home/myself"
                                             :port 8080,
                                             :protocol "https",
@@ -223,7 +223,7 @@
                                            {:extra-ports [8081 8082 8083],
                                             :healthy? false,
                                             :host "10.141.141.12",
-                                            :id "test-app-1234.abcd3-0",
+                                            :id "test-app-1234.test-app-1234-abcd3-0",
                                             :log-directory "/home/myself"
                                             :port 8080,
                                             :protocol "https",
@@ -234,7 +234,7 @@
                                             :extra-ports [],
                                             :healthy? false,
                                             :host "10.141.141.11",
-                                            :id "test-app-1234.abcd2-0",
+                                            :id "test-app-1234.test-app-1234-abcd2-0",
                                             :log-directory "/home/myself"
                                             :port 8080,
                                             :protocol "https",
@@ -292,7 +292,7 @@
                                            {:extra-ports [],
                                             :healthy? true,
                                             :host "10.141.141.11",
-                                            :id "test-app-1234.abcd1-0",
+                                            :id "test-app-1234.test-app-1234-abcd1-0",
                                             :log-directory "/home/myself"
                                             :port 8080,
                                             :protocol "http",
@@ -303,7 +303,7 @@
                                             :healthy? true,
                                             :host "10.141.141.12",
                                             :log-directory "/home/myself"
-                                            :id "test-app-1234.abcd2-0",
+                                            :id "test-app-1234.test-app-1234-abcd2-0",
                                             :port 8080,
                                             :protocol "http",
                                             :service-id "test-app-1234",
@@ -313,7 +313,7 @@
                                             :healthy? false,
                                             :host "10.141.141.13",
                                             :log-directory "/home/myself"
-                                            :id "test-app-1234.abcd3-0",
+                                            :id "test-app-1234.test-app-1234-abcd3-0",
                                             :port 8080,
                                             :protocol "http",
                                             :service-id "test-app-1234",
@@ -516,7 +516,7 @@
                     [(scheduler/make-ServiceInstance
                        {:healthy? true
                         :host "10.141.141.11"
-                        :id "test-app-1234.abcd1-0"
+                        :id "test-app-1234.test-app-1234-abcd1-0"
                         :log-directory "/home/myself"
                         :port 8080
                         :protocol "https"
@@ -525,7 +525,7 @@
                      (scheduler/make-ServiceInstance
                        {:healthy? true
                         :host "10.141.141.12"
-                        :id "test-app-1234.abcd2-0"
+                        :id "test-app-1234.test-app-1234-abcd2-0"
                         :log-directory "/home/myself"
                         :port 8080
                         :protocol "https"
@@ -540,7 +540,7 @@
                     [(scheduler/make-ServiceInstance
                        {:healthy? true
                         :host "10.141.141.13"
-                        :id "test-app-6789.abcd1-0"
+                        :id "test-app-6789.test-app-6789-abcd1-0"
                         :log-directory "/home/myself"
                         :port 8080
                         :protocol "http"
@@ -549,7 +549,7 @@
                      (scheduler/make-ServiceInstance
                        {:healthy? false
                         :host "10.141.141.14"
-                        :id "test-app-6789.abcd2-1"
+                        :id "test-app-6789.test-app-6789-abcd2-1"
                         :log-directory "/home/myself"
                         :port 8080
                         :protocol "http"
@@ -558,7 +558,7 @@
                      (scheduler/make-ServiceInstance
                        {:healthy? false
                         :host "10.141.141.15"
-                        :id "test-app-6789.abcd3-0"
+                        :id "test-app-6789.test-app-6789-abcd3-0"
                         :log-directory "/home/myself"
                         :port 8080
                         :protocol "http"
@@ -569,7 +569,7 @@
                        {:exit-code 255
                         :healthy? false
                         :host "10.141.141.14"
-                        :id "test-app-6789.abcd2-0"
+                        :id "test-app-6789.test-app-6789-abcd2-0"
                         :log-directory "/home/myself"
                         :port 8080
                         :protocol "http"

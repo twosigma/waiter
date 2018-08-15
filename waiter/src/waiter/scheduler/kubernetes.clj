@@ -97,9 +97,8 @@
   ([scheduler pod] (pod->instance-id scheduler pod (get-in pod [:status :containerStatuses 0 :restartCount])))
   ([{:keys [pod-suffix-length] :as scheduler} pod restart-count]
    (let [pod-name (get-in pod [:metadata :name])
-         instance-suffix (subs pod-name (- (count pod-name) pod-suffix-length))
          service-id (get-in pod [:metadata :annotations :waiter-service-id])]
-     (str service-id \. instance-suffix \- restart-count))))
+     (str service-id \. pod-name \- restart-count))))
 
 (defn- killed-by-k8s?
   "Determine whether a pod was killed (restarted) by its corresponding Kubernetes liveness checks."
