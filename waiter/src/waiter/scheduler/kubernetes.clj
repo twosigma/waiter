@@ -72,23 +72,29 @@
                       (subs 0 prefix-max-length))]
     (str app-prefix' suffix)))
 
-(pc/defnk replicaset->Service
+(defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
-  [spec
-   [:metadata name namespace [:annotations waiter-service-id]]
-   [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
-  (let [requested (get spec :replicas 0)
-        staged (- (+ availableReplicas unavailableReplicas) replicas)]
-    (scheduler/make-Service
-      {:id waiter-service-id
-       :instances requested
-       :k8s/app-name name
-       :k8s/namespace namespace
-       :task-count replicas
-       :task-stats {:healthy readyReplicas
-                    :running replicas
-                    :staged staged
-                    :unhealthy (- replicas readyReplicas staged)}})))
+  [replicaset-json]
+  (try
+    (pc/letk
+      [[spec
+        [:metadata name namespace [:annotations waiter-service-id]]
+        [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
+       replicaset-json
+       requested (get spec :replicas 0)
+       staged (- (+ availableReplicas unavailableReplicas) replicas)]
+        (scheduler/make-Service
+          {:id waiter-service-id
+           :instances requested
+           :k8s/app-name name
+           :k8s/namespace namespace
+           :task-count replicas
+           :task-stats {:healthy readyReplicas
+                        :running replicas
+                        :staged staged
+                        :unhealthy (- replicas readyReplicas staged)}}))
+    (catch Throwable t
+      (log/error t "error converting ReplicaSet to Waiter Service"))))
 
 (defn- pod->instance-id
   "Construct the Waiter instance-id for the given Kubernetes pod incarnation.
@@ -193,7 +199,8 @@
             orchestrator-name)
        (api-request http-client)
        :items
-       (mapv replicaset->Service)))
+       (map replicaset->Service)
+       (filterv some?)))
 
 (defn- get-replicaset-pods
   "Get all Kubernetes pods associated with the given Waiter Service's corresponding ReplicaSet."

@@ -375,6 +375,40 @@
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-6789" :instances 3 :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
+         {:api-server-response
+          {:kind "ReplicaSetList"
+           :apiVersion "extensions/v1beta1"
+           :items [{:metadata {:name "test-app-abcd"
+                               :namespace "myself"
+                               :labels {:app "test-app-abcd"
+                                        :managed-by "waiter"}
+                               :annotations {:waiter-service-id "test-app-abcd"}}
+                    :spec {:replicas 2
+                           :selector {:matchLabels {:app "test-app-abcd"
+                                                    :managed-by "waiter"}}}
+                    :status {:replicas 2
+                             :readyReplicas 2
+                             :availableReplicas 2}}
+                   {:mismatched-replicaset "should be ignored"}
+                   {:metadata {:name "test-app-wxyz"
+                               :namespace "myself"
+                               :labels {:app "test-app-wxyz"
+                                        :managed-by "waiter"}
+                               :annotations {:waiter-service-id "test-app-wxyz"}}
+                    :spec {:replicas 3
+                           :selector {:matchLabels {:app "test-app-wxyz"
+                                                    :managed-by "waiter"}}}
+                    :status {:replicas 3
+                             :readyReplicas 1
+                             :availableReplicas 2
+                             :unavailableReplicas 1}}]}
+          :expected-result
+          [(scheduler/make-Service {:id "test-app-abcd"
+                                    :instances 2
+                                    :task-count 2
+                                    :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
+           (scheduler/make-Service {:id "test-app-wxyz" :instances 3 :task-count 3
+                                    :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
 
          {:api-server-response
           {:kind "ReplicaSetList"
