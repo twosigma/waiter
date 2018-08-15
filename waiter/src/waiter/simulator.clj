@@ -17,7 +17,7 @@
   (:require [clojure.data.json :as json]
             [clojure.walk :as walk]
             [waiter.scaling :as scaling]
-            [waiter.util.utils :refer [non-neg?]])
+            [waiter.util.utils :as utils :refer [non-neg?]])
   (:import (java.util Random)))
 
 (let [random (Random.)]
@@ -264,5 +264,5 @@
     "/sim" (case request-method
              :get {:body (slurp (clojure.java.io/resource "web/sim.html"))}
              :post {:body (let [{:strs [client-curve config]} (json/read-str (slurp body))]
-                            (json/write-str (simulate (walk/stringify-keys config) {} (eval (read-string client-curve)))))
+                            (utils/clj->json (simulate (walk/stringify-keys config) {} (eval (read-string client-curve)))))
                     :headers {"Content-Type" "application/json"}})))

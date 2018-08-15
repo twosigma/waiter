@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.request-log
-  (:require [clojure.data.json :as json]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [waiter.metrics :as metrics]
@@ -26,7 +25,7 @@
 (defn log
   "Log log-data as JSON"
   [log-data]
-  (log/log "RequestLog" :info nil (json/write-str log-data :escape-slash false)))
+  (log/log "RequestLog" :info nil (utils/clj->json log-data)))
 
 (defn request->context
   "Convert a request into a context suitable for logging."

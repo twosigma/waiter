@@ -16,7 +16,6 @@
 (ns waiter.auth.kerberos
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
-            [clojure.data.json :as json]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.tools.logging :as log]

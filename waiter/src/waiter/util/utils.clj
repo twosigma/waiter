@@ -146,7 +146,7 @@
     (symbol? v) (str/join "/" ((juxt namespace name) v))
     :else v))
 
-(defn map->json
+(defn clj->json
   "Convert the input Clojure data structure into a json string."
   [data-map]
   (json/write-str
@@ -155,10 +155,10 @@
     :key-fn stringify-keys
     :value-fn stringify-elements))
 
-(defn map->json-response
+(defn clj->json-response
   "Convert the input data into a json response."
   [data-map & {:keys [headers status] :or {headers {} status 200}}]
-  {:body (map->json data-map)
+  {:body (clj->json data-map)
    :status status
    :headers (assoc headers "content-type" "application/json")})
 

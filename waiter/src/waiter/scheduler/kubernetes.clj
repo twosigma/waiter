@@ -241,7 +241,7 @@
   "Make a JSON-patch request on a given Kubernetes object."
   [k8s-object-uri http-client ops]
   (api-request http-client k8s-object-uri
-               :body (utils/map->json ops)
+               :body (utils/clj->json ops)
                :content-type "application/json-patch+json"
                :request-method :patch))
 
@@ -334,9 +334,9 @@
                      pod-name)
         base-body {:kind "DeleteOptions" :apiVersion "v1"}
         ;; we use a 5-minute (300s) grace period on pods to enable manual victim selection on scale-down
-        term-json (-> base-body (assoc :gracePeriodSeconds 300) utils/map->json)
+        term-json (-> base-body (assoc :gracePeriodSeconds 300) utils/clj->json)
         ;; setting the grace period to 0 seconds results in an immediate SIGKILL to the pod
-        kill-json (-> base-body (assoc :gracePeriodSeconds 0) utils/map->json)
+        kill-json (-> base-body (assoc :gracePeriodSeconds 0) utils/clj->json)
         make-kill-response (fn [killed? message status]
                              {:instance-id id :killed? killed?
                               :message message :service-id service-id :status status})]
@@ -371,7 +371,7 @@
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/"
                          (service-description->namespace service-description) "/replicasets")
         response-json (api-request http-client request-url
-                                   :body (utils/map->json spec-json)
+                                   :body (utils/clj->json spec-json)
                                    :request-method :post)]
     (replicaset->Service response-json)))
 
@@ -380,7 +380,7 @@
    Owned Pods will be removed asynchronously by the Kubernetes garbage collector."
   [{:keys [api-server-url http-client] :as scheduler} {:keys [id] :as service}]
   (let [replicaset-url (build-replicaset-url scheduler service)
-        kill-json (utils/map->json
+        kill-json (utils/clj->json
                     {:kind "DeleteOptions" :apiVersion "v1"
                      :propagationPolicy "Background"})]
     (api-request http-client replicaset-url :request-method :delete :body kill-json)

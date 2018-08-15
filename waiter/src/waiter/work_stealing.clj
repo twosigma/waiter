@@ -255,7 +255,7 @@
                                                            :body (-> reservation-parameters
                                                                      (assoc :router-id router-id
                                                                             :service-id service-id)
-                                                                     (utils/map->json-response)
+                                                                     (utils/clj->json-response)
                                                                      :body)
                                                            :method :post)
                             (get target-router-id)

@@ -239,7 +239,7 @@
     (-> (make-inter-router-requests-fn
           dest-endpoint
           :acceptable-router? #(= dest-router-id %)
-          :body (utils/map->json {:instance instance :period-in-ms blacklist-period-ms :reason reason})
+          :body (utils/clj->json {:instance instance :period-in-ms blacklist-period-ms :reason reason})
           :method :post)
         (get dest-router-id))
     (catch Exception e
@@ -1335,7 +1335,7 @@
                                   (do
                                     (log/info "x-waiter-authentication is not supported as an on-the-fly header"
                                               {:service-description service-description, :token token})
-                                    (utils/map->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
+                                    (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
                                                               :status 400))
 
                                   ;; ensure service description formed comes entirely from the token by ensuring absence of on-the-fly headers
@@ -1343,7 +1343,7 @@
                                   (do
                                     (log/info "request cannot proceed as it is mixing an authentication disabled token with on-the-fly headers"
                                               {:service-description service-description, :token token})
-                                    (utils/map->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
+                                    (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
                                                               :status 400))
 
                                   authentication-disabled?

@@ -15,10 +15,10 @@
 ;;
 (ns waiter.util.http-utils-test
   (:require [clojure.core.async :as async]
-            [clojure.data.json :as json]
             [clojure.test :refer :all]
             [qbits.jet.client.http :as http]
-            [waiter.util.http-utils :refer :all])
+            [waiter.util.http-utils :refer :all]
+            [waiter.util.utils :as utils])
   (:import clojure.lang.ExceptionInfo))
 
 (deftest test-http-request
@@ -30,7 +30,7 @@
       (with-redefs [http/request (constantly
                                    (let [response-chan (async/promise-chan)
                                          body-chan (async/promise-chan)]
-                                     (async/>!! body-chan (json/write-str expected-body))
+                                     (async/>!! body-chan (utils/clj->json expected-body))
                                      (async/>!! response-chan {:body body-chan, :status 200})
                                      response-chan))]
         (is (= expected-body (http-request http-client "some-url"))))))
@@ -53,7 +53,7 @@
       (with-redefs [http/request (constantly
                                    (let [response-chan (async/promise-chan)
                                          body-chan (async/promise-chan)]
-                                     (async/>!! body-chan (json/write-str expected-body))
+                                     (async/>!! body-chan (utils/clj->json expected-body))
                                      (async/>!! response-chan {:body body-chan, :status 400})
                                      response-chan))]
         (is (= expected-body (http-request http-client "some-url" :throw-exceptions false))))))
@@ -63,7 +63,7 @@
       (with-redefs [http/request (constantly
                                    (let [response-chan (async/promise-chan)
                                          body-chan (async/promise-chan)]
-                                     (async/>!! body-chan (json/write-str {}))
+                                     (async/>!! body-chan (utils/clj->json {}))
                                      (async/>!! response-chan {:body body-chan, :status 400})
                                      response-chan))]
         (is (thrown? ExceptionInfo (http-request http-client "some-url")))))))

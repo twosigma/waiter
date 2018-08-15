@@ -294,7 +294,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description-1))
+                 :body (StringBufferInputStream. (utils/clj->json service-description-1))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -332,7 +332,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (-> service-description-1 (assoc "owner" "tu2" "token" token) json/write-str StringBufferInputStream.)
+                 :body (-> service-description-1 (assoc "owner" "tu2" "token" token) utils/clj->json StringBufferInputStream.)
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -362,7 +362,7 @@
           (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
             (is (str/includes? body (str (get service-description-1 key)))))
           (doseq [key json-keys]
-            (is (str/includes? body (json/write-str (get service-description-1 key)))))))
+            (is (str/includes? body (utils/clj->json (get service-description-1 key)))))))
 
       (testing "get:new-service-description:token query parameter"
         (let [{:keys [body headers status]}
@@ -378,7 +378,7 @@
           (doseq [key (keys (apply dissoc (select-keys service-description-1 sd/service-parameter-keys) json-keys))]
             (is (str/includes? body (str (get service-description-1 key)))))
           (doseq [key json-keys]
-            (is (str/includes? body (json/write-str (get service-description-1 key)))))))
+            (is (str/includes? body (utils/clj->json (get service-description-1 key)))))))
 
       (testing "post:update-service-description:with-changes"
         (let [existing-service-description (kv/fetch kv-store token :refresh true)
@@ -386,7 +386,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description-2))
+                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -413,7 +413,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str (assoc existing-service-parameter-template "token" token)))
+                 :body (StringBufferInputStream. (utils/clj->json (assoc existing-service-parameter-template "token" token)))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -439,7 +439,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str (assoc existing-service-parameter-template "owner" auth-user "token" token)))
+                 :body (StringBufferInputStream. (utils/clj->json (assoc existing-service-parameter-template "owner" auth-user "token" token)))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -464,7 +464,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str (assoc service-description-2 "owner" "tu2")))
+                 :body (StringBufferInputStream. (utils/clj->json (assoc service-description-2 "owner" "tu2")))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -488,7 +488,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description-2))
+                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -589,7 +589,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -611,7 +611,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -634,7 +634,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -661,7 +661,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -693,7 +693,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description-2))
+                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -725,7 +725,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description-2))
+                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
           (is (= 200 status))
@@ -745,7 +745,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 200 status))
@@ -770,7 +770,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 200 status))
@@ -798,7 +798,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
@@ -826,7 +826,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
@@ -855,7 +855,7 @@
                   (run-handle-token-request
                     kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                     {:authorization/user test-user
-                     :body (StringBufferInputStream. (json/write-str new-service-description))
+                     :body (StringBufferInputStream. (utils/clj->json new-service-description))
                      :headers {"x-waiter-token" token}
                      :request-method :post})]
               (is (= 200 status))
@@ -892,7 +892,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= 400 status))
@@ -907,7 +907,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= 403 status))
@@ -922,7 +922,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 400 status))
@@ -938,7 +938,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 403 status))
@@ -954,7 +954,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 403 status))
@@ -969,7 +969,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 403 status))
@@ -989,7 +989,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post :authorization/user test-user :headers {"x-waiter-token" token}
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :query-params {"update-mode" "foobar"}})]
           (is (= 400 status))
           (is (str/includes? body "Invalid update-mode"))
@@ -1011,7 +1011,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (json/write-str service-description'))
+                 :body (StringBufferInputStream. (utils/clj->json service-description'))
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
@@ -1033,7 +1033,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"if-match" (str (clock-millis))
                            "x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
@@ -1055,7 +1055,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"if-match" (str (clock-millis))
                            "x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
@@ -1074,7 +1074,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= 400 status))
@@ -1090,7 +1090,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
           (is (= 400 status))
           (is (str/includes? body "Token must match pattern"))))
@@ -1105,7 +1105,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
           (is (= 400 status))
           (is (str/includes? body "Unsupported key(s) in token"))))
@@ -1120,7 +1120,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
           (is (= 400 status))
           (is (str/includes? body "Cannot modify last-update-time token metadata"))))
@@ -1135,7 +1135,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
           (is (= 400 status))
           (is (str/includes? body "Cannot modify root token metadata"))))
@@ -1151,7 +1151,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
                 {:request-method :post :authorization/user "tu1"
-                 :body (StringBufferInputStream. (json/write-str service-description))})]
+                 :body (StringBufferInputStream. (utils/clj->json service-description))})]
           (is (= 400 status))
           (is (str/includes? body "Cannot modify previous token metadata"))))
 
@@ -1164,7 +1164,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1182,7 +1182,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1199,7 +1199,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1215,7 +1215,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1231,7 +1231,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1247,7 +1247,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1263,7 +1263,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1280,7 +1280,7 @@
                     (run-handle-token-request
                       kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                       {:authorization/user auth-user
-                       :body (StringBufferInputStream. (json/write-str service-description))
+                       :body (StringBufferInputStream. (utils/clj->json service-description))
                        :headers {"accept" "application/json"}
                        :request-method :post})
                     {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1361,7 +1361,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (json/write-str service-description))
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]

@@ -174,7 +174,7 @@
         (if instance-killed?
           (cid/cinfo correlation-id "killed instance" instance-id)
           (cid/cinfo correlation-id "unable to kill instance" kill-response))
-        (-> (utils/map->json-response {:kill-response kill-response
+        (-> (utils/clj->json-response {:kill-response kill-response
                                        :service-id service-id
                                        :source-router-id src-router-id
                                        :success instance-killed?}

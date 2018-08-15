@@ -80,7 +80,7 @@
       (when (str/blank? request-id)
         (throw (ex-info "No request-id specified" {:src-router-id src-router-id, :status 400, :uri uri})))
       (let [succeeded (async-request-terminate-fn request-id)]
-        (utils/map->json-response {:request-id request-id, :success succeeded})))
+        (utils/clj->json-response {:request-id request-id, :success succeeded})))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -168,10 +168,10 @@
                                             (when started-at
                                               (du/str-to-date started-at))))
                       scheduler/process-instance-killed!))
-                (utils/map->json-response {:instance-id instance-id
+                (utils/clj->json-response {:instance-id instance-id
                                            :blacklist-period period-in-ms}))
               (let [response-status (if (= :in-use response-code) 423 503)]
-                (utils/map->json-response {:message "Unable to blacklist instance."
+                (utils/clj->json-response {:message "Unable to blacklist instance."
                                            :instance-id instance-id
                                            :reason response-code}
                                           :status response-status))))))
@@ -194,7 +194,7 @@
                             :priority true)
             blacklisted-instances (vec (keys (:instance-id->blacklist-expiry-time current-state)))]
         (log/info service-id "has" (count blacklisted-instances) "blacklisted instance(s).")
-        (utils/map->json-response {:blacklisted-instances blacklisted-instances}))
+        (utils/clj->json-response {:blacklisted-instances blacklisted-instances}))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
@@ -288,7 +288,7 @@
                             :no-such-service-exists 404
                             400)
           response-body-map (merge {:success (= 200 response-status), :service-id service-id} delete-result)]
-      (utils/map->json-response response-body-map :status response-status))))
+      (utils/clj->json-response response-body-map :status response-status))))
 
 (defn generate-log-url
   "Generates the log url for an instance"
@@ -319,7 +319,7 @@
         router->metrics (try
                           (let [router->response (-> (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
                                                      (assoc router-id (-> (metrics/get-service-metrics service-id)
-                                                                          (utils/map->json-response))))
+                                                                          (utils/clj->json-response))))
                                 response->service-metrics (fn response->metrics [{:keys [body]}]
                                                             (try
                                                               (let [metrics (json/read-str (str body))]
@@ -410,7 +410,7 @@
           (let [success (contains? #{:suspend :resume} mode)]
             ; refresh state on routers
             (trigger-service-refresh make-inter-router-requests-fn service-id)
-            (utils/map->json-response {:action mode-str
+            (utils/clj->json-response {:action mode-str
                                        :service-id service-id
                                        :success success})))
         (throw (ex-info (str auth-user " not allowed to modify " service-id)
@@ -436,7 +436,7 @@
           (do
             (sd/clear-service-description-overrides kv-store service-id auth-user)
             (trigger-service-refresh make-inter-router-requests-fn service-id)
-            (utils/map->json-response {:service-id service-id, :success true}))
+            (utils/clj->json-response {:service-id service-id, :success true}))
           (throw (ex-info (str auth-user " not allowed to override " service-id)
                           {:auth-user auth-user, :service-id service-id, :status 403}))))
 
@@ -444,7 +444,7 @@
       (if (allowed-to-manage-service? service-id auth-user)
         (-> (sd/service-id->overrides kv-store service-id :refresh true)
             (assoc :service-id service-id)
-            utils/map->json-response)
+            utils/clj->json-response)
         (throw (ex-info (str auth-user " not allowed view override information of " service-id)
                         {:auth-user auth-user, :service-id service-id, :status 403})))
 
@@ -456,7 +456,7 @@
             (let [service-description-overrides (-> request ru/json-request :body)]
               (sd/store-service-description-overrides kv-store service-id auth-user service-description-overrides))
             (trigger-service-refresh make-inter-router-requests-fn service-id)
-            (utils/map->json-response {:service-id service-id, :success true}))
+            (utils/clj->json-response {:service-id service-id, :success true}))
           (throw (ex-info (str auth-user " not allowed to override " service-id)
                           {:auth-user auth-user, :service-id service-id, :status 403}))))
 
@@ -480,7 +480,7 @@
                                                                            :id instance-id
                                                                            :service-id service-id})))))
                                  (scheduler/retrieve-directory-content scheduler service-id instance-id host directory))]
-      (utils/map->json-response (vec directory-content)))
+      (utils/clj->json-response (vec directory-content)))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -504,7 +504,7 @@
                               :service-id service-id}]
             (service/offer-instance! instance-rpc-chan service-id offer-params)
             (let [response-status (async/<! response-chan)]
-              (utils/map->json-response (assoc (select-keys offer-params [:cid :request-id :router-id :service-id])
+              (utils/clj->json-response (assoc (select-keys offer-params [:cid :request-id :router-id :service-id])
                                           :response-status response-status))))))
       (catch Exception ex
         (utils/exception->response ex request)))))
@@ -779,7 +779,7 @@
     (try
       (case request-method
         :get {:body (case content-type
-                      "application/json" (json/write-str welcome-info)
+                      "application/json" (utils/clj->json welcome-info)
                       "text/html" (render-welcome-html welcome-info)
                       "text/plain" (render-welcome-text welcome-info))
               :headers {"content-type" content-type}}

@@ -26,7 +26,8 @@
             [waiter.interstitial :as interstitial]
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.date-utils :as du])
+            [waiter.util.date-utils :as du]
+            [waiter.util.utils :as utils])
   (:import (java.io ByteArrayInputStream)
            (java.net URLEncoder)))
 
@@ -498,10 +499,10 @@
           override-endpoint (str "/apps/" service-id "/override")]
       (with-service-cleanup
         service-id
-        (-> (make-request waiter-url override-endpoint :body (json/write-str overrides) :method :post)
+        (-> (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :post)
             (assert-response-status 200))
         (let [{:keys [body] :as response}
-              (make-request waiter-url override-endpoint :body (json/write-str overrides) :method :get)]
+              (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :get)]
           (assert-response-status response 200)
           (let [response-data (-> body str json/read-str walk/keywordize-keys)]
             (is (= (retrieve-username) (:last-updated-by response-data)))

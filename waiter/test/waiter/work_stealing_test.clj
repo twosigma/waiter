@@ -427,7 +427,7 @@
                                                   (is (= :post method))
                                                   (let [response-chan (async/promise-chan)
                                                         body-chan (async/promise-chan)]
-                                                    (async/>!! body-chan (json/write-str response-map))
+                                                    (async/>!! body-chan (utils/clj->json response-map))
                                                     (async/>!! response-chan {:body body-chan, :status status})
                                                     {target-router-id response-chan})))]
     (with-redefs [work-stealing-balancer
