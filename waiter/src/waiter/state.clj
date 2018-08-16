@@ -1184,29 +1184,32 @@
    and the existence of other routers. Acts as the central access point
    for modifying this data for the router."
   [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config]
-  (let [state-chan (async/chan)
+  (let [initial-state {:all-available-service-ids #{}
+                       :service-id->healthy-instances {}
+                       :service-id->unhealthy-instances {}
+                       :service-id->my-instance->slots {} ; updated in update-router-state
+                       :service-id->expired-instances {}
+                       :service-id->starting-instances {}
+                       :service-id->failed-instances {}
+                       :service-id->instance-counts {}
+                       :service-id->deployment-error {}
+                       :service-id->instability-issue {}
+                       :iteration 0
+                       :routers []
+                       :time (t/now)}
+        state-atom (atom initial-state)
+        state-chan (async/chan)
         router-state-push-chan (au/latest-chan)
         query-chan (async/chan)]
     {:state-chan state-chan
      :router-state-push-mult (async/mult router-state-push-chan)
      :query-chan query-chan
+     :query-fn (fn router-state-maintainer-query-fn [] @state-atom)
      :go-chan
      (async/go
        (try
-         (loop [{:keys [iteration routers] :as current-state}
-                {:all-available-service-ids #{}
-                 :service-id->healthy-instances {}
-                 :service-id->unhealthy-instances {}
-                 :service-id->my-instance->slots {} ; updated in update-router-state
-                 :service-id->expired-instances {}
-                 :service-id->starting-instances {}
-                 :service-id->failed-instances {}
-                 :service-id->instance-counts {}
-                 :service-id->deployment-error {}
-                 :service-id->instability-issue {}
-                 :iteration 0
-                 :routers []
-                 :time (t/now)}]
+         (loop [{:keys [iteration routers] :as current-state} @state-atom]
+           (reset! state-atom current-state)
            (let [next-state
                  (async/alt!
                    exit-chan
