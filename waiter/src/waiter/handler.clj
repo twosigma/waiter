@@ -604,7 +604,7 @@
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."
-  [router-id instance-rpc-chan local-usage-agent service-id query-chans request]
+  [router-id instance-rpc-chan local-usage-agent service-id query-chans-or-fns request]
   (async/go
     (try
       (if (str/blank? service-id)
@@ -617,24 +617,31 @@
               work-stealing-state-chan
               (service/query-maintainer-channel-map-with-timeout! instance-rpc-chan service-id timeout-ms :query-work-stealing)
               local-usage-state (get @local-usage-agent service-id)
+              query-params {:cid (cid/get-correlation-id) :service-id service-id}
               [query-chans initial-result]
-              (loop [[[entry-key entry-value] & remaining] [[:responder-state responder-state-chan]
-                                                            [:work-stealing-state work-stealing-state-chan]]
-                     query-chans query-chans
+              (loop [[[entry-key entry-value] & remaining]
+                     (concat query-chans-or-fns
+                       [[:responder-state responder-state-chan] [:work-stealing-state work-stealing-state-chan]])
+                     query-chans {}
                      initial-result {:local-usage local-usage-state}]
                 (if entry-key
-                  (if (map? entry-value)
-                    (recur remaining query-chans (assoc initial-result entry-key entry-value))
-                    (recur remaining (assoc query-chans entry-key entry-value) initial-result))
+                  (cond
+                    (map? entry-value) (recur remaining
+                                              query-chans
+                                              (assoc initial-result entry-key entry-value))
+                    (fn? entry-value) (recur remaining
+                                             query-chans
+                                             (assoc initial-result entry-key (entry-value query-params)))
+                    :else (recur remaining
+                                 (assoc query-chans entry-key entry-value)
+                                 initial-result))
                   [query-chans initial-result]))
               query-chans-state (loop [[[key query-response-or-chan] & remaining] (seq query-chans)
                                        result initial-result]
                                   (if (and key query-response-or-chan)
                                     (let [state (let [response-chan (async/promise-chan)]
                                                   (async/>! query-response-or-chan
-                                                            {:cid (cid/get-correlation-id)
-                                                             :response-chan response-chan
-                                                             :service-id service-id})
+                                                            (assoc query-params :response-chan response-chan))
                                                   (log/info (str "waiting on response from " key " channel"))
                                                   (async/alt!
                                                     response-chan ([state] state)
