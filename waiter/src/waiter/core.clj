@@ -1126,11 +1126,11 @@
                                      [:routines prepend-waiter-url router-metrics-helpers service-id->service-description-fn]
                                      [:state entitlement-manager]
                                      wrap-secure-request-fn]
-                              (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
+                              (let [query-state-fn (get-in router-state-maintainer [:maintainer-chans :query-state-fn])
                                     {:keys [service-id->metrics-fn]} router-metrics-helpers]
                                 (wrap-secure-request-fn
                                   (fn service-list-handler-fn [request]
-                                    (handler/list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                    (handler/list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                                                    service-id->service-description-fn service-id->metrics-fn
                                                                    request)))))
    :service-override-handler-fn (pc/fnk [[:curator kv-store]
@@ -1173,10 +1173,10 @@
    :state-all-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                   [:state router-id]
                                   wrap-secure-request-fn]
-                           (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
+                           (let [query-state-fn (get-in router-state-maintainer [:maintainer-chans :query-state-fn])]
                              (wrap-secure-request-fn
                                (fn state-all-handler-fn [request]
-                                 (handler/get-router-state router-id state-chan request)))))
+                                 (handler/get-router-state router-id query-state-fn request)))))
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]
@@ -1218,10 +1218,10 @@
    :state-maintainer-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                          [:state router-id]
                                          wrap-secure-request-fn]
-                                  (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
+                                  (let [query-state-fn (get-in router-state-maintainer [:maintainer-chans :query-state-fn])]
                                     (wrap-secure-request-fn
                                       (fn maintainer-state-handler-fn [request]
-                                        (handler/get-chan-latest-state-handler router-id state-chan request)))))
+                                        (handler/get-chan-latest-state-handler router-id query-state-fn request)))))
    :state-router-metrics-handler-fn (pc/fnk [[:routines router-metrics-helpers]
                                              [:state router-id]
                                              wrap-secure-request-fn]

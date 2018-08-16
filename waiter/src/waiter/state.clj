@@ -1180,9 +1180,9 @@
 
 (defn start-router-state-maintainer
   "Start the instance state maintainer.
-   Maintains the state of the router as well as the state of marathon
-   and the existence of other routers. Acts as the central access point
-   for modifying this data for the router."
+   Maintains the state of the router as well as the state of marathon and the existence of other routers.
+   Acts as the central access point for modifying this data for the router.
+   Exposes the state of the router via a `query-state-fn` no-args function that is returned."
   [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config]
   (let [initial-state {:all-available-service-ids #{}
                        :service-id->healthy-instances {}
@@ -1198,11 +1198,9 @@
                        :routers []
                        :time (t/now)}
         state-atom (atom initial-state)
-        state-chan (async/chan)
         router-state-push-chan (au/latest-chan)
         query-chan (async/chan)]
-    {:state-chan state-chan
-     :router-state-push-mult (async/mult router-state-push-chan)
+    {:router-state-push-mult (async/mult router-state-push-chan)
      :query-chan query-chan
      :query-state-fn (fn router-state-maintainer-query-state-fn []
                        (assoc @state-atom :router-id router-id))
@@ -1345,10 +1343,7 @@
                                  (update-router-state router-id current-state candidate-state service-id->service-description-fn))
                                current-state)]
                          (async/put! router-state-push-chan new-state)
-                         new-state)))
-
-                   [[state-chan current-state]]
-                   (assoc current-state :router-id router-id))]
+                         new-state))))]
              (if next-state
                (recur next-state)
                (log/info "Stopping router-state-maintainer as next state is nil"))))

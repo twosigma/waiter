@@ -409,7 +409,8 @@
 (deftest test-list-services-handler
   (let [test-user "test-user"
         test-user-services ["service1" "service2" "service3"]
-        state-chan (async/chan 1)
+        state-atom (atom nil)
+        query-state-fn (fn [] @state-atom)
         request {:authorization/user test-user}
         instance-counts-present (fn [body]
                                   (let [parsed-body (-> body (str) (json/read-str) (walk/keywordize-keys))]
@@ -431,15 +432,15 @@
               {})]
 
       (testing "list-services-handler:success-regular-user"
-        (async/>!! state-chan {:service-id->healthy-instances {"service1" []
-                                                               "service2" []
-                                                               "service3" []
-                                                               "service4" []
-                                                               "service6" []}
-                               :service-id->unhealthy-instances {"service3" []
-                                                                 "service5" []}})
+        (reset! state-atom {:service-id->healthy-instances {"service1" []
+                                                            "service2" []
+                                                            "service3" []
+                                                            "service4" []
+                                                            "service6" []}
+                            :service-id->unhealthy-instances {"service3" []
+                                                              "service5" []}})
         (let [{:keys [body headers status]}
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url
+              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
@@ -449,15 +450,15 @@
 
       (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user")]
-          (async/>!! state-chan {:service-id->healthy-instances {"service1" []
-                                                                 "service2" []
-                                                                 "service3" []
-                                                                 "service4" []
-                                                                 "service6" []}
-                                 :service-id->unhealthy-instances {"service3" []
-                                                                   "service5" []}})
+          (reset! state-atom {:service-id->healthy-instances {"service1" []
+                                                              "service2" []
+                                                              "service3" []
+                                                              "service4" []
+                                                              "service6" []}
+                              :service-id->unhealthy-instances {"service3" []
+                                                                "service5" []}})
           (let [{:keys [body headers status]}
-                (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "content-type")))
@@ -471,16 +472,16 @@
                                       ; use (constantly true) for authorized? to verify that filter still applies
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
-          (async/>!! state-chan {:service-id->healthy-instances {"service1" []
-                                                                 "service2" []
-                                                                 "service3" []
-                                                                 "service4" []
-                                                                 "service6" []}
-                                 :service-id->unhealthy-instances {"service3" []
-                                                                   "service5" []}})
+          (reset! state-atom {:service-id->healthy-instances {"service1" []
+                                                              "service2" []
+                                                              "service3" []
+                                                              "service4" []
+                                                              "service6" []}
+                              :service-id->unhealthy-instances {"service3" []
+                                                                "service5" []}})
           (let [{:keys [body headers status]}
 
-                (list-services-handler entitlement-manager state-chan prepend-waiter-url
+                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn request)]
             (is (= 200 status))
             (is (= "application/json" (get headers "content-type")))
@@ -489,12 +490,12 @@
             (is (instance-counts-present body)))))
 
       (testing "list-services-handler:failure"
-        (async/>!! state-chan {:service-id->healthy-instances {"service1" []}})
+        (reset! state-atom {:service-id->healthy-instances {"service1" []}})
         (let [request {:authorization/user test-user}
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
               list-services-handler (core/wrap-error-handling
-                                      #(list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                      #(list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                                               service-id->service-description-fn service-id->metrics-fn %))
               {:keys [body headers status]}
               (list-services-handler request)]
@@ -503,13 +504,13 @@
           (is (str/includes? (str body) exception-message))))
 
       (testing "list-services-handler:success-super-user-sees-all-apps"
-        (async/>!! state-chan {:service-id->healthy-instances {"service1" []
-                                                               "service2" []
-                                                               "service3" []
-                                                               "service4" []
-                                                               "service6" []}
-                               :service-id->unhealthy-instances {"service3" []
-                                                                 "service5" []}})
+        (reset! state-atom {:service-id->healthy-instances {"service1" []
+                                                            "service2" []
+                                                            "service3" []
+                                                            "service4" []
+                                                            "service6" []}
+                            :service-id->unhealthy-instances {"service3" []
+                                                              "service5" []}})
         (let [entitlement-manager (reify authz/EntitlementManager
                                     (authorized? [_ user action {:keys [service-id]}]
                                       (and (= user test-user)
@@ -517,7 +518,7 @@
                                            (some #(= (str "service" %) service-id) (range 1 7)))))
               {:keys [body headers status]}
               ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager state-chan prepend-waiter-url
+              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn request)]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
@@ -660,38 +661,29 @@
       (is (= 500 status)))))
 
 (deftest test-get-router-state
-  (let [test-fn (fn [router-id state-chan request]
-                  (let [handler (wrap-async-handler-json-response get-router-state)]
-                    (-> (handler router-id state-chan request)
-                        async/<!!)))
-        router-id "test-router-id"
-        state-chan (au/latest-chan)
-        test-complete (atom false)]
+  (let [state-atom (atom nil)
+        query-state-fn (fn [] @state-atom)
+        test-fn (fn [router-id query-state-fn request]
+                  (let [handler (wrap-handler-json-response get-router-state)]
+                    (handler router-id query-state-fn request)))
+        router-id "test-router-id"]
 
-    (async/go-loop []
-      (async/>! state-chan {:state-data {}})
-      (if @test-complete
-        (async/close! state-chan)
-        (recur)))
+    (reset! state-atom {:state-data {}})
 
-    (try
-      (testing "Getting router state"
-        (testing "should handle exceptions gracefully"
-          (let [bad-request {:scheme 1} ;; integer scheme will throw error
-                {:keys [status body]} (test-fn router-id state-chan bad-request)]
-            (is (str/includes? (str body) "Internal error"))
-            (is (= 500 status))))
+    (testing "Getting router state"
+      (testing "should handle exceptions gracefully"
+        (let [bad-request {:scheme 1} ;; integer scheme will throw error
+              {:keys [status body]} (test-fn router-id query-state-fn bad-request)]
+          (is (str/includes? (str body) "Internal error"))
+          (is (= 500 status))))
 
-        (testing "display router state"
-          (let [{:keys [status body]} (test-fn router-id state-chan {})]
-            (is (every? #(str/includes? (str body) %1)
-                        ["fallback" "interstitial" "kv-store" "leader" "local-usage" "maintainer" "router-metrics"
-                         "scheduler" "statsd"])
-                (str "Body did not include necessary JSON keys:\n" body))
-            (is (= 200 status)))))
-
-      (finally
-        (reset! test-complete true)))))
+      (testing "display router state"
+        (let [{:keys [status body]} (test-fn router-id query-state-fn {})]
+          (is (every? #(str/includes? (str body) %1)
+                      ["fallback" "interstitial" "kv-store" "leader" "local-usage" "maintainer" "router-metrics"
+                       "scheduler" "statsd"])
+              (str "Body did not include necessary JSON keys:\n" body))
+          (is (= 200 status)))))))
 
 (deftest test-get-kv-store-state
   (let [router-id "test-router-id"
@@ -744,12 +736,13 @@
 
 (deftest test-get-chan-latest-state-handler
   (let [router-id "test-router-id"
-        test-fn (wrap-async-handler-json-response get-chan-latest-state-handler)]
+        test-fn (wrap-handler-json-response get-chan-latest-state-handler)]
     (testing "successful response"
-      (let [state-chan (async/promise-chan)
+      (let [state-atom (atom nil)
+            query-state-fn (fn [] @state-atom)
             state {"foo" "bar"}
-            _ (async/>!! state-chan state)
-            {:keys [body status]} (async/<!! (test-fn router-id state-chan {}))]
+            _ (reset! state-atom state)
+            {:keys [body status]} (test-fn router-id query-state-fn {})]
         (is (= 200 status))
         (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
 
