@@ -446,7 +446,16 @@
    Acquires state of services and passes to scale-services."
   [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-service-fn
    service-id->service-description-fn state-mult]
-  (let [exit-chan (async/chan)
+  (let [state-atom (atom (merge {:iter-counter 1
+                                 :global-state {}
+                                 :previous-cycle-start-time nil
+                                 :service-id->scale-state {}
+                                 :service-id->router-state {}
+                                 :service-id->scheduler-state {}
+                                 :timeout-chan (async/timeout timeout-interval-ms)
+                                 :continue-looping true}
+                                initial-state))
+        exit-chan (async/chan)
         query-chan (async/chan 10)
         state-chan (au/latest-chan)
         apply-scaling-fn (fn apply-scaling-fn [service-id scaling-data]
@@ -457,15 +466,8 @@
         (try
           (loop [{:keys [iter-counter global-state previous-cycle-start-time service-id->scale-state
                          service-id->router-state timeout-chan service-id->scheduler-state] :as current-state}
-                 (merge {:iter-counter 1
-                         :global-state {}
-                         :previous-cycle-start-time nil
-                         :service-id->scale-state {}
-                         :service-id->router-state {}
-                         :service-id->scheduler-state {}
-                         :timeout-chan (async/timeout timeout-interval-ms)
-                         :continue-looping true}
-                        initial-state)]
+                 @state-atom]
+            (reset! state-atom current-state)
             (let [correlation-id (str prefix-cid "-" iter-counter)
                   new-state
                   (timers/start-stop-time!
@@ -556,4 +558,5 @@
             (log/error e "fatal error in autoscaler")
             (System/exit 1)))))
     {:exit exit-chan
-     :query query-chan}))
+     :query query-chan
+     :query-state-fn (fn autoscaler-query-state-fn [] @state-atom)}))
