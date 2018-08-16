@@ -1007,12 +1007,13 @@
                      :transient-metrics-gc-state (:query gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
-                    scheduler-maintainer]
+                    router-state-maintainer]
              (when (not= statsd :disabled)
                (statsd/setup statsd)
-               (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
-                     exit-chan (async/chan)]
-                 (statsd/start-scheduler-metrics-publisher scheduler-state-chan exit-chan service-id->service-description-fn))))})
+               (let [{:keys [sync-instances-interval-ms]} statsd
+                     {{:keys [query-state-fn]} :maintainer} router-state-maintainer]
+                 (statsd/start-service-instance-metrics-publisher
+                   service-id->service-description-fn query-state-fn sync-instances-interval-ms))))})
 
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [service-id-handler-fn]
@@ -1175,7 +1176,7 @@
    :state-all-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                   [:state router-id]
                                   wrap-secure-request-fn]
-                           (let [query-state-fn (get-in router-state-maintainer [:maintainer :query-state-fn])]
+                           (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                              (wrap-secure-request-fn
                                (fn state-all-handler-fn [request]
                                  (handler/get-router-state router-id query-state-fn request)))))
@@ -1220,7 +1221,7 @@
    :state-maintainer-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                          [:state router-id]
                                          wrap-secure-request-fn]
-                                  (let [query-state-fn (get-in router-state-maintainer [:maintainer :query-state-fn])]
+                                  (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                                     (wrap-secure-request-fn
                                       (fn maintainer-state-handler-fn [request]
                                         (handler/get-chan-latest-state-handler router-id query-state-fn request)))))

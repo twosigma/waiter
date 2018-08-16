@@ -348,22 +348,22 @@
               {}
               @aggregation-agent))))
 
-(defn publish-instance-counts-by-metric-group
-  "Publishes a gauge for  the number healthy, unhealthy, and failed
-  instances corresponding to each metric group in the provided map"
-  [counts-by-metric-group]
+(defn publish-metric-group->counts
+  "Publishes a gauge for the number of cpus, mem, healthy instances, unhealthy instances, and
+   failed instances corresponding to each metric group in the provided map."
+  [metric-group->counts]
   (dorun (map (fn [[metric-group {:keys [healthy-instances unhealthy-instances failed-instances cpus mem]}]]
                 (gauge! metric-group "instances.healthy" healthy-instances)
                 (gauge! metric-group "instances.unhealthy" unhealthy-instances)
                 (gauge! metric-group "instances.failed" failed-instances)
                 (gauge! metric-group "cpus" cpus)
                 (gauge! metric-group "mem" mem))
-              counts-by-metric-group)))
+              metric-group->counts)))
 
-(defn process-update-service-instances-message
-  "Merges the current map of resources by metric group with data from a :update-service-instances scheduler message"
-  [counts-by-metric-group {:keys [service-id healthy-instances unhealthy-instances failed-instances] :as message-data}
-   service-id->service-description-fn]
+(defn process-service-instance-state
+  "Merges the current map of resources by metric group with service data from a router state update message."
+  [service-id->service-description-fn service-id healthy-instances unhealthy-instances failed-instances
+   metric-group->counts]
   (try
     (if-let [{:strs [metric-group cpus mem]} (service-id->service-description-fn service-id)]
       (let [healthy (count healthy-instances)
@@ -375,53 +375,51 @@
                     :failed-instances failed
                     :cpus (* active (or cpus 0))
                     :mem (* active (or mem 0))}]
-        (merge-with #(merge-with + %1 %2) counts-by-metric-group {metric-group counts}))
+        (merge-with #(merge-with + %1 %2) metric-group->counts {metric-group counts}))
       (do
-        (log/warn "No service description found for service id" service-id)
-        counts-by-metric-group))
+        (log/warn "no service description found for service id" service-id)
+        metric-group->counts))
     (catch Throwable e
-      (log/error e "Error processing update-service-instances message" message-data)
-      counts-by-metric-group)))
+      (log/error e "error processing service metrics for" service-id)
+      metric-group->counts)))
 
-(defn scheduler-messages->instance-counts-by-metric-group
-  "Converts messages from the scheduler to a map of metric-group -> [healthy unhealthy failed],
-  where each element in the array is the count of instances in that metric group with that status"
-  [messages service-id->service-description-fn]
-  (loop [[[message-type message-data] & remaining] messages
-         counts-by-metric-group {}]
-    (let [counts-by-metric-group'
-          (cond-> counts-by-metric-group
-                  (= message-type :update-service-instances)
-                  (process-update-service-instances-message message-data service-id->service-description-fn))]
-      (if (some? remaining)
-        (recur remaining counts-by-metric-group')
-        counts-by-metric-group'))))
+(defn router-state->metric-group->counts
+  "Converts messages from the router state update to a map of metric-group -> [healthy unhealthy failed],
+   where each element in the array is the count of instances in that metric group with that status."
+  [service-id->service-description-fn
+   {:keys [all-available-service-ids service-id->failed-instances service-id->healthy-instances service-id->unhealthy-instances]}]
+  (loop [[service-id & remaining-service-ids] (seq all-available-service-ids)
+         metric-group->counts {}]
+    (if-not service-id
+      metric-group->counts
+      (let [failed-instances (get service-id->failed-instances service-id)
+            healthy-instances (get service-id->healthy-instances service-id)
+            unhealthy-instances (get service-id->unhealthy-instances service-id)]
+        (recur remaining-service-ids
+               (process-service-instance-state
+                 service-id->service-description-fn service-id healthy-instances unhealthy-instances failed-instances
+                 metric-group->counts))))))
 
-(defn process-scheduler-messages
+(defn process-router-state
   "Publishes all gauges produced from the provided scheduler messages"
-  [messages service-id->service-description-fn]
+  [router-state service-id->service-description-fn]
   (try
-    (->
-      messages
-      (scheduler-messages->instance-counts-by-metric-group service-id->service-description-fn)
-      (publish-instance-counts-by-metric-group))
+    (->> router-state
+         (router-state->metric-group->counts service-id->service-description-fn)
+         publish-metric-group->counts)
     (catch Throwable e
-      (log/error e "Error processing scheduler messages"))))
+      (log/error e "error processing router state"))))
 
-(defn start-scheduler-metrics-publisher
-  "Go loop to continuously publish stats based on scheduler messages"
-  [scheduler-state-chan exit-chan service-id->service-description-fn]
-  (log/info "Starting scheduler-metrics-publisher")
-  (async/go-loop []
-    (let [continue
-          (async/alt!
-            exit-chan
-            ([_] false)
-
-            scheduler-state-chan
-            ([messages]
-              (process-scheduler-messages messages service-id->service-description-fn)
-              true))]
-      (if continue
-        (recur)
-        (log/info "Stopping scheduler-metrics-publisher")))))
+(defn start-service-instance-metrics-publisher
+  "Go loop to continuously publish stats based on router state updates."
+  [service-id->service-description-fn query-state-fn sync-instances-interval-ms]
+  (log/info "service-instance-metrics-publisher starting")
+  (let [cancel-fn (du/start-timer-task
+                    (t/millis sync-instances-interval-ms)
+                    (fn run-instance-metrics-publisher []
+                      (log/info "service-instance-metrics-publisher publishing router state")
+                      (-> (query-state-fn)
+                          (process-router-state service-id->service-description-fn))))]
+    (fn cancel-instance-metrics-publisher []
+      (log/info "service-instance-metrics-publisher stopping")
+      (cancel-fn))))

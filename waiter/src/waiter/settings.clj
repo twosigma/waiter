@@ -137,7 +137,8 @@
                                        (s/required-key :host) schema/non-empty-string
                                        (s/required-key :port) schema/positive-int
                                        (s/required-key :publish-interval-ms) schema/positive-int
-                                       (s/required-key :server) schema/non-empty-string})
+                                       (s/required-key :server) schema/non-empty-string
+                                       (s/required-key :sync-instances-interval-ms) schema/positive-int})
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]

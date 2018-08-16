@@ -416,7 +416,7 @@
     (try-parse-json state-body)))
 
 (defn fallback-state
-  "Fetches and returns the statsd state."
+  "Fetches and returns the fallback state."
   [waiter-url & {:keys [cookies] :or {cookies {}}}]
   (retrieve-state-helper waiter-url "/state/fallback" :cookies cookies))
 
