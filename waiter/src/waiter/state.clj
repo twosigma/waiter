@@ -1204,7 +1204,8 @@
     {:state-chan state-chan
      :router-state-push-mult (async/mult router-state-push-chan)
      :query-chan query-chan
-     :query-fn (fn router-state-maintainer-query-fn [] @state-atom)
+     :query-state-fn (fn router-state-maintainer-query-state-fn []
+                       (assoc @state-atom :router-id router-id))
      :go-chan
      (async/go
        (try
