@@ -1104,7 +1104,8 @@
                       (recur (inc index) (conj scheduler-messages service-instances-message))))))
               (let [expected-services (services-fn n)
                     expected-state (let [index-fn #(Integer/parseInt (subs % (inc (.lastIndexOf ^String % "-"))))]
-                                     {:service-id->healthy-instances
+                                     {:all-available-service-ids (set expected-services)
+                                      :service-id->healthy-instances
                                       (pc/map-from-keys #(healthy-instances-fn % (index-fn %) n) expected-services)
                                       :service-id->unhealthy-instances
                                       (pc/map-from-keys #(unhealthy-instances-fn % (index-fn %)) expected-services)
@@ -1141,7 +1142,7 @@
                     state (async/<!! router-state-push-chan)
                     actual-state (dissoc state :iteration :service-id->instance-counts)]
                 (when (not= expected-state actual-state)
-                  (clojure.pprint/pprint (clojure.data/diff expected-state actual-state)))
+                  (clojure.pprint/pprint (take 2 (clojure.data/diff expected-state actual-state))))
                 (is (= expected-state actual-state) (str (clojure.data/diff expected-state actual-state))))))
           (async/>!! exit-chan :exit)))))
 
@@ -1216,7 +1217,8 @@
                       (recur (inc index) (conj scheduler-messages service-instances-message))))))
               (let [expected-services (services-fn n)
                     expected-state (let [index-fn #(Integer/parseInt (subs % (inc (.lastIndexOf ^String % "-"))))]
-                                     {:service-id->unhealthy-instances
+                                     {:all-available-service-ids (set expected-services)
+                                      :service-id->unhealthy-instances
                                       (zipmap expected-services
                                               (map #(unhealthy-instances-fn % (index-fn %)) expected-services))
                                       :service-id->failed-instances
@@ -1231,8 +1233,8 @@
                     actual-state (dissoc state :iteration :service-id->healthy-instances :service-id->expired-instances :service-id->starting-instances
                                           :service-id->instance-counts :service-id->my-instance->slots :routers :time)]
                 (when (not= expected-state actual-state)
-                  (clojure.pprint/pprint (clojure.data/diff expected-state actual-state)))
-                (is (= expected-state actual-state) (str (clojure.data/diff expected-state actual-state))))))
+                  (clojure.pprint/pprint (take 2 (clojure.data/diff expected-state actual-state))))
+                (is (= expected-state actual-state) (str (take 2 (clojure.data/diff expected-state actual-state)))))))
           (async/>!! exit-chan :exit))))))
 
 (deftest test-retrieve-peer-routers

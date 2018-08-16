@@ -459,7 +459,7 @@
                                                               (available? instance health-check-path http-client))
                                                             service-id->service-description-fn))]
       (let [available-services (keys service->service-instances)
-            available-service-ids (->> available-services (map :id ) (set ))]
+            available-service-ids (->> available-services (map :id) (set))]
         (log/debug "scheduler-syncer:" (count service->service-instances) "available services:" available-service-ids)
         (doseq [service available-services]
           (when (->> (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])
