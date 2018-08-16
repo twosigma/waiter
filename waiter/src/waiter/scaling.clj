@@ -441,19 +441,28 @@
   [^DateTime end-time ^DateTime start-time]
   (- (.getMillis end-time) (.getMillis start-time)))
 
+(defn query-autoscaler-service-state
+  "Retrieves the autoscaler state for the specified service-id."
+  [{:keys [global-state service-id->router-state service-id->scale-state service-id->scheduler-state]}
+   {:keys [service-id]}]
+  (merge (service-id->scale-state service-id)
+         (service-id->scheduler-state service-id)
+         {:outstanding-requests (get-in global-state [service-id "outstanding"])}
+         (service-id->router-state service-id)))
+
 (defn autoscaler-goroutine
   "Autoscaler encapsulated in goroutine.
    Acquires state of services and passes to scale-services."
   [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-service-fn
    service-id->service-description-fn state-mult]
-  (let [state-atom (atom (merge {:iter-counter 1
+  (let [state-atom (atom (merge {:continue-looping true
                                  :global-state {}
+                                 :iter-counter 1
                                  :previous-cycle-start-time nil
-                                 :service-id->scale-state {}
                                  :service-id->router-state {}
+                                 :service-id->scale-state {}
                                  :service-id->scheduler-state {}
-                                 :timeout-chan (async/timeout timeout-interval-ms)
-                                 :continue-looping true}
+                                 :timeout-chan (async/timeout timeout-interval-ms)}
                                 initial-state))
         exit-chan (async/chan)
         query-chan (async/chan 10)
@@ -464,8 +473,8 @@
     (let [prefix-cid "SCALING"]
       (async/go
         (try
-          (loop [{:keys [iter-counter global-state previous-cycle-start-time service-id->scale-state
-                         service-id->router-state timeout-chan service-id->scheduler-state] :as current-state}
+          (loop [{:keys [global-state iter-counter previous-cycle-start-time service-id->router-state
+                         service-id->scale-state timeout-chan] :as current-state}
                  @state-atom]
             (reset! state-atom current-state)
             (let [correlation-id (str prefix-cid "-" iter-counter)
@@ -544,12 +553,8 @@
                                                :previous-cycle-start-time nil))
                         query-chan
                         (let [{:keys [service-id response-chan]} args
-                              router-state (get service-id->router-state service-id)
-                              metrics {:outstanding-requests (get-in global-state [service-id "outstanding"])}]
-                          (async/>! response-chan (merge (service-id->scale-state service-id)
-                                                         (service-id->scheduler-state service-id)
-                                                         metrics
-                                                         router-state))
+                              service-state (query-autoscaler-service-state current-state {:service-id service-id})]
+                          (async/>! response-chan service-state)
                           current-state))))]
               (if (:continue-looping new-state)
                 (recur (update-in new-state [:iter-counter] inc))
@@ -559,4 +564,5 @@
             (System/exit 1)))))
     {:exit exit-chan
      :query query-chan
-     :query-state-fn (fn autoscaler-query-state-fn [] @state-atom)}))
+     :query-service-state-fn (fn query-service-state-fn [query-params]
+                               (query-autoscaler-service-state @state-atom query-params))}))
