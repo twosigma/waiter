@@ -160,7 +160,7 @@
             (log/info "container support enabled" container-data)
             (throw (ex-info "to use container support format version as namespace/name:label" container-data)))))
       {:jobs [(cond-> {:application {:name name
-                                     :version version}
+                                     :version (if image-label image-label version)}
                        :command cmd
                        :cpus cpus
                        :disable-mea-culpa-retries true
