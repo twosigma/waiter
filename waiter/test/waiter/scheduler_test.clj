@@ -147,8 +147,9 @@
                 broken-service-timeout-mins 5
                 broken-service-min-hosts 2
                 service-id->idle-timeout (constantly 50)
+                query-state-fn (fn [] (async/<!! scheduler-state-chan))
                 channel-map (scheduler-services-gc
-                              scheduler scheduler-state-chan service-id->metrics-fn
+                              scheduler query-state-fn service-id->metrics-fn
                               {:broken-service-min-hosts broken-service-min-hosts
                                :broken-service-timeout-mins broken-service-timeout-mins
                                :scheduler-gc-interval-ms timeout-interval-ms}
@@ -157,22 +158,7 @@
             (dotimes [n 100]
               (let [global-state (pc/map-vals #(update-in % ["outstanding"] (fn [v] (max 0 (- v n))))
                                               initial-global-state)]
-                (async/>!! scheduler-state-chan (concat
-                                                  [[:update-available-services {:available-service-ids (set @available-services-atom)}]]
-                                                  (vec
-                                                    (map (fn [service-id]
-                                                           [:update-service-instances
-                                                            {:service-id service-id
-                                                             :failed-instances (cond
-                                                                                 (str/includes? service-id "broken") [{:id (str service-id ".failed1"), :host "failed1.example.com"},
-                                                                                                                      {:id (str service-id ".failed2"), :host "failed2.example.com"}]
-                                                                                 (str/includes? service-id "faulty") [{:id (str service-id ".failed4a"), :host "failed4.example.com"},
-                                                                                                                      {:id (str service-id ".failed4b"), :host "failed4.example.com"},
-                                                                                                                      {:id (str service-id ".failed4c"), :host "failed4.example.com"},
-                                                                                                                      {:id (str service-id ".failed4d"), :host "failed4.example.com"}]
-                                                                                 :else [])
-                                                             :healthy-instances (if (str/includes? service-id "broken") [] [{:id (str service-id ".unhealthy")}])}])
-                                                         @available-services-atom))))
+                (async/>!! scheduler-state-chan {:all-available-service-ids (set @available-services-atom)})
                 (async/>!! metrics-chan global-state)
                 (Thread/sleep 2)
                 (swap! iteration-counter inc)))
@@ -201,31 +187,33 @@
         (let [timeout-interval-ms 10
               broken-service-timeout-mins 5
               broken-service-min-hosts 3
-              channel-map (scheduler-broken-services-gc scheduler scheduler-state-chan
+              query-state-fn (fn [] (async/<!! scheduler-state-chan))
+              channel-map (scheduler-broken-services-gc service-gc-go-routine query-state-fn scheduler
                                                         {:broken-service-min-hosts broken-service-min-hosts
                                                          :broken-service-timeout-mins broken-service-timeout-mins
-                                                         :scheduler-gc-broken-service-interval-ms timeout-interval-ms}
-                                                        service-gc-go-routine)
+                                                         :scheduler-gc-broken-service-interval-ms timeout-interval-ms})
               service-gc-exit-chan (:exit channel-map)]
           (dotimes [iteration 20]
-            (async/>!! scheduler-state-chan
-                       (concat
-                         [[:update-available-services {:available-service-ids (set @available-services-atom)}]]
-                         (vec
-                           (map (fn [service-id]
-                                  [:update-service-instances
-                                   {:service-id service-id
-                                    :failed-instances
-                                    (cond
-                                      (str/includes? service-id "broken")
-                                      (map (fn [index] {:id (str service-id ".failed" index), :host (str "failed" index "-host.example.com")})
-                                           (range (inc (mod iteration 4))))
-                                      (str/includes? service-id "faulty")
-                                      (map (fn [index] {:id (str service-id ".faulty" index), :host "faulty-host.example.com"})
-                                           (range (mod iteration 4)))
-                                      :else [])
-                                    :healthy-instances (if (str/includes? service-id "broken") [] [{:id (str service-id ".unhealthy")}])}])
-                                @available-services-atom))))
+            (async/>!!
+              scheduler-state-chan
+              {:all-available-service-ids (set @available-services-atom)
+               :service-id->failed-instances
+               (pc/map-from-keys
+                 (fn [service-id]
+                   (cond
+                     (str/includes? service-id "broken")
+                     (map (fn [index] {:id (str service-id ".failed" index), :host (str "failed" index "-host.example.com")})
+                          (range (inc (mod iteration 4))))
+                     (str/includes? service-id "faulty")
+                     (map (fn [index] {:id (str service-id ".faulty" index), :host "faulty-host.example.com"})
+                          (range (mod iteration 4)))
+                     :else []))
+                 @available-services-atom)
+               :service-id->healthy-instances
+               (pc/map-from-keys
+                 (fn [service-id]
+                   (if (str/includes? service-id "broken") [] [{:id (str service-id ".unhealthy")}]))
+                 @available-services-atom)})
             (swap! iteration-counter inc)
             (while (> @iteration-counter @write-iteration-counter) nil))
           (async/>!! service-gc-exit-chan :exit)

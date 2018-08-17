@@ -288,46 +288,41 @@
    Idle services are detected based on no changes to the metrics state past the `idle-timeout-mins` period.
    They are then deleted by the leader using the `delete-service` function.
    If an error occurs while deleting a service, there will be repeated attempts to delete it later."
-  [scheduler scheduler-state-chan service-id->metrics-fn {:keys [scheduler-gc-interval-ms]} service-gc-go-routine
+  [scheduler query-state-fn service-id->metrics-fn {:keys [scheduler-gc-interval-ms]} service-gc-go-routine
    service-id->idle-timeout]
-  (let [service-data-chan (au/latest-chan)]
-    (let [transformer-fn (fn [scheduler-messages out*]
-                           (async/go
-                             (doseq [[message-type message-data] scheduler-messages]
-                               (when (= :update-available-services message-type)
-                                 (when-let [global-state (service-id->metrics-fn)]
-                                   (let [service->state (fn [service-id]
-                                                          [service-id
-                                                           (merge {"outstanding" 0 "total" 0}
-                                                                  (select-keys (get global-state service-id) ["outstanding" "total"]))])
-                                         service->data (into {} (map service->state (:available-service-ids message-data)))]
-                                     (async/>! out* service->data)))))
-                             (async/close! out*)))]
-      (async/pipeline-async 1 service-data-chan transformer-fn scheduler-state-chan false))
-    (let [service->state-fn (fn [_ _ data] data)
-          gc-service?-fn (fn [service-id {:keys [last-modified-time state]} current-time]
-                           (let [outstanding (get state "outstanding")]
-                             (and (number? outstanding)
-                                  (zero? outstanding)
-                                  (let [idle-timeout-mins (service-id->idle-timeout service-id)
-                                        timeout-time (t/plus last-modified-time (t/minutes idle-timeout-mins))]
-                                    (log/debug service-id "timeout:" (du/date-to-str timeout-time) "current:" (du/date-to-str current-time))
-                                    (t/after? current-time timeout-time)))))
-          perform-gc-fn (fn [service-id]
-                          (log/info "deleting idle service" service-id)
-                          (try
-                            (delete-service scheduler service-id)
-                            (catch Exception e
-                              (log/error e "unable to delete idle service" service-id))))]
-      (log/info "starting scheduler-services-gc")
-      (service-gc-go-routine
-        "scheduler-services-gc"
-        service-data-chan
-        scheduler-gc-interval-ms
-        scheduler-gc-sanitize-state
-        service->state-fn
-        gc-service?-fn
-        perform-gc-fn))))
+  (let [service->raw-data-fn (fn scheduler-services-gc-service->raw-data-fn []
+                               (let [{:keys [all-available-service-ids]} (query-state-fn)
+                                     global-state (service-id->metrics-fn)]
+                                 (pc/map-from-keys
+                                   (fn scheduler-services-gc-service->raw-data-fn [service-id]
+                                     (-> (select-keys (get global-state service-id) ["outstanding" "total"])
+                                         (utils/assoc-if-absent "outstanding" 0)
+                                         (utils/assoc-if-absent "total" 0)))
+                                   all-available-service-ids)))
+        service->state-fn (fn [_ _ data] data)
+        gc-service?-fn (fn [service-id {:keys [last-modified-time state]} current-time]
+                         (let [outstanding (get state "outstanding")]
+                           (and (number? outstanding)
+                                (zero? outstanding)
+                                (let [idle-timeout-mins (service-id->idle-timeout service-id)
+                                      timeout-time (t/plus last-modified-time (t/minutes idle-timeout-mins))]
+                                  (log/debug service-id "timeout:" (du/date-to-str timeout-time) "current:" (du/date-to-str current-time))
+                                  (t/after? current-time timeout-time)))))
+        perform-gc-fn (fn [service-id]
+                        (log/info "deleting idle service" service-id)
+                        (try
+                          (delete-service scheduler service-id)
+                          (catch Exception e
+                            (log/error e "unable to delete idle service" service-id))))]
+    (log/info "starting scheduler-services-gc")
+    (service-gc-go-routine
+      "scheduler-services-gc"
+      service->raw-data-fn
+      scheduler-gc-interval-ms
+      scheduler-gc-sanitize-state
+      service->state-fn
+      gc-service?-fn
+      perform-gc-fn)))
 
 (defn scheduler-broken-services-gc
   "Performs scheduler GC by tracking which services are broken (i.e. has no healthy instance, but at least one failed instance possibly due to a broken command).
@@ -335,55 +330,45 @@
    Faulty services are detected based on no changes to the healthy/failed instances state past the `broken-service-timeout-mins` period, respectively.
    They are then deleted by the leader using the `delete-service` function.
    If an error occurs while deleting a service, there will be repeated attempts to delete it later."
-  [scheduler scheduler-state-chan {:keys [broken-service-timeout-mins broken-service-min-hosts scheduler-gc-broken-service-interval-ms]} service-gc-go-routine]
-  (let [service-data-chan (au/latest-chan)]
-    (let [transformer-fn (fn [scheduler-messages out*]
-                           (async/go
-                             (loop [[[message-type message-data] & remaining-scheduler-messages] scheduler-messages
-                                    service->data {}]
-                               (condp = message-type
-                                 :update-available-services
-                                 (let [service->data' (select-keys service->data (:available-service-ids message-data))]
-                                   (recur remaining-scheduler-messages service->data'))
-
-                                 :update-service-instances
-                                 (let [{:keys [service-id failed-instances healthy-instances]} message-data
-                                       service->data' (assoc service->data
-                                                        service-id {"failed-instance-hosts" (set (map :host failed-instances))
-                                                                    "has-healthy-instances" (not (empty? healthy-instances))
-                                                                    "has-failed-instances" (not (empty? failed-instances))})]
-                                   (recur remaining-scheduler-messages service->data'))
-
-                                 ;; else
-                                 (async/>! out* service->data)))
-                             (async/close! out*)))]
-      (async/pipeline-async 1 service-data-chan transformer-fn scheduler-state-chan false))
-    (let [service->state-fn (fn [_ {:strs [failed-hosts-limit-reached]} {:strs [failed-instance-hosts has-healthy-instances] :as data}]
-                              (if (and (not has-healthy-instances)
-                                       (or failed-hosts-limit-reached (>= (count failed-instance-hosts) broken-service-min-hosts)))
-                                (-> data (dissoc "failed-instance-hosts") (assoc "failed-hosts-limit-reached" true))
-                                data))
-          gc-service?-fn (fn [_ {:keys [last-modified-time state]} current-time]
-                           (and (false? (get state "has-healthy-instances" false))
-                                (true? (get state "has-failed-instances" false))
-                                (get state "failed-hosts-limit-reached" false)
-                                (let [gc-time (t/plus last-modified-time (t/minutes broken-service-timeout-mins))]
-                                  (t/after? current-time gc-time))))
-          perform-gc-fn (fn [service-id]
-                          (log/info "deleting broken service" service-id)
-                          (try
-                            (delete-service scheduler service-id)
-                            (catch Exception e
-                              (log/error e "unable to delete broken service" service-id))))]
-      (log/info "starting scheduler-broken-services-gc")
-      (service-gc-go-routine
-        "scheduler-broken-services-gc"
-        service-data-chan
-        scheduler-gc-broken-service-interval-ms
-        scheduler-gc-sanitize-state
-        service->state-fn
-        gc-service?-fn
-        perform-gc-fn))))
+  [service-gc-go-routine query-state-fn scheduler
+   {:keys [broken-service-timeout-mins broken-service-min-hosts scheduler-gc-broken-service-interval-ms]}]
+  (let [service->raw-data-fn (fn scheduler-broken-services-gc-service->raw-data-fn []
+                               (let [{:keys [all-available-service-ids service-id->failed-instances
+                                             service-id->healthy-instances]} (query-state-fn)]
+                                 (pc/map-from-keys
+                                   (fn compute-broken-services-raw-data [service-id]
+                                     (let [failed-instances (get service-id->failed-instances service-id)
+                                           healthy-instances (get service-id->healthy-instances service-id)]
+                                       {"failed-instance-hosts" (set (map :host failed-instances))
+                                        "has-healthy-instances" (not (empty? healthy-instances))
+                                        "has-failed-instances" (not (empty? failed-instances))}))
+                                   all-available-service-ids)))
+        service->state-fn (fn [_ {:strs [failed-hosts-limit-reached]} {:strs [failed-instance-hosts has-healthy-instances] :as data}]
+                            (if (and (not has-healthy-instances)
+                                     (or failed-hosts-limit-reached (>= (count failed-instance-hosts) broken-service-min-hosts)))
+                              (-> data (dissoc "failed-instance-hosts") (assoc "failed-hosts-limit-reached" true))
+                              data))
+        gc-service?-fn (fn [_ {:keys [last-modified-time state]} current-time]
+                         (and (false? (get state "has-healthy-instances" false))
+                              (true? (get state "has-failed-instances" false))
+                              (get state "failed-hosts-limit-reached" false)
+                              (let [gc-time (t/plus last-modified-time (t/minutes broken-service-timeout-mins))]
+                                (t/after? current-time gc-time))))
+        perform-gc-fn (fn [service-id]
+                        (log/info "deleting broken service" service-id)
+                        (try
+                          (delete-service scheduler service-id)
+                          (catch Exception e
+                            (log/error e "unable to delete broken service" service-id))))]
+    (log/info "starting scheduler-broken-services-gc")
+    (service-gc-go-routine
+      "scheduler-broken-services-gc"
+      service->raw-data-fn
+      scheduler-gc-broken-service-interval-ms
+      scheduler-gc-sanitize-state
+      service->state-fn
+      gc-service?-fn
+      perform-gc-fn)))
 
 (defn- request-available-waiter-apps
   "Queries the scheduler and builds a list of available Waiter apps."

@@ -309,7 +309,7 @@
              `(str base-path '/' gc-relative-path '/' name`.
   `clock` (fn [] ...) returns the current time.
   `name`: Name of the go-routine.
-  `service-data-chan`: A channel which produces service data.
+  `service->raw-data-source`: A channel or a no-args function which produces service data.
   `timeout-interval-ms`: Timeout interval used as a refractory period while listening for data from `service-data-mult-chan`
                          to allow effects of any GC run to propagate through the system.
   `in-exit-chan`: The exit signal channel.
@@ -321,7 +321,8 @@
                  Predicate function that returns true for apps that need to be gc-ed.
   `perform-gc-fn`: (fn [service] ...). Function that performs GC of the service.
                    It must return a truth-y value when successful."
-  [read-state-fn write-state-fn leader? clock name service-data-chan timeout-interval-ms sanitize-state-fn service->state-fn gc-service? perform-gc-fn]
+  [read-state-fn write-state-fn leader? clock name service->raw-data-source timeout-interval-ms sanitize-state-fn
+   service->state-fn gc-service? perform-gc-fn]
   {:pre (pos? timeout-interval-ms)}
   (let [query-chan (async/chan 10)
         exit-chan (async/chan 1)]
@@ -341,7 +342,9 @@
           :continue
           (do
             (when (leader?)
-              (let [service->raw-data (async/<! service-data-chan)]
+              (let [service->raw-data (if (fn? service->raw-data-source)
+                                        (service->raw-data-source)
+                                        (async/<! service->raw-data-source))]
                 (cid/with-correlation-id
                   (str name "-" iter)
                   (timers/start-stop-time!
@@ -869,16 +872,16 @@
    :gc-for-transient-metrics (pc/fnk [[:routines router-metrics-helpers]
                                       [:settings metrics-config]
                                       [:state clock local-usage-agent]
-                                      scheduler-maintainer]
+                                      router-state-maintainer]
                                (let [state-store-atom (atom {})
                                      read-state-fn (fn read-state [_] @state-store-atom)
                                      write-state-fn (fn write-state [_ state] (reset! state-store-atom state))
                                      leader?-fn (constantly true)
                                      service-gc-go-routine (partial service-gc-go-routine read-state-fn write-state-fn leader?-fn clock)
-                                     scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
+                                     {{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                      {:keys [service-id->metrics-fn]} router-metrics-helpers
                                      {:keys [service-id->metrics-chan] :as metrics-gc-chans}
-                                     (metrics/transient-metrics-gc scheduler-state-chan local-usage-agent service-gc-go-routine metrics-config)]
+                                     (metrics/transient-metrics-gc query-state-fn local-usage-agent service-gc-go-routine metrics-config)]
                                  (metrics/transient-metrics-data-producer service-id->metrics-chan service-id->metrics-fn metrics-config)
                                  metrics-gc-chans))
    :interstitial-maintainer (pc/fnk [[:routines service-id->service-description-fn]
@@ -933,10 +936,10 @@
                                           [:scheduler scheduler]
                                           [:settings scheduler-gc-config]
                                           [:state clock]
-                                          scheduler-maintainer]
-                                   (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
+                                          router-state-maintainer]
+                                   (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                          service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
-                                     (scheduler/scheduler-broken-services-gc scheduler scheduler-state-chan scheduler-gc-config service-gc-go-routine)))
+                                     (scheduler/scheduler-broken-services-gc service-gc-go-routine query-state-fn scheduler scheduler-gc-config)))
    :scheduler-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                   [:scheduler scheduler]
                                   [:settings [:health-check-config health-check-timeout-ms failed-check-threshold] scheduler-syncer-interval-secs]
@@ -955,12 +958,12 @@
                                    [:scheduler scheduler]
                                    [:settings scheduler-gc-config]
                                    [:state clock]
-                                   scheduler-maintainer]
-                            (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
+                                   router-state-maintainer]
+                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                   {:keys [service-id->metrics-fn]} router-metrics-helpers
                                   service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                               (scheduler/scheduler-services-gc
-                                scheduler scheduler-state-chan service-id->metrics-fn scheduler-gc-config service-gc-go-routine
+                                scheduler query-state-fn service-id->metrics-fn scheduler-gc-config service-gc-go-routine
                                 service-id->idle-timeout)))
    :service-chan-maintainer (pc/fnk [[:routines start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
                                      [:settings blacklist-config instance-request-properties]
@@ -1128,7 +1131,7 @@
                                      [:routines prepend-waiter-url router-metrics-helpers service-id->service-description-fn]
                                      [:state entitlement-manager]
                                      wrap-secure-request-fn]
-                              (let [query-state-fn (get-in router-state-maintainer [:maintainer :query-state-fn])
+                              (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                     {:keys [service-id->metrics-fn]} router-metrics-helpers]
                                 (wrap-secure-request-fn
                                   (fn service-list-handler-fn [request]
@@ -1175,7 +1178,7 @@
    :state-all-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                   [:state router-id]
                                   wrap-secure-request-fn]
-                           (let [query-state-fn (get-in router-state-maintainer [:maintainer :query-state-fn])]
+                           (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                              (wrap-secure-request-fn
                                (fn state-all-handler-fn [request]
                                  (handler/get-router-state router-id query-state-fn request)))))
@@ -1220,7 +1223,7 @@
    :state-maintainer-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                          [:state router-id]
                                          wrap-secure-request-fn]
-                                  (let [query-state-fn (get-in router-state-maintainer [:maintainer :query-state-fn])]
+                                  (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                                     (wrap-secure-request-fn
                                       (fn maintainer-state-handler-fn [request]
                                         (handler/get-chan-latest-state-handler router-id query-state-fn request)))))

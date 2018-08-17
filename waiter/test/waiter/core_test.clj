@@ -110,6 +110,7 @@
       (let [service-gc-block (fn [service-data-atom num-times]
                                (let [service-data-exit-chan (async/chan 1)
                                      service-data-chan (async/chan (async/sliding-buffer num-times))
+                                     service->raw-data-fn (fn service->raw-data-fn [] (async/<!! service-data-chan))
                                      timeout-interval-ms 1
                                      read-state-fn (fn [name] (:data (curator/read-path curator (str gc-base-path "/" name) :nil-on-missing? true :serializer :nippy)))
                                      write-state-fn (fn [name state] (curator/write-path curator (str gc-base-path "/" name) state :serializer :nippy :create-parent-zknodes? true))]
@@ -125,7 +126,7 @@
                                                               leader?
                                                               t/now
                                                               "test-routine"
-                                                              service-data-chan
+                                                              service->raw-data-fn
                                                               timeout-interval-ms
                                                               (fn [prev-service->state _] prev-service->state)
                                                               (fn [_ _ data] data)

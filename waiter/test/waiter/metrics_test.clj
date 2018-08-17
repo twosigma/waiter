@@ -410,15 +410,16 @@
           (let [transient-metrics-timeout-ms 10
                 metrics-gc-interval-ms 1
                 scheduler-state-chan (async/chan)
-                result-chans (transient-metrics-gc scheduler-state-chan local-usage-agent service-gc-go-routine
+                query-state-fn (fn [] (async/<!! scheduler-state-chan))
+                result-chans (transient-metrics-gc query-state-fn local-usage-agent service-gc-go-routine
                                                    {:transient-metrics-timeout-ms transient-metrics-timeout-ms
                                                     :metrics-gc-interval-ms metrics-gc-interval-ms})
                 service-id->metrics-chan (:service-id->metrics-chan result-chans)]
             (async/thread
               (while (not @exit-flag-atom)
                 (let [available-service-ids (set (remove #(str/includes? % (str @remove-target-atom)) @available-services-atom))
-                      scheduler-messages [[:update-available-services {:available-service-ids available-service-ids}]]]
-                  (async/>!! scheduler-state-chan scheduler-messages)))
+                      router-state {:all-available-service-ids available-service-ids}]
+                  (async/>!! scheduler-state-chan router-state)))
               (async/close! scheduler-state-chan))
             (async/thread
               (while (not @exit-flag-atom)

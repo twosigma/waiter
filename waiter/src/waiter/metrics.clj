@@ -378,23 +378,18 @@
      :query-chan query-chan}))
 
 (defn- transient-metrics-state-producer
-  "Retrieves the service-id->metrics from service-id->metrics-chan and scheduler state from scheduler-state-chan.
+  "Retrieves the service-id->metrics from service-id->metrics-chan and scheduler state from query-state-fn.
    It then creates the service-id->state map and propagates it into the service-id->state-chan."
-  [service-id->metrics-chan scheduler-state-chan service-id->state-chan]
+  [service-id->metrics-chan query-state-fn service-id->state-chan]
   (async/go-loop []
     (let [service-id->metrics (async/<! service-id->metrics-chan)
-          scheduler-messages (async/<! scheduler-state-chan)
-          available-service-ids (->> scheduler-messages
-                                     (filter (fn [[message-type _]] (= message-type :update-available-services)))
-                                     first
-                                     second
-                                     :available-service-ids)
+          {:keys [all-available-service-ids]} (query-state-fn)
           service-id->state (pc/map-from-keys (fn service-id->state-fn [service-id]
                                                 (-> (get service-id->metrics service-id)
                                                     (select-keys ["outstanding" "total"])
-                                                    (assoc "alive?" (contains? available-service-ids service-id))))
+                                                    (assoc "alive?" (contains? all-available-service-ids service-id))))
                                               (keys service-id->metrics))]
-      (if (or service-id->metrics scheduler-messages)
+      (if service-id->metrics
         (do
           (async/>! service-id->state-chan service-id->state)
           (recur))
@@ -422,7 +417,7 @@
    longer exist in the scheduler, i.e. not alive?, and have not received any new requests) known to the router.
    When such an idle service is found (based on the timestamp it was last updated), the metrics (except the one for
    outstanding requests) are deleted locally."
-  [scheduler-state-chan local-usage-agent service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
+  [query-state-fn local-usage-agent service-gc-go-routine {:keys [metrics-gc-interval-ms transient-metrics-timeout-ms]}]
   (let [sanitize-state-fn (fn sanitize-state [prev-service->state _] prev-service->state)
         service-id->state-fn (fn service->state [_ _ data] data)
         gc-service?-fn (fn [_ {:keys [state last-modified-time]} current-time]
@@ -441,7 +436,7 @@
         service-id->metrics-chan (au/latest-chan)
         service-id->state-chan (au/latest-chan)]
     ;; launch go-block to populate the service-id->state-chan
-    (transient-metrics-state-producer service-id->metrics-chan scheduler-state-chan service-id->state-chan)
+    (transient-metrics-state-producer service-id->metrics-chan query-state-fn service-id->state-chan)
     ;; launch go-block to perform transient metrics GC
     (assoc (service-gc-go-routine "transient-metrics-gc" service-id->state-chan metrics-gc-interval-ms
                                   sanitize-state-fn service-id->state-fn gc-service?-fn perform-gc-fn)
