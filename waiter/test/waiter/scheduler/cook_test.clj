@@ -325,7 +325,7 @@
             job-uuid (-> actual :jobs first :uuid)
             expected {:jobs [(assoc expected-job
                                :application {:name "test-service"
-                                             :version "foo/bar:baz"}
+                                             :version "baz"}
                                :container {:docker {:force-pull-image false
                                                     :image "namespace:foo,name:bar,label:baz"
                                                     :network "HOST"}
