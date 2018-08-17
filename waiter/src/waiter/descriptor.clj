@@ -88,10 +88,10 @@
 (defn fallback-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
    fallback state. It also responds to queries for the fallback state."
-  [scheduler-state-chan fallback-state-atom]
+  [router-state-chan fallback-state-atom]
   (let [exit-chan (au/latest-chan)
         query-chan (async/chan 32)
-        channels [exit-chan scheduler-state-chan query-chan]]
+        channels [exit-chan router-state-chan query-chan]]
     (async/go
       (loop [{:keys [available-service-ids healthy-service-ids]
               :or {available-service-ids #{}
@@ -118,15 +118,11 @@
                            (async/>! response-chan))
                       current-state)
 
-                    scheduler-state-chan
-                    (let [{:keys [available-service-ids healthy-service-ids]}
-                          (some (fn [[message-type message-data]]
-                                  (when (= :update-available-services message-type)
-                                    message-data))
-                                message)
+                    router-state-chan
+                    (let [{:keys [all-available-service-ids service-id->healthy-instances]} message
                           current-state' (assoc current-state
-                                           :available-service-ids available-service-ids
-                                           :healthy-service-ids healthy-service-ids)]
+                                           :available-service-ids all-available-service-ids
+                                           :healthy-service-ids (-> service-id->healthy-instances keys set))]
                       (reset! fallback-state-atom current-state')
                       current-state')))
                 (catch Exception e
