@@ -97,14 +97,12 @@
   "Processes messages from the scheduler.
    In particular, it resolves all promises for services which have healthy instances.
    It also removes from the interstitial state any resolved promises for services which are no longer available."
-  [interstitial-state-atom service-id->service-description current-available-service-ids scheduler-messages]
-  (let [{:keys [available-service-ids healthy-service-ids]} (some (fn [[message-type message-data]]
-                                                                    (when (= :update-available-services message-type)
-                                                                      message-data))
-                                                                  scheduler-messages)
-        service-ids-to-remove (set/difference current-available-service-ids available-service-ids)
+  [interstitial-state-atom service-id->service-description current-available-service-ids
+   {:keys [all-available-service-ids service-id->healthy-instances]}]
+  (let [healthy-service-ids (-> service-id->healthy-instances keys set)
+        service-ids-to-remove (set/difference current-available-service-ids all-available-service-ids)
         removed-service-ids (remove-resolved-interstitial-promises! interstitial-state-atom service-ids-to-remove)]
-    (doseq [service-id available-service-ids]
+    (doseq [service-id all-available-service-ids]
       (let [{:strs [interstitial-secs]} (service-id->service-description service-id)]
         (when (pos? interstitial-secs)
           (ensure-service-interstitial! interstitial-state-atom service-id interstitial-secs))))
@@ -113,16 +111,16 @@
         (resolve-promise! service-id interstitial-promise :healthy-instance-found)))
     (-> current-available-service-ids
         (set/difference removed-service-ids)
-        (set/union available-service-ids)
+        (set/union all-available-service-ids)
         (set/union healthy-service-ids))))
 
 (defn interstitial-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
    interstitial state. It also responds to queries for the interstitial state."
-  [service-id->service-description scheduler-state-chan interstitial-state-atom initial-state]
+  [service-id->service-description router-state-chan interstitial-state-atom initial-state]
   (let [exit-chan (au/latest-chan)
         query-chan (async/chan 32)
-        channels [exit-chan scheduler-state-chan query-chan]]
+        channels [exit-chan router-state-chan query-chan]]
     (async/go
       (loop [{:keys [available-service-ids] :or {available-service-ids #{}} :as current-state} initial-state]
         (metrics/reset-counter
@@ -152,11 +150,10 @@
                            (async/>! response-chan))
                       current-state)
 
-                    scheduler-state-chan
-                    (let [scheduler-messages message
-                          available-service-ids' (process-scheduler-messages
+                    router-state-chan
+                    (let [available-service-ids' (process-scheduler-messages
                                                    interstitial-state-atom service-id->service-description
-                                                   available-service-ids scheduler-messages)]
+                                                   available-service-ids message)]
                       (when-not (:initialized? @interstitial-state-atom)
                         (log/info "interstitial state has been initialized with services from the scheduler")
                         (swap! interstitial-state-atom assoc :initialized? true))

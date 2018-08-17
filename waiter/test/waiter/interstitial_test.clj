@@ -181,7 +181,6 @@
   (let [resolved-service-ids #{"service-1" "service-3" "service-5" "service-7"}
         unresolved-service-ids #{"service-2" "service-4" "service-6"}
         all-service-ids (set/union resolved-service-ids unresolved-service-ids)
-        healthy-service-ids #{"service-0" "service-6" "service-8"}
         interstitial-state-atom (->> all-service-ids
                                      (pc/map-from-keys (fn [service-id]
                                                          (let [p (promise)]
@@ -191,27 +190,21 @@
                                      (assoc {:initialized? false} :service-id->interstitial-promise)
                                      atom)
         available-service-ids #{"service-0" "service-7" "service-8" "service-9"}
-        scheduler-messages [[:update-available-services {:available-service-ids available-service-ids
-                                                         :healthy-service-ids healthy-service-ids}]
-                            [:update-service-instances {:healthy-instances [{:id "service-0.1"}]
-                                                        :service-id "service-0"}]
-                            [:update-service-instances {:healthy-instances [{:id "service-6.1"}]
-                                                        :service-id "service-6"}]
-                            [:update-service-instances {:healthy-instances [{:id "service-8.1"}]
-                                                        :service-id "service-8"}]
-                            [:update-service-instances {:service-id "service-9"
-                                                        :unhealthy-instances [{:id "service-9.1"}]}]]
+        router-message {:all-available-service-ids available-service-ids
+                        :service-id->healthy-instances {"service-0" [{:id "service-0.1"}]
+                                                        "service-6" [{:id "service-6.1"}]
+                                                        "service-8" [{:id "service-8.1"}]}}
         service-id->service-description (fn [service-id]
                                           {"interstitial-secs" (->> (str/last-index-of service-id "-")
                                                                     inc
                                                                     (subs service-id)
                                                                     Integer/parseInt)})
-        scheduler-state-chan (au/latest-chan)
+        router-state-chan (au/latest-chan)
         initial-state {:available-service-ids all-service-ids}
         {:keys [exit-chan query-chan]}
-        (interstitial-maintainer service-id->service-description scheduler-state-chan interstitial-state-atom initial-state)]
+        (interstitial-maintainer service-id->service-description router-state-chan interstitial-state-atom initial-state)]
 
-    (async/>!! scheduler-state-chan scheduler-messages)
+    (async/>!! router-state-chan router-message)
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan})
           state (async/<!! response-chan)]
