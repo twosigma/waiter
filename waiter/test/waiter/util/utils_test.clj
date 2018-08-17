@@ -122,26 +122,26 @@
       (is (= (json/write-str {"bar" ["foo" "baz"]}) (:body (clj->json-response {:bar ["foo" #"baz"]}))))
       (is (= (json/write-str {"bar" [["foo" "baz"]]}) (:body (clj->json-response {:bar [["foo" #"baz"]]})))))))
 
-(deftest test-map->streaming-json-response
+(deftest test-clj->streaming-json-response
   (testing "convert empty map"
-    (let [{:keys [body headers status]} (map->streaming-json-response {})]
+    (let [{:keys [body headers status]} (clj->streaming-json-response {})]
       (is (= 200 status))
       (is (= {"content-type" "application/json"} headers))
       (is (= {} (json/read-str (json-response->str body))))))
   (testing "consumes status argument"
-    (let [{:keys [status]} (map->streaming-json-response {} :status 404)]
+    (let [{:keys [status]} (clj->streaming-json-response {} :status 404)]
       (is (= status 404))))
   (testing "converts regex patters to strings"
     (is (= {"foo" ["bar"]}
            (-> {:foo [#"bar"]}
-               map->streaming-json-response
+               clj->streaming-json-response
                :body
                json-response->str
                json/read-str))))
   (testing "converts namespaced keywords"
     (is (= {"foo/bar" "fuu/baz"}
            (-> {:foo/bar :fuu/baz}
-               map->streaming-json-response
+               clj->streaming-json-response
                :body
                json-response->str
                json/read-str)))))

@@ -211,7 +211,7 @@
                     (and (not exclude-services) service-id) (metrics/get-service-metrics service-id)
                     include-jvm-metrics (metrics/get-jvm-metrics)
                     :else (metrics/get-metrics))]
-      (utils/map->streaming-json-response metrics))
+      (utils/clj->streaming-json-response metrics))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -263,7 +263,7 @@
                                                                      (service-id->service-description-fn
                                                                        service-id :effective? true)))))
                           viewable-services)]
-      (utils/map->streaming-json-response response-data))))
+      (utils/clj->streaming-json-response response-data))))
 
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
@@ -305,9 +305,9 @@
                                         (when (not-empty instances)
                                           (map #(assoc-log-url generate-log-url-fn %) instances)))]
                                   (-> (scheduler/get-instances scheduler service-id)
-                                      (update-in [:active-instances] assoc-log-url-to-instances)
-                                      (update-in [:failed-instances] assoc-log-url-to-instances)
-                                      (update-in [:killed-instances] assoc-log-url-to-instances)))
+                                      (update :active-instances assoc-log-url-to-instances)
+                                      (update :failed-instances assoc-log-url-to-instances)
+                                      (update :killed-instances assoc-log-url-to-instances)))
                                 (catch Exception e
                                   (log/error e "Error in retrieving instances for" service-id)))
         router->metrics (try
@@ -338,25 +338,23 @@
                                     (log/error e "Error in retrieving service suspended state for" service-id)))
         request-params (-> request ru/query-params-request :query-params)
         include-effective-parameters? (utils/request-flag request-params "effective-parameters")
-        result-map (walk/stringify-keys
-                     (cond-> {:router-id router-id, :num-routers (count router->metrics)}
-                             include-effective-parameters?
-                             (assoc :effective-parameters (service-id->service-description-fn service-id :effective? true))
-                             (not-empty service-instance-maps)
-                             (assoc :instances service-instance-maps
-                                    :num-active-instances (count (:active-instances service-instance-maps)))
-                             (not-empty aggregate-metrics-map)
-                             (assoc-in [:metrics :aggregate] aggregate-metrics-map)
-                             (not-empty router->metrics)
-                             (assoc-in [:metrics :routers] router->metrics)
-                             (not-empty core-service-description)
-                             (assoc :service-description core-service-description)
-                             (not-empty (or (:overrides service-description-overrides) {}))
-                             (assoc :service-description-overrides service-description-overrides)
-                             (:time service-suspended-state)
-                             (assoc :service-suspended-state service-suspended-state)))
-        sorted-result-map (utils/deep-sort-map result-map)]
-    (utils/map->streaming-json-response sorted-result-map)))
+        result-map (cond-> {:router-id router-id, :num-routers (count router->metrics)}
+                     include-effective-parameters?
+                     (assoc :effective-parameters (service-id->service-description-fn service-id :effective? true))
+                     (not-empty service-instance-maps)
+                     (assoc :instances service-instance-maps
+                            :num-active-instances (count (:active-instances service-instance-maps)))
+                     (not-empty aggregate-metrics-map)
+                     (assoc-in [:metrics :aggregate] aggregate-metrics-map)
+                     (not-empty router->metrics)
+                     (assoc-in [:metrics :routers] router->metrics)
+                     (not-empty core-service-description)
+                     (assoc :service-description core-service-description)
+                     (not-empty (or (:overrides service-description-overrides) {}))
+                     (assoc :service-description-overrides service-description-overrides)
+                     (:time service-suspended-state)
+                     (assoc :service-suspended-state service-suspended-state))]
+    (utils/clj->streaming-json-response result-map)))
 
 (defn service-handler
   "Handles the /apps/<service-id> requests.
@@ -524,7 +522,7 @@
                          (pc/map-from-keys make-url))
            :router-id router-id
            :routers routers}
-          (utils/map->streaming-json-response)))
+          (utils/clj->streaming-json-response)))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -536,7 +534,7 @@
     (let [data (query-state-fn)
           state (or data {:message "No data available"})]
       (-> {:router-id router-id :state state}
-          (utils/map->streaming-json-response)))
+          (utils/clj->streaming-json-response)))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -552,7 +550,7 @@
         (let [[data _] (async/alts! [response-chan timeout-chan] :priority true)
               state (or data {:message "Request timeout"})]
           (-> {:router-id router-id :state state}
-              (utils/map->streaming-json-response))))
+              (utils/clj->streaming-json-response))))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
@@ -562,7 +560,7 @@
   (try
     (-> {:router-id router-id
          :state (retrieve-state-fn)}
-        (utils/map->streaming-json-response))
+        (utils/clj->streaming-json-response))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -640,7 +638,7 @@
                                                     (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
                                       (recur remaining (assoc result key state)))
                                     result))]
-          (utils/map->streaming-json-response {:router-id router-id, :state (utils/deep-sort-map query-chans-state)})))
+          (utils/clj->streaming-json-response {:router-id router-id, :state query-chans-state})))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
