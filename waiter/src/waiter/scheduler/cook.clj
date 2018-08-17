@@ -142,6 +142,7 @@
     (let [{:strs [backend-proto cmd cmd-type cpus health-check-url instance-expiry-mins mem name ports
                   run-as-user version]} service-description
           job-uuid (str (UUID/randomUUID)) ;; TODO Use "less random" UUIDs for better Cook cache performance.
+          _ (log/info "creating a new job for" service-id "with uuid" job-uuid)
           home-path (str home-path-prefix run-as-user)
           environment (scheduler/environment service-id service-description service-id->password-fn home-path)
           container-mode? (= "docker" cmd-type)
@@ -194,7 +195,6 @@
   "Create and start a new Cook job specified by the service-description."
   [cook-api service-id service-description service-id->password-fn home-path-prefix instance-priority
    backend-port]
-  (log/info "creating a new job for" service-id)
   (->> (create-job-description service-id service-description service-id->password-fn home-path-prefix
                                instance-priority backend-port)
        (post-jobs cook-api)))

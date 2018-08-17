@@ -45,7 +45,7 @@
         {:keys [error status] :as response} (async/<!! raw-response)]
     (when error
       (throw error))
-    (let [response (assoc response :body async/<!!)]
+    (let [response (update response :body async/<!!)]
       (when (and throw-exceptions (not (<= 200 status 299)))
         (ss/throw+ response))
       (let [{:keys [body]} response]
