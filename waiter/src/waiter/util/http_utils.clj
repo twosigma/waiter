@@ -45,15 +45,16 @@
         {:keys [error status] :as response} (async/<!! raw-response)]
     (when error
       (throw error))
-    (when (and throw-exceptions (not (<= 200 status 299)))
-      (ss/throw+ response))
-    (let [response-body (-> response :body async/<!!)]
-      (try
-        (cond-> response-body
-          (not-empty response-body)
-          (-> json/read-str walk/keywordize-keys))
-        (catch Exception _
-          response-body)))))
+    (let [response (update response :body async/<!!)]
+      (when (and throw-exceptions (not (<= 200 status 299)))
+        (ss/throw+ response))
+      (let [{:keys [body]} response]
+        (try
+          (cond-> body
+            (not-empty body)
+            (-> json/read-str walk/keywordize-keys))
+          (catch Exception _
+            body))))))
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
