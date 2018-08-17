@@ -63,7 +63,11 @@
       (with-redefs [http/request (constantly
                                    (let [response-chan (async/promise-chan)
                                          body-chan (async/promise-chan)]
-                                     (async/>!! body-chan (utils/clj->json {}))
+                                     (async/>!! body-chan (utils/clj->json {:error :response}))
                                      (async/>!! response-chan {:body body-chan, :status 400})
                                      response-chan))]
-        (is (thrown? ExceptionInfo (http-request http-client "some-url")))))))
+        (try
+          (http-request http-client "some-url")
+          (is false "exception not thrown")
+          (catch ExceptionInfo ex
+            (is (= {:body "{\"error\":\"response\"}" :status 400} (ex-data ex)))))))))
