@@ -534,7 +534,7 @@
   (try
     (log/info (str "Waiting for response from state channel"))
     (let [data (query-state-fn)
-          state (or data {:message "Request timeout"})]
+          state (or data {:message "No data available"})]
       (-> {:router-id router-id :state state}
           (utils/map->streaming-json-response)))
     (catch Exception ex
