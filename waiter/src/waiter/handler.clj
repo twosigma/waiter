@@ -604,7 +604,7 @@
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."
-  [router-id instance-rpc-chan local-usage-agent service-id query-chans-or-fns request]
+  [router-id instance-rpc-chan local-usage-agent service-id query-sources request]
   (async/go
     (try
       (if (str/blank? service-id)
@@ -620,7 +620,7 @@
               query-params {:cid (cid/get-correlation-id) :service-id service-id}
               [query-chans initial-result]
               (loop [[[entry-key entry-value] & remaining]
-                     (concat query-chans-or-fns
+                     (concat query-sources
                        [[:responder-state responder-state-chan] [:work-stealing-state work-stealing-state-chan]])
                      query-chans {}
                      initial-result {:local-usage local-usage-state}]

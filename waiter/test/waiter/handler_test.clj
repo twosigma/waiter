@@ -826,10 +826,10 @@
       (start-instance-rpc-fn)
       (start-query-chan-fn)
       (start-maintainer-fn)
-      (let [query-chans-or-fns {:autoscaler-state (fn [{:keys [service-id]}]
-                                                    {:service-id service-id :source "autoscaler"})
-                                :maintainer-state maintainer-state-chan}
-            response (->> (get-service-state router-id instance-rpc-chan local-usage-agent service-id query-chans-or-fns {})
+      (let [query-sources {:autoscaler-state (fn [{:keys [service-id]}]
+                                               {:service-id service-id :source "autoscaler"})
+                           :maintainer-state maintainer-state-chan}
+            response (->> (get-service-state router-id instance-rpc-chan local-usage-agent service-id query-sources {})
                           (async/<!!))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
