@@ -842,7 +842,7 @@
                         [:settings [:scaling autoscaler-interval-ms]]
                         autoscaling-multiplexer router-state-maintainer]
                  (let [service-id->metrics-fn (:service-id->metrics-fn router-metrics-helpers)
-                       router-state-push-mult (get-in router-state-maintainer [:maintainer-chans :router-state-push-mult])
+                       {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
                        {:keys [executor-multiplexer-chan]} autoscaling-multiplexer]
                    (scaling/autoscaler-goroutine
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
@@ -890,7 +890,7 @@
    :launch-metrics-maintainer (pc/fnk [[:curator leader?-fn]
                                        [:routines service-id->service-description-fn]
                                        router-state-maintainer]
-                                (let [{{:keys [router-state-push-mult]} :maintainer-chans} router-state-maintainer]
+                                (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer]
                                   (scheduler/start-launch-metrics-maintainer
                                     (async/tap router-state-push-mult (au/latest-chan))
                                     leader?-fn
@@ -923,10 +923,10 @@
                               (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
                                     exit-chan (async/chan)
                                     router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))
-                                    maintainer-chan (state/start-router-state-maintainer
-                                                      scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
+                                    maintainer (state/start-router-state-maintainer
+                                                 scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
                                 {:exit-chan exit-chan
-                                 :maintainer-chans maintainer-chan}))
+                                 :maintainer maintainer}))
    :scheduler-broken-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
                                           [:scheduler scheduler]
                                           [:settings scheduler-gc-config]
@@ -987,9 +987,9 @@
                                                           :reserve [:maintainer-chan-map :reserve-instance-chan-in]
                                                           :update-state [:maintainer-chan-map :update-state-chan])]
                                         (get-in channel-map method-chan)))
-                                    state-chan-mult (get-in router-state-maintainer [:maintainer-chans :router-state-push-mult])
+                                    {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
                                     state-chan (au/latest-chan)]
-                                (async/tap state-chan-mult state-chan)
+                                (async/tap router-state-push-mult state-chan)
                                 (state/start-service-chan-maintainer
                                   {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
    :state-query-chans (pc/fnk [[:state query-app-maintainer-chan]
@@ -1126,11 +1126,11 @@
                                      [:routines prepend-waiter-url router-metrics-helpers service-id->service-description-fn]
                                      [:state entitlement-manager]
                                      wrap-secure-request-fn]
-                              (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])
+                              (let [query-state-fn (get-in router-state-maintainer [:maintainer :query-state-fn])
                                     {:keys [service-id->metrics-fn]} router-metrics-helpers]
                                 (wrap-secure-request-fn
                                   (fn service-list-handler-fn [request]
-                                    (handler/list-services-handler entitlement-manager state-chan prepend-waiter-url
+                                    (handler/list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                                                    service-id->service-description-fn service-id->metrics-fn
                                                                    request)))))
    :service-override-handler-fn (pc/fnk [[:curator kv-store]
@@ -1173,10 +1173,10 @@
    :state-all-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                   [:state router-id]
                                   wrap-secure-request-fn]
-                           (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
+                           (let [query-state-fn (get-in router-state-maintainer [:maintainer :query-state-fn])]
                              (wrap-secure-request-fn
                                (fn state-all-handler-fn [request]
-                                 (handler/get-router-state router-id state-chan request)))))
+                                 (handler/get-router-state router-id query-state-fn request)))))
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]
@@ -1218,10 +1218,10 @@
    :state-maintainer-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                          [:state router-id]
                                          wrap-secure-request-fn]
-                                  (let [state-chan (get-in router-state-maintainer [:maintainer-chans :state-chan])]
+                                  (let [query-state-fn (get-in router-state-maintainer [:maintainer :query-state-fn])]
                                     (wrap-secure-request-fn
                                       (fn maintainer-state-handler-fn [request]
-                                        (handler/get-chan-latest-state-handler router-id state-chan request)))))
+                                        (handler/get-chan-latest-state-handler router-id query-state-fn request)))))
    :state-router-metrics-handler-fn (pc/fnk [[:routines router-metrics-helpers]
                                              [:state router-id]
                                              wrap-secure-request-fn]

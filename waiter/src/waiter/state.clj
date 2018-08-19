@@ -1180,32 +1180,34 @@
 
 (defn start-router-state-maintainer
   "Start the instance state maintainer.
-   Maintains the state of the router as well as the state of marathon
-   and the existence of other routers. Acts as the central access point
-   for modifying this data for the router."
+   Maintains the state of the router as well as the state of marathon and the existence of other routers.
+   Acts as the central access point for modifying this data for the router.
+   Exposes the state of the router via a `query-state-fn` no-args function that is returned."
   [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config]
-  (let [state-chan (async/chan)
+  (let [state-atom (atom {:all-available-service-ids #{}
+                          :service-id->healthy-instances {}
+                          :service-id->unhealthy-instances {}
+                          :service-id->my-instance->slots {} ; updated in update-router-state
+                          :service-id->expired-instances {}
+                          :service-id->starting-instances {}
+                          :service-id->failed-instances {}
+                          :service-id->instance-counts {}
+                          :service-id->deployment-error {}
+                          :service-id->instability-issue {}
+                          :iteration 0
+                          :routers []
+                          :time (t/now)})
         router-state-push-chan (au/latest-chan)
         query-chan (async/chan)]
-    {:state-chan state-chan
-     :router-state-push-mult (async/mult router-state-push-chan)
+    {:router-state-push-mult (async/mult router-state-push-chan)
      :query-chan query-chan
+     :query-state-fn (fn router-state-maintainer-query-state-fn []
+                       (assoc @state-atom :router-id router-id))
      :go-chan
      (async/go
        (try
-         (loop [{:keys [iteration routers] :as current-state}
-                {:service-id->healthy-instances {}
-                 :service-id->unhealthy-instances {}
-                 :service-id->my-instance->slots {} ; updated in update-router-state
-                 :service-id->expired-instances {}
-                 :service-id->starting-instances {}
-                 :service-id->failed-instances {}
-                 :service-id->instance-counts {}
-                 :service-id->deployment-error {}
-                 :service-id->instability-issue {}
-                 :iteration 0
-                 :routers []
-                 :time (t/now)}]
+         (loop [{:keys [iteration routers] :as current-state} @state-atom]
+           (reset! state-atom current-state)
            (let [next-state
                  (async/alt!
                    exit-chan
@@ -1227,15 +1229,16 @@
                                (case message-type
                                  :update-available-services
                                  (let [{:keys [available-service-ids scheduler-sync-time]} message-data
-                                       services-without-instances (remove #(contains? service-id->my-instance->slots %) available-service-ids)
-                                       service-id->healthy-instances' (select-keys service-id->healthy-instances available-service-ids)
-                                       service-id->unhealthy-instances' (select-keys service-id->unhealthy-instances available-service-ids)
-                                       service-id->expired-instances' (select-keys service-id->expired-instances available-service-ids)
-                                       service-id->starting-instances' (select-keys service-id->starting-instances available-service-ids)
-                                       service-id->failed-instances' (select-keys service-id->failed-instances available-service-ids)
-                                       service-id->instance-counts' (select-keys service-id->instance-counts available-service-ids)
-                                       service-id->deployment-error' (select-keys service-id->deployment-error available-service-ids)
-                                       service-id->instability-issue' (select-keys service-id->instability-issue available-service-ids)]
+                                       all-available-service-ids' available-service-ids
+                                       services-without-instances (remove #(contains? service-id->my-instance->slots %) all-available-service-ids')
+                                       service-id->healthy-instances' (select-keys service-id->healthy-instances all-available-service-ids')
+                                       service-id->unhealthy-instances' (select-keys service-id->unhealthy-instances all-available-service-ids')
+                                       service-id->expired-instances' (select-keys service-id->expired-instances all-available-service-ids')
+                                       service-id->starting-instances' (select-keys service-id->starting-instances all-available-service-ids')
+                                       service-id->failed-instances' (select-keys service-id->failed-instances all-available-service-ids')
+                                       service-id->instance-counts' (select-keys service-id->instance-counts all-available-service-ids')
+                                       service-id->deployment-error' (select-keys service-id->deployment-error all-available-service-ids')
+                                       service-id->instability-issue' (select-keys service-id->instability-issue all-available-service-ids')]
                                    (when (or (not= service-id->healthy-instances service-id->healthy-instances')
                                              (not= service-id->unhealthy-instances service-id->unhealthy-instances')
                                              (seq services-without-instances))
@@ -1244,6 +1247,7 @@
                                                (count services-without-instances) "services without instances:"
                                                (vec services-without-instances)))
                                    (assoc loop-state
+                                     :all-available-service-ids all-available-service-ids'
                                      :service-id->healthy-instances service-id->healthy-instances'
                                      :service-id->unhealthy-instances service-id->unhealthy-instances'
                                      :service-id->expired-instances service-id->expired-instances'
@@ -1338,10 +1342,7 @@
                                  (update-router-state router-id current-state candidate-state service-id->service-description-fn))
                                current-state)]
                          (async/put! router-state-push-chan new-state)
-                         new-state)))
-
-                   [[state-chan current-state]]
-                   (assoc current-state :router-id router-id))]
+                         new-state))))]
              (if next-state
                (recur next-state)
                (log/info "Stopping router-state-maintainer as next state is nil"))))

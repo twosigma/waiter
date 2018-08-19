@@ -231,45 +231,39 @@
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
-  [entitlement-manager state-chan prepend-waiter-url service-id->service-description-fn service-id->metrics-fn request]
-  (let [timeout-ms 30000
-        current-state (async/alt!!
-                        state-chan ([state-data] state-data)
-                        (async/timeout timeout-ms) ([_] :timeout)
-                        :priority true)]
-    (if (= :timeout current-state)
-      (throw (ex-info "Query for service state timed out" {:status 503}))
-      (let [request-params (-> request ru/query-params-request :query-params)
-            auth-user (get request :authorization/user)
-            run-as-user-param (get request-params "run-as-user")
-            viewable-services (filter
-                                #(let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn % :effective? false)]
-                                   (and service-description
-                                        (if run-as-user-param
-                                          (= run-as-user run-as-user-param)
-                                          (authz/manage-service? entitlement-manager auth-user % service-description))))
-                                (->> (concat (keys (:service-id->healthy-instances current-state))
-                                             (keys (:service-id->unhealthy-instances current-state)))
-                                     (apply sorted-set)))
-            retrieve-instance-counts (fn retrieve-instance-counts [service-id]
-                                       {:healthy-instances (count (get-in current-state [:service-id->healthy-instances service-id]))
-                                        :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
-            service-id->metrics (service-id->metrics-fn)
-            include-effective-parameters? (utils/request-flag request-params "effective-parameters")
-            response-data (map
-                            (fn service-id->service-info [service-id]
-                              (let [service-description (service-id->service-description-fn service-id :effective? false)]
-                                (cond->
-                                  {:instance-counts (retrieve-instance-counts service-id)
-                                   :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
-                                   :service-id service-id
-                                   :service-description service-description
-                                   :url (prepend-waiter-url (str "/apps/" service-id))}
-                                  include-effective-parameters? (assoc :effective-parameters
-                                                                       (service-id->service-description-fn
-                                                                         service-id :effective? true)))))
-                            viewable-services)]
-        (utils/map->streaming-json-response response-data)))))
+  [entitlement-manager query-state-fn prepend-waiter-url service-id->service-description-fn service-id->metrics-fn request]
+  (let [current-state (query-state-fn)]
+    (let [request-params (-> request ru/query-params-request :query-params)
+          auth-user (get request :authorization/user)
+          run-as-user-param (get request-params "run-as-user")
+          viewable-services (filter
+                              #(let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn % :effective? false)]
+                                 (and service-description
+                                      (if run-as-user-param
+                                        (= run-as-user run-as-user-param)
+                                        (authz/manage-service? entitlement-manager auth-user % service-description))))
+                              (->> (concat (keys (:service-id->healthy-instances current-state))
+                                           (keys (:service-id->unhealthy-instances current-state)))
+                                   (apply sorted-set)))
+          retrieve-instance-counts (fn retrieve-instance-counts [service-id]
+                                     {:healthy-instances (count (get-in current-state [:service-id->healthy-instances service-id]))
+                                      :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
+          service-id->metrics (service-id->metrics-fn)
+          include-effective-parameters? (utils/request-flag request-params "effective-parameters")
+          response-data (map
+                          (fn service-id->service-info [service-id]
+                            (let [service-description (service-id->service-description-fn service-id :effective? false)]
+                              (cond->
+                                {:instance-counts (retrieve-instance-counts service-id)
+                                 :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
+                                 :service-id service-id
+                                 :service-description service-description
+                                 :url (prepend-waiter-url (str "/apps/" service-id))}
+                                include-effective-parameters? (assoc :effective-parameters
+                                                                     (service-id->service-description-fn
+                                                                       service-id :effective? true)))))
+                          viewable-services)]
+      (utils/map->streaming-json-response response-data))))
 
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
@@ -518,35 +512,33 @@
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [router-id state-chan request]
-  (async/go
-    (try
-      (let [routers (-> state-chan retrieve-channel-state async/<! :routers)
-            host (get-in request [:headers "host"])
-            scheme (some-> request utils/request->scheme name)
-            make-url (fn make-url [path]
-                       (str (when scheme (str scheme "://")) host "/state/" path))]
-        (-> {:details (->> ["fallback" "interstitial" "kv-store" "launch-metrics" "leader"
-                            "local-usage" "maintainer" "router-metrics" "scheduler" "statsd"]
-                           (pc/map-from-keys make-url))
-             :router-id router-id
-             :routers routers}
-            (utils/map->streaming-json-response)))
-      (catch Exception ex
-        (utils/exception->response ex request)))))
+  [router-id query-state-fn request]
+  (try
+    (let [{:keys [routers]} (query-state-fn)
+          host (get-in request [:headers "host"])
+          scheme (some-> request utils/request->scheme name)
+          make-url (fn make-url [path]
+                     (str (when scheme (str scheme "://")) host "/state/" path))]
+      (-> {:details (->> ["fallback" "interstitial" "kv-store" "launch-metrics" "leader"
+                          "local-usage" "maintainer" "router-metrics" "scheduler" "statsd"]
+                         (pc/map-from-keys make-url))
+           :router-id router-id
+           :routers routers}
+          (utils/map->streaming-json-response)))
+    (catch Exception ex
+      (utils/exception->response ex request))))
 
 (defn get-chan-latest-state-handler
   "Outputs the latest state of the channel."
-  [router-id state-chan request]
-  (async/go
-    (try
-      (log/info (str "Waiting for response from state channel"))
-      (let [data (-> state-chan retrieve-channel-state async/<!)
-            state (or data {:message "Request timeout"})]
-        (-> {:router-id router-id :state state}
-            (utils/map->streaming-json-response)))
-      (catch Exception ex
-        (utils/exception->response ex request)))))
+  [router-id query-state-fn request]
+  (try
+    (log/info (str "Waiting for response from state channel"))
+    (let [data (query-state-fn)
+          state (or data {:message "No data available"})]
+      (-> {:router-id router-id :state state}
+          (utils/map->streaming-json-response)))
+    (catch Exception ex
+      (utils/exception->response ex request))))
 
 (defn get-query-chan-state-handler
   "Outputs the state by sending a standard query to the channel."
