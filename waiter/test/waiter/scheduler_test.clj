@@ -804,3 +804,12 @@
           (is (= expected-state-1 actual-state-1')))
         (testing "applied router state update"
           (is (= expected-state-2 actual-state-2)))))))
+
+(deftest test-scheduler-naming
+  (let [scheduler (reify ServiceScheduler)]
+    (is (nil? (scheduler->name scheduler)))
+    (let [scheduler (attach-name scheduler "foo")]
+      (is (= "foo" (scheduler->name scheduler)))
+      (let [scheduler (attach-name scheduler "bar")]
+        (is (= "bar" (scheduler->name scheduler))))
+      (is (= "foo" (scheduler->name scheduler))))))

@@ -613,11 +613,13 @@
                        service-id->password-fn*
                        service-id->service-description-fn*]
                 (let [is-waiter-app?-fn (fn is-waiter-app? [^String service-id]
-                                          (str/starts-with? service-id service-id-prefix))]
-                  (utils/create-component scheduler-config :context {:is-waiter-app?-fn is-waiter-app?-fn
-                                                                     :leader?-fn leader?-fn
-                                                                     :service-id->password-fn service-id->password-fn*
-                                                                     :service-id->service-description-fn service-id->service-description-fn*})))
+                                          (str/starts-with? service-id service-id-prefix))
+                      scheduler-context {:is-waiter-app?-fn is-waiter-app?-fn
+                                         :leader?-fn leader?-fn
+                                         :service-id->password-fn service-id->password-fn*
+                                         :service-id->service-description-fn service-id->service-description-fn*}]
+                  (-> (utils/create-component scheduler-config :context scheduler-context)
+                      (scheduler/attach-name (-> scheduler-config :kind name)))))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
    :service-id->password-fn* (pc/fnk [[:state passwords]]
