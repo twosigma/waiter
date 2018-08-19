@@ -992,17 +992,17 @@
                                 (async/tap router-state-push-mult state-chan)
                                 (state/start-service-chan-maintainer
                                   {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
-   :state-query-chans (pc/fnk [[:state query-app-maintainer-chan]
-                               autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
-                               scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
-                        {:app-maintainer-state query-app-maintainer-chan
-                         :autoscaler-state (:query autoscaler)
-                         :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
-                         :interstitial-maintainer-state (:query-chan interstitial-maintainer)
-                         :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
-                         :scheduler-services-gc-state (:query scheduler-services-gc)
-                         :scheduler-state (:query-chan scheduler-maintainer)
-                         :transient-metrics-gc-state (:query gc-for-transient-metrics)})
+   :state-sources (pc/fnk [[:state query-app-maintainer-chan]
+                           autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
+                           scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
+                    {:app-maintainer-state query-app-maintainer-chan
+                     :autoscaler-state (:query-service-state-fn autoscaler)
+                     :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
+                     :interstitial-maintainer-state (:query-chan interstitial-maintainer)
+                     :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
+                     :scheduler-services-gc-state (:query scheduler-services-gc)
+                     :scheduler-state (:query-chan scheduler-maintainer)
+                     :transient-metrics-gc-state (:query gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
                     scheduler-maintainer]
@@ -1236,13 +1236,13 @@
                                    (wrap-secure-request-fn
                                      (fn scheduler-state-handler-fn [request]
                                        (handler/get-query-chan-state-handler router-id scheduler-query-chan request)))))
-   :state-service-handler-fn (pc/fnk [[:daemons state-query-chans]
+   :state-service-handler-fn (pc/fnk [[:daemons state-sources]
                                       [:state instance-rpc-chan local-usage-agent router-id]
                                       wrap-secure-request-fn]
                                (wrap-secure-request-fn
                                  (fn service-state-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                    (handler/get-service-state router-id instance-rpc-chan local-usage-agent
-                                                              service-id state-query-chans request))))
+                                                              service-id state-sources request))))
    :state-statsd-handler-fn (pc/fnk [[:state router-id]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn

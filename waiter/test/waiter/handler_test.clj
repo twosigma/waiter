@@ -819,15 +819,19 @@
       (start-instance-rpc-fn)
       (start-query-chan-fn)
       (start-maintainer-fn)
-      (let [response (async/<!! (get-service-state router-id instance-rpc-chan local-usage-agent
-                                                   service-id {:maintainer-state maintainer-state-chan} {}))
+      (let [query-sources {:autoscaler-state (fn [{:keys [service-id]}]
+                                               {:service-id service-id :source "autoscaler"})
+                           :maintainer-state maintainer-state-chan}
+            response (->> (get-service-state router-id instance-rpc-chan local-usage-agent service-id query-sources {})
+                          (async/<!!))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))
         (is (= {:last-request-time "foo"}
                (get-in service-state [:state :local-usage])))
         (is (= work-stealing-state (get-in service-state [:state :work-stealing-state])))
-        (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))))))
+        (is (= (assoc maintainer-state :service-id service-id) (get-in service-state [:state :maintainer-state])))
+        (is (= {:service-id service-id :source "autoscaler"} (get-in service-state [:state :autoscaler-state])))))))
 
 (deftest test-acknowledge-consent-handler
   (let [current-time-ms (System/currentTimeMillis)
