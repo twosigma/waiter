@@ -73,7 +73,7 @@
 (defn make-ServiceInstance [value-map]
   (map->ServiceInstance (merge {:extra-ports [] :flags #{}} value-map)))
 
-(let [name-key :waiter/scheduler-name]
+(let [name-key :waiter.scheduler/name]
   (defn attach-name
     "Attaches the name metadata to the scheduler."
     [scheduler scheduler-name]
