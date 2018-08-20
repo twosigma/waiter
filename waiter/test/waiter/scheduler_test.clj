@@ -806,10 +806,5 @@
           (is (= expected-state-2 actual-state-2)))))))
 
 (deftest test-scheduler-naming
-  (let [scheduler (reify ServiceScheduler)]
-    (is (nil? (scheduler->name scheduler)))
-    (let [scheduler (attach-name scheduler "foo")]
-      (is (= "foo" (scheduler->name scheduler)))
-      (let [scheduler (attach-name scheduler "bar")]
-        (is (= "bar" (scheduler->name scheduler))))
-      (is (= "foo" (scheduler->name scheduler))))))
+  (is (-> (reify ServiceScheduler) scheduler->name nil?))
+  (is (-> (reify ServiceScheduler) (attach-name "foo") scheduler->name (= "foo"))))
