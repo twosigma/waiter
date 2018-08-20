@@ -73,6 +73,17 @@
 (defn make-ServiceInstance [value-map]
   (map->ServiceInstance (merge {:extra-ports [] :flags #{}} value-map)))
 
+(defn attach-name
+  "Attaches the name metadata to the scheduler."
+  [scheduler scheduler-name]
+  {:pre [(not (str/blank? scheduler-name))]}
+  (vary-meta scheduler assoc ::name scheduler-name))
+
+(defn scheduler->name
+  "Retrieves the scheduler name."
+  [scheduler]
+  (some-> scheduler meta ::name))
+
 (defprotocol ServiceScheduler
 
   (get-service->instances [this]
@@ -451,7 +462,7 @@
   (let [^DateTime request-apps-time (t/now)
         timing-message-fn (fn [] (let [^DateTime now (t/now)]
                                    (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-apps-time)) " ms")))]
-    (log/trace "scheduler-syncer: querying scheduler")
+    (log/trace "scheduler-syncer: querying" (scheduler->name scheduler) "scheduler")
     (if-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "app->available-tasks")
                                           (do-health-checks (request-available-waiter-apps scheduler)
@@ -460,14 +471,16 @@
                                                             service-id->service-description-fn))]
       (let [available-services (keys service->service-instances)
             available-service-ids (->> available-services (map :id) (set))]
-        (log/debug "scheduler-syncer:" (count service->service-instances) "available services:" available-service-ids)
+        (log/debug "scheduler-syncer:" (scheduler->name scheduler) "scheduler has" (count service->service-instances)
+                   "available services:" available-service-ids)
         (doseq [service available-services]
           (when (->> (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])
                      vals
                      (filter number?)
                      (reduce + 0)
                      zero?)
-            (log/info "scheduler-syncer:" (:id service) "has no live instances!" (:task-stats service))))
+            (log/info "scheduler-syncer:" (:id service) "in" (scheduler->name scheduler) "scheduler"
+                      "has no live instances!" (:task-stats service))))
         (loop [service-id->health-check-context' {}
                healthy-service-ids #{}
                scheduler-messages []

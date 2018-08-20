@@ -804,3 +804,7 @@
           (is (= expected-state-1 actual-state-1')))
         (testing "applied router state update"
           (is (= expected-state-2 actual-state-2)))))))
+
+(deftest test-scheduler-naming
+  (is (-> (reify ServiceScheduler) scheduler->name nil?))
+  (is (-> (reify ServiceScheduler) (attach-name "foo") scheduler->name (= "foo"))))
