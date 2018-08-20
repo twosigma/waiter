@@ -619,7 +619,7 @@
                                          :service-id->password-fn service-id->password-fn*
                                          :service-id->service-description-fn service-id->service-description-fn*}]
                   (-> (utils/create-component scheduler-config :context scheduler-context)
-                      (scheduler/attach-name (-> scheduler-config :kind name)))))
+                      (scheduler/attach-name (-> scheduler-config :kind utils/keyword->str)))))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
    :service-id->password-fn* (pc/fnk [[:state passwords]]

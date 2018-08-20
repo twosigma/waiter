@@ -118,7 +118,7 @@
     (log/debug "generate-secret-word" [src-id dest-id] "->" secret-word)
     secret-word))
 
-(defn- keyword->str
+(defn keyword->str
   "Converts keyword to string including the namespace."
   [k]
   (str (.-sym k)))

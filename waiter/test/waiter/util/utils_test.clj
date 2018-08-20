@@ -106,6 +106,12 @@
     (is (not (str/includes? actual "dest")))
     (is (not (str/includes? actual "pass")))))
 
+(deftest test-keyword->str
+  (is (= "foo" (keyword->str :foo)))
+  (is (= "foo-bar" (keyword->str :foo-bar)))
+  (is (= "foo/bar" (keyword->str :foo/bar)))
+  (is (= "foo.bar/fuu-baz" (keyword->str :foo.bar/fuu-baz))))
+
 (deftest test-clj->json-response
   (testing "Conversion from map to JSON response"
 
