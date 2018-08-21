@@ -853,14 +853,17 @@
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]
                                      [:settings [:scaling quanta-constraints]]
-                                     [:state instance-rpc-chan scaling-timeout-config]]
-                              (scaling/service-scaling-multiplexer
-                                (fn scaling-executor-factory [service-id]
-                                  (scaling/service-scaling-executor
-                                    service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                                    delegate-instance-kill-request-fn service-id->service-description-fn
-                                    quanta-constraints scaling-timeout-config))
-                                {}))
+                                     [:state instance-rpc-chan scaling-timeout-config]
+                                     router-state-maintainer]
+                              (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
+                                (scaling/service-scaling-multiplexer
+                                  (fn scaling-executor-factory [service-id]
+                                    (scaling/service-scaling-executor
+                                      notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                                      delegate-instance-kill-request-fn service-id->service-description-fn
+                                      scheduler instance-rpc-chan quanta-constraints scaling-timeout-config
+                                      service-id))
+                                  {})))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  scheduler-maintainer]
                           (let [scheduler-state-mult-chan (:scheduler-state-mult-chan scheduler-maintainer)
@@ -1068,14 +1071,17 @@
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
                             :content-type "image/png"}))
-   :kill-instance-handler-fn (pc/fnk [[:routines peers-acknowledged-blacklist-requests-fn]
+   :kill-instance-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                      [:routines peers-acknowledged-blacklist-requests-fn]
                                       [:scheduler scheduler]
                                       [:state instance-rpc-chan scaling-timeout-config]
                                       wrap-router-auth-fn]
-                               (wrap-router-auth-fn
-                                 (fn kill-instance-handler-fn [request]
-                                   (scaling/kill-instance-handler scheduler instance-rpc-chan scaling-timeout-config
-                                                                  peers-acknowledged-blacklist-requests-fn request))))
+                               (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
+                                 (wrap-router-auth-fn
+                                   (fn kill-instance-handler-fn [request]
+                                     (scaling/kill-instance-handler
+                                       notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                                       scheduler instance-rpc-chan scaling-timeout-config request)))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
