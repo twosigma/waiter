@@ -162,7 +162,7 @@
    :status status
    :headers (assoc headers "content-type" "application/json")})
 
-(defn map->streaming-json-response
+(defn clj->streaming-json-response
   "Converts the data into a json response which can be streamed back to the client."
   [data-map & {:keys [status] :or {status 200}}]
   (let [data-map (doall data-map)]
@@ -171,7 +171,12 @@
      :body (fn [^ServletResponse resp]
              (let [writer (OutputStreamWriter. (.getOutputStream resp))]
                (try
-                 (json/write data-map writer :key-fn stringify-keys :value-fn stringify-elements)
+                 (json/write
+                   data-map
+                   writer
+                   :escape-slash false
+                   :key-fn stringify-keys
+                   :value-fn stringify-elements)
                  (catch Exception e
                    (log/error e "Exception creating streaming json response")
                    (throw e))

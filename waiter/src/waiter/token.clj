@@ -498,7 +498,7 @@
                                        (not show-metadata)
                                        (dissoc :deleted :etag)))))))
                   flatten
-                  utils/map->streaming-json-response))
+                  utils/clj->streaming-json-response))
       (throw (ex-info "Only GET supported" {:request-method request-method
                                             :status 405})))
     (catch Exception ex
