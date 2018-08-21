@@ -1369,8 +1369,8 @@
               (System/exit 1))))]
     {:go-chan go-chan
      :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
-                                  (async/go
-                                    (async/>! kill-notification-chan {:instance instance})))
+                                  (log/info "received notification of killed instance" (:id instance))
+                                  (async/go (async/>! kill-notification-chan {:instance instance})))
      :query-chan query-chan
      :query-state-fn (fn router-state-maintainer-query-state-fn []
                        (assoc @state-atom :router-id router-id))
