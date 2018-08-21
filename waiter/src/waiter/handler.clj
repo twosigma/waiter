@@ -297,16 +297,28 @@
   [generate-log-url-fn service-instance]
   (assoc service-instance :log-url (generate-log-url-fn service-instance)))
 
+(defn- get-service-instances
+  "Retrieve a {:active-instances [...] :failed-instances [...] :killed-instances [...]} map of
+   scheduler/ServiceInstance records for the given service-id.
+   The active-instances should not be assumed to be healthy (or live)."
+  [query-state-fn service-id]
+  (let [{:keys [service-id->failed-instances service-id->healthy-instances service-id->killed-instances
+                service-id->unhealthy-instances]} (query-state-fn)]
+    {:active-instances (concat (get service-id->healthy-instances service-id)
+                               (get service-id->unhealthy-instances service-id))
+     :failed-instances (get service-id->failed-instances service-id)
+     :killed-instances (get service-id->killed-instances service-id)}))
+
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
-  [router-id service-id core-service-description scheduler kv-store generate-log-url-fn make-inter-router-requests-fn
-   service-id->service-description-fn request]
+  [router-id service-id core-service-description kv-store generate-log-url-fn make-inter-router-requests-fn
+   service-id->service-description-fn query-state-fn request]
   (let [service-instance-maps (try
                                 (let [assoc-log-url-to-instances
                                       (fn assoc-log-url-to-instances [instances]
                                         (when (not-empty instances)
                                           (map #(assoc-log-url generate-log-url-fn %) instances)))]
-                                  (-> (scheduler/get-instances scheduler service-id)
+                                  (-> (get-service-instances query-state-fn service-id)
                                       (update :active-instances assoc-log-url-to-instances)
                                       (update :failed-instances assoc-log-url-to-instances)
                                       (update :killed-instances assoc-log-url-to-instances)))
@@ -364,7 +376,7 @@
      :delete deletes the service from the scheduler (after authorization checks).
      :get returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
-   service-id->service-description-fn request]
+   service-id->service-description-fn query-state-fn request]
   (try
     (when (not service-id)
       (throw (ex-info "Missing service-id" {:status 400})))
@@ -373,8 +385,8 @@
         (throw (ex-info "Service not found" {:status 404 :service-id service-id}))
         (case (:request-method request)
           :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn request)
-          :get (get-service-handler router-id service-id core-service-description scheduler kv-store
-                                    generate-log-url-fn make-inter-router-requests-fn service-id->service-description-fn
+          :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
+                                    make-inter-router-requests-fn service-id->service-description-fn  query-state-fn
                                     request))))
     (catch Exception ex
       (utils/exception->response ex request))))
