@@ -95,12 +95,6 @@
   (get-services [this]
     "Returns a list of scheduler/Service records")
 
-  (get-instances [this ^String service-id]
-    "Retrieve a {:active-instances [...] :failed-instances [...] :killed-instances [...]} map of
-     scheduler/ServiceInstance records for the given service-id.
-     The active-instances should not be assumed to be healthy (or live).
-     The failed-instances are guaranteed to be dead.")
-
   (kill-instance [this instance]
     "Instructs the scheduler to kill a specific ServiceInstance.
      Returns a map containing the following structure:

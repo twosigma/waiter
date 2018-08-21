@@ -355,19 +355,6 @@
           (-> service-id service-id->jobs jobs->service))
         (keys service-id->jobs))))
 
-  (get-instances [_ service-id]
-    (ss/try+
-      (scheduler/retry-on-transient-server-exceptions
-        (str "get-instances[" service-id "]")
-        {:active-instances (some->> (service-id->service-description-fn service-id)
-                                    (retrieve-jobs cook-api search-interval service-id)
-                                    (map job->service-instance)
-                                    doall)
-         :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
-         :killed-instances (scheduler/service-id->killed-instances service-id)})
-      (catch [:status 404] {}
-        (log/warn "get-instances: service" service-id "does not exist!"))))
-
   (kill-instance [this {:keys [cook/job-uuid id service-id] :as instance}]
     (if (scheduler/service-exists? this service-id)
       (let [log-data {:instance-id id :job-uuid job-uuid :service-id service-id}

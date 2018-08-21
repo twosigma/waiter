@@ -725,37 +725,6 @@
           (scheduler/remove-killed-instances-for-service! "S1")
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
 
-(deftest test-get-service-instances
-  (let [{:keys [service-id->failed-instances-transient-store] :as scheduler} (create-cook-scheduler-helper)
-        suffix (System/nanoTime)
-        jobs [{:labels {:service-id "S1"} :name (str "healthy-S1.1." suffix) :status "running"}
-              {:labels {:service-id "S1"} :name (str "healthy-S1.2." suffix) :status "running"}
-              {:labels {:service-id "S1"} :name (str "unhealthy-S1." suffix) :status "running"}
-              {:labels {:service-id "S1"} :name (str "staging-S1.1." suffix) :status "staging"}]]
-    (with-redefs [retrieve-jobs (constantly jobs)
-                  job->service-instance (fn [{:keys [name]}] {:id name})]
-
-      (scheduler/process-instance-killed! {:id (str "killed-S1.1." suffix) :service-id "S1"})
-      (scheduler/add-instance-to-buffered-collection!
-        service-id->failed-instances-transient-store 1 "S1"
-        {:id (str "failed-S1.1." suffix) :service-id "S1"}
-        (fn [] #{})
-        (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))
-      (try
-        (is (seq (scheduler/service-id->killed-instances "S1")))
-        (is (seq (service-id->failed-instances service-id->failed-instances-transient-store "S1")))
-
-        (is (= {:active-instances [{:id (str "healthy-S1.1." suffix)}
-                                   {:id (str "healthy-S1.2." suffix)}
-                                   {:id (str "unhealthy-S1." suffix)}
-                                   {:id (str "staging-S1.1." suffix)}]
-                :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store "S1")
-                :killed-instances (scheduler/service-id->killed-instances "S1")}
-               (scheduler/get-instances scheduler "S1")))
-        (finally
-          (scheduler/remove-killed-instances-for-service! "S1")
-          (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
-
 (deftest test-kill-instance
   (let [scheduler (create-cook-scheduler-helper)
         service-id "foo"

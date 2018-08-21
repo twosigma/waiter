@@ -429,14 +429,6 @@
   (get-services [this]
     (get-services this))
 
-  (get-instances [this service-id]
-    (instances-breakdown! this
-                          {:id service-id
-                           :k8s/app-name (service-id->k8s-app-name this service-id)
-                           :k8s/namespace (-> service-id
-                                              service-id->service-description-fn
-                                              (get "run-as-user"))}))
-
   (kill-instance [this {:keys [id service-id] :as instance}]
     (ss/try+
       (let [service (service-id->service this service-id)]

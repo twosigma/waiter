@@ -553,11 +553,6 @@
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 
-  (get-instances [_ service-id]
-    (let [id->service @id->service-agent
-          service-entry (get id->service service-id)]
-      (second (service-entry->instances service-entry))))
-
   (kill-instance [this {:keys [id service-id] :as instance}]
     (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]

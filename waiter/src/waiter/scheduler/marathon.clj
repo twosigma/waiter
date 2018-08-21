@@ -336,17 +336,6 @@
   (get-services [_]
     (map response->Service (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})))
 
-  (get-instances [_ service-id]
-    (ss/try+
-      (scheduler/retry-on-transient-server-exceptions
-        (str "get-instances[" service-id "]")
-        (let [marathon-response (marathon/get-app marathon-api service-id)]
-          (response-data->service-instances
-            marathon-response [:app] retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
-            service-id->service-description)))
-      (catch [:status 404] {}
-        (log/warn "get-instances: service" service-id "does not exist!"))))
-
   (kill-instance [_ {:keys [id service-id] :as instance}]
     (let [current-time (t/now)
           {:keys [kill-failing-since] :or {kill-failing-since current-time}}
