@@ -360,7 +360,7 @@
                 (gauge! metric-group "mem" mem))
               metric-group->counts)))
 
-(defn process-service-instance-state
+(defn merge-service-state
   "Merges the current map of resources by metric group with service data from a router state update message."
   [service-id->service-description-fn service-id healthy-instances unhealthy-instances failed-instances
    metric-group->counts]
@@ -396,7 +396,7 @@
             healthy-instances (get service-id->healthy-instances service-id)
             unhealthy-instances (get service-id->unhealthy-instances service-id)]
         (recur remaining-service-ids
-               (process-service-instance-state
+               (merge-service-state
                  service-id->service-description-fn service-id healthy-instances unhealthy-instances failed-instances
                  metric-group->counts))))))
 

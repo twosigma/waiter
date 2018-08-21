@@ -148,7 +148,7 @@
                 :service-id->healthy-instances {:fee [:i]}
                 :service-id->unhealthy-instances {:fee [:i :i]}}))))))
 
-(deftest test-process-service-instance-state
+(deftest test-merge-service-state
   (testing "Processing of an :update-service-instances scheduler message"
 
     (testing "should not let exceptions bubble out"
@@ -156,15 +156,15 @@
             healthy-instances [:i]
             unhealthy-instances [:i :i]
             failed-instances [:i :i :i]]
-        (is (= {} (statsd/process-service-instance-state
+        (is (= {} (statsd/merge-service-state
                     misbehaving-fn "foo" healthy-instances unhealthy-instances failed-instances {})))
         (is (= {"foo" {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0.5, :mem 384}}
-               (statsd/process-service-instance-state
+               (statsd/merge-service-state
                  misbehaving-fn "bar" healthy-instances unhealthy-instances failed-instances
                  {"foo" {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0.5, :mem 384}})))))
 
     (testing "should not include instance counts when service description is nil"
-      (is (= {} (statsd/process-service-instance-state
+      (is (= {} (statsd/merge-service-state
                   (constantly nil)
                   "fee" [:i] [:i :i] [:i :i :i]
                   {}))))))
