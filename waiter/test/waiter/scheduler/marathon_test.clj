@@ -34,22 +34,19 @@
                           :name "response-data->service-instances no response"
                           :marathon-response nil
                           :expected-response {:active-instances []
-                                              :failed-instances []
-                                              :killed-instances []}
+                                              :failed-instances []}
                           :service-id->service-description {}},
                          {
                           :name "response-data->service-instances empty response"
                           :marathon-response {}
                           :expected-response {:active-instances []
-                                              :failed-instances []
-                                              :killed-instances []}
+                                              :failed-instances []}
                           :service-id->service-description {}},
                          {
                           :name "response-data->service-instances empty-app response"
                           :marathon-response {:app {}}
                           :expected-response {:active-instances []
-                                              :failed-instances []
-                                              :killed-instances []}
+                                              :failed-instances []}
                           :service-id->service-description {}},
                          {
                           :name "response-data->service-instances valid response with task failure"
@@ -151,8 +148,7 @@
                                                   :port 0,
                                                   :protocol "https",
                                                   :service-id "test-app-1234",
-                                                  :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))
-                           :killed-instances []}
+                                                  :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)}))}
                           :service-id->service-description {"test-app-1234" {"backend-proto" "https"}}},
                          {
                           :name "response-data->service-instances valid response without task failure"
@@ -238,8 +234,7 @@
                                                   :protocol "http",
                                                   :service-id "test-app-1234",
                                                   :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
-                           :failed-instances []
-                           :killed-instances []}
+                           :failed-instances []}
                           :service-id->service-description {"test-app-1234" {"backend-proto" "http"}}})]
     (doseq [{:keys [expected-response marathon-response name service-id->service-description]} test-cases]
       (testing (str "Test " name)
@@ -253,7 +248,6 @@
                                 service-id->failed-instances-transient-store
                                 service-id->service-description)]
           (is (= expected-response actual-response) (str name))
-          (scheduler/preserve-only-killed-instances-for-services! [])
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
 
 (deftest test-response-data->service->service-instances
@@ -356,8 +350,7 @@
                          :port 31234
                          :protocol "https"
                          :started-at (du/str-to-date "2014-09-13T00:24:46.965Z" formatter-marathon)}))
-                    :failed-instances []
-                    :killed-instances []}
+                    :failed-instances []}
                    (scheduler/make-Service {:id "test-app-6789", :instances 3, :task-count 3})
                    {:active-instances
                     (list
@@ -395,15 +388,13 @@
                          :port 0
                          :protocol "http"
                          :started-at (du/str-to-date "2014-09-12T23:23:41.711Z" formatter-marathon)
-                         :message "Abnormal executor termination"}))
-                    :killed-instances []})
+                         :message "Abnormal executor termination"}))})
         service-id->failed-instances-transient-store (atom {})
         service-id->service-description {"test-app-1234" {"backend-proto" "https"}
                                          "test-app-6789" {"backend-proto" "http"}}
         actual (response-data->service->service-instances
                  input (fn [] nil) nil service-id->failed-instances-transient-store service-id->service-description)]
     (is (= expected actual))
-    (scheduler/preserve-only-killed-instances-for-services! [])
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])))
 
 (deftest test-service-id->failed-instances-transient-store
@@ -432,7 +423,6 @@
         service-id-1 "test-service-id-failed-instances-1"
         service-id-2 "test-service-id-failed-instances-2"
         service-id->failed-instances-transient-store (atom {})]
-    (scheduler/preserve-only-killed-instances-for-services! [])
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])
     (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
@@ -449,7 +439,6 @@
     (is (= 3 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "D") common-extractor-fn)
     (is (= 4 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (scheduler/preserve-only-killed-instances-for-services! [])
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])
     (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
@@ -664,67 +653,9 @@
                              :service-id->kill-info-store (atom {service-id :kill-call-info}))
         state (scheduler/service-id->state marathon-scheduler service-id)]
     (is (= {:failed-instances [:failed-instances]
-            :killed-instances []
             :kill-info :kill-call-info
             :out-of-sync-state nil}
            state))))
-
-(deftest test-killed-instances-transient-store
-  (let [current-time (t/now)
-        current-time-str (du/date-to-str current-time)
-        marathon-api (Object.)
-        marathon-scheduler (create-marathon-scheduler :force-kill-after-ms 60000 :marathon-api marathon-api)
-        make-instance (fn [service-id instance-id]
-                        {:id instance-id
-                         :service-id service-id})]
-    (with-redefs [marathon/kill-task (fn [in-marathon-api service-id instance-id scale-value force-value]
-                                       (is (= marathon-api in-marathon-api))
-                                       (is (= [scale-value force-value] [true false]))
-                                       {:service-id service-id, :instance-id instance-id, :killed? true, :deploymentId "12982340972"})
-                  t/now (fn [] current-time)]
-      (testing "tracking-instance-killed"
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.A"))))
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-2" "service-2.A"))))
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.C"))))
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-1" "service-1.B"))))
-
-        (is (= [{:id "service-1.A", :service-id "service-1", :killed-at current-time-str}
-                {:id "service-1.B", :service-id "service-1", :killed-at current-time-str}
-                {:id "service-1.C", :service-id "service-1", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-1")))
-        (is (= [{:id "service-2.A" :service-id "service-2", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-1")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [{:id "service-2.A" :service-id "service-2", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-3" "service-3.A"))))
-        (is (:killed? (scheduler/kill-instance marathon-scheduler (make-instance "service-3" "service-3.B"))))
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [{:id "service-2.A" :service-id "service-2", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [{:id "service-3.A", :service-id "service-3", :killed-at current-time-str}
-                {:id "service-3.B", :service-id "service-3", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-2")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [{:id "service-3.A", :service-id "service-3", :killed-at current-time-str}
-                {:id "service-3.B", :service-id "service-3", :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))))))
 
 (deftest test-max-failed-instances-cache
   (let [current-time (t/now)

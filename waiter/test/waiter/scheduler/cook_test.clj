@@ -476,7 +476,6 @@
         service-id-1 "test-service-id-failed-instances-1"
         service-id-2 "test-service-id-failed-instances-2"
         service-id->failed-instances-transient-store (atom {})]
-    (scheduler/preserve-only-killed-instances-for-services! [])
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])
     (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (->> (failed-instance-response-fn service-id-1 "A")
@@ -500,7 +499,6 @@
     (->> (failed-instance-response-fn service-id-1 "D")
          (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1))
     (is (= 4 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (scheduler/preserve-only-killed-instances-for-services! [])
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])
     (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (->> (failed-instance-response-fn service-id-1 "A")
@@ -611,72 +609,6 @@
       (merge cook-config)
       map->CookScheduler))
 
-(deftest test-killed-instances-transient-store
-  (let [current-time (t/now)
-        current-time-str (du/date-to-str current-time)
-        cook-api (Object.)
-        test-user "test-user"
-        cook-scheduler (create-cook-scheduler-helper
-                         :cook-api cook-api
-                         :service-id->service-description-fn (constantly {"run-as-user" test-user}))
-        make-instance (fn [service-id instance-id]
-                        {:cook/job-uuid instance-id
-                         :id instance-id
-                         :service-id service-id})]
-    (with-redefs [delete-jobs (fn [in-cook-api run-as-user job-uuids]
-                                (is (= cook-api in-cook-api))
-                                (is (= test-user run-as-user))
-                                (is (= 1 (count job-uuids)))
-                                {:killed? true})
-                  retrieve-jobs (fn [in-cook-api in-search-interval in-service-id _]
-                                  (is (= cook-api in-cook-api))
-                                  (is in-search-interval)
-                                  (str/starts-with? in-service-id "service-"))
-                  t/now (fn [] current-time)]
-      (testing "tracking-instance-killed"
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-
-        (is (:killed? (scheduler/kill-instance cook-scheduler (make-instance "service-1" "service-1.A"))))
-        (is (:killed? (scheduler/kill-instance cook-scheduler (make-instance "service-2" "service-2.A"))))
-        (is (:killed? (scheduler/kill-instance cook-scheduler (make-instance "service-1" "service-1.C"))))
-        (is (:killed? (scheduler/kill-instance cook-scheduler (make-instance "service-1" "service-1.B"))))
-
-        (is (= [{:cook/job-uuid "service-1.A" :id "service-1.A" :service-id "service-1" :killed-at current-time-str}
-                {:cook/job-uuid "service-1.B" :id "service-1.B" :service-id "service-1" :killed-at current-time-str}
-                {:cook/job-uuid "service-1.C" :id "service-1.C" :service-id "service-1" :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-1")))
-        (is (= [{:cook/job-uuid "service-2.A" :id "service-2.A" :service-id "service-2" :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-1")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [{:cook/job-uuid "service-2.A" :id "service-2.A" :service-id "service-2" :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (is (:killed? (scheduler/kill-instance cook-scheduler (make-instance "service-3" "service-3.A"))))
-        (is (:killed? (scheduler/kill-instance cook-scheduler (make-instance "service-3" "service-3.B"))))
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [{:cook/job-uuid "service-2.A" :id "service-2.A" :service-id "service-2" :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [{:cook/job-uuid "service-3.A" :id "service-3.A" :service-id "service-3" :killed-at current-time-str}
-                {:cook/job-uuid "service-3.B" :id "service-3.B" :service-id "service-3" :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-2")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [{:cook/job-uuid "service-3.A" :id "service-3.A" :service-id "service-3" :killed-at current-time-str}
-                {:cook/job-uuid "service-3.B" :id "service-3.B" :service-id "service-3" :killed-at current-time-str}]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))))))
-
 (deftest test-get-services->instances
   (let [{:keys [service-id->failed-instances-transient-store] :as scheduler} (create-cook-scheduler-helper)
         suffix (System/nanoTime)
@@ -694,7 +626,6 @@
                              jobs)
                   job->service-instance (fn [{:keys [name]}] {:id name})]
 
-      (scheduler/process-instance-killed! {:id (str "killed-S1.1." suffix) :service-id "S1"})
       (scheduler/add-instance-to-buffered-collection!
         service-id->failed-instances-transient-store 1 "S2"
         {:id (str "failed-S2.1." suffix) :service-id "S2"}
@@ -708,21 +639,17 @@
                                                       {:id (str "healthy-S1.2." suffix)}
                                                       {:id (str "unhealthy-S1." suffix)}
                                                       {:id (str "staging-S1.1." suffix)}]
-                                   :failed-instances []
-                                   :killed-instances (scheduler/service-id->killed-instances "S1")}
+                                   :failed-instances []}
               service-2 (scheduler/make-Service
                           {:id "S2" :instances 2 :task-count 2 :task-stats {:healthy 1 :running 1 :staged 1 :unhealthy 0}})
               service-2-instances {:active-instances [{:id (str "healthy-S2.1." suffix)}
                                                       {:id (str "staging-S2.1." suffix)}]
-                                   :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store "S2")
-                                   :killed-instances []}]
-          (is (seq (scheduler/service-id->killed-instances "S1")))
+                                   :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store "S2")}]
           (is (seq (service-id->failed-instances service-id->failed-instances-transient-store "S2")))
 
           (is (= {service-1 service-1-instances, service-2 service-2-instances}
                  (scheduler/get-service->instances scheduler))))
         (finally
-          (scheduler/remove-killed-instances-for-service! "S1")
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
 
 (deftest test-kill-instance
@@ -736,31 +663,21 @@
                                              {:uuid "uuid-3"}])
                   t/now (constantly current-time)]
       (with-redefs [delete-jobs (constantly {:deploymentId 12345})]
-        (scheduler/preserve-only-killed-instances-for-services! [])
         (is (= {:killed? true :message "Killed foo.1A" :result :killed :success true}
-               (scheduler/kill-instance scheduler test-instance)))
-        (is (= [(assoc test-instance :killed-at (du/date-to-str current-time))]
-               (scheduler/service-id->killed-instances service-id)))
-        (scheduler/preserve-only-killed-instances-for-services! []))
+               (scheduler/kill-instance scheduler test-instance))))
 
       (with-redefs [delete-jobs (constantly {})]
-        (scheduler/preserve-only-killed-instances-for-services! [])
         (is (= {:killed? true :message "Killed foo.1A" :result :killed :success true}
-               (scheduler/kill-instance scheduler test-instance)))
-        (is (= [(assoc test-instance :killed-at (du/date-to-str current-time))]
-               (scheduler/service-id->killed-instances service-id)))
-        (scheduler/preserve-only-killed-instances-for-services! []))
+               (scheduler/kill-instance scheduler test-instance))))
 
       (with-redefs [delete-jobs (fn [_ _] (throw (ex-info "Delete error" {:status 400})))]
         (is (= {:killed? false :message "Unable to kill foo.1A" :result :failed :success false}
-               (scheduler/kill-instance scheduler test-instance)))
-        (is (empty? (scheduler/service-id->killed-instances service-id))))
+               (scheduler/kill-instance scheduler test-instance))))
 
       (with-redefs [delete-jobs (constantly {})
                     retrieve-jobs (constantly nil)]
         (is (= {:message "foo does not exist!" :result :no-such-service-exists :success false}
-               (scheduler/kill-instance scheduler test-instance)))
-        (is (empty? (scheduler/service-id->killed-instances service-id)))))))
+               (scheduler/kill-instance scheduler test-instance)))))))
 
 (deftest test-create-instance
   (let [cook-api (Object.)
@@ -915,12 +832,9 @@
   (let [service-id "service-id"
         cook-scheduler (create-cook-scheduler-helper
                          :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]}))]
-    (scheduler/preserve-only-killed-instances-for-services! [])
-    (is (= {:failed-instances [:failed-instances]
-            :killed-instances []}
+    (is (= {:failed-instances [:failed-instances]}
            (scheduler/service-id->state cook-scheduler service-id)))
-    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
-            :service-id->killed-instances-transient-store {}}
+    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}}
            (scheduler/state cook-scheduler)))))
 
 (deftest test-cook-scheduler

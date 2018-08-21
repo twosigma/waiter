@@ -523,11 +523,10 @@
             (is (= 0 (get body-json "num-routers")))
             (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
     (testing "service-handler:valid-response-including-active-killed-and-failed"
-      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
-                    scheduler/service-id->killed-instances (fn [service-id]
-                                                             [{:id (str service-id ".K"), :service-id service-id}])]
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (reset! router-state-atom {:service-id->failed-instances {service-id [{:id (str service-id ".F"), :service-id service-id}]}
-                                   :service-id->healthy-instances {service-id [{:id (str service-id ".A"), :service-id service-id}]}})
+                                   :service-id->healthy-instances {service-id [{:id (str service-id ".A"), :service-id service-id}]}
+                                   :service-id->killed-instances {service-id [{:id (str service-id ".K"), :service-id service-id}]}})
         (let [request {:request-method :get, :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))

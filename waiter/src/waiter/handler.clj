@@ -167,9 +167,7 @@
                                      (update :started-at (fn [started-at]
                                                            (when started-at
                                                              (du/str-to-date started-at)))))]
-                    (notify-instance-killed-fn instance)
-                    ;; TODO shams remove the call to process-instance-killed!
-                    (scheduler/process-instance-killed! instance)))
+                    (notify-instance-killed-fn instance)))
                 (utils/clj->json-response {:instance-id instance-id
                                            :blacklist-period period-in-ms}))
               (let [response-status (if (= :in-use response-code) 423 503)]

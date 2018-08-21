@@ -193,8 +193,7 @@
       service-id->failed-instances-transient-store
       service-id (get-in marathon-response (conj service-keys :lastTaskFailure)) common-extractor-fn)
     {:active-instances active-instances
-     :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
-     :killed-instances (scheduler/service-id->killed-instances service-id)}))
+     :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)}))
 
 (defn- app->waiter-service-id
   "Given a Marathon app, returns the Waiter service id for that app"
@@ -223,7 +222,6 @@
                                              service-id->failed-instances-transient-store
                                              service-id->service-description)
                                           apps-list))]
-    (scheduler/preserve-only-killed-instances-for-services! (map :id (keys service->service-instances)))
     (preserve-only-failed-instances-for-services!
       service-id->failed-instances-transient-store (map :id (keys service->service-instances)))
     service->service-instances))
@@ -346,8 +344,7 @@
           params {:force use-force, :scale true}
           {:keys [killed?] :as kill-result} (process-kill-instance-request marathon-api service-id id params)]
       (if killed?
-        (do (swap! service-id->kill-info-store dissoc service-id)
-            (scheduler/process-instance-killed! instance))
+        (swap! service-id->kill-info-store dissoc service-id)
         (swap! service-id->kill-info-store update-in [service-id :kill-failing-since]
                (fn [existing-time] (or existing-time current-time))))
       kill-result))
@@ -375,7 +372,6 @@
                             (marathon/delete-app marathon-api service-id))]
         (when delete-result
           (remove-failed-instances-for-service! service-id->failed-instances-transient-store service-id)
-          (scheduler/remove-killed-instances-for-service! service-id)
           (swap! service-id->kill-info-store dissoc service-id))
         (if (:deploymentId delete-result)
           {:result :deleted
@@ -429,7 +425,6 @@
 
   (service-id->state [_ service-id]
     {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
-     :killed-instances (scheduler/service-id->killed-instances service-id)
      :kill-info (get @service-id->kill-info-store service-id)
      :out-of-sync-state (get @service-id->out-of-sync-state-store service-id)})
 

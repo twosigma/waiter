@@ -362,8 +362,7 @@
                         :protocol "https"
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)})]
-                    :failed-instances []
-                    :killed-instances []}
+                    :failed-instances []}
 
                    (scheduler/make-Service {:id "test-app-6789" :instances 3 :task-count 3
                                             :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
@@ -405,16 +404,14 @@
                         :port 8080
                         :protocol "http"
                         :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]
-                    :killed-instances []})
+                        :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]})
         dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"])
         response-iterator (.iterator api-server-responses)
         actual (with-redefs [api-request (fn [& _] (.next response-iterator))]
                  (->> dummy-scheduler
                       scheduler/get-service->instances
                       sanitize-k8s-service-records))]
-    (assert-data-equal expected actual)
-    (scheduler/preserve-only-killed-instances-for-services! [])))
+    (assert-data-equal expected actual)))
 
 (deftest test-kill-instance
   (let [service-id "test-service-id"
@@ -504,71 +501,6 @@
             actual-result (with-redefs [api-request (constantly api-server-response)]
                             (scheduler/service-exists? dummy-scheduler service-id))]
         (is (= expected-result actual-result))))))
-
-(deftest test-killed-instances-transient-store
-  (let [current-time (t/now)
-        current-time-str (du/date-to-str current-time)
-        dummy-scheduler (make-dummy-scheduler ["service-1" "service-2" "service-3"])
-        make-instance (fn [service-id instance-suffix]
-                        (let [instance-id (str service-id \. instance-suffix)]
-                          {:id instance-id
-                           :k8s/namespace (-> dummy-scheduler
-                                              :service-id->service-description-fn
-                                              (get service-id)
-                                              (get "run-as-user"))
-                           :k8s/pod-name (str instance-id "-0")
-                           :service-id service-id}))
-        make-killed-instance (fn [service-id instance-suffix]
-                               (assoc (make-instance service-id instance-suffix)
-                                 :killed-at current-time-str))]
-    (with-redefs [api-request (constantly {:status "OK"})
-                  service-id->service (fn service-id->dummy-service [_ service-id]
-                                        (scheduler/make-Service
-                                          {:id service-id :instances 1 :k8s/namespace "myself"}))
-                  t/now (constantly current-time)]
-      (testing "tracking-instance-killed"
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-1" "A"))))
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-2" "A"))))
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-1" "C"))))
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-1" "B"))))
-
-        (is (= [(make-killed-instance "service-1" "A")
-                (make-killed-instance "service-1" "B")
-                (make-killed-instance "service-1" "C")]
-               (scheduler/service-id->killed-instances "service-1")))
-        (is (= [(make-killed-instance "service-2" "A")]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-1")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [(make-killed-instance "service-2" "A")]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-3" "A"))))
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-3" "B"))))
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [(make-killed-instance "service-2" "A")]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [(make-killed-instance "service-3" "A")
-                (make-killed-instance "service-3" "B")]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-2")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [(make-killed-instance "service-3" "A")
-                (make-killed-instance "service-3" "B")]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))))))
 
 (deftest test-create-app
   (let [service-id "test-service-id"

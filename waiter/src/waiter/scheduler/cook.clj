@@ -339,8 +339,7 @@
                    service->instance-distribution
                    (jobs->service jobs)
                    {:active-instances (map job->service-instance jobs)
-                    :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
-                    :killed-instances (scheduler/service-id->killed-instances service-id)})))
+                    :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})))
              (transient {}))
            (persistent!))))
 
@@ -368,8 +367,6 @@
                       (catch Exception ex
                         (log/error ex "unable to kill" log-data)
                         false))]
-        (when success
-          (scheduler/process-instance-killed! instance))
         {:killed? success
          :success success
          :result (if success :killed :failed)
@@ -474,12 +471,10 @@
       (mesos/retrieve-directory-content-from-host cook-api host log-directory)))
 
   (service-id->state [_ service-id]
-    {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
-     :killed-instances (scheduler/service-id->killed-instances service-id)})
+    {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})
 
   (state [_]
-    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
-     :service-id->killed-instances-transient-store @scheduler/service-id->killed-instances-transient-store}))
+    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store}))
 
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."
