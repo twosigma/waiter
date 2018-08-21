@@ -1185,170 +1185,171 @@
    Exposes the state of the router via a `query-state-fn` no-args function that is returned."
   [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config]
   (let [state-atom (atom {:all-available-service-ids #{}
-                          :service-id->healthy-instances {}
-                          :service-id->unhealthy-instances {}
-                          :service-id->my-instance->slots {} ; updated in update-router-state
-                          :service-id->expired-instances {}
-                          :service-id->starting-instances {}
-                          :service-id->failed-instances {}
-                          :service-id->instance-counts {}
-                          :service-id->deployment-error {}
-                          :service-id->instability-issue {}
                           :iteration 0
                           :routers []
+                          :service-id->deployment-error {}
+                          :service-id->expired-instances {}
+                          :service-id->failed-instances {}
+                          :service-id->healthy-instances {}
+                          :service-id->instability-issue {}
+                          :service-id->instance-counts {}
+                          :service-id->my-instance->slots {} ; updated in update-router-state
+                          :service-id->starting-instances {}
+                          :service-id->unhealthy-instances {}
                           :time (t/now)})
         router-state-push-chan (au/latest-chan)
-        query-chan (async/chan)]
-    {:router-state-push-mult (async/mult router-state-push-chan)
+        query-chan (async/chan)
+        go-chan
+        (async/go
+          (try
+            (loop [{:keys [iteration routers] :as current-state} @state-atom]
+              (reset! state-atom current-state)
+              (let [next-state
+                    (async/alt!
+                      exit-chan
+                      ([message]
+                        (log/warn "Stopping router-state-maintainer")
+                        (when (not= :exit message)
+                          (throw (ex-info "Stopping router-state maintainer" {:time (t/now), :reason message}))))
+
+                      scheduler-state-chan
+                      ([scheduler-messages]
+                        (cid/with-correlation-id
+                          (str "router-state-maintainer-" iteration)
+                          (loop [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->my-instance->slots
+                                         service-id->expired-instances service-id->starting-instances service-id->failed-instances
+                                         service-id->instance-counts service-id->deployment-error service-id->instability-issue] :as loop-state} current-state
+                                 [[message-type message-data] & remaining] scheduler-messages]
+                            (log/trace "scheduler-state-chan received, type:" message-type)
+                            (let [loop-state'
+                                  (case message-type
+                                    :update-available-services
+                                    (let [{:keys [available-service-ids scheduler-sync-time]} message-data
+                                          all-available-service-ids' available-service-ids
+                                          services-without-instances (remove #(contains? service-id->my-instance->slots %) all-available-service-ids')
+                                          service-id->healthy-instances' (select-keys service-id->healthy-instances all-available-service-ids')
+                                          service-id->unhealthy-instances' (select-keys service-id->unhealthy-instances all-available-service-ids')
+                                          service-id->expired-instances' (select-keys service-id->expired-instances all-available-service-ids')
+                                          service-id->starting-instances' (select-keys service-id->starting-instances all-available-service-ids')
+                                          service-id->failed-instances' (select-keys service-id->failed-instances all-available-service-ids')
+                                          service-id->instance-counts' (select-keys service-id->instance-counts all-available-service-ids')
+                                          service-id->deployment-error' (select-keys service-id->deployment-error all-available-service-ids')
+                                          service-id->instability-issue' (select-keys service-id->instability-issue all-available-service-ids')]
+                                      (when (or (not= service-id->healthy-instances service-id->healthy-instances')
+                                                (not= service-id->unhealthy-instances service-id->unhealthy-instances')
+                                                (seq services-without-instances))
+                                        (log/info "update-available-services:"
+                                                  (count service-id->healthy-instances') "services with healthy instances and"
+                                                  (count services-without-instances) "services without instances:"
+                                                  (vec services-without-instances)))
+                                      (assoc loop-state
+                                        :all-available-service-ids all-available-service-ids'
+                                        :service-id->healthy-instances service-id->healthy-instances'
+                                        :service-id->unhealthy-instances service-id->unhealthy-instances'
+                                        :service-id->expired-instances service-id->expired-instances'
+                                        :service-id->starting-instances service-id->starting-instances'
+                                        :service-id->failed-instances service-id->failed-instances'
+                                        :service-id->instance-counts service-id->instance-counts'
+                                        :service-id->deployment-error service-id->deployment-error'
+                                        :service-id->instability-issue service-id->instability-issue'
+                                        :time scheduler-sync-time))
+
+                                    :update-service-instances
+                                    (let [{:keys [service-id healthy-instances unhealthy-instances failed-instances instance-counts scheduler-sync-time]} message-data
+                                          service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
+                                          service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)
+                                          service-description (service-id->service-description-fn service-id)
+                                          grace-period-secs (t/seconds (int (get service-description "grace-period-secs")))
+                                          expiry-mins-int (int (get service-description "instance-expiry-mins"))
+                                          expiry-mins (t/minutes expiry-mins-int)
+                                          expired-instances (filter #(and (pos? expiry-mins-int)
+                                                                          (du/older-than? scheduler-sync-time expiry-mins %))
+                                                                    healthy-instances)
+                                          starting-instances (filter #(not (du/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
+                                          service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
+                                          service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
+                                          service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
+                                          service-id->instance-counts' (assoc service-id->instance-counts service-id instance-counts)
+                                          deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config)
+                                          service-id->deployment-error' (if deployment-error
+                                                                          (assoc service-id->deployment-error service-id deployment-error)
+                                                                          (dissoc service-id->deployment-error service-id))
+                                          instability-issue (get-instability-issue failed-instances)
+                                          service-id->instability-issue' (if instability-issue
+                                                                           (assoc service-id->instability-issue service-id instability-issue)
+                                                                           (dissoc service-id->instability-issue service-id))]
+                                      (when (or (not= (get service-id->healthy-instances service-id) healthy-instances)
+                                                (not= (get service-id->unhealthy-instances service-id) unhealthy-instances))
+                                        (let [curr-instance-ids (set (map :id healthy-instances))
+                                              prev-instance-ids (set (map :id (get service-id->healthy-instances service-id)))
+                                              new-instance-ids (filterv (complement prev-instance-ids) curr-instance-ids)
+                                              rem-instance-ids (filterv (complement curr-instance-ids) prev-instance-ids)
+                                              unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
+                                          (log/info "update-healthy-instances:" service-id "has"
+                                                    (count healthy-instances) "healthy instance(s) and"
+                                                    (count unhealthy-instance-ids) "unhealthy instance(s)."
+                                                    (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
+                                                    (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
+                                                    (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
+                                      (assoc loop-state
+                                        :service-id->deployment-error service-id->deployment-error'
+                                        :service-id->expired-instances service-id->expired-instances'
+                                        :service-id->failed-instances service-id->failed-instances'
+                                        :service-id->healthy-instances service-id->healthy-instances'
+                                        :service-id->instability-issue service-id->instability-issue'
+                                        :service-id->instance-counts service-id->instance-counts'
+                                        :service-id->starting-instances service-id->starting-instances'
+                                        :service-id->unhealthy-instances service-id->unhealthy-instances'
+                                        :time scheduler-sync-time))
+
+                                    ; default value
+                                    (do
+                                      (log/warn "scheduler-state-chan unknown message type=" message-type)
+                                      loop-state))]
+                              (if (nil? remaining)
+                                (let [new-state (update-router-state router-id current-state loop-state' service-id->service-description-fn)
+                                      relevant-keys [:service-id->deployment-error :service-id->expired-instances :service-id->failed-instances
+                                                     :service-id->healthy-instances :service-id->instability-issue :service-id->instance-counts
+                                                     :service-id->starting-instances :service-id->unhealthy-instances]]
+                                  (when (not= (select-keys current-state relevant-keys)
+                                              (select-keys new-state relevant-keys))
+                                    ; propagate along router-state-push-chan only when state changes
+                                    (async/put! router-state-push-chan new-state))
+                                  new-state)
+                                (recur loop-state' remaining))))))
+
+                      query-chan
+                      ([response-chan]
+                        (async/put! response-chan current-state)
+                        current-state)
+
+                      router-chan
+                      ([data]
+                        (cid/with-correlation-id
+                          (str "router-state-maintainer-" iteration)
+                          (let [router-id->endpoint-url data
+                                new-state
+                                (if (not= routers router-id->endpoint-url)
+                                  (let [candidate-state (assoc current-state :routers router-id->endpoint-url)
+                                        current-routers (-> current-state :routers keys vec sort)
+                                        new-routers (-> router-id->endpoint-url keys vec sort)]
+                                    (log/info "peer router info changed from" current-routers "to" new-routers)
+                                    (metrics/update-counter (metrics/waiter-counter "core" "number-of-routers") routers router-id->endpoint-url)
+                                    (update-router-state router-id current-state candidate-state service-id->service-description-fn))
+                                  current-state)]
+                            (async/put! router-state-push-chan new-state)
+                            new-state))))]
+                (if next-state
+                  (recur next-state)
+                  (log/info "Stopping router-state-maintainer as next state is nil"))))
+            (catch Exception e
+              (log/error e "Fatal error in router-state-maintainer!")
+              (System/exit 1))))]
+    {:go-chan go-chan
      :query-chan query-chan
      :query-state-fn (fn router-state-maintainer-query-state-fn []
                        (assoc @state-atom :router-id router-id))
-     :go-chan
-     (async/go
-       (try
-         (loop [{:keys [iteration routers] :as current-state} @state-atom]
-           (reset! state-atom current-state)
-           (let [next-state
-                 (async/alt!
-                   exit-chan
-                   ([message]
-                     (log/warn "Stopping router-state-maintainer")
-                     (when (not= :exit message)
-                       (throw (ex-info "Stopping router-state maintainer" {:time (t/now), :reason message}))))
-
-                   scheduler-state-chan
-                   ([scheduler-messages]
-                     (cid/with-correlation-id
-                       (str "router-state-maintainer-" iteration)
-                       (loop [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->my-instance->slots
-                                      service-id->expired-instances service-id->starting-instances service-id->failed-instances
-                                      service-id->instance-counts service-id->deployment-error service-id->instability-issue] :as loop-state} current-state
-                              [[message-type message-data] & remaining] scheduler-messages]
-                         (log/trace "scheduler-state-chan received, type:" message-type)
-                         (let [loop-state'
-                               (case message-type
-                                 :update-available-services
-                                 (let [{:keys [available-service-ids scheduler-sync-time]} message-data
-                                       all-available-service-ids' available-service-ids
-                                       services-without-instances (remove #(contains? service-id->my-instance->slots %) all-available-service-ids')
-                                       service-id->healthy-instances' (select-keys service-id->healthy-instances all-available-service-ids')
-                                       service-id->unhealthy-instances' (select-keys service-id->unhealthy-instances all-available-service-ids')
-                                       service-id->expired-instances' (select-keys service-id->expired-instances all-available-service-ids')
-                                       service-id->starting-instances' (select-keys service-id->starting-instances all-available-service-ids')
-                                       service-id->failed-instances' (select-keys service-id->failed-instances all-available-service-ids')
-                                       service-id->instance-counts' (select-keys service-id->instance-counts all-available-service-ids')
-                                       service-id->deployment-error' (select-keys service-id->deployment-error all-available-service-ids')
-                                       service-id->instability-issue' (select-keys service-id->instability-issue all-available-service-ids')]
-                                   (when (or (not= service-id->healthy-instances service-id->healthy-instances')
-                                             (not= service-id->unhealthy-instances service-id->unhealthy-instances')
-                                             (seq services-without-instances))
-                                     (log/info "update-available-services:"
-                                               (count service-id->healthy-instances') "services with healthy instances and"
-                                               (count services-without-instances) "services without instances:"
-                                               (vec services-without-instances)))
-                                   (assoc loop-state
-                                     :all-available-service-ids all-available-service-ids'
-                                     :service-id->healthy-instances service-id->healthy-instances'
-                                     :service-id->unhealthy-instances service-id->unhealthy-instances'
-                                     :service-id->expired-instances service-id->expired-instances'
-                                     :service-id->starting-instances service-id->starting-instances'
-                                     :service-id->failed-instances service-id->failed-instances'
-                                     :service-id->instance-counts service-id->instance-counts'
-                                     :service-id->deployment-error service-id->deployment-error'
-                                     :service-id->instability-issue service-id->instability-issue'
-                                     :time scheduler-sync-time))
-
-                                 :update-service-instances
-                                 (let [{:keys [service-id healthy-instances unhealthy-instances failed-instances instance-counts scheduler-sync-time]} message-data
-                                       service-id->healthy-instances' (assoc service-id->healthy-instances service-id healthy-instances)
-                                       service-id->unhealthy-instances' (assoc service-id->unhealthy-instances service-id unhealthy-instances)
-                                       service-description (service-id->service-description-fn service-id)
-                                       grace-period-secs (t/seconds (int (get service-description "grace-period-secs")))
-                                       expiry-mins-int (int (get service-description "instance-expiry-mins"))
-                                       expiry-mins (t/minutes expiry-mins-int)
-                                       expired-instances (filter #(and (pos? expiry-mins-int)
-                                                                       (du/older-than? scheduler-sync-time expiry-mins %))
-                                                                 healthy-instances)
-                                       starting-instances (filter #(not (du/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
-                                       service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
-                                       service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
-                                       service-id->failed-instances' (assoc service-id->failed-instances service-id failed-instances)
-                                       service-id->instance-counts' (assoc service-id->instance-counts service-id instance-counts)
-                                       deployment-error (get-deployment-error healthy-instances unhealthy-instances failed-instances deployment-error-config)
-                                       service-id->deployment-error' (if deployment-error
-                                                                       (assoc service-id->deployment-error service-id deployment-error)
-                                                                       (dissoc service-id->deployment-error service-id))
-                                       instability-issue (get-instability-issue failed-instances)
-                                       service-id->instability-issue' (if instability-issue
-                                                                        (assoc service-id->instability-issue service-id instability-issue)
-                                                                        (dissoc service-id->instability-issue service-id))]
-                                   (when (or (not= (get service-id->healthy-instances service-id) healthy-instances)
-                                             (not= (get service-id->unhealthy-instances service-id) unhealthy-instances))
-                                     (let [curr-instance-ids (set (map :id healthy-instances))
-                                           prev-instance-ids (set (map :id (get service-id->healthy-instances service-id)))
-                                           new-instance-ids (filterv (complement prev-instance-ids) curr-instance-ids)
-                                           rem-instance-ids (filterv (complement curr-instance-ids) prev-instance-ids)
-                                           unhealthy-instance-ids (mapv :id (get service-id->unhealthy-instances' service-id))]
-                                       (log/info "update-healthy-instances:" service-id "has"
-                                                 (count healthy-instances) "healthy instance(s) and"
-                                                 (count unhealthy-instance-ids) "unhealthy instance(s)."
-                                                 (if (seq new-instance-ids) (str "New healthy instances: " new-instance-ids ".") "")
-                                                 (if (seq rem-instance-ids) (str "Removed healthy instances: " rem-instance-ids ".") "")
-                                                 (if (seq unhealthy-instance-ids) (str "Unhealthy instances: " unhealthy-instance-ids ".") ""))))
-                                   (assoc loop-state
-                                     :service-id->healthy-instances service-id->healthy-instances'
-                                     :service-id->unhealthy-instances service-id->unhealthy-instances'
-                                     :service-id->expired-instances service-id->expired-instances'
-                                     :service-id->starting-instances service-id->starting-instances'
-                                     :service-id->failed-instances service-id->failed-instances'
-                                     :service-id->instance-counts service-id->instance-counts'
-                                     :service-id->deployment-error service-id->deployment-error'
-                                     :service-id->instability-issue service-id->instability-issue'
-                                     :time scheduler-sync-time))
-
-                                 ; default value
-                                 (do
-                                   (log/warn "scheduler-state-chan unknown message type=" message-type)
-                                   loop-state))]
-                           (if (nil? remaining)
-                             (let [new-state (update-router-state router-id current-state loop-state' service-id->service-description-fn)
-                                   relevant-keys [:service-id->healthy-instances :service-id->unhealthy-instances :service-id->expired-instances
-                                                  :service-id->starting-instances :service-id->failed-instances :service-id->instance-counts
-                                                  :service-id->deployment-error :service-id->instability-issue]]
-                               (when (not= (select-keys current-state relevant-keys)
-                                           (select-keys new-state relevant-keys))
-                                 ; propagate along router-state-push-chan only when state changes
-                                 (async/put! router-state-push-chan new-state))
-                               new-state)
-                             (recur loop-state' remaining))))))
-
-                   query-chan
-                   ([response-chan]
-                    (async/put! response-chan current-state)
-                    current-state)
-
-                   router-chan
-                   ([data]
-                     (cid/with-correlation-id
-                       (str "router-state-maintainer-" iteration)
-                       (let [router-id->endpoint-url data
-                             new-state
-                             (if (not= routers router-id->endpoint-url)
-                               (let [candidate-state (assoc current-state :routers router-id->endpoint-url)
-                                     current-routers (-> current-state :routers keys vec sort)
-                                     new-routers (-> router-id->endpoint-url keys vec sort)]
-                                 (log/info "peer router info changed from" current-routers "to" new-routers)
-                                 (metrics/update-counter (metrics/waiter-counter "core" "number-of-routers") routers router-id->endpoint-url)
-                                 (update-router-state router-id current-state candidate-state service-id->service-description-fn))
-                               current-state)]
-                         (async/put! router-state-push-chan new-state)
-                         new-state))))]
-             (if next-state
-               (recur next-state)
-               (log/info "Stopping router-state-maintainer as next state is nil"))))
-         (catch Exception e
-           (log/error e "Fatal error in router-state-maintainer!")
-           (System/exit 1))))}))
+     :router-state-push-mult (async/mult router-state-push-chan)}))
 
 ;; External state queries
 
