@@ -591,8 +591,8 @@
           ;; to StatsD on the following interval (milliseconds):
           :publish-interval-ms 10000
 
-          ;; Waiter aggregates metrics locally for instances and resource usage and
-          ;; maintains them locally on the following interval (milliseconds):
+          ;; Waiter polls the router state for instances and resource
+          ;; usage on the following interval (milliseconds):
           :sync-instances-interval-ms 5000}
 
  ;; Waiter allows a "metric group" string to be associated with a service so that related

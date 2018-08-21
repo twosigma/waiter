@@ -50,7 +50,8 @@
                 (log/info metric-group "counts gauges:" metric-group-gauges)
                 (every? #(contains? metric-group-gauges %)
                         [:cpus :instances.failed :instances.healthy :instances.unhealthy :mem])))
-            :interval 1 :timeout (* 2 (quot sync-instances-interval-ms 1000)))))
+            :interval 1
+            :timeout (-> sync-instances-interval-ms (quot 1000) (* 2)))))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-statsd-disabled

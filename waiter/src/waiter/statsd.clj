@@ -411,7 +411,8 @@
       (log/error e "error processing router state"))))
 
 (defn start-service-instance-metrics-publisher
-  "Go loop to continuously publish stats based on router state updates."
+  "Launches a timer task, running at intervals of sync-instances-interval-ms milliseconds,
+   to continuously publish stats based on router state updates."
   [service-id->service-description-fn query-state-fn sync-instances-interval-ms]
   (log/info "service-instance-metrics-publisher starting")
   (let [cancel-fn (du/start-timer-task
