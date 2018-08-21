@@ -1032,11 +1032,13 @@
                               (wrap-secure-request-fn
                                 (fn async-status-handler-fn [request]
                                   (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))))
-   :blacklist-instance-handler-fn (pc/fnk [[:state instance-rpc-chan]
+   :blacklist-instance-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                           [:state instance-rpc-chan]
                                            wrap-router-auth-fn]
-                                    (wrap-router-auth-fn
-                                      (fn blacklist-instance-handler-fn [request]
-                                        (handler/blacklist-instance instance-rpc-chan request))))
+                                    (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
+                                      (wrap-router-auth-fn
+                                        (fn blacklist-instance-handler-fn [request]
+                                          (handler/blacklist-instance notify-instance-killed-fn instance-rpc-chan request)))))
    :blacklisted-instances-list-handler-fn (pc/fnk [[:state instance-rpc-chan]]
                                             (fn blacklisted-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                               (handler/get-blacklisted-instances instance-rpc-chan service-id request)))

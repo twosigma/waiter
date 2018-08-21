@@ -135,7 +135,7 @@
         (utils/exception->response ex request)))))
 
 (defn blacklist-instance
-  [instance-rpc-chan request]
+  [notify-instance-killed-fn instance-rpc-chan request]
   (async/go
     (try
       (let [{:strs [instance period-in-ms reason] :as request-body-map} (-> request ru/json-request :body)
@@ -162,12 +162,14 @@
             (if successful?
               (do
                 (when (= "killed" reason)
-                  (-> instance
-                      walk/keywordize-keys
-                      (update :started-at (fn [started-at]
-                                            (when started-at
-                                              (du/str-to-date started-at))))
-                      scheduler/process-instance-killed!))
+                  (let [instance (-> instance
+                                     walk/keywordize-keys
+                                     (update :started-at (fn [started-at]
+                                                           (when started-at
+                                                             (du/str-to-date started-at)))))]
+                    (notify-instance-killed-fn instance)
+                    ;; TODO shams remove the call to process-instance-killed!
+                    (scheduler/process-instance-killed! instance)))
                 (utils/clj->json-response {:instance-id instance-id
                                            :blacklist-period period-in-ms}))
               (let [response-status (if (= :in-use response-code) 423 503)]
