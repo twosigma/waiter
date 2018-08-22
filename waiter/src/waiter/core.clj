@@ -862,10 +862,10 @@
                                     quanta-constraints scaling-timeout-config))
                                 {}))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
-                                 scheduler-maintainer]
-                          (let [scheduler-state-mult-chan (:scheduler-state-mult-chan scheduler-maintainer)
-                                scheduler-state-chan (async/tap scheduler-state-mult-chan (au/latest-chan))]
-                            (descriptor/fallback-maintainer scheduler-state-chan fallback-state-atom)))
+                                 router-state-maintainer]
+                          (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
+                                router-state-chan (async/tap router-state-push-mult (au/latest-chan))]
+                            (descriptor/fallback-maintainer router-state-chan fallback-state-atom)))
    :gc-for-transient-metrics (pc/fnk [[:routines router-metrics-helpers]
                                       [:settings metrics-config]
                                       [:state clock local-usage-agent]

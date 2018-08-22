@@ -18,6 +18,7 @@
             [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.test :refer :all]
+            [plumbing.core :as pc]
             [waiter.descriptor :refer :all]
             [waiter.kv :as kv]
             [waiter.service-description :as sd]
@@ -89,12 +90,16 @@
                                 atom)
         new-healthy-service-ids (set/union current-available-service-ids #{"service-2" "service-4"})
         new-available-service-ids (set/union new-healthy-service-ids #{"service-6" "service-8"})
-        scheduler-messages [[:update-available-services {:available-service-ids new-available-service-ids
-                                                         :healthy-service-ids new-healthy-service-ids}]]
-        scheduler-state-chan (au/latest-chan)
-        {:keys [exit-chan query-chan]} (fallback-maintainer scheduler-state-chan fallback-state-atom)]
+        scheduler-messages {:all-available-service-ids new-available-service-ids
+                            :service-id->healthy-instances (pc/map-from-keys
+                                                             (fn [service-id]
+                                                               {:id (str service-id ".instance-1")
+                                                                :service-id service-id})
+                                                             new-healthy-service-ids)}
+        router-state-chan (au/latest-chan)
+        {:keys [exit-chan query-chan]} (fallback-maintainer router-state-chan fallback-state-atom)]
 
-    (async/>!! scheduler-state-chan scheduler-messages)
+    (async/>!! router-state-chan scheduler-messages)
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan})
           state (async/<!! response-chan)]
