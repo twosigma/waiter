@@ -32,6 +32,28 @@
   [waiter-url]
   (not= "disabled" (:statsd (waiter-settings waiter-url))))
 
+(deftest ^:parallel ^:integration-fast test-statsd-instance-metrics-aggregation
+  (testing-using-waiter-url
+    (let [metric-group (rand-name "foo")
+          headers {:x-waiter-name (rand-name)
+                   :x-waiter-metric-group metric-group}
+          {:keys [status service-id] :as response}
+          (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+      (is (= 200 status))
+      (when (statsd-enabled? waiter-url)
+        (let [{:keys [metric-group]} (response->service-description waiter-url response)
+              metric-group-keyword (keyword metric-group)
+              {:keys [sync-instances-interval-ms]} (get (waiter-settings waiter-url) :statsd)]
+          (wait-for
+            (fn statsd-instance-metrics-predicate []
+              (let [metric-group-gauges (-> waiter-url statsd-state :state :gauge metric-group-keyword)]
+                (log/info metric-group "counts gauges:" metric-group-gauges)
+                (every? #(contains? metric-group-gauges %)
+                        [:cpus :instances.failed :instances.healthy :instances.unhealthy :mem])))
+            :interval 1
+            :timeout (-> sync-instances-interval-ms (quot 1000) (* 2)))))
+      (delete-service waiter-url service-id))))
+
 (deftest ^:parallel ^:integration-fast test-statsd-disabled
   (testing-using-waiter-url
     (if (statsd-enabled? waiter-url)

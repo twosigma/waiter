@@ -1010,12 +1010,13 @@
                      :transient-metrics-gc-state (:query gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
-                    scheduler-maintainer]
+                    router-state-maintainer]
              (when (not= statsd :disabled)
                (statsd/setup statsd)
-               (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
-                     exit-chan (async/chan)]
-                 (statsd/start-scheduler-metrics-publisher scheduler-state-chan exit-chan service-id->service-description-fn))))})
+               (let [{:keys [sync-instances-interval-ms]} statsd
+                     {{:keys [query-state-fn]} :maintainer} router-state-maintainer]
+                 (statsd/start-service-instance-metrics-publisher
+                   service-id->service-description-fn query-state-fn sync-instances-interval-ms))))})
 
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [service-id-handler-fn]

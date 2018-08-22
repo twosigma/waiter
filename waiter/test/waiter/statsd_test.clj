@@ -68,45 +68,54 @@
 
 (deftest test-start-scheduler-metrics-publisher
   (testing "Scheduler metrics publishing loop"
-    (testing "should terminate via exit channel"
-      (let [exit-chan (async/chan 1)
-            return-chan (statsd/start-scheduler-metrics-publisher (async/chan) exit-chan nil)]
-        (is (async/>!! exit-chan :foo))
-        (async/alt!!
-          return-chan
-          ([returned] (is (nil? returned)))
+    (testing "should terminate via cancel call"
+      (let [service-id->service-description-fn (constantly {})
+            query-state-call-counter (atom 0)
+            query-call-started (promise)
+            cancel-triggered (promise)
+            query-state-fn (fn []
+                             (swap! query-state-call-counter inc)
+                             (deliver query-call-started :called)
+                             {:call-count @query-state-call-counter
+                              :cancel-triggered (deref cancel-triggered 1000 :not-called)})
+            sync-instances-interval-ms 10
+            cancel-fn (statsd/start-service-instance-metrics-publisher
+                        service-id->service-description-fn query-state-fn sync-instances-interval-ms)]
+        (is (= :called (deref query-call-started 1000 :not-called)))
+        (is (= 1 @query-state-call-counter))
+        (cancel-fn)
+        (deliver cancel-triggered :called)
+        (is (= {:call-count 2
+                :cancel-triggered :called}
+               (query-state-fn)))
+        ;; since publisher has been cancelled, we should not have any intervening calls to query state
+        (Thread/sleep (* 2 sync-instances-interval-ms))
+        (is (= {:call-count 3
+                :cancel-triggered :called}
+               (query-state-fn)))))))
 
-          (async/timeout 1000)
-          ([_] (throw (Exception. "Timed out waiting for publisher to terminate"))))))))
-
-(deftest test-scheduler-messages->instance-counts-by-metric-group
+(deftest test-router-state->metric-group->counts
   (testing "Conversion of scheduler messages to instance counts by metric group"
     (testing "should produce aggregate instance counts by metric group"
-      (let [messages [[:update-available-services {}]
-                      [:update-service-instances {:service-id :fee
-                                                  :healthy-instances [:i]
-                                                  :unhealthy-instances [:i :i]
-                                                  :failed-instances [:i :i :i]}]
-                      [:update-service-instances {:service-id :fie
-                                                  :healthy-instances [:i]
-                                                  :unhealthy-instances [:i :i]
-                                                  :failed-instances [:i :i :i]}]
-                      [:update-service-instances {:service-id :foe
-                                                  :healthy-instances [:i :i :i]
-                                                  :unhealthy-instances [:i :i :i]
-                                                  :failed-instances [:i :i :i]}]
-                      [:update-service-instances {:service-id :fum
-                                                  :healthy-instances [:i :i :i]
-                                                  :unhealthy-instances [:i :i :i]
-                                                  :failed-instances [:i :i :i]}]
-                      [:update-service-instances {:service-id :qux
-                                                  :healthy-instances [:i :i :i]
-                                                  :unhealthy-instances [:i :i :i]
-                                                  :failed-instances [:i :i :i]}]
-                      [:update-service-instances {:service-id :eek
-                                                  :healthy-instances [:i]
-                                                  :unhealthy-instances [:i :i]
-                                                  :failed-instances [:i :i :i]}]]
+      (let [router-state {:all-available-service-ids #{:eek :fee :fie :foe :fum :qux}
+                          :service-id->failed-instances {:eek [:i :i :i]
+                                                         :fee [:i :i :i]
+                                                         :fie [:i :i :i]
+                                                         :foe [:i :i :i]
+                                                         :fum [:i :i :i]
+                                                         :qux [:i :i :i]}
+                          :service-id->healthy-instances {:eek [:i]
+                                                          :fee [:i]
+                                                          :fie [:i]
+                                                          :foe [:i :i :i]
+                                                          :fum [:i :i :i]
+                                                          :qux [:i :i :i]}
+                          :service-id->unhealthy-instances {:eek [:i :i]
+                                                            :fee [:i :i]
+                                                            :fie [:i :i]
+                                                            :foe [:i :i :i]
+                                                            :fum [:i :i :i]
+                                                            :qux [:i :i :i]}}
             service-id->service-description #(% {:fee {"metric-group" "foo", "cpus" 0.1, "mem" 128}
                                                  :fie {"metric-group" "bar", "cpus" 0.2, "mem" 256}
                                                  :foe {"metric-group" "bar", "cpus" 0.4, "mem" 512}
@@ -128,44 +137,45 @@
                        :failed-instances 9
                        :cpus (+ (* 6 0.8) (* 6 1.6) (* 3 3.2))
                        :mem 30720}}
-               (statsd/scheduler-messages->instance-counts-by-metric-group messages service-id->service-description)))))
+               (statsd/router-state->metric-group->counts service-id->service-description router-state)))))
 
     (testing "should be resilient to empty service description"
       (is (= {nil {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0, :mem 0}}
-             (statsd/scheduler-messages->instance-counts-by-metric-group
-               [[:update-service-instances {:service-id :fee
-                                            :healthy-instances [:i]
-                                            :unhealthy-instances [:i :i]
-                                            :failed-instances [:i :i :i]}]]
-               (constantly {})))))))
+             (statsd/router-state->metric-group->counts
+               (constantly {})
+               {:all-available-service-ids #{:fee}
+                :service-id->failed-instances {:fee [:i :i :i]}
+                :service-id->healthy-instances {:fee [:i]}
+                :service-id->unhealthy-instances {:fee [:i :i]}}))))))
 
-(deftest test-process-update-service-instances-message
+(deftest test-merge-service-state
   (testing "Processing of an :update-service-instances scheduler message"
 
     (testing "should not let exceptions bubble out"
-      (let [misbehaving-fn (fn [_] (throw (Exception. "I'm misbehaving")))]
-        (is (= {} (statsd/process-update-service-instances-message {} {} misbehaving-fn)))
+      (let [misbehaving-fn (fn [_] (throw (Exception. "I'm misbehaving")))
+            healthy-instances [:i]
+            unhealthy-instances [:i :i]
+            failed-instances [:i :i :i]]
+        (is (= {} (statsd/merge-service-state
+                    misbehaving-fn "foo" healthy-instances unhealthy-instances failed-instances {})))
         (is (= {"foo" {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0.5, :mem 384}}
-               (statsd/process-update-service-instances-message
-                 {"foo" {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0.5, :mem 384}}
-                 {:service-id "bar"}
-                 misbehaving-fn)))))
+               (statsd/merge-service-state
+                 misbehaving-fn "bar" healthy-instances unhealthy-instances failed-instances
+                 {"foo" {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0.5, :mem 384}})))))
 
     (testing "should not include instance counts when service description is nil"
-      (is (= {} (statsd/process-update-service-instances-message {}
-                                                                 {:service-id :fee
-                                                                  :healthy-instances [:i]
-                                                                  :unhealthy-instances [:i :i]
-                                                                  :failed-instances [:i :i :i]}
-                                                                 (constantly nil)))))))
+      (is (= {} (statsd/merge-service-state
+                  (constantly nil)
+                  "fee" [:i] [:i :i] [:i :i :i]
+                  {}))))))
 
-(deftest test-process-scheduler-messages
-  (testing "Processing a batch of scheduler messages"
+(deftest test-process-router-state
+  (testing "Processing a batch of router-state messages"
     (testing "should not let exceptions bubble out"
-      (with-redefs [statsd/publish-instance-counts-by-metric-group (fn [_] (throw (Exception. "I'm misbehaving")))]
-        (statsd/process-scheduler-messages [] (constantly {}))))))
+      (with-redefs [statsd/publish-metric-group->counts (fn [_] (throw (Exception. "I'm misbehaving")))]
+        (is (nil? (statsd/process-router-state (constantly {}) {})))))))
 
-(deftest test-publish-instance-counts-by-metric-group
+(deftest test-publish-instance-metric-group->counts
   (testing "Publishing instance counts"
     (testing "should send a gauge for each of healthy, unhealthy, failed"
       (teardown-setup)
@@ -173,21 +183,21 @@
         (with-redefs [statsd/add-value (fn [_ metric-group metric value metric-type]
                                          (swap! metrics #(conj %1 [metric-group metric value metric-type]))
                                          {})]
-          (statsd/publish-instance-counts-by-metric-group {"foo" {:healthy-instances 1
-                                                                  :unhealthy-instances 2
-                                                                  :failed-instances 3
-                                                                  :cpus (* 3 0.1)
-                                                                  :mem 384}
-                                                           "bar" {:healthy-instances 4
-                                                                  :unhealthy-instances 5
-                                                                  :failed-instances 6
-                                                                  :cpus (+ (* 3 0.2) (* 6 0.4))
-                                                                  :mem 3840}
-                                                           "baz" {:healthy-instances 7
-                                                                  :unhealthy-instances 8
-                                                                  :failed-instances 9
-                                                                  :cpus (+ (* 6 0.8) (* 6 1.6) (* 3 3.2))
-                                                                  :mem 30720}}))
+          (statsd/publish-metric-group->counts {"foo" {:healthy-instances 1
+                                                       :unhealthy-instances 2
+                                                       :failed-instances 3
+                                                       :cpus (* 3 0.1)
+                                                       :mem 384}
+                                                "bar" {:healthy-instances 4
+                                                       :unhealthy-instances 5
+                                                       :failed-instances 6
+                                                       :cpus (+ (* 3 0.2) (* 6 0.4))
+                                                       :mem 3840}
+                                                "baz" {:healthy-instances 7
+                                                       :unhealthy-instances 8
+                                                       :failed-instances 9
+                                                       :cpus (+ (* 6 0.8) (* 6 1.6) (* 3 3.2))
+                                                       :mem 30720}}))
         (statsd/drain)
         (is (= 15 (count @metrics)))
         (is (= ["foo" "instances.healthy" 1 statsd/gauge-metric] (nth @metrics 0)))
