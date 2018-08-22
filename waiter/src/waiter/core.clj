@@ -883,12 +883,12 @@
                                  metrics-gc-chans))
    :interstitial-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                      [:state interstitial-state-atom]
-                                     scheduler-maintainer]
-                              (let [scheduler-state-mult-chan (:scheduler-state-mult-chan scheduler-maintainer)
-                                    scheduler-state-chan (async/tap scheduler-state-mult-chan (au/latest-chan))
+                                     router-state-maintainer]
+                              (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
+                                    router-state-chan (async/tap router-state-push-mult (au/latest-chan))
                                     initial-state {}]
                                 (interstitial/interstitial-maintainer
-                                  service-id->service-description-fn scheduler-state-chan interstitial-state-atom initial-state)))
+                                  service-id->service-description-fn router-state-chan interstitial-state-atom initial-state)))
    :launch-metrics-maintainer (pc/fnk [[:curator leader?-fn]
                                        [:routines service-id->service-description-fn]
                                        router-state-maintainer]
