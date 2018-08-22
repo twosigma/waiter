@@ -232,22 +232,31 @@
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
   [entitlement-manager query-state-fn prepend-waiter-url service-id->service-description-fn service-id->metrics-fn request]
-  (let [current-state (query-state-fn)]
-    (let [request-params (-> request ru/query-params-request :query-params)
+  (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)]
+    (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
           auth-user (get request :authorization/user)
-          run-as-user-param (get request-params "run-as-user")
+          run-as-user-predicate (fn [{:keys [service-description service-id]}]
+                                  (if run-as-user
+                                    (some-> (get service-description "run-as-user")
+                                            (= run-as-user))
+                                    (authz/manage-service? entitlement-manager auth-user service-id service-description)))
+          source-token-predicate-factory (fn [entry-key target-value]
+                                           (if target-value
+                                             (fn [{{:strs [source-tokens]} :service-description}]
+                                               (->> source-tokens (map #(get % entry-key)) (some #(= target-value %))))
+                                             (constantly true)))
+          token-predicate (source-token-predicate-factory "token" token)
+          token-version-predicate (source-token-predicate-factory "version" token-version)
           viewable-services (filter
-                              #(let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn % :effective? false)]
-                                 (and service-description
-                                      (if run-as-user-param
-                                        (= run-as-user run-as-user-param)
-                                        (authz/manage-service? entitlement-manager auth-user % service-description))))
-                              (->> (concat (keys (:service-id->healthy-instances current-state))
-                                           (keys (:service-id->unhealthy-instances current-state)))
-                                   (apply sorted-set)))
+                              (fn [service-id]
+                                (let [entry-map {:service-description (service-id->service-description-fn service-id :effective? false)
+                                                 :service-id service-id}
+                                      predicates [run-as-user-predicate token-predicate token-version-predicate]]
+                                  (reduce #(and %1 (%2 entry-map)) true predicates)))
+                              (sort all-available-service-ids))
           retrieve-instance-counts (fn retrieve-instance-counts [service-id]
-                                     {:healthy-instances (count (get-in current-state [:service-id->healthy-instances service-id]))
-                                      :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
+                                     {:healthy-instances (-> service-id->healthy-instances (get service-id) count)
+                                      :unhealthy-instances (-> service-id->unhealthy-instances (get service-id) count)})
           service-id->metrics (service-id->metrics-fn)
           include-effective-parameters? (utils/request-flag request-params "effective-parameters")
           response-data (map
