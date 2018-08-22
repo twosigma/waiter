@@ -856,14 +856,17 @@
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]
                                      [:settings [:scaling quanta-constraints]]
-                                     [:state instance-rpc-chan scaling-timeout-config]]
-                              (scaling/service-scaling-multiplexer
-                                (fn scaling-executor-factory [service-id]
-                                  (scaling/service-scaling-executor
-                                    service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                                    delegate-instance-kill-request-fn service-id->service-description-fn
-                                    quanta-constraints scaling-timeout-config))
-                                {}))
+                                     [:state instance-rpc-chan scaling-timeout-config]
+                                     router-state-maintainer]
+                              (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
+                                (scaling/service-scaling-multiplexer
+                                  (fn scaling-executor-factory [service-id]
+                                    (scaling/service-scaling-executor
+                                      notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                                      delegate-instance-kill-request-fn service-id->service-description-fn
+                                      scheduler instance-rpc-chan quanta-constraints scaling-timeout-config
+                                      service-id))
+                                  {})))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  router-state-maintainer]
                           (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
@@ -1036,11 +1039,13 @@
                               (wrap-secure-request-fn
                                 (fn async-status-handler-fn [request]
                                   (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))))
-   :blacklist-instance-handler-fn (pc/fnk [[:state instance-rpc-chan]
+   :blacklist-instance-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                           [:state instance-rpc-chan]
                                            wrap-router-auth-fn]
-                                    (wrap-router-auth-fn
-                                      (fn blacklist-instance-handler-fn [request]
-                                        (handler/blacklist-instance instance-rpc-chan request))))
+                                    (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
+                                      (wrap-router-auth-fn
+                                        (fn blacklist-instance-handler-fn [request]
+                                          (handler/blacklist-instance notify-instance-killed-fn instance-rpc-chan request)))))
    :blacklisted-instances-list-handler-fn (pc/fnk [[:state instance-rpc-chan]]
                                             (fn blacklisted-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                               (handler/get-blacklisted-instances instance-rpc-chan service-id request)))
@@ -1070,14 +1075,17 @@
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
                             :content-type "image/png"}))
-   :kill-instance-handler-fn (pc/fnk [[:routines peers-acknowledged-blacklist-requests-fn]
+   :kill-instance-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                      [:routines peers-acknowledged-blacklist-requests-fn]
                                       [:scheduler scheduler]
                                       [:state instance-rpc-chan scaling-timeout-config]
                                       wrap-router-auth-fn]
-                               (wrap-router-auth-fn
-                                 (fn kill-instance-handler-fn [request]
-                                   (scaling/kill-instance-handler scheduler instance-rpc-chan scaling-timeout-config
-                                                                  peers-acknowledged-blacklist-requests-fn request))))
+                               (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
+                                 (wrap-router-auth-fn
+                                   (fn kill-instance-handler-fn [request]
+                                     (scaling/kill-instance-handler
+                                       notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                                       scheduler instance-rpc-chan scaling-timeout-config request)))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
@@ -1111,16 +1119,18 @@
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
    :service-handler-fn (pc/fnk [[:curator kv-store]
+                                [:daemons router-state-maintainer]
                                 [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn
                                  service-id->service-description-fn]
                                 [:scheduler scheduler]
                                 [:state router-id]
                                 wrap-secure-request-fn]
-                         (wrap-secure-request-fn
-                           (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                             (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
-                                                      generate-log-url-fn make-inter-router-requests-sync-fn
-                                                      service-id->service-description-fn request))))
+                         (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
+                           (wrap-secure-request-fn
+                             (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
+                               (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
+                                                        generate-log-url-fn make-inter-router-requests-sync-fn
+                                                        service-id->service-description-fn query-state-fn request)))))
    :service-id-handler-fn (pc/fnk [[:curator kv-store]
                                    [:routines store-service-description-fn]
                                    wrap-descriptor-fn wrap-secure-request-fn]

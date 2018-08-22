@@ -153,12 +153,15 @@
                  (fn [[instance result]]
                    (is (= instance-1 instance))
                    (is (= :killed (:status result))))])
-              (let [correlation-id (str "test-cid-" (rand-int 10000))
+              (let [killed-instance-promise (promise)
+                    notify-instance-killed-fn (fn [instance] (deliver killed-instance-promise instance))
+                    correlation-id (str "test-cid-" (rand-int 10000))
                     response-chan
                     (cid/with-correlation-id
                       correlation-id
                       (kill-instance-handler
-                        scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
+                        notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                        scheduler instance-rpc-chan timeout-config
                         {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                     {:keys [body headers status]} (async/<!! response-chan)]
                 (is (= 200 status))
@@ -166,7 +169,8 @@
                 (is (= {:kill-response {:instance-id "instance-1", :killed? true, :message "Killed", :service-id test-service-id, :status 200},
                         :service-id test-service-id, :source-router-id src-router-id, :success true}
                        (walk/keywordize-keys (json/read-str body))))
-                (is (= [[:kill-instance "instance-1" "test-service-id" true]] @scheduler-operation-tracker-atom))))))
+                (is (= [[:kill-instance "instance-1" "test-service-id" true]] @scheduler-operation-tracker-atom))
+                (is (= instance-1 (deref killed-instance-promise 10 :not-killed)))))))
 
         (testing "no-instance-to-kill-no-message-404"
           (let [instance-rpc-chan (async/chan 1)
@@ -177,12 +181,15 @@
               [(fn [[{:keys [reason]} response-chan]]
                  (is (= :kill-instance reason))
                  (async/>!! response-chan :instance-unavailable))])
-            (let [correlation-id (str "test-cid-" (rand-int 10000))
+            (let [killed-instance-promise (promise)
+                  notify-instance-killed-fn (fn [instance] (deliver killed-instance-promise instance))
+                  correlation-id (str "test-cid-" (rand-int 10000))
                   response-chan
                   (cid/with-correlation-id
                     correlation-id
                     (kill-instance-handler
-                      scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
+                      notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                      scheduler instance-rpc-chan timeout-config
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
@@ -190,7 +197,8 @@
               (is (= {:kill-response {:message "no-instance-killed", :status 404}, :service-id test-service-id,
                       :source-router-id src-router-id, :success false}
                      (walk/keywordize-keys (json/read-str body))))
-              (is (empty? @scheduler-operation-tracker-atom)))))
+              (is (empty? @scheduler-operation-tracker-atom))
+              (is (= :not-killed (deref killed-instance-promise 100 :not-killed))))))
 
         (testing "no-instance-to-kill-with-message-409"
           (let [instance-rpc-chan (async/chan 1)
@@ -205,12 +213,15 @@
                  (fn [[instance result]]
                    (is (= instance-1 instance))
                    (is (= :not-killed (:status result))))]))
-            (let [correlation-id (str "test-cid-" (rand-int 10000))
+            (let [killed-instance-promise (promise)
+                  notify-instance-killed-fn (fn [instance] (deliver killed-instance-promise instance))
+                  correlation-id (str "test-cid-" (rand-int 10000))
                   response-chan
                   (cid/with-correlation-id
                     correlation-id
                     (kill-instance-handler
-                      scheduler instance-rpc-chan timeout-config peers-acknowledged-blacklist-requests-fn
+                      notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                      scheduler instance-rpc-chan timeout-config
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
@@ -219,7 +230,8 @@
                                       :service-id test-service-id, :status 404},
                       :service-id test-service-id, :source-router-id src-router-id, :success false}
                      (walk/keywordize-keys (json/read-str body))))
-              (is (= [[:kill-instance "instance-1" "test-service-id" false]] @scheduler-operation-tracker-atom)))))))))
+              (is (= [[:kill-instance "instance-1" "test-service-id" false]] @scheduler-operation-tracker-atom))
+              (is (= :not-killed (deref killed-instance-promise 100 :not-killed))))))))))
 
 (deftest test-compute-scale-amount-restricted-by-quanta
   (is (= 1 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 1024} {:cpus 32 :mem 4608} 1)))
@@ -265,22 +277,33 @@
             delegate-instance-kill-request-fn (fn [service-id]
                                                 (is (= test-service-id service-id))
                                                 false)
+            notify-instance-killed-fn (fn [instance] (throw (ex-info "Unexpected call" {:instance instance})))
             service-id->service-description-fn (constantly {"cpus" 10 "mem" 1024})
             quanta-constraints {:cpus 64 :mem 100000}
             equilibrium-state {}
             make-scaling-message (fn [service-id scale-amount scale-to-instances task-count total-instances response-chan]
                                    {:service-id service-id, :scale-amount scale-amount, :scale-to-instances scale-to-instances,
-                                    :task-count task-count, :total-instances total-instances, :response-chan response-chan})]
+                                    :task-count task-count, :total-instances total-instances, :response-chan response-chan})
+            run-service-scaling-executor (fn [scheduler instance-rpc-chan &
+                                              {:keys [delegate-instance-kill-request-fn
+                                                      notify-instance-killed-fn
+                                                      peers-acknowledged-blacklist-requests-fn]
+                                               :or {delegate-instance-kill-request-fn delegate-instance-kill-request-fn
+                                                    notify-instance-killed-fn notify-instance-killed-fn
+                                                    peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn}}]
+                                           (service-scaling-executor
+                                             notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn delegate-instance-kill-request-fn
+                                             service-id->service-description-fn scheduler instance-rpc-chan quanta-constraints timeout-config
+                                             test-service-id))]
         (testing "basic-equilibrium-with-no-scaling"
           (let [instance-rpc-chan (async/chan 1)
                 peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)]
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan {:service-id test-service-id, :scale-amount 0})
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -292,10 +315,9 @@
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)]
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 30 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -308,10 +330,9 @@
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)]
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -324,10 +345,9 @@
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)]
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 4 24 22 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -340,10 +360,9 @@
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)]
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id -5 25 20 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -361,10 +380,9 @@
                                                     (.countDown latch)
                                                     false)
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)]
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :delegate-instance-kill-request-fn delegate-instance-kill-request-fn)]
             (mock-reservation-system
               instance-rpc-chan
               [(fn [[{:keys [reason]} response-chan]]
@@ -389,10 +407,9 @@
                                                     (.countDown latch)
                                                     true)
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)]
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :delegate-instance-kill-request-fn delegate-instance-kill-request-fn)]
             (mock-reservation-system
               instance-rpc-chan
               [(fn [[{:keys [reason]} response-chan]]
@@ -411,12 +428,14 @@
           (let [instance-rpc-chan (async/chan 1)
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                notify-instance-killed-fn (fn [{:keys [id service-id]}]
+                                            (is (= "instance-1" id))
+                                            (is (= test-service-id service-id)))
                 response-chan (async/promise-chan)
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)]
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :notify-instance-killed-fn notify-instance-killed-fn)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
                 instance-rpc-chan
@@ -448,10 +467,9 @@
                   (is (= :prepare-to-kill reason))
                   false)
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
@@ -480,12 +498,15 @@
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 response-chan (async/promise-chan)
+                notify-instance-killed-fn (fn [{:keys [id service-id]}]
+                                            (is (= "instance-2" id))
+                                            (is (= test-service-id service-id)))
                 peers-acknowledged-blacklist-requests-fn (fn [{:keys [id]} _ _ _] (not= "instance-1" id))
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :notify-instance-killed-fn notify-instance-killed-fn
+                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag true}]
@@ -521,10 +542,9 @@
                 response-chan (async/promise-chan)
                 peers-acknowledged-blacklist-requests-fn (fn [{:keys [id]} _ _ _] (not= "instance-1" id))
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
                   instance-2 {:id "instance-2", :service-id test-service-id, :success-flag false}]
@@ -559,11 +579,13 @@
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
                 response-chan (async/promise-chan)
+                notify-instance-killed-fn (fn [{:keys [id service-id]}]
+                                            (is (= "instance-1" id))
+                                            (is (= test-service-id service-id)))
                 {:keys [executor-chan exit-chan query-chan]}
-                (service-scaling-executor
-                  test-service-id scheduler instance-rpc-chan peers-acknowledged-blacklist-requests-fn
-                  delegate-instance-kill-request-fn service-id->service-description-fn quanta-constraints
-                  timeout-config)]
+                (run-service-scaling-executor
+                  scheduler instance-rpc-chan
+                  :notify-instance-killed-fn notify-instance-killed-fn)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
                 instance-rpc-chan

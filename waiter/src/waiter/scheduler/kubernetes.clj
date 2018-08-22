@@ -234,8 +234,7 @@
    Grouped by liveness status, i.e.: {:active-instances [...] :failed-instances [...] :killed-instances [...]}"
   [{:keys [service-id->failed-instances-transient-store] :as scheduler} {service-id :id :as basic-service-info}]
   {:active-instances (get-service-instances! scheduler basic-service-info)
-   :failed-instances (-> @service-id->failed-instances-transient-store (get service-id []) vals vec)
-   :killed-instances (-> service-id scheduler/service-id->killed-instances vec)})
+   :failed-instances (-> @service-id->failed-instances-transient-store (get service-id []) vals vec)})
 
 (defn- patch-object-json
   "Make a JSON-patch request on a given Kubernetes object."
@@ -352,8 +351,6 @@
       (api-request http-client pod-url :request-method :delete :body kill-json)
       (catch Throwable t
         (log/error t "Error force-killing pod")))
-    ; report back that the instance was killed
-    (scheduler/process-instance-killed! instance)
     (comment "Success! Even if the scale-down or force-kill operation failed,
               the pod will be force-killed after the grace period is up.")))
 
@@ -429,14 +426,6 @@
   (get-services [this]
     (get-services this))
 
-  (get-instances [this service-id]
-    (instances-breakdown! this
-                          {:id service-id
-                           :k8s/app-name (service-id->k8s-app-name this service-id)
-                           :k8s/namespace (-> service-id
-                                              service-id->service-description-fn
-                                              (get "run-as-user"))}))
-
   (kill-instance [this {:keys [id service-id] :as instance}]
     (ss/try+
       (let [service (service-id->service this service-id)]
@@ -480,7 +469,6 @@
       (let [service (service-id->service this service-id)
             delete-result (delete-service this service)]
         (swap! service-id->failed-instances-transient-store dissoc service-id)
-        (scheduler/remove-killed-instances-for-service! service-id)
         delete-result)
       (catch [:status 404] _
         (log/warn "service does not exist:" service-id)
@@ -524,8 +512,7 @@
     [])
 
   (service-id->state [_ service-id]
-    {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))
-     :killed-instances (scheduler/service-id->killed-instances service-id)})
+    {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))})
 
   (state [_]
     {:service-id->failed-instances @service-id->failed-instances-transient-store}))

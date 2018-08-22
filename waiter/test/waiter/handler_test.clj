@@ -32,7 +32,6 @@
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all]
-            [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
@@ -1182,14 +1181,15 @@
           (is (= body "template:some-content")))))))
 
 (deftest test-blacklist-instance-cannot-find-channel
-  (let [instance-rpc-chan (async/chan)
+  (let [notify-instance-killed-fn (fn [instance] (throw (ex-info "Unexpected call" {:instance instance})))
+        instance-rpc-chan (async/chan)
         test-service-id "test-service-id"
         request {:body (StringBufferInputStream.
                          (utils/clj->json
                            {"instance" {"id" "test-instance-id", "service-id" test-service-id}
                             "period-in-ms" 1000
                             "reason" "blacklist"}))}
-        response-chan (blacklist-instance instance-rpc-chan request)]
+        response-chan (blacklist-instance notify-instance-killed-fn instance-rpc-chan request)]
     (async/thread
       (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
         (is (= :blacklist method))
@@ -1199,6 +1199,38 @@
         (async/close! response-chan)))
     (let [{:keys [status]} (async/<!! response-chan)]
       (is (= 400 status)))))
+
+(deftest test-blacklist-killed-instance
+  (let [notify-instance-chan (async/promise-chan)
+        notify-instance-killed-fn (fn [instance] (async/>!! notify-instance-chan instance))
+        instance-rpc-chan (async/chan)
+        test-service-id "test-service-id"
+        instance {:id "test-instance-id"
+                  :service-id test-service-id
+                  :started-at nil}
+        request {:body (StringBufferInputStream.
+                         (utils/clj->json
+                           {"instance" instance
+                            "period-in-ms" 1000
+                            "reason" "killed"}))}]
+    (with-redefs []
+      (let [response-chan (blacklist-instance notify-instance-killed-fn instance-rpc-chan request)
+            blacklist-chan (async/promise-chan)]
+        (async/thread
+          (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
+            (is (= :blacklist method))
+            (is (= test-service-id service-id))
+            (is cid)
+            (is (instance? ManyToManyChannel response-chan))
+            (async/>!! response-chan blacklist-chan)))
+        (async/thread
+          (let [[{:keys [blacklist-period-ms instance-id]} repsonse-chan] (async/<!! blacklist-chan)]
+            (is (= 1000 blacklist-period-ms))
+            (is (= (:id instance) instance-id))
+            (async/>!! repsonse-chan :blacklisted)))
+        (let [{:keys [status]} (async/<!! response-chan)]
+          (is (= 200 status))
+          (is (= instance (async/<!! notify-instance-chan))))))))
 
 (deftest test-get-blacklisted-instances-cannot-find-channel
   (let [instance-rpc-chan (async/chan)

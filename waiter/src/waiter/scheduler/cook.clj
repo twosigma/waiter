@@ -339,8 +339,7 @@
                    service->instance-distribution
                    (jobs->service jobs)
                    {:active-instances (map job->service-instance jobs)
-                    :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
-                    :killed-instances (scheduler/service-id->killed-instances service-id)})))
+                    :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})))
              (transient {}))
            (persistent!))))
 
@@ -355,19 +354,6 @@
           (-> service-id service-id->jobs jobs->service))
         (keys service-id->jobs))))
 
-  (get-instances [_ service-id]
-    (ss/try+
-      (scheduler/retry-on-transient-server-exceptions
-        (str "get-instances[" service-id "]")
-        {:active-instances (some->> (service-id->service-description-fn service-id)
-                                    (retrieve-jobs cook-api search-interval service-id)
-                                    (map job->service-instance)
-                                    doall)
-         :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
-         :killed-instances (scheduler/service-id->killed-instances service-id)})
-      (catch [:status 404] {}
-        (log/warn "get-instances: service" service-id "does not exist!"))))
-
   (kill-instance [this {:keys [cook/job-uuid id service-id] :as instance}]
     (if (scheduler/service-exists? this service-id)
       (let [log-data {:instance-id id :job-uuid job-uuid :service-id service-id}
@@ -381,8 +367,6 @@
                       (catch Exception ex
                         (log/error ex "unable to kill" log-data)
                         false))]
-        (when success
-          (scheduler/process-instance-killed! instance))
         {:killed? success
          :success success
          :result (if success :killed :failed)
@@ -487,12 +471,10 @@
       (mesos/retrieve-directory-content-from-host cook-api host log-directory)))
 
   (service-id->state [_ service-id]
-    {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
-     :killed-instances (scheduler/service-id->killed-instances service-id)})
+    {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})
 
   (state [_]
-    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
-     :service-id->killed-instances-transient-store @scheduler/service-id->killed-instances-transient-store}))
+    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store}))
 
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."

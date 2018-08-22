@@ -395,6 +395,7 @@
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         configuration {:curator {:kv-store nil}
+                       :daemons {:router-state-maintainer {:maintainer {:query-state-fn (constantly {})}}}
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
                                   :make-inter-router-requests-sync-fn nil
@@ -467,7 +468,9 @@
   (let [user "waiter-user"
         service-id "test-service-1"
         waiter-request?-fn (fn [_] true)
+        router-state-atom (atom {})
         configuration {:curator {:kv-store nil}
+                       :daemons {:router-state-maintainer {:maintainer {:query-state-fn (fn [] @router-state-atom)}}}
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
                                   :make-inter-router-requests-sync-fn nil
@@ -491,15 +494,14 @@
             (is (= "Service not found" message))
             (is (= "test-service-1" service-id))))))
     (testing "service-handler:valid-response-missing-killed-and-failed"
-      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
-                    scheduler/get-instances (fn [_ service-id]
-                                              {:active-instances [{:id (str service-id ".A")
-                                                                   :service-id service-id
-                                                                   :healthy? true,
-                                                                   :host "10.141.141.11"
-                                                                   :port 31045,
-                                                                   :started-at started-time}]
-                                               :failed-instances []})]
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (reset! router-state-atom {:service-id->healthy-instances
+                                   {service-id [{:id (str service-id ".A")
+                                                 :service-id service-id
+                                                 :healthy? true,
+                                                 :host "10.141.141.11"
+                                                 :port 31045,
+                                                 :started-at started-time}]}})
         (let [request {:headers {"accept" "application/json"}
                        :request-method :get
                        :uri (str "/apps/" service-id)}
@@ -507,8 +509,7 @@
           (is (= 200 status))
           (is (= {"content-type" "application/json"} headers))
           (let [body-json (json/read-str (str body))]
-            (is (= (get body-json "instances")
-                   {"active-instances" [{"id" (str service-id ".A")
+            (is (= {"active-instances" [{"id" (str service-id ".A")
                                          "service-id" service-id
                                          "healthy?" true,
                                          "host" "10.141.141.11"
@@ -516,26 +517,23 @@
                                          "port" 31045,
                                          "started-at" (du/date-to-str started-time du/formatter-iso8601)}]
                     "failed-instances" nil
-                    "killed-instances" nil}))
-            (is (= (get body-json "metrics")
-                   {"aggregate" {"routers-sent-requests-to" 0}}))
-            (is (= (get body-json "num-active-instances") 1))
-            (is (= (get body-json "num-routers") 0))
-            (is (= (get body-json "service-description")
-                   {"name" "test-service-1-name", "run-as-user" "waiter-user"}))))))
+                    "killed-instances" nil}
+                   (get body-json "instances")))
+            (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
+            (is (= 1 (get body-json "num-active-instances")))
+            (is (= 0 (get body-json "num-routers")))
+            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
     (testing "service-handler:valid-response-including-active-killed-and-failed"
-      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})
-                    scheduler/get-instances (fn [_ service-id]
-                                              {:active-instances [{:id (str service-id ".A"), :service-id service-id}]
-                                               :failed-instances [{:id (str service-id ".F"), :service-id service-id}]
-                                               :killed-instances [{:id (str service-id ".K"), :service-id service-id}]})]
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (reset! router-state-atom {:service-id->failed-instances {service-id [{:id (str service-id ".F"), :service-id service-id}]}
+                                   :service-id->healthy-instances {service-id [{:id (str service-id ".A"), :service-id service-id}]}
+                                   :service-id->killed-instances {service-id [{:id (str service-id ".K"), :service-id service-id}]}})
         (let [request {:request-method :get, :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
           (is (= {"content-type" "application/json"} headers))
           (let [body-json (json/read-str (str body))]
-            (is (= (get body-json "instances")
-                   {"active-instances" [{"id" (str service-id ".A")
+            (is (= {"active-instances" [{"id" (str service-id ".A")
                                          "service-id" service-id
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.A&host="}]
                     "killed-instances" [{"id" (str service-id ".K")
@@ -543,13 +541,12 @@
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.K&host="}]
                     "failed-instances" [{"id" (str service-id ".F")
                                          "service-id" service-id
-                                         "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.F&host="}]}))
-            (is (= (get body-json "metrics")
-                   {"aggregate" {"routers-sent-requests-to" 0}}))
-            (is (= (get body-json "num-active-instances") 1))
-            (is (= (get body-json "num-routers") 0))
-            (is (= (get body-json "service-description")
-                   {"name" "test-service-1-name", "run-as-user" "waiter-user"}))))))))
+                                         "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.F&host="}]}
+                   (get body-json "instances")))
+            (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
+            (is (= 1 (get body-json "num-active-instances")))
+            (is (= 0 (get body-json "num-routers")))
+            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))))
 
 (deftest test-make-inter-router-requests
   (let [auth-object (Object.)

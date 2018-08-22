@@ -1184,7 +1184,8 @@
    Acts as the central access point for modifying this data for the router.
    Exposes the state of the router via a `query-state-fn` no-args function that is returned."
   [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config]
-  (let [state-atom (atom {:all-available-service-ids #{}
+  (let [killed-instances-to-keep 10
+        state-atom (atom {:all-available-service-ids #{}
                           :iteration 0
                           :routers []
                           :service-id->deployment-error {}
@@ -1193,12 +1194,14 @@
                           :service-id->healthy-instances {}
                           :service-id->instability-issue {}
                           :service-id->instance-counts {}
+                          :service-id->killed-instances {}
                           :service-id->my-instance->slots {} ; updated in update-router-state
                           :service-id->starting-instances {}
                           :service-id->unhealthy-instances {}
                           :time (t/now)})
         router-state-push-chan (au/latest-chan)
         query-chan (async/chan)
+        kill-notification-chan (async/chan 16)
         go-chan
         (async/go
           (try
@@ -1218,7 +1221,8 @@
                           (str "router-state-maintainer-" iteration)
                           (loop [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->my-instance->slots
                                          service-id->expired-instances service-id->starting-instances service-id->failed-instances
-                                         service-id->instance-counts service-id->deployment-error service-id->instability-issue] :as loop-state} current-state
+                                         service-id->instance-counts service-id->deployment-error service-id->instability-issue
+                                         service-id->killed-instances] :as loop-state} current-state
                                  [[message-type message-data] & remaining] scheduler-messages]
                             (log/trace "scheduler-state-chan received, type:" message-type)
                             (let [loop-state'
@@ -1228,6 +1232,7 @@
                                           all-available-service-ids' available-service-ids
                                           services-without-instances (remove #(contains? service-id->my-instance->slots %) all-available-service-ids')
                                           service-id->healthy-instances' (select-keys service-id->healthy-instances all-available-service-ids')
+                                          service-id->killed-instances' (select-keys service-id->killed-instances all-available-service-ids')
                                           service-id->unhealthy-instances' (select-keys service-id->unhealthy-instances all-available-service-ids')
                                           service-id->expired-instances' (select-keys service-id->expired-instances all-available-service-ids')
                                           service-id->starting-instances' (select-keys service-id->starting-instances all-available-service-ids')
@@ -1252,6 +1257,7 @@
                                         :service-id->instance-counts service-id->instance-counts'
                                         :service-id->deployment-error service-id->deployment-error'
                                         :service-id->instability-issue service-id->instability-issue'
+                                        :service-id->killed-instances service-id->killed-instances'
                                         :time scheduler-sync-time))
 
                                     :update-service-instances
@@ -1318,6 +1324,22 @@
                                   new-state)
                                 (recur loop-state' remaining))))))
 
+                      kill-notification-chan
+                      ([message]
+                        (cid/with-correlation-id
+                          (str "router-state-maintainer-" iteration)
+                          (let [{{:keys [id service-id] :as instance} :instance} message]
+                            (log/info "tracking killed instance" id "of service" service-id)
+                            (-> current-state
+                                (update-in [:service-id->killed-instances service-id]
+                                           (fn [killed-instances]
+                                             (vec
+                                               (take
+                                                 killed-instances-to-keep
+                                                 (conj
+                                                   (filterv (fn [i] (not= (:id i) id)) killed-instances)
+                                                   instance)))))))))
+
                       query-chan
                       ([response-chan]
                         (async/put! response-chan current-state)
@@ -1346,6 +1368,9 @@
               (log/error e "Fatal error in router-state-maintainer!")
               (System/exit 1))))]
     {:go-chan go-chan
+     :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
+                                  (log/info "received notification of killed instance" (:id instance))
+                                  (async/go (async/>! kill-notification-chan {:instance instance})))
      :query-chan query-chan
      :query-state-fn (fn router-state-maintainer-query-state-fn []
                        (assoc @state-atom :router-id router-id))

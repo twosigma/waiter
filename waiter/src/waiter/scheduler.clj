@@ -88,18 +88,12 @@
 
   (get-service->instances [this]
     "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records.
-     The nested map has the following keys: :active-instances, :failed-instances and :killed-instances.
+     The nested map has the following keys: :active-instances and :failed-instances.
      The active-instances should not be assumed to be healthy (or live).
      The failed-instances are guaranteed to be dead.")
 
   (get-services [this]
     "Returns a list of scheduler/Service records")
-
-  (get-instances [this ^String service-id]
-    "Retrieve a {:active-instances [...] :failed-instances [...] :killed-instances [...]} map of
-     scheduler/ServiceInstance records for the given service-id.
-     The active-instances should not be assumed to be healthy (or live).
-     The failed-instances are guaranteed to be dead.")
 
   (kill-instance [this instance]
     "Instructs the scheduler to kill a specific ServiceInstance.
@@ -607,43 +601,6 @@
                       #(cond-> (or % (initial-value-fn))
                                (= max-instances-to-keep (count %)) (remove-fn)
                                true (conj instance-entry))))))
-
-(def service-id->killed-instances-transient-store (atom {}))
-
-(defn preserve-only-killed-instances-for-services!
-  "Removes killed instance entries for services that no longer exist based on `service-ids-to-keep`."
-  ([service-ids-to-keep]
-   (preserve-only-killed-instances-for-services! service-id->killed-instances-transient-store service-ids-to-keep))
-  ([service-id->killed-instances-transient-store service-ids-to-keep]
-   (swap! service-id->killed-instances-transient-store #(select-keys % service-ids-to-keep))))
-
-(defn remove-killed-instances-for-service!
-  "Removes killed instance entries for the specified service."
-  ([service-id]
-   (remove-killed-instances-for-service! service-id->killed-instances-transient-store service-id))
-  ([service-id->killed-instances-transient-store service-id]
-   (swap! service-id->killed-instances-transient-store #(dissoc % service-id))))
-
-(defn service-id->killed-instances
-  "Return the known list of killed service instances for a given service."
-  ([service-id]
-   (service-id->killed-instances service-id->killed-instances-transient-store service-id))
-  ([service-id->killed-instances-transient-store service-id]
-   (-> (get @service-id->killed-instances-transient-store service-id [])
-       (sort-instances))))
-
-(defn process-instance-killed!
-  "Process a notification that an instance has been killed.
-   It adds the instances into its cache of killed instances."
-  ([instance]
-   (process-instance-killed! service-id->killed-instances-transient-store instance))
-  ([service-id->killed-instances-transient-store {:keys [id service-id] :as instance}]
-   (log/info "tracking" id "as a killed instance")
-   (let [max-instances-to-keep 10]
-     (add-instance-to-buffered-collection!
-       service-id->killed-instances-transient-store max-instances-to-keep service-id
-       (assoc instance :killed-at (du/date-to-str (t/now)))
-       #(PersistentQueue/EMPTY) pop))))
 
 (defn environment
   "Returns a new environment variable map with some basic variables added in"

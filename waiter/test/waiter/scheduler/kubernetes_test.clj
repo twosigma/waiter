@@ -131,209 +131,6 @@
                       "-" short-sample-uuid)
                  (service-id->k8s-app-name short-name-scheduler service-id))))))))
 
-(deftest test-scheduler-get-instances
-  (let [test-cases [{:name "get-instances no response"
-                     :kubernetes-response nil
-                     :expected-response {:active-instances []
-                                         :failed-instances []
-                                         :killed-instances []}}
-
-                    {:name "get-instances empty response"
-                     :kubernetes-response {}
-                     :expected-response {:active-instances []
-                                         :failed-instances []
-                                         :killed-instances []}}
-
-                    {:name "get-instances empty-app response"
-                     :kubernetes-response {:apiVersion "v1" :items [] :kind "List"
-                                           :metadata {:resourceVersion "" :selfLink ""}}
-                     :expected-response {:active-instances []
-                                         :failed-instances []
-                                         :killed-instances []}}
-
-                    {:name "get-instances valid response with task failure"
-                     :kubernetes-response
-                     {:apiVersion "v1"
-                      :kind "List"
-                      :metadata {}
-                      :items [{:metadata {:annotations {:waiter/port-count "1"
-                                                        :waiter/protocol "https"
-                                                        :waiter/service-id "test-app-1234"}
-                                          :labels {:app "test-app-1234"
-                                                   :managed-by "waiter"}
-                                          :name "test-app-1234-abcd1"
-                                          :namespace "myself"}
-                               :spec {:containers [{:name "test-app-1234"
-                                                    :ports [{:containerPort 8080}]}]}
-                               :status {:containerStatuses [{:ready true
-                                                             :restartCount 0}]
-                                        :podIP "10.141.141.10"
-                                        :startTime "2014-09-13T00:24:46Z"}}
-                              {:metadata {:annotations {:waiter/port-count "1"
-                                                        :waiter/protocol "https"
-                                                        :waiter/service-id "test-app-1234"}
-                                          :labels {:app "test-app-1234"
-                                                   :managed-by "waiter"}
-                                          :name "test-app-1234-abcd2"
-                                          :namespace "myself"}
-                               :spec {:containers [{:name "test-app-1234"
-                                                    :ports [{:containerPort 8080}]}]}
-                               :status {:containerStatuses [{:lastState {:terminated {:exitCode 1
-                                                                                      :startedAt "2014-09-12T23:23:41Z"}}
-                                                             :ready true
-                                                             :restartCount 1}]
-                                        :podIP "10.141.141.11"
-                                        :startTime "2014-09-13T00:24:56Z"}}
-                              {:metadata {:annotations {:waiter/port-count "4"
-                                                        :waiter/protocol "https"
-                                                        :waiter/service-id "test-app-1234"}
-                                          :labels {:app "test-app-1234"
-                                                   :managed-by "waiter"}
-                                          :name "test-app-1234-abcd3"
-                                          :namespace "myself"}
-                               :spec {:containers [{:name "test-app-1234"
-                                                    :ports [{:containerPort 8080}]}]}
-                               :status {:containerStatuses [{:ready false
-                                                             :restartCount 0}]
-                                        :podIP "10.141.141.12"
-                                        :startTime "2014-09-14T00:24:46Z"}}]}
-
-                     :expected-response
-                     {:active-instances [(scheduler/make-ServiceInstance
-                                           {:extra-ports [],
-                                            :healthy? true,
-                                            :host "10.141.141.10",
-                                            :id "test-app-1234.test-app-1234-abcd1-0",
-                                            :log-directory "/home/myself"
-                                            :port 8080,
-                                            :protocol "https",
-                                            :service-id "test-app-1234",
-                                            :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)}),
-                                         (scheduler/make-ServiceInstance
-                                           {:extra-ports [],
-                                            :healthy? true,
-                                            :host "10.141.141.11",
-                                            :id "test-app-1234.test-app-1234-abcd2-1",
-                                            :log-directory "/home/myself"
-                                            :port 8080,
-                                            :protocol "https",
-                                            :service-id "test-app-1234",
-                                            :started-at (du/str-to-date "2014-09-13T00:24:56Z" k8s-timestamp-format)}),
-                                         (scheduler/make-ServiceInstance
-                                           {:extra-ports [8081 8082 8083],
-                                            :healthy? false,
-                                            :host "10.141.141.12",
-                                            :id "test-app-1234.test-app-1234-abcd3-0",
-                                            :log-directory "/home/myself"
-                                            :port 8080,
-                                            :protocol "https",
-                                            :service-id "test-app-1234",
-                                            :started-at (du/str-to-date "2014-09-14T00:24:46Z" k8s-timestamp-format)})]
-                      :failed-instances [(scheduler/make-ServiceInstance
-                                           {:exit-code 1
-                                            :extra-ports [],
-                                            :healthy? false,
-                                            :host "10.141.141.11",
-                                            :id "test-app-1234.test-app-1234-abcd2-0",
-                                            :log-directory "/home/myself"
-                                            :port 8080,
-                                            :protocol "https",
-                                            :service-id "test-app-1234",
-                                            :started-at (du/str-to-date "2014-09-12T23:23:41Z" k8s-timestamp-format)})]
-                      :killed-instances []}}
-
-                    {:name "get-instances valid response without task failure"
-                     :kubernetes-response
-                     {:apiVersion "v1"
-                      :kind "List"
-                      :metadata {}
-                      :items [{:metadata {:annotations {:waiter/port-count "1"
-                                                        :waiter/protocol "http"
-                                                        :waiter/service-id "test-app-1234"}
-                                          :labels {:app "test-app-1234"
-                                                   :managed-by "waiter"}
-                                          :name "test-app-1234-abcd1"
-                                          :namespace "myself"}
-                               :spec {:containers [{:name "test-app-1234"
-                                                    :ports [{:containerPort 8080}]}]}
-                               :status {:containerStatuses [{:ready true
-                                                             :restartCount 0}]
-                                        :podIP "10.141.141.11"
-                                        :startTime "2014-09-13T00:24:46Z"}}
-                              {:metadata {:annotations {:waiter/port-count "1"
-                                                        :waiter/protocol "http"
-                                                        :waiter/service-id "test-app-1234"}
-                                          :labels {:app "test-app-1234"
-                                                   :managed-by "waiter"}
-                                          :name "test-app-1234-abcd2"
-                                          :namespace "myself"}
-                               :spec {:containers [{:name "test-app-1234"
-                                                    :ports [{:containerPort 8080}]}]}
-                               :status {:containerStatuses [{:ready true
-                                                             :restartCount 0}]
-                                        :podIP "10.141.141.12"
-                                        :startTime "2014-09-13T00:24:47Z"}}
-                              {:metadata {:annotations {:waiter/port-count "1"
-                                                        :waiter/protocol "http"
-                                                        :waiter/service-id "test-app-1234"}
-                                          :labels {:app "test-app-1234"
-                                                   :managed-by "waiter"}
-                                          :name "test-app-1234-abcd3"
-                                          :namespace "myself"}
-                               :spec {:containers [{:name "test-app-1234"
-                                                    :ports [{:containerPort 8080}]}]}
-                               :status {:containerStatuses [{:ready false
-                                                             :restartCount 0}]
-                                        :podIP "10.141.141.13"
-                                        :startTime "2014-09-14T00:24:48Z"}}]}
-
-                     :expected-response
-                     {:active-instances [(scheduler/make-ServiceInstance
-                                           {:extra-ports [],
-                                            :healthy? true,
-                                            :host "10.141.141.11",
-                                            :id "test-app-1234.test-app-1234-abcd1-0",
-                                            :log-directory "/home/myself"
-                                            :port 8080,
-                                            :protocol "http",
-                                            :service-id "test-app-1234",
-                                            :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)}),
-                                         (scheduler/make-ServiceInstance
-                                           {:extra-ports [],
-                                            :healthy? true,
-                                            :host "10.141.141.12",
-                                            :log-directory "/home/myself"
-                                            :id "test-app-1234.test-app-1234-abcd2-0",
-                                            :port 8080,
-                                            :protocol "http",
-                                            :service-id "test-app-1234",
-                                            :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)}),
-                                         (scheduler/make-ServiceInstance
-                                           {:extra-ports [],
-                                            :healthy? false,
-                                            :host "10.141.141.13",
-                                            :log-directory "/home/myself"
-                                            :id "test-app-1234.test-app-1234-abcd3-0",
-                                            :port 8080,
-                                            :protocol "http",
-                                            :service-id "test-app-1234",
-                                            :started-at (du/str-to-date "2014-09-14T00:24:48Z" k8s-timestamp-format)})]
-                      :failed-instances []
-                      :killed-instances []}}]]
-    (doseq [{:keys [expected-response kubernetes-response name]} test-cases]
-      (testing (str "Test " name)
-        (let [service-id "test-app-1234"
-              dummy-scheduler (make-dummy-scheduler [service-id])
-              actual-response (with-redefs [;; mock the K8s API server returning our test responses
-                                            api-request (constantly kubernetes-response)]
-                                (->> (scheduler/get-instances dummy-scheduler service-id)
-                                     sanitize-k8s-service-records))]
-          (is (= expected-response actual-response) (str name))
-          (is (== (-> expected-response :failed-instances count)
-                  (-> dummy-scheduler :service-id->failed-instances-transient-store deref count))
-              (str name))
-          (scheduler/preserve-only-killed-instances-for-services! []))))))
-
 (deftest test-scheduler-get-services
   (let [test-cases
         [{:api-server-response
@@ -565,8 +362,7 @@
                         :protocol "https"
                         :service-id "test-app-1234"
                         :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)})]
-                    :failed-instances []
-                    :killed-instances []}
+                    :failed-instances []}
 
                    (scheduler/make-Service {:id "test-app-6789" :instances 3 :task-count 3
                                             :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
@@ -608,16 +404,14 @@
                         :port 8080
                         :protocol "http"
                         :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]
-                    :killed-instances []})
+                        :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]})
         dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"])
         response-iterator (.iterator api-server-responses)
         actual (with-redefs [api-request (fn [& _] (.next response-iterator))]
                  (->> dummy-scheduler
                       scheduler/get-service->instances
                       sanitize-k8s-service-records))]
-    (assert-data-equal expected actual)
-    (scheduler/preserve-only-killed-instances-for-services! [])))
+    (assert-data-equal expected actual)))
 
 (deftest test-kill-instance
   (let [service-id "test-service-id"
@@ -707,71 +501,6 @@
             actual-result (with-redefs [api-request (constantly api-server-response)]
                             (scheduler/service-exists? dummy-scheduler service-id))]
         (is (= expected-result actual-result))))))
-
-(deftest test-killed-instances-transient-store
-  (let [current-time (t/now)
-        current-time-str (du/date-to-str current-time)
-        dummy-scheduler (make-dummy-scheduler ["service-1" "service-2" "service-3"])
-        make-instance (fn [service-id instance-suffix]
-                        (let [instance-id (str service-id \. instance-suffix)]
-                          {:id instance-id
-                           :k8s/namespace (-> dummy-scheduler
-                                              :service-id->service-description-fn
-                                              (get service-id)
-                                              (get "run-as-user"))
-                           :k8s/pod-name (str instance-id "-0")
-                           :service-id service-id}))
-        make-killed-instance (fn [service-id instance-suffix]
-                               (assoc (make-instance service-id instance-suffix)
-                                 :killed-at current-time-str))]
-    (with-redefs [api-request (constantly {:status "OK"})
-                  service-id->service (fn service-id->dummy-service [_ service-id]
-                                        (scheduler/make-Service
-                                          {:id service-id :instances 1 :k8s/namespace "myself"}))
-                  t/now (constantly current-time)]
-      (testing "tracking-instance-killed"
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-1" "A"))))
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-2" "A"))))
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-1" "C"))))
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-1" "B"))))
-
-        (is (= [(make-killed-instance "service-1" "A")
-                (make-killed-instance "service-1" "B")
-                (make-killed-instance "service-1" "C")]
-               (scheduler/service-id->killed-instances "service-1")))
-        (is (= [(make-killed-instance "service-2" "A")]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-1")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [(make-killed-instance "service-2" "A")]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))
-
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-3" "A"))))
-        (is (:killed? (scheduler/kill-instance dummy-scheduler (make-instance "service-3" "B"))))
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [(make-killed-instance "service-2" "A")]
-               (scheduler/service-id->killed-instances "service-2")))
-        (is (= [(make-killed-instance "service-3" "A")
-                (make-killed-instance "service-3" "B")]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/remove-killed-instances-for-service! "service-2")
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [(make-killed-instance "service-3" "A")
-                (make-killed-instance "service-3" "B")]
-               (scheduler/service-id->killed-instances "service-3")))
-
-        (scheduler/preserve-only-killed-instances-for-services! [])
-        (is (= [] (scheduler/service-id->killed-instances "service-1")))
-        (is (= [] (scheduler/service-id->killed-instances "service-2")))
-        (is (= [] (scheduler/service-id->killed-instances "service-3")))))))
 
 (deftest test-create-app
   (let [service-id "test-service-id"
