@@ -235,24 +235,21 @@
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)]
     (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
           auth-user (get request :authorization/user)
-          run-as-user-predicate (fn [{:keys [service-description service-id]}]
-                                  (if run-as-user
-                                    (some-> (get service-description "run-as-user")
-                                            (= run-as-user))
-                                    (authz/manage-service? entitlement-manager auth-user service-id service-description)))
-          source-token-predicate-factory (fn [entry-key target-value]
-                                           (if target-value
-                                             (fn [{{:strs [source-tokens]} :service-description}]
-                                               (->> source-tokens (map #(get % entry-key)) (some #(= target-value %))))
-                                             (constantly true)))
-          token-predicate (source-token-predicate-factory "token" token)
-          token-version-predicate (source-token-predicate-factory "version" token-version)
           viewable-services (filter
                               (fn [service-id]
-                                (let [entry-map {:service-description (service-id->service-description-fn service-id :effective? false)
-                                                 :service-id service-id}
-                                      predicates [run-as-user-predicate token-predicate token-version-predicate]]
-                                  (reduce #(and %1 (%2 entry-map)) true predicates)))
+                                (let [{:strs [source-tokens] :as service-description}
+                                      (service-id->service-description-fn service-id :effective? false)]
+                                  (and (if (str/blank? run-as-user)
+                                         (authz/manage-service? entitlement-manager auth-user service-id service-description)
+                                         (= run-as-user (get service-description "run-as-user")))
+                                       (or (str/blank? token)
+                                           (->> source-tokens
+                                                (map #(get % "token"))
+                                                (some #(= token %))))
+                                       (or (str/blank? token-version)
+                                           (->> source-tokens
+                                                (map #(get % "version"))
+                                                (some #(= token-version %)))))))
                               (sort all-available-service-ids))
           retrieve-instance-counts (fn retrieve-instance-counts [service-id]
                                      {:healthy-instances (-> service-id->healthy-instances (get service-id) count)
