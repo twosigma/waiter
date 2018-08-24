@@ -228,26 +228,43 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
+(defn- str->filter-fn
+  "Returns a name-filtering function given a user-provided name filter string"
+  [name]
+  (let [pattern (-> (str name)
+                    (str/replace #"\." "\\\\.")
+                    (str/replace #"\*+" ".*")
+                    re-pattern)]
+    #(re-matches pattern %)))
+
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
   [entitlement-manager query-state-fn prepend-waiter-url service-id->service-description-fn service-id->metrics-fn request]
-  (let [current-state (query-state-fn)]
-    (let [request-params (-> request ru/query-params-request :query-params)
+  (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)]
+    (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
           auth-user (get request :authorization/user)
-          run-as-user-param (get request-params "run-as-user")
           viewable-services (filter
-                              #(let [{:strs [run-as-user] :as service-description} (service-id->service-description-fn % :effective? false)]
-                                 (and service-description
-                                      (if run-as-user-param
-                                        (= run-as-user run-as-user-param)
-                                        (authz/manage-service? entitlement-manager auth-user % service-description))))
-                              (->> (concat (keys (:service-id->healthy-instances current-state))
-                                           (keys (:service-id->unhealthy-instances current-state)))
-                                   (apply sorted-set)))
+                              (fn [service-id]
+                                (let [{:strs [source-tokens] :as service-description}
+                                      (service-id->service-description-fn service-id :effective? false)]
+                                  (and (if (str/blank? run-as-user)
+                                         (authz/manage-service? entitlement-manager auth-user service-id service-description)
+                                         (= run-as-user (get service-description "run-as-user")))
+                                       (or (str/blank? token)
+                                           (let [filter-fn (str->filter-fn token)]
+                                             (->> source-tokens
+                                                  (map #(get % "token"))
+                                                  (some filter-fn))))
+                                       (or (str/blank? token-version)
+                                           (let [filter-fn (str->filter-fn token-version)]
+                                             (->> source-tokens
+                                                  (map #(get % "version"))
+                                                  (some filter-fn)))))))
+                              (sort all-available-service-ids))
           retrieve-instance-counts (fn retrieve-instance-counts [service-id]
-                                     {:healthy-instances (count (get-in current-state [:service-id->healthy-instances service-id]))
-                                      :unhealthy-instances (count (get-in current-state [:service-id->unhealthy-instances service-id]))})
+                                     {:healthy-instances (-> service-id->healthy-instances (get service-id) count)
+                                      :unhealthy-instances (-> service-id->unhealthy-instances (get service-id) count)})
           service-id->metrics (service-id->metrics-fn)
           include-effective-parameters? (utils/request-flag request-params "effective-parameters")
           response-data (map

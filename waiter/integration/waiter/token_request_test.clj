@@ -292,6 +292,97 @@
             (assert-response-status response 404)
             (is (str/includes? (str body) "Couldn't find token") (str body))))))))
 
+(deftest ^:parallel ^:integration-fast test-service-list-filtering
+  (testing-using-waiter-url
+    (let [service-name (rand-name)
+          token-1 (create-token-name waiter-url (str "www." service-name ".t1"))
+          token-2 (create-token-name waiter-url (str "www." service-name ".t2"))
+          service-ids-atom (atom #{})
+          token->version->etag-atom (atom {})
+          all-tokens [token-1 token-2]
+          all-version-suffixes ["v1" "v2" "v3"]]
+
+      (doseq [version-suffix all-version-suffixes]
+        (doseq [token all-tokens]
+          (let [token-description (merge
+                                    (kitchen-request-headers :prefix "")
+                                    {:fallback-period-secs 0
+                                     :name service-name
+                                     :token token
+                                     :version (str service-name "." version-suffix)})
+                {:keys [headers] :as response} (post-token waiter-url token-description)]
+            (assert-response-status response 200)
+            (let [token-etag (get headers "etag")]
+              (log/info token "->" token-etag)
+              (is (-> token-etag str/blank? not))
+              (let [{:keys [service-id] :as response} (make-request-with-debug-info
+                                                        {:x-waiter-token token}
+                                                        #(make-request waiter-url "/environment" :headers %))]
+                (assert-response-status response 200)
+                (is (-> service-id str/blank? not))
+                (swap! service-ids-atom conj service-id))
+              (swap! token->version->etag-atom assoc-in [token version-suffix] token-etag)))))
+      (is (= (* (count all-tokens) (count all-version-suffixes)) (count @service-ids-atom))
+          (str {:service-ids @service-ids-atom}))
+
+      (testing "star in token filter"
+        (let [query-params {"token" (str "www." service-name ".t*")}
+              _ (log/info query-params)
+              {:keys [body] :as response} (make-request waiter-url "/apps" :query-params query-params)
+              services (json/read-str body)
+              service-tokens (mapcat (fn [entry]
+                                       (some->> entry
+                                                walk/keywordize-keys
+                                                :service-description
+                                                :source-tokens
+                                                (map :token)))
+                                     services)]
+          (assert-response-status response 200)
+          (is (= (count @service-ids-atom) (count service-tokens))
+              (str {:query-params query-params
+                    :service-count (count services)
+                    :service-tokens service-tokens}))))
+
+      (doseq [loop-token all-tokens]
+        (let [query-params {"token" loop-token}
+              _ (log/info query-params)
+              {:keys [body] :as response} (make-request waiter-url "/apps" :query-params query-params)
+              services (json/read-str body)
+              service-tokens (mapcat (fn [entry]
+                                       (some->> entry
+                                                walk/keywordize-keys
+                                                :service-description
+                                                :source-tokens
+                                                (map :token)))
+                                     services)]
+          (assert-response-status response 200)
+          (is (= 3 (count service-tokens))
+              (str {:query-params query-params
+                    :service-count (count services)
+                    :service-tokens service-tokens})))
+
+        (doseq [version-suffix all-version-suffixes]
+          (let [loop-etag (get-in @token->version->etag-atom [loop-token version-suffix])
+                query-params {"token-version" loop-etag}
+                _ (log/info query-params)
+                {:keys [body] :as response} (make-request waiter-url "/apps" :query-params query-params)
+                services (json/read-str body)
+                service-token-versions (mapcat (fn [entry]
+                                                 (some->> entry
+                                                          walk/keywordize-keys
+                                                          :service-description
+                                                          :source-tokens
+                                                          (map :version)))
+                                               services)]
+            (assert-response-status response 200)
+            (is (= 1 (count service-token-versions))
+                (str {:query-params query-params
+                      :service-count (count services)
+                      :service-token-verisons service-token-versions})))))
+
+      (doseq [service-id @service-ids-atom]
+        (delete-service waiter-url service-id)))))
+
 (deftest ^:parallel ^:integration-fast test-hostname-token
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
