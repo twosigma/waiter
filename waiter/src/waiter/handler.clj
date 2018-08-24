@@ -231,7 +231,10 @@
 (defn- str->filter-fn
   "Returns a name-filtering function given a user-provided name filter string"
   [name]
-  (let [pattern (re-pattern (str/replace (str name) #"\*+" ".*"))]
+  (let [pattern (-> (str name)
+                    (str/replace #"\." "\\\\.")
+                    (str/replace #"\*+" ".*")
+                    re-pattern)]
     #(re-matches pattern %)))
 
 (defn list-services-handler

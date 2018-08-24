@@ -412,12 +412,12 @@
         other-user-services #{"service4" "service5" "service6"}
         healthy-services #{"service1" "service2" "service4" "service6" "service7" "service8" "service9"}
         unhealthy-services #{"service2" "service3" "service5"}
-        service-id->source-tokens {"service1" [{:token "t1" :version "v1"} {:token "t2" :version "v2"}]
-                                   "service3" [{:token "t2" :version "v2"} {:token "t3" :version "v3"}]
-                                   "service4" [{:token "t1" :version "v1"} {:token "t2" :version "v2"}]
-                                   "service5" [{:token "t1" :version "v1"} {:token "t3" :version "v3"}]
-                                   "service7" [{:token "t1" :version "v2"} {:token "t2" :version "v1"}]
-                                   "service9" [{:token "t2" :version "v3"}]}
+        service-id->source-tokens {"service1" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
+                                   "service3" [{:token "t2.com" :version "v2"} {:token "t3.edu" :version "v3"}]
+                                   "service4" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
+                                   "service5" [{:token "t1.org" :version "v1"} {:token "t3.edu" :version "v3"}]
+                                   "service7" [{:token "t1.org" :version "v2"} {:token "t2.com" :version "v1"}]
+                                   "service9" [{:token "t2.com" :version "v3"}]}
         all-services (set/union other-user-services test-user-services)
         query-state-fn (constantly {:all-available-service-ids all-services
                                     :service-id->healthy-instances (pc/map-from-keys (constantly []) healthy-services)
@@ -504,12 +504,14 @@
 
       (testing "list-services-handler:success-filter-tokens"
         (doseq [[query-param filter-fn]
-                {"t1" #(= % "t1")
-                 "t2" #(= % "t2")
+                {"t1.com" #(= % "t1.com")
+                 "t2.org" #(= % "t2.org")
+                 "tn.none" #(= % "tn.none")
+                 "*o*" #(str/includes? % "o")
                  "*t*" #(str/includes? % "t")
                  "t*" #(str/starts-with? % "t")
-                 "*1" #(str/ends-with? % "1")
-                 "*2" #(str/ends-with? % "2")}]
+                 "*com" #(str/ends-with? % "com")
+                 "*org" #(str/ends-with? % "org")}]
           (let [request (assoc request :query-string (str "token=" query-param))
                 {:keys [body] :as response}
                 ; without a run-as-user, should return all apps
@@ -528,6 +530,7 @@
         (doseq [[query-param filter-fn]
                 {"v1" #(= % "v1")
                  "v2" #(= % "v2")
+                 "vn" #(= % "vn")
                  "*v*" #(str/includes? % "v")
                  "v*" #(str/starts-with? % "v")
                  "*1" #(str/ends-with? % "1")

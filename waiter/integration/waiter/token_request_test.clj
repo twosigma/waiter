@@ -295,12 +295,13 @@
 (deftest ^:parallel ^:integration-fast test-service-list-filtering
   (testing-using-waiter-url
     (let [service-name (rand-name)
-          token-1 (create-token-name waiter-url (str service-name ".t1"))
-          token-2 (create-token-name waiter-url (str service-name ".t2"))
+          token-1 (create-token-name waiter-url (str "www." service-name ".t1"))
+          token-2 (create-token-name waiter-url (str "www." service-name ".t2"))
           service-ids-atom (atom #{})
           token->version->etag-atom (atom {})
           all-tokens [token-1 token-2]
           all-version-suffixes ["v1" "v2" "v3"]]
+
       (doseq [version-suffix all-version-suffixes]
         (doseq [token all-tokens]
           (let [token-description (merge
@@ -323,6 +324,24 @@
               (swap! token->version->etag-atom assoc-in [token version-suffix] token-etag)))))
       (is (= (* (count all-tokens) (count all-version-suffixes)) (count @service-ids-atom))
           (str {:service-ids @service-ids-atom}))
+
+      (testing "star in token filter"
+        (let [query-params {"token" (str "www." service-name ".t*")}
+              _ (log/info query-params)
+              {:keys [body] :as response} (make-request waiter-url "/apps" :query-params query-params)
+              services (json/read-str body)
+              service-tokens (mapcat (fn [entry]
+                                       (some->> entry
+                                                walk/keywordize-keys
+                                                :service-description
+                                                :source-tokens
+                                                (map :token)))
+                                     services)]
+          (assert-response-status response 200)
+          (is (= (count @service-ids-atom) (count service-tokens))
+              (str {:query-params query-params
+                    :service-count (count services)
+                    :service-tokens service-tokens}))))
 
       (doseq [loop-token all-tokens]
         (let [query-params {"token" loop-token}
