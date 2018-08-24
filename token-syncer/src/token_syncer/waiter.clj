@@ -195,3 +195,26 @@
       {:body (parse-json-data body-data)
        :headers (extract-relevant-headers headers)
        :status status})))
+
+(defn health-check-token
+  "Performs health check on a token on a specific cluster."
+  [^HttpClient http-client cluster-url token]
+  (log/info "health-check-token" token "on" cluster-url)
+  (let [{:keys [description]} (load-token http-client cluster-url token)
+        {:strs [deleted health-check-url]} description]
+    (if (and (not deleted) (not (str/blank? health-check-url)))
+      (do
+        (log/info "health-check-token" token "on" (str cluster-url health-check-url))
+        (-> (make-http-request http-client (str cluster-url health-check-url)
+                               :headers {"x-waiter-queue-timeout" (-> 2 t/minutes t/in-millis)
+                                         "x-waiter-token" token}
+                               :method :get
+                               :query-params {})
+            (update :body async/<!!)))
+      (do
+        (log/info "health-check-token not performed"
+                  {:cluster-url cluster-url
+                   :deleted deleted
+                   :health-check-url health-check-url
+                   :token token})
+        (comment "return nil")))))

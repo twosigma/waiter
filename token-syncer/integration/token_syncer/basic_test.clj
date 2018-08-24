@@ -18,11 +18,18 @@
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
+            [token-syncer.commands.ping :as ping]
             [token-syncer.commands.syncer :as syncer]
             [token-syncer.main :as main])
   (:import (java.util UUID)))
 
-(def basic-description {"cmd" "echo 'Hello World'", "cpus" 1, "mem" 2048, "metric-group" "syncer-test"})
+(defn- kitchen-cmd []
+  (str (System/getenv "WAITER_TEST_KITCHEN_CMD") " -p $PORT0"))
+
+(def basic-description {"cmd" (kitchen-cmd)
+                        "cpus" 1
+                        "mem" 2048
+                        "metric-group" "syncer-test"})
 
 (defn- waiter-urls []
   (let [waiter-uris (System/getenv "WAITER_URIS")]
@@ -37,9 +44,14 @@
 (deftest ^:integration test-environment
   (log/info "Running: test-environment")
   (testing "presence of environment variables"
-    (log/info "env.WAITER_URIS" (System/getenv "WAITER_URIS"))
-    (is (System/getenv "WAITER_URIS"))
-    (is (> (count (waiter-urls)) 1))))
+    (testing "waiter cluster uris"
+      (log/info "env.WAITER_URIS" (System/getenv "WAITER_URIS"))
+      (is (System/getenv "WAITER_URIS"))
+      (is (> (count (waiter-urls)) 1)))
+
+    (testing "kitchen command"
+      (log/info "env.WAITER_TEST_KITCHEN_CMD" (System/getenv "WAITER_TEST_KITCHEN_CMD"))
+      (is (not (str/blank? (System/getenv "WAITER_TEST_KITCHEN_CMD")))))))
 
 (defn- basic-token-metadata
   "Returns the common metadata used in the tests."
@@ -508,3 +520,74 @@
                     waiter-urls))))))
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))
+
+(deftest ^:integration test-ping-tokens
+  (testing "token ping on clusters"
+    (let [waiter-urls (waiter-urls)
+          {:keys [store-token] :as waiter-api} (waiter-api)]
+
+      (testing "successful health check"
+        (let [token-name (str "test-ping-tokens-" (UUID/randomUUID))]
+          (try
+            ;; ARRANGE
+            (doall
+              (map (fn [waiter-url]
+                     (->> (assoc basic-description
+                            "health-check-url" "/status"
+                            "idle-timeout-mins" 2
+                            "run-as-user" "*"
+                            "version" "lorem-ipsum")
+                          (store-token waiter-url token-name nil)))
+                   waiter-urls))
+
+            ;; ACT
+            (let [actual-result (ping/ping-token waiter-api waiter-urls token-name)]
+
+              ;; ASSERT
+              (let [expected-result {:details
+                                     (pc/map-from-keys
+                                       (fn [cluster-url]
+                                         {:exit-code 0
+                                          :message (str "Successfully pinged token " token-name " on " cluster-url
+                                                        ", reason: health check returned status code 200")})
+                                       waiter-urls)
+                                     :exit-code 0
+                                     :message (str "pinging token " token-name " on "
+                                                   (-> waiter-urls vec println with-out-str str/trim)
+                                                   " was successful")}]
+                (is (= expected-result actual-result))))
+            (finally
+              (cleanup-token waiter-api waiter-urls token-name)))))
+
+      (testing "unsuccessful health check"
+        (let [token-name (str "test-ping-tokens-" (UUID/randomUUID))]
+          (try
+            ;; ARRANGE
+            (doall
+              (map (fn [waiter-url]
+                     (->> (assoc basic-description
+                            "health-check-url" "/bad-status"
+                            "idle-timeout-mins" 2
+                            "run-as-user" "*"
+                            "version" "lorem-ipsum")
+                          (store-token waiter-url token-name nil)))
+                   waiter-urls))
+
+            ;; ACT
+            (let [actual-result (ping/ping-token waiter-api waiter-urls token-name)]
+
+              ;; ASSERT
+              (let [expected-result {:details
+                                     (pc/map-from-keys
+                                       (fn [cluster-url]
+                                         {:exit-code 1
+                                          :message (str "unable to ping token " token-name " on " cluster-url
+                                                        ", reason: health check returned status code 503")})
+                                       waiter-urls)
+                                     :exit-code (count waiter-urls)
+                                     :message (str "pinging token " token-name " on "
+                                                   (-> waiter-urls vec println with-out-str str/trim)
+                                                   " failed")}]
+                (is (= expected-result actual-result))))
+            (finally
+              (cleanup-token waiter-api waiter-urls token-name))))))))
