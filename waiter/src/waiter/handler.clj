@@ -228,6 +228,12 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
+(defn- str->filter-fn
+  "Returns a name-filtering function given a user-provided name filter string"
+  [name]
+  (let [pattern (re-pattern (str/replace (str name) #"\*+" ".*"))]
+    #(re-matches pattern %)))
+
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
@@ -243,13 +249,15 @@
                                          (authz/manage-service? entitlement-manager auth-user service-id service-description)
                                          (= run-as-user (get service-description "run-as-user")))
                                        (or (str/blank? token)
-                                           (->> source-tokens
-                                                (map #(get % "token"))
-                                                (some #(= token %))))
+                                           (let [filter-fn (str->filter-fn token)]
+                                             (->> source-tokens
+                                                  (map #(get % "token"))
+                                                  (some filter-fn))))
                                        (or (str/blank? token-version)
-                                           (->> source-tokens
-                                                (map #(get % "version"))
-                                                (some #(= token-version %)))))))
+                                           (let [filter-fn (str->filter-fn token-version)]
+                                             (->> source-tokens
+                                                  (map #(get % "version"))
+                                                  (some filter-fn)))))))
                               (sort all-available-service-ids))
           retrieve-instance-counts (fn retrieve-instance-counts [service-id]
                                      {:healthy-instances (-> service-id->healthy-instances (get service-id) count)

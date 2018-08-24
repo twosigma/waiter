@@ -503,60 +503,48 @@
           (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
 
       (testing "list-services-handler:success-filter-tokens"
-        (let [request (assoc request :query-string "token=t1")
-              {:keys [body] :as response}
-              ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
-          (assert-successful-json-response response)
-          (is (= (->> service-id->source-tokens
-                      (filter (fn [[_ source-tokens]]
-                                (->> source-tokens (map :token) (some #(= % "t1")))))
-                      keys
-                      set
-                      (set/intersection test-user-services))
-                 (->> body json/read-str walk/keywordize-keys (map :service-id) set))))
-        (let [request (assoc request :query-string "token=t2")
-              {:keys [body] :as response}
-              ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
-          (assert-successful-json-response response)
-          (is (= (->> service-id->source-tokens
-                      (filter (fn [[_ source-tokens]]
-                                (->> source-tokens (map :token) (some #(= % "t2")))))
-                      keys
-                      set
-                      (set/intersection test-user-services))
-                 (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+        (doseq [[query-param filter-fn]
+                {"t1" #(= % "t1")
+                 "t2" #(= % "t2")
+                 "*t*" #(str/includes? % "t")
+                 "t*" #(str/starts-with? % "t")
+                 "*1" #(str/ends-with? % "1")
+                 "*2" #(str/ends-with? % "2")}]
+          (let [request (assoc request :query-string (str "token=" query-param))
+                {:keys [body] :as response}
+                ; without a run-as-user, should return all apps
+                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn request)]
+            (assert-successful-json-response response)
+            (is (= (->> service-id->source-tokens
+                        (filter (fn [[_ source-tokens]]
+                                  (->> source-tokens (map :token) (some filter-fn))))
+                        keys
+                        set
+                        (set/intersection test-user-services))
+                   (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
       (testing "list-services-handler:success-filter-version"
-        (let [request (assoc request :query-string "token-version=v1")
-              {:keys [body] :as response}
-              ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
-          (assert-successful-json-response response)
-          (is (= (->> service-id->source-tokens
-                      (filter (fn [[_ source-tokens]]
-                                (->> source-tokens (map :version) (some #(= % "v1")))))
-                      keys
-                      set
-                      (set/intersection test-user-services))
-                 (->> body json/read-str walk/keywordize-keys (map :service-id) set))))
-        (let [request (assoc request :query-string "token-version=v2")
-              {:keys [body] :as response}
-              ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
-          (assert-successful-json-response response)
-          (is (= (->> service-id->source-tokens
-                      (filter (fn [[_ source-tokens]]
-                                (->> source-tokens (map :version) (some #(= % "v2")))))
-                      keys
-                      set
-                      (set/intersection test-user-services))
-                 (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+        (doseq [[query-param filter-fn]
+                {"v1" #(= % "v1")
+                 "v2" #(= % "v2")
+                 "*v*" #(str/includes? % "v")
+                 "v*" #(str/starts-with? % "v")
+                 "*1" #(str/ends-with? % "1")
+                 "*2" #(str/ends-with? % "2")}]
+          (let [request (assoc request :query-string (str "token-version=" query-param))
+                {:keys [body] :as response}
+                ; without a run-as-user, should return all apps
+                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn request)]
+            (assert-successful-json-response response)
+            (is (= (->> service-id->source-tokens
+                        (filter (fn [[_ source-tokens]]
+                                  (->> source-tokens (map :version) (some filter-fn))))
+                        keys
+                        set
+                        (set/intersection test-user-services))
+                   (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
       (testing "list-services-handler:success-filter-token-and-version"
         (let [request (assoc request :query-string "token=t1&token-version=v1")
