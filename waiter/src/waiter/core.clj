@@ -926,10 +926,9 @@
                                                                                 websocket-client bytes-encryptor websocket-request-auth-cookie-attacher)}))
    :router-state-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                      [:settings deployment-error-config]
-                                     [:state router-id]
-                                     router-list-maintainer scheduler-maintainer]
-                              (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
-                                    exit-chan (async/chan)
+                                     [:state router-id scheduler-state-chan]
+                                     router-list-maintainer]
+                              (let [exit-chan (async/chan)
                                     router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))
                                     maintainer (state/start-router-state-maintainer
                                                  scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
@@ -946,16 +945,13 @@
    :scheduler-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                   [:scheduler scheduler]
                                   [:settings [:health-check-config health-check-timeout-ms failed-check-threshold] scheduler-syncer-interval-secs]
-                                  [:state clock]]
-                           (let [scheduler-state-chan (au/latest-chan)
-                                 scheduler-state-mult-chan (async/mult scheduler-state-chan)
-                                 http-client (http/client {:connect-timeout health-check-timeout-ms
+                                  [:state clock scheduler-state-chan]]
+                           (let [http-client (http/client {:connect-timeout health-check-timeout-ms
                                                            :idle-timeout health-check-timeout-ms})
                                  timeout-chan (chime/chime-ch (du/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))]
-                             (assoc (scheduler/start-scheduler-syncer
-                                      clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
-                                      scheduler/available? http-client failed-check-threshold)
-                               :scheduler-state-mult-chan scheduler-state-mult-chan)))
+                             (scheduler/start-scheduler-syncer
+                               clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
+                               scheduler/available? http-client failed-check-threshold)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
                                    [:routines router-metrics-helpers service-id->idle-timeout]
                                    [:scheduler scheduler]
