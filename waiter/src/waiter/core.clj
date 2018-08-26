@@ -948,10 +948,11 @@
                                   [:state clock scheduler-state-chan]]
                            (let [http-client (http/client {:connect-timeout health-check-timeout-ms
                                                            :idle-timeout health-check-timeout-ms})
-                                 timeout-chan (chime/chime-ch (du/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))]
+                                 timeout-chan (chime/chime-ch (du/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))
+                                 syncer-state-atom (atom {:service-id->health-check-context {}})]
                              (scheduler/start-scheduler-syncer
                                clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
-                               scheduler/available? http-client failed-check-threshold)))
+                               scheduler/available? http-client failed-check-threshold syncer-state-atom)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
                                    [:routines router-metrics-helpers service-id->idle-timeout]
                                    [:scheduler scheduler]

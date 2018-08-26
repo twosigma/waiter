@@ -537,14 +537,16 @@
                 :instance-id->failed-health-check-count {...}}
 
   and sends the data to the router state maintainer."
-  [clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn available? http-client failed-check-threshold]
+  [clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn available? http-client
+   failed-check-threshold syncer-state-atom]
   (log/info "Starting scheduler syncer")
   (let [exit-chan (async/chan 1)
         state-query-chan (async/chan 32)]
     (async/go
       (try
         (loop [{:keys [last-update-time service-id->health-check-context] :as current-state}
-               {:service-id->health-check-context {}}]
+               @syncer-state-atom]
+          (reset! syncer-state-atom current-state)
           (when-let [next-state
                      (async/alt!
                        exit-chan

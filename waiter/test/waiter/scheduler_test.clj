@@ -246,15 +246,18 @@
                                  :else {:healthy? false
                                         :status 400})))
         start-time-ms (-> (clock) .getMillis)
+        syncer-state-atom (atom {:service-id->health-check-context {}})
         {:keys [exit-chan query-chan]}
-        (start-scheduler-syncer clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn available? {} 5)
+        (start-scheduler-syncer clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
+                                available? {} 5 syncer-state-atom)
         instance3-unhealthy (assoc instance3
                               :flags #{:has-connected :has-responded}
                               :healthy? false
                               :health-check-status 400)]
     (let [response-chan (async/promise-chan)]
       (async/>!! query-chan {:response-chan response-chan :service-id "s0"})
-      (is (= {:last-update-time nil :service-specific-state []} (async/<!! response-chan))))
+      (is (= {:last-update-time nil :service-specific-state []} (async/<!! response-chan)))
+      (is (= {:service-id->health-check-context {}} @syncer-state-atom)))
     (async/>!! timeout-chan :timeout)
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-services update-apps-msg))
@@ -279,7 +282,14 @@
               "s2" {:instance-id->failed-health-check-count {}
                     :instance-id->tracked-failed-instance {}
                     :instance-id->unhealthy-instance {}}}
-             (:service-id->health-check-context response))))
+             (:service-id->health-check-context response)))
+      (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy},
+                    :instance-id->tracked-failed-instance {},
+                    :instance-id->failed-health-check-count {"s1.i3" 1}}
+              "s2" {:instance-id->failed-health-check-count {}
+                    :instance-id->tracked-failed-instance {}
+                    :instance-id->unhealthy-instance {}}}
+             (:service-id->health-check-context @syncer-state-atom))))
     ;; Retrieves scheduler state with service-id
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan :service-id "s1"})
