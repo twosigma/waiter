@@ -9,7 +9,7 @@
 ;;       actual or intended publication of such source code.
 ;;
 (ns waiter.scheduler.kubernetes-test
-  (:require [clj-time.core :as t]
+  (:require [clojure.core.async :as async]
             [clojure.data]
             [clojure.pprint]
             [clojure.string :as string]
@@ -619,18 +619,26 @@
   refresh-value)
 
 (deftest test-kubernetes-scheduler
-  (let [base-config {:authentication nil
-                     :http-options {:conn-timeout 10000
-                                    :socket-timeout 10000}
-                     :max-patch-retries 5
-                     :max-name-length 63
-                     :orchestrator-name "waiter"
-                     :pod-base-port 8080
-                     :pod-suffix-length default-pod-suffix-length
-                     :replicaset-api-version "extensions/v1beta1"
-                     :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
-                                               :default-container-image "twosigma/kitchen:latest"}
-                     :url "http://127.0.0.1:8001"}]
+  (let [context {:is-waiter-app?-fn (constantly nil)
+                 :leader?-fn (constantly nil)
+                 :scheduler-state-chan (async/chan 4)
+                 :scheduler-syncer-interval-secs 5
+                 :service-id->password-fn (constantly nil)
+                 :service-id->service-description-fn (constantly nil)
+                 :start-scheduler-syncer-fn (constantly nil)}
+        k8s-config {:authentication nil
+                    :http-options {:conn-timeout 10000
+                                   :socket-timeout 10000}
+                    :max-patch-retries 5
+                    :max-name-length 63
+                    :orchestrator-name "waiter"
+                    :pod-base-port 8080
+                    :pod-suffix-length default-pod-suffix-length
+                    :replicaset-api-version "extensions/v1beta1"
+                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
+                                              :default-container-image "twosigma/kitchen:latest"}
+                    :url "http://127.0.0.1:8001"}
+        base-config (merge context k8s-config)]
     (testing "Creating a KubernetesScheduler"
 
       (testing "should throw on invalid configuration"

@@ -415,6 +415,7 @@
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
                                 service-id->failed-instances-transient-store
+                                syncer-state-atom
                                 service-id->password-fn
                                 service-id->service-description-fn]
   scheduler/ServiceScheduler
@@ -512,10 +513,12 @@
     [])
 
   (service-id->state [_ service-id]
-    {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))})
+    (-> (scheduler/retrieve-scheduler-state nil syncer-state-atom service-id)
+        (assoc :failed-instances (vals (get @service-id->failed-instances-transient-store service-id)))))
 
   (state [_]
-    {:service-id->failed-instances @service-id->failed-instances-transient-store}))
+    (-> (scheduler/retrieve-scheduler-state nil syncer-state-atom)
+        (assoc :service-id->failed-instances @service-id->failed-instances-transient-store))))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -611,7 +614,8 @@
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication http-options max-patch-retries max-name-length orchestrator-name
            pod-base-port pod-suffix-length replicaset-api-version replicaset-spec-builder
-           service-id->service-description-fn service-id->password-fn url]}]
+           scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
+           service-id->password-fn url start-scheduler-syncer-fn]}]
   {:pre [(utils/pos-int? (:socket-timeout http-options))
          (utils/pos-int? (:conn-timeout http-options))
          (utils/non-neg-int? max-patch-retries)
@@ -622,7 +626,12 @@
          (utils/pos-int? pod-suffix-length)
          (not (string/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
-         (some? (io/as-url url))]}
+         (some? (io/as-url url))
+         (not (nil? scheduler-state-chan))
+         (utils/pos-int? scheduler-syncer-interval-secs)
+         (not (nil? service-id->password-fn))
+         (not (nil? service-id->service-description-fn))
+         (not (nil? start-scheduler-syncer-fn))]}
   (let [http-client (http-utils/http-client-factory http-options)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
@@ -631,18 +640,22 @@
                                                deref)]
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description]
-                                       (f scheduler service-id service-description replicaset-spec-builder)))]
+                                       (f scheduler service-id service-description replicaset-spec-builder)))
+        syncer-state-atom (atom {:service-id->health-check-context {}})
+        k8s-scheduler (->KubernetesScheduler url
+                                             http-client
+                                             max-patch-retries
+                                             max-name-length
+                                             orchestrator-name
+                                             pod-base-port
+                                             pod-suffix-length
+                                             replicaset-api-version
+                                             replicaset-spec-builder-fn
+                                             service-id->failed-instances-transient-store
+                                             syncer-state-atom
+                                             service-id->password-fn
+                                             service-id->service-description-fn)]
     (when authentication
       (start-auth-renewer authentication))
-    (->KubernetesScheduler url
-                           http-client
-                           max-patch-retries
-                           max-name-length
-                           orchestrator-name
-                           pod-base-port
-                           pod-suffix-length
-                           replicaset-api-version
-                           replicaset-spec-builder-fn
-                           service-id->failed-instances-transient-store
-                           service-id->password-fn
-                           service-id->service-description-fn)))
+    (start-scheduler-syncer-fn k8s-scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
+    k8s-scheduler))

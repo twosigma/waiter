@@ -598,6 +598,5 @@
         sync-deployment-maintainer (start-sync-deployment-maintainer
                                      leader?-fn service-id->out-of-sync-state-store marathon-scheduler sync-deployment)]
     (reset! sync-deployment-maintainer-atom sync-deployment-maintainer)
-    (start-scheduler-syncer-fn
-      marathon-scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
+    (start-scheduler-syncer-fn marathon-scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
     marathon-scheduler))
