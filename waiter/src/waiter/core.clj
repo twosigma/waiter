@@ -621,7 +621,7 @@
                       scheduler-context {:is-waiter-app?-fn is-waiter-app?-fn
                                          :leader?-fn leader?-fn
                                          :scheduler-state-chan scheduler-state-chan
-                                         ;; TODO shams scheduler-syncer-interval-secs should be inside the scheduler's config
+                                         ;; TODO scheduler-syncer-interval-secs should be inside the scheduler's config
                                          :scheduler-syncer-interval-secs scheduler-syncer-interval-secs
                                          :service-id->password-fn service-id->password-fn*
                                          :service-id->service-description-fn service-id->service-description-fn*
@@ -962,12 +962,6 @@
                                    (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                          service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                                      (scheduler/scheduler-broken-services-gc service-gc-go-routine query-state-fn scheduler scheduler-gc-config)))
-   :scheduler-maintainer (pc/fnk [[:scheduler scheduler start-scheduler-syncer-fn]
-                                  [:settings scheduler-syncer-interval-secs]
-                                  [:state scheduler-state-chan]]
-                           (let [syncer-state-atom (atom {:service-id->health-check-context {}})]
-                             (start-scheduler-syncer-fn
-                               scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
                                    [:routines router-metrics-helpers service-id->idle-timeout]
                                    [:scheduler scheduler]
@@ -1012,16 +1006,18 @@
                                 (async/tap router-state-push-mult state-chan)
                                 (state/start-service-chan-maintainer
                                   {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
-   :state-sources (pc/fnk [[:state query-app-maintainer-chan]
+   :state-sources (pc/fnk [[:scheduler scheduler]
+                           [:state query-app-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
-                           scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
+                           scheduler-broken-services-gc scheduler-services-gc]
                     {:app-maintainer-state query-app-maintainer-chan
                      :autoscaler-state (:query-service-state-fn autoscaler)
                      :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
                      :interstitial-maintainer-state (:query-chan interstitial-maintainer)
                      :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
                      :scheduler-services-gc-state (:query scheduler-services-gc)
-                     :scheduler-state (:query-chan scheduler-maintainer) ;; TODO shams change to scheduler/service-id->state
+                     :scheduler-state (fn scheduler-state-fn [service-id]
+                                        (scheduler/service-id->state scheduler service-id))
                      :transient-metrics-gc-state (:query gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
@@ -1257,14 +1253,12 @@
                                         (wrap-secure-request-fn
                                           (fn r-router-metrics-state-handler-fn [request]
                                             (handler/get-router-metrics-state router-id router-metrics-state-fn request)))))
-   :state-scheduler-handler-fn (pc/fnk [[:daemons scheduler-maintainer]
+   :state-scheduler-handler-fn (pc/fnk [[:scheduler scheduler]
                                         [:state router-id]
                                         wrap-secure-request-fn]
-                                 ;; TODO shams change to scheduler/state
-                                 (let [scheduler-query-chan (:query-chan scheduler-maintainer)]
-                                   (wrap-secure-request-fn
-                                     (fn scheduler-state-handler-fn [request]
-                                       (handler/get-query-chan-state-handler router-id scheduler-query-chan request)))))
+                                 (wrap-secure-request-fn
+                                   (fn scheduler-state-handler-fn [request]
+                                     (handler/get-scheduler-state router-id scheduler request))))
    :state-service-handler-fn (pc/fnk [[:daemons state-sources]
                                       [:state instance-rpc-chan local-usage-agent router-id]
                                       wrap-secure-request-fn]

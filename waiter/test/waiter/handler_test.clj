@@ -816,6 +816,18 @@
         (is (= 200 status))
         (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
 
+(deftest test-get-scheduler-state
+  (let [router-id "test-router-id"
+        scheduler (reify scheduler/ServiceScheduler
+                    (state [_]
+                      {:scheduler "state"}))
+        test-fn (wrap-handler-json-response get-scheduler-state)]
+    (testing "successful response"
+      (let [state (-> (scheduler/state scheduler) walk/stringify-keys)
+            {:keys [body status]} (test-fn router-id scheduler {})]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+
 (deftest test-get-statsd-state
   (let [router-id "test-router-id"
         test-fn (wrap-handler-json-response get-statsd-state)]

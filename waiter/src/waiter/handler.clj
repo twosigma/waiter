@@ -616,6 +616,11 @@
   [router-id router-metrics-state-fn request]
   (get-function-state router-metrics-state-fn router-id request))
 
+(defn get-scheduler-state
+  "Outputs the scheduler state."
+  [router-id scheduler request]
+  (get-function-state #(scheduler/state scheduler) router-id request))
+
 (defn get-statsd-state
   "Outputs the statsd state."
   [router-id request]
