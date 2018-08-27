@@ -529,18 +529,12 @@
 
 (defn retrieve-scheduler-state
   "Retrieves the scheduler and syncer state either for the entire scheduler or when provided for a specific service."
-  ([scheduler syncer-state-atom]
-    (let [syncer-state @syncer-state-atom
-          ;; TODO shams remove the call to scheduler/state
-          scheduler-state (when scheduler (state scheduler))]
-      (merge syncer-state scheduler-state)))
-  ([scheduler syncer-state-atom service-id]
+  ([syncer-state-atom]
+   @syncer-state-atom)
+  ([syncer-state-atom service-id]
     (let [{:keys [last-update-time service-id->health-check-context]} @syncer-state-atom
-          ;; TODO shams remove the call to scheduler/service-id->state
-          scheduler-state (when scheduler (service-id->state scheduler service-id))
           health-check-context (get service-id->health-check-context service-id)]
-      (-> {:last-update-time last-update-time}
-          (merge scheduler-state health-check-context)))))
+      (assoc health-check-context :last-update-time last-update-time))))
 
 (defn start-scheduler-syncer
   "Starts loop to query marathon for the app and instance statuses,
@@ -572,8 +566,8 @@
                        state-query-chan
                        ([{:keys [response-chan service-id]}]
                          (->> (if service-id
-                                (retrieve-scheduler-state scheduler syncer-state-atom service-id)
-                                (retrieve-scheduler-state scheduler syncer-state-atom))
+                                (retrieve-scheduler-state syncer-state-atom service-id)
+                                (retrieve-scheduler-state syncer-state-atom))
                               (async/>! response-chan))
                          current-state)
 

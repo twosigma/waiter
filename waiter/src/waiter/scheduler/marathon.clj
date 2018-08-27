@@ -425,13 +425,13 @@
       (mesos/retrieve-directory-content-from-host mesos-api host log-directory)))
 
   (service-id->state [_ service-id]
-    (-> (scheduler/retrieve-scheduler-state nil syncer-state-atom service-id)
+    (-> (scheduler/retrieve-scheduler-state syncer-state-atom service-id)
         (assoc :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
                :kill-info (get @service-id->kill-info-store service-id)
                :out-of-sync-state (get @service-id->out-of-sync-state-store service-id))))
 
   (state [_]
-    (-> (scheduler/retrieve-scheduler-state nil syncer-state-atom)
+    (-> (scheduler/retrieve-scheduler-state syncer-state-atom)
         (assoc :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
                :service-id->kill-info-store @service-id->kill-info-store
                :service-id->out-of-sync-state-store @service-id->out-of-sync-state-store))))

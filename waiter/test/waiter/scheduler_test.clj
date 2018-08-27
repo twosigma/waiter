@@ -234,11 +234,7 @@
                       {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
                                                   :failed-instances []}
                        (->Service "s2" {} {} {}) {:active-instances []
-                                                  :failed-instances []}})
-                    (service-id->state [_ _]
-                      {:service-specific-state []})
-                    (state [_]
-                      {:state []}))
+                                                  :failed-instances []}}))
         available? (fn [{:keys [id]} url]
                      (async/go (cond
                                  (and (= "s1.i1" id) (= "/s1" url)) {:healthy? true
@@ -257,7 +253,7 @@
                               :health-check-status 400)]
     (let [response-chan (async/promise-chan)]
       (async/>!! query-chan {:response-chan response-chan :service-id "s0"})
-      (is (= {:last-update-time nil :service-specific-state []} (async/<!! response-chan)))
+      (is (= {:last-update-time nil} (async/<!! response-chan)))
       (is (= {:service-id->health-check-context {}} @syncer-state-atom)))
     (async/>!! timeout-chan :timeout)
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
@@ -274,9 +270,7 @@
           response (async/alt!!
                      response-chan ([state] state)
                      (async/timeout 10000) ([_] {:message "Request timed out!"}))]
-      (doseq [required-key [:service-id->health-check-context
-                            :state]]
-        (is (contains? response required-key)))
+      (is (contains? response :service-id->health-check-context))
       (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy},
                     :instance-id->tracked-failed-instance {},
                     :instance-id->failed-health-check-count {"s1.i3" 1}}
@@ -301,8 +295,7 @@
       (doseq [required-key [:instance-id->failed-health-check-count
                             :instance-id->tracked-failed-instance
                             :instance-id->unhealthy-instance
-                            :last-update-time
-                            :service-specific-state]]
+                            :last-update-time]]
         (is (contains? response required-key)))
       (is (nil? (:service-id->health-check-context response)))
       (is (<= start-time-ms (-> response :last-update-time .getMillis) end-time-ms)))

@@ -471,11 +471,11 @@
       (mesos/retrieve-directory-content-from-host cook-api host log-directory)))
 
   (service-id->state [_ service-id]
-    (-> (scheduler/retrieve-scheduler-state nil syncer-state-atom service-id)
+    (-> (scheduler/retrieve-scheduler-state syncer-state-atom service-id)
         (assoc :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id))))
 
   (state [_]
-    (-> (scheduler/retrieve-scheduler-state nil syncer-state-atom)
+    (-> (scheduler/retrieve-scheduler-state syncer-state-atom)
         (assoc :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store))))
 
 (s/defn ^:always-validate create-cook-scheduler

@@ -627,11 +627,11 @@
       (directory-content service-entry instance-id relative-directory)))
 
   (service-id->state [_ service-id]
-    (-> (scheduler/retrieve-scheduler-state nil syncer-state-atom service-id)
+    (-> (scheduler/retrieve-scheduler-state syncer-state-atom service-id)
         (merge (get @id->service-agent service-id))))
 
   (state [_]
-    (-> (scheduler/retrieve-scheduler-state nil syncer-state-atom)
+    (-> (scheduler/retrieve-scheduler-state syncer-state-atom)
         (assoc :id->service @id->service-agent
                :port->reservation @port->reservation-atom))))
 
