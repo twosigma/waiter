@@ -85,6 +85,7 @@
 
 (defprotocol ServiceScheduler
 
+  ;; TODO shams move this method to a different protocol
   (get-service->instances [this]
     "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records.
      The nested map has the following keys: :active-instances and :failed-instances.
@@ -530,12 +531,14 @@
   "Retrieves the scheduler and syncer state either for the entire scheduler or when provided for a specific service."
   ([scheduler syncer-state-atom]
     (let [syncer-state @syncer-state-atom
-          scheduler-state (state scheduler)]
+          ;; TODO shams remove the call to scheduler/state
+          scheduler-state (when scheduler (state scheduler))]
       (merge syncer-state scheduler-state)))
   ([scheduler syncer-state-atom service-id]
     (let [{:keys [last-update-time service-id->health-check-context]} @syncer-state-atom
-          scheduler-state (service-id->state scheduler service-id)
-          health-check-context (service-id->health-check-context service-id)]
+          ;; TODO shams remove the call to scheduler/service-id->state
+          scheduler-state (when scheduler (service-id->state scheduler service-id))
+          health-check-context (get service-id->health-check-context service-id)]
       (-> {:last-update-time last-update-time}
           (merge scheduler-state health-check-context)))))
 

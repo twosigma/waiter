@@ -589,7 +589,8 @@
        :service-id->out-of-sync-state-store (atom {})
        :service-id->password-fn #(str % ".password")
        :service-id->service-description (constantly nil)
-       :sync-deployment-maintainer-atom (atom nil)}
+       :sync-deployment-maintainer-atom (atom nil)
+       :syncer-state-atom (atom {})}
       (merge marathon-config)
       map->MarathonScheduler))
 
@@ -654,6 +655,7 @@
         state (scheduler/service-id->state marathon-scheduler service-id)]
     (is (= {:failed-instances [:failed-instances]
             :kill-info :kill-call-info
+            :last-update-time nil
             :out-of-sync-state nil}
            state))))
 
@@ -685,15 +687,23 @@
 
 (deftest test-marathon-scheduler
   (testing "Creating a MarathonScheduler"
-    (let [valid-config {:force-kill-after-ms 60000
-                        :framework-id-ttl 900000
-                        :home-path-prefix "/home/"
-                        :http-options {:conn-timeout 10000 :socket-timeout 10000}
-                        :mesos-slave-port 5051
-                        :slave-directory "/foo"
-                        :sync-deployment {:interval-ms 15000
-                                          :timeout-cycles 4}
-                        :url "url"}
+    (let [context {:is-waiter-app?-fn (constantly nil)
+                   :leader?-fn (constantly nil)
+                   :scheduler-state-chan (async/chan 4)
+                   :scheduler-syncer-interval-secs 5
+                   :service-id->password-fn (constantly nil)
+                   :service-id->service-description-fn (constantly nil)
+                   :start-scheduler-syncer-fn (constantly nil)}
+          scheduler-config {:force-kill-after-ms 60000
+                            :framework-id-ttl 900000
+                            :home-path-prefix "/home/"
+                            :http-options {:conn-timeout 10000 :socket-timeout 10000}
+                            :mesos-slave-port 5051
+                            :slave-directory "/foo"
+                            :sync-deployment {:interval-ms 15000
+                                              :timeout-cycles 4}
+                            :url "url"}
+          valid-config (merge context scheduler-config)
           create-marathon-scheduler (fn create-marathon-scheduler [config]
                                       (let [result (marathon-scheduler config)
                                             {:keys [sync-deployment-maintainer-atom]} result]

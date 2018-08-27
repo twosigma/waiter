@@ -611,8 +611,8 @@
 
 (def scheduler
   {:scheduler (pc/fnk [[:curator leader?-fn]
-                       [:settings scheduler-config]
-                       [:state service-id-prefix]
+                       [:settings scheduler-config scheduler-syncer-interval-secs]
+                       [:state scheduler-state-chan service-id-prefix]
                        service-id->password-fn*
                        service-id->service-description-fn*
                        start-scheduler-syncer-fn]
@@ -620,6 +620,9 @@
                                           (str/starts-with? service-id service-id-prefix))
                       scheduler-context {:is-waiter-app?-fn is-waiter-app?-fn
                                          :leader?-fn leader?-fn
+                                         :scheduler-state-chan scheduler-state-chan
+                                         ;; TODO shams scheduler-syncer-interval-secs should be inside the scheduler's config
+                                         :scheduler-syncer-interval-secs scheduler-syncer-interval-secs
                                          :service-id->password-fn service-id->password-fn*
                                          :service-id->service-description-fn service-id->service-description-fn*
                                          :start-scheduler-syncer-fn start-scheduler-syncer-fn}]
