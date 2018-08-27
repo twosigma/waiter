@@ -1046,7 +1046,7 @@
         make-instance (fn [index]
                         {:id (str service-id "." index)
                          :service-id service-id
-                         :started-at (t/minus (t/now) (t/minutes index))})
+                         :started-at (t/minus (t/now) (t/seconds (+ (-> index t/minutes t/in-seconds) 10)))})
         deployment-error-config {:min-failed-instances 2
                                  :min-hosts 2}
         instance-0 (make-instance 0)
