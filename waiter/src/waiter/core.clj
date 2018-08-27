@@ -1018,7 +1018,7 @@
                      :interstitial-maintainer-state (:query-chan interstitial-maintainer)
                      :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
                      :scheduler-services-gc-state (:query scheduler-services-gc)
-                     :scheduler-state (:query-chan scheduler-maintainer)
+                     :scheduler-state (:query-chan scheduler-maintainer) ;; TODO shams change to scheduler/service-id->state
                      :transient-metrics-gc-state (:query gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
@@ -1257,6 +1257,7 @@
    :state-scheduler-handler-fn (pc/fnk [[:daemons scheduler-maintainer]
                                         [:state router-id]
                                         wrap-secure-request-fn]
+                                 ;; TODO shams change to scheduler/state
                                  (let [scheduler-query-chan (:query-chan scheduler-maintainer)]
                                    (wrap-secure-request-fn
                                      (fn scheduler-state-handler-fn [request]
