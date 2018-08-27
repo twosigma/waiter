@@ -43,7 +43,7 @@
 
 (deftest ^:integration test-environment
   (log/info "Running: test-environment")
-  (testing "presence of environment variables"
+  (testing "verifies presence of environment variables for running integration tests"
     (testing "waiter cluster uris"
       (log/info "env.WAITER_URIS" (System/getenv "WAITER_URIS"))
       (is (System/getenv "WAITER_URIS"))
@@ -549,13 +549,14 @@
                                      (pc/map-from-keys
                                        (fn [cluster-url]
                                          {:exit-code 0
-                                          :message (str "Successfully pinged token " token-name " on " cluster-url
+                                          :message (str "successfully pinged token " token-name " on " cluster-url
                                                         ", reason: health check returned status code 200")})
                                        waiter-urls)
                                      :exit-code 0
                                      :message (str "pinging token " token-name " on "
                                                    (-> waiter-urls vec println with-out-str str/trim)
-                                                   " was successful")}]
+                                                   " was successful")
+                                     :token token-name}]
                 (is (= expected-result actual-result))))
             (finally
               (cleanup-token waiter-api waiter-urls token-name)))))
@@ -588,7 +589,8 @@
                                      :exit-code (count waiter-urls)
                                      :message (str "pinging token " token-name " on "
                                                    (-> waiter-urls vec println with-out-str str/trim)
-                                                   " failed")}]
+                                                   " failed")
+                                     :token token-name}]
                 (is (= expected-result actual-result))))
             (finally
               (cleanup-token waiter-api waiter-urls token-name))))))))
