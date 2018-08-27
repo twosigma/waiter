@@ -325,7 +325,7 @@
                           cook-api allowed-priorities allowed-users backend-port home-path-prefix
                           search-interval service-id->failed-instances-transient-store syncer-state-atom]
 
-  scheduler/ServiceScheduler
+  scheduler/PollableServiceScheduler
 
   (get-service->instances [_]
     (let [all-jobs (mapcat #(get-jobs cook-api % ["running" "waiting"] :search-interval search-interval)
@@ -342,6 +342,8 @@
                     :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})))
              (transient {}))
            (persistent!))))
+
+  scheduler/ServiceScheduler
 
   (get-services [_]
     (let [all-jobs (mapcat #(get-jobs cook-api % ["running" "waiting"] :search-interval search-interval)

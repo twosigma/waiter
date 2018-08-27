@@ -85,13 +85,6 @@
 
 (defprotocol ServiceScheduler
 
-  ;; TODO shams move this method to a different protocol
-  (get-service->instances [this]
-    "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records.
-     The nested map has the following keys: :active-instances and :failed-instances.
-     The active-instances should not be assumed to be healthy (or live).
-     The failed-instances are guaranteed to be dead.")
-
   (get-services [this]
     "Returns a list of scheduler/Service records")
 
@@ -127,6 +120,16 @@
 
   (state [this]
     "Returns the global (i.e. non-service-specific) state the scheduler is maintaining"))
+
+(defprotocol PollableServiceScheduler
+  "This protocol allows schedulers to support polling the underlying scheduler for the global state
+   of running services."
+
+  (get-service->instances [this]
+    "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records.
+     The nested map has the following keys: :active-instances and :failed-instances.
+     The active-instances should not be assumed to be healthy (or live).
+     The failed-instances are guaranteed to be dead."))
 
 (defn retry-on-transient-server-exceptions-fn
   "Helper function for `retry-on-transient-server-exceptions`.

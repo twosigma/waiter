@@ -324,13 +324,15 @@
                               force-kill-after-ms is-waiter-app?-fn sync-deployment-maintainer-atom
                               syncer-state-atom]
 
-  scheduler/ServiceScheduler
+  scheduler/PollableServiceScheduler
 
   (get-service->instances [_]
     (let [apps (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})]
       (response-data->service->service-instances
         apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
         service-id->service-description)))
+
+  scheduler/ServiceScheduler
 
   (get-services [_]
     (map response->Service (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})))

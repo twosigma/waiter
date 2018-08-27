@@ -541,13 +541,15 @@
 (defrecord ShellScheduler [work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
                            syncer-state-atom service-id->password-fn]
 
-  scheduler/ServiceScheduler
+  scheduler/PollableServiceScheduler
 
   (get-service->instances [_]
     (let [id->service @id->service-agent]
       (into {} (map (fn [[_ service-entry]]
                       (service-entry->instances service-entry))
                     id->service))))
+
+  scheduler/ServiceScheduler
 
   (get-services [_]
     (let [id->service @id->service-agent]

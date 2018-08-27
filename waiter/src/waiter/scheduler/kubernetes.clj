@@ -418,11 +418,13 @@
                                 syncer-state-atom
                                 service-id->password-fn
                                 service-id->service-description-fn]
-  scheduler/ServiceScheduler
+  scheduler/PollableServiceScheduler
 
   (get-service->instances [this]
     (pc/map-from-keys #(instances-breakdown! this %)
                       (get-services this)))
+
+  scheduler/ServiceScheduler
 
   (get-services [this]
     (get-services this))

@@ -229,7 +229,7 @@
         instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
-        scheduler (reify ServiceScheduler
+        scheduler (reify PollableServiceScheduler
                     (get-service->instances [_]
                       {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
                                                   :failed-instances []}
