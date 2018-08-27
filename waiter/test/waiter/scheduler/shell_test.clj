@@ -461,7 +461,8 @@
                                           :protocol "http"
                                           :log-directory instance-dir
                                           :shell-scheduler/working-directory instance-dir
-                                          :shell-scheduler/pid fake-pid})}}
+                                          :shell-scheduler/pid fake-pid})}
+                        :last-update-time nil}
         process-keys [:id->instance "foo.bar" :shell-scheduler/process]
         host-keys [:id->instance "foo.bar" :host]]
     (with-redefs [pid (constantly fake-pid)
