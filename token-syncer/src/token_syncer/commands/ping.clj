@@ -22,21 +22,21 @@
 (defn ping-token
   "Pings the specified tokens across provided clusters based on cluster-urls and returns the result.
    Throws an exception if there was an error while pinging the clusters with the provided token."
-  [{:keys [health-check-token]} cluster-urls token]
+  [{:keys [health-check-token]} cluster-urls token queue-timeout-ms]
   (try
     (log/info "pinging token" token "on clusters:" cluster-urls)
     (let [cluster-url->result
           (pc/map-from-keys
             (fn [cluster-url]
               (try
-                (let [{:keys [body headers status]} (health-check-token cluster-url token)]
-                  (log/info "health check repsonse:"
+                (let [{:keys [body headers status]} (health-check-token cluster-url token queue-timeout-ms)]
+                  (log/info cluster-url "health check response:"
                             {:body (str/trim (str body))
                              :headers headers
                              :status status})
                   (if (and (integer? status) (<= 200 status 299))
                     {:exit-code 0
-                     :message (str "Successfully pinged token " token " on " cluster-url
+                     :message (str "successfully pinged token " token " on " cluster-url
                                    ", reason: health check returned status code " status)}
                     {:exit-code 1
                      :message (str "unable to ping token " token " on " cluster-url
@@ -51,7 +51,8 @@
       {:details cluster-url->result
        :exit-code exit-code
        :message (str "pinging token " token " on " (-> cluster-urls vec println with-out-str str/trim)
-                     " " (if (zero? exit-code) "was successful" "failed"))})
+                     " " (if (zero? exit-code) "was successful" "failed"))
+       :token token})
     (catch Throwable th
       (log/error th "unable to ping token")
       (throw th))))
@@ -60,8 +61,9 @@
 
 (def ping-token-config
   {:execute-command (fn execute-ping-token-command
-                      [{:keys [waiter-api]} _ arguments]
-                      (let [token (first arguments)
+                      [{:keys [waiter-api]} {:keys [options]} arguments]
+                      (let [{:keys [queue-timeout]} options
+                            token (first arguments)
                             cluster-urls-set (-> arguments rest set)]
                         (cond
                           (empty? arguments)
@@ -87,11 +89,15 @@
                            :message (str "at least one cluster url required, provided: " (vec cluster-urls-set))}
 
                           :else
-                          (let [{:keys [exit-code] :as ping-result} (ping-token waiter-api cluster-urls-set token)]
+                          (let [{:keys [exit-code] :as ping-result}
+                                (ping-token waiter-api cluster-urls-set token queue-timeout)]
                             (log/info (-> ping-result pp/pprint with-out-str str/trim))
                             {:exit-code exit-code
                              :message (str "exiting with code " exit-code)}))))
-   :option-specs []
+   :option-specs [["-q" "--queue-timeout TIMEOUT" "The maximum time, in ms, allowed spent by a request waiting for an available service backend"
+                   :default 12000
+                   :parse-fn #(Integer/parseInt %)
+                   :validate [#(< 0 % 300001) "Must be between 1 and 30000"]]]
    :retrieve-documentation (fn retrieve-ping-token-documentation
                              [command-name _]
                              {:description (str "Pings the specified TOKEN across Waiter cluster(s) specified in the URL(s)")

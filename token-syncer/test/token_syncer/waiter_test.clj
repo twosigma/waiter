@@ -242,7 +242,8 @@
   (let [http-client-wrapper (Object.)
         test-cluster-url "http://www.test.com:1234"
         test-token "lorem-ipsum"
-        expected-options {:headers {"x-waiter-queue-timeout" 120000
+        queue-timeout-ms 120000
+        expected-options {:headers {"x-waiter-queue-timeout" queue-timeout-ms
                                     "x-waiter-token" test-token}
                           :method :get
                           :query-params {}}]
@@ -257,7 +258,7 @@
                       make-http-request (fn [& _]
                                           (throw (Exception. "unexpected call")))]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (health-check-token http-client-wrapper test-cluster-url test-token))))))
+                                (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms))))))
 
     (testing "deleted token"
       (let [error (Exception. "exception from test")]
@@ -269,7 +270,7 @@
                                     "health-check-url" "/health-check"})
                       make-http-request (fn [& _]
                                           (throw (Exception. "unexpected call")))]
-          (is (nil? (health-check-token http-client-wrapper test-cluster-url test-token))))))
+          (is (nil? (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms))))))
 
     (testing "error in health check"
       (let [error (Exception. "exception from test")]
@@ -284,7 +285,7 @@
                                           (is (= expected-options (apply hash-map in-options)))
                                           (throw error))]
           (is (thrown-with-msg? Exception #"exception from test"
-                                (health-check-token http-client-wrapper test-cluster-url test-token))))))
+                                (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms))))))
 
     (testing "error in status code"
       (with-redefs [load-token (fn [in-http-client-wrapper in-cluster-url in-token]
@@ -300,7 +301,7 @@
         (is (= {:body "{\"message\":\"failed\"}"
                 :headers {}
                 :status 400}
-               (health-check-token http-client-wrapper test-cluster-url test-token)))))
+               (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms)))))
 
     (testing "successful response"
       (with-redefs [load-token (fn [in-http-client-wrapper in-cluster-url in-token]
@@ -316,4 +317,4 @@
         (is (= {:body "{\"message\":\"success\"}"
                 :headers {}
                 :status 200}
-               (health-check-token http-client-wrapper test-cluster-url test-token)))))))
+               (health-check-token http-client-wrapper test-cluster-url test-token queue-timeout-ms)))))))

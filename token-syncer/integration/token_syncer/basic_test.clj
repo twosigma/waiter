@@ -524,6 +524,7 @@
 (deftest ^:integration test-ping-tokens
   (testing "token ping on clusters"
     (let [waiter-urls (waiter-urls)
+          queue-timeout-ms 120000
           {:keys [store-token] :as waiter-api} (waiter-api)]
 
       (testing "successful health check"
@@ -541,7 +542,7 @@
                    waiter-urls))
 
             ;; ACT
-            (let [actual-result (ping/ping-token waiter-api waiter-urls token-name)]
+            (let [actual-result (ping/ping-token waiter-api waiter-urls token-name queue-timeout-ms)]
 
               ;; ASSERT
               (let [expected-result {:details
@@ -574,7 +575,7 @@
                    waiter-urls))
 
             ;; ACT
-            (let [actual-result (ping/ping-token waiter-api waiter-urls token-name)]
+            (let [actual-result (ping/ping-token waiter-api waiter-urls token-name queue-timeout-ms)]
 
               ;; ASSERT
               (let [expected-result {:details
