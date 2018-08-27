@@ -605,7 +605,8 @@
        :search-interval (t/minutes 10)
        :service-id->failed-instances-transient-store (atom {})
        :service-id->password-fn #(str % ".password")
-       :service-id->service-description-fn (constantly {})}
+       :service-id->service-description-fn (constantly {})
+       :syncer-state-atom (atom {:service-id->health-check-context {}})}
       (merge cook-config)
       map->CookScheduler))
 
@@ -832,9 +833,11 @@
   (let [service-id "service-id"
         cook-scheduler (create-cook-scheduler-helper
                          :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]}))]
-    (is (= {:failed-instances [:failed-instances]}
+    (is (= {:failed-instances [:failed-instances]
+            :last-update-time nil}
            (scheduler/service-id->state cook-scheduler service-id)))
-    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}}
+    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
+            :service-id->health-check-context {}}
            (scheduler/state cook-scheduler)))))
 
 (deftest test-cook-scheduler
@@ -851,8 +854,9 @@
                         :service-id->service-description-fn (constantly {})}
           cook-api (Object.)
           service-id->failed-instances-transient-store (atom {})
+          syncer-state-atom (atom {:service-id->health-check-context {}})
           create-cook-scheduler-helper (fn create-cook-scheduler-helper [config]
-                                         (create-cook-scheduler config cook-api service-id->failed-instances-transient-store))]
+                                         (create-cook-scheduler config cook-api service-id->failed-instances-transient-store syncer-state-atom))]
 
       (testing "should throw on invalid configuration"
         (is (thrown? Throwable (create-cook-scheduler-helper (assoc valid-config :allowed-users #{}))))
