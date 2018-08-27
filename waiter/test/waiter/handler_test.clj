@@ -18,7 +18,6 @@
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
-            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
@@ -408,20 +407,9 @@
 
 (deftest test-list-services-handler
   (let [test-user "test-user"
-        test-user-services #{"service1" "service2" "service3" "service7" "service8" "service9"}
-        other-user-services #{"service4" "service5" "service6"}
-        healthy-services #{"service1" "service2" "service4" "service6" "service7" "service8" "service9"}
-        unhealthy-services #{"service2" "service3" "service5"}
-        service-id->source-tokens {"service1" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
-                                   "service3" [{:token "t2.com" :version "v2"} {:token "t3.edu" :version "v3"}]
-                                   "service4" [{:token "t1.org" :version "v1"} {:token "t2.com" :version "v2"}]
-                                   "service5" [{:token "t1.org" :version "v1"} {:token "t3.edu" :version "v3"}]
-                                   "service7" [{:token "t1.org" :version "v2"} {:token "t2.com" :version "v1"}]
-                                   "service9" [{:token "t2.com" :version "v3"}]}
-        all-services (set/union other-user-services test-user-services)
-        query-state-fn (constantly {:all-available-service-ids all-services
-                                    :service-id->healthy-instances (pc/map-from-keys (constantly []) healthy-services)
-                                    :service-id->unhealthy-instances (pc/map-from-keys (constantly []) unhealthy-services)})
+        test-user-services ["service1" "service2" "service3"]
+        state-atom (atom nil)
+        query-state-fn (fn [] @state-atom)
         request {:authorization/user test-user}
         instance-counts-present (fn [body]
                                   (let [parsed-body (-> body (str) (json/read-str) (walk/keywordize-keys))]
@@ -436,32 +424,46 @@
                                 (and (= user test-user)
                                      (= action :manage)
                                      (some #(= % service-id) test-user-services))))
-        list-services-handler (wrap-handler-json-response list-services-handler)
-        assert-successful-json-response (fn [{:keys [body headers status]}]
-                                          (is (= 200 status))
-                                          (is (= "application/json" (get headers "content-type")))
-                                          (is (instance-counts-present body)))]
+        list-services-handler (wrap-handler-json-response list-services-handler)]
     (letfn [(service-id->service-description-fn [service-id & _]
-              (cond-> {"run-as-user" (if (contains? test-user-services service-id) test-user "another-user")}
-                (contains? service-id->source-tokens service-id)
-                (assoc "source-tokens" (-> service-id service-id->source-tokens walk/stringify-keys))))
+              {"run-as-user" (if (some #(= service-id %) test-user-services) test-user "another-user")})
             (service-id->metrics-fn []
               {})]
 
       (testing "list-services-handler:success-regular-user"
-        (let [{:keys [body] :as response}
+        (reset! state-atom {:service-id->healthy-instances {"service1" []
+                                                            "service2" []
+                                                            "service3" []
+                                                            "service4" []
+                                                            "service6" []}
+                            :service-id->unhealthy-instances {"service3" []
+                                                              "service5" []}})
+        (let [{:keys [body headers status]}
               (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn request)]
-          (assert-successful-json-response response)
-          (is (= test-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+          (is (= 200 status))
+          (is (= "application/json" (get headers "content-type")))
+          (is (every? #(str/includes? (str body) (str "service" %)) (range 1 4)))
+          (is (not-any? #(str/includes? (str body) (str "service" %)) (range 4 7)))
+          (is (instance-counts-present body))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user")]
-          (let [{:keys [body] :as response}
+          (reset! state-atom {:service-id->healthy-instances {"service1" []
+                                                              "service2" []
+                                                              "service3" []
+                                                              "service4" []
+                                                              "service6" []}
+                              :service-id->unhealthy-instances {"service3" []
+                                                                "service5" []}})
+          (let [{:keys [body headers status]}
                 (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn request)]
-            (assert-successful-json-response response)
-            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+            (is (= 200 status))
+            (is (= "application/json" (get headers "content-type")))
+            (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
+            (is (every? #(str/includes? (str body) (str "service" %)) (range 4 7)))
+            (is (instance-counts-present body)))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-same-user"
         (let [entitlement-manager (reify authz/EntitlementManager
@@ -469,101 +471,58 @@
                                       ; use (constantly true) for authorized? to verify that filter still applies
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
-          (let [{:keys [body] :as response}
+          (reset! state-atom {:service-id->healthy-instances {"service1" []
+                                                              "service2" []
+                                                              "service3" []
+                                                              "service4" []
+                                                              "service6" []}
+                              :service-id->unhealthy-instances {"service3" []
+                                                                "service5" []}})
+          (let [{:keys [body headers status]}
+
                 (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                        service-id->service-description-fn service-id->metrics-fn request)]
-            (assert-successful-json-response response)
-            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+            (is (= 200 status))
+            (is (= "application/json" (get headers "content-type")))
+            (is (not-any? #(str/includes? (str body) (str "service" %)) (range 1 4)))
+            (is (every? #(str/includes? (str body) (str "service" %)) (range 4 7)))
+            (is (instance-counts-present body)))))
 
       (testing "list-services-handler:failure"
-        (let [query-state-fn (constantly {:all-available-service-ids #{"service1"}
-                                          :service-id->healthy-instances {"service1" []}})
-              request {:authorization/user test-user}
+        (reset! state-atom {:service-id->healthy-instances {"service1" []}})
+        (let [request {:authorization/user test-user}
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
               list-services-handler (core/wrap-error-handling
                                       #(list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                                               service-id->service-description-fn service-id->metrics-fn %))
-              {:keys [body headers status]} (list-services-handler request)]
+              {:keys [body headers status]}
+              (list-services-handler request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "content-type")))
           (is (str/includes? (str body) exception-message))))
 
       (testing "list-services-handler:success-super-user-sees-all-apps"
+        (reset! state-atom {:service-id->healthy-instances {"service1" []
+                                                            "service2" []
+                                                            "service3" []
+                                                            "service4" []
+                                                            "service6" []}
+                            :service-id->unhealthy-instances {"service3" []
+                                                              "service5" []}})
         (let [entitlement-manager (reify authz/EntitlementManager
                                     (authorized? [_ user action {:keys [service-id]}]
                                       (and (= user test-user)
                                            (= :manage action)
-                                           (contains? all-services service-id))))
-              {:keys [body] :as response}
+                                           (some #(= (str "service" %) service-id) (range 1 7)))))
+              {:keys [body headers status]}
               ; without a run-as-user, should return all apps
               (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
                                      service-id->service-description-fn service-id->metrics-fn request)]
-          (assert-successful-json-response response)
-          (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
-
-      (testing "list-services-handler:success-filter-tokens"
-        (doseq [[query-param filter-fn]
-                {"t1.com" #(= % "t1.com")
-                 "t2.org" #(= % "t2.org")
-                 "tn.none" #(= % "tn.none")
-                 "*o*" #(str/includes? % "o")
-                 "*t*" #(str/includes? % "t")
-                 "t*" #(str/starts-with? % "t")
-                 "*com" #(str/ends-with? % "com")
-                 "*org" #(str/ends-with? % "org")}]
-          (let [request (assoc request :query-string (str "token=" query-param))
-                {:keys [body] :as response}
-                ; without a run-as-user, should return all apps
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                       service-id->service-description-fn service-id->metrics-fn request)]
-            (assert-successful-json-response response)
-            (is (= (->> service-id->source-tokens
-                        (filter (fn [[_ source-tokens]]
-                                  (->> source-tokens (map :token) (some filter-fn))))
-                        keys
-                        set
-                        (set/intersection test-user-services))
-                   (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
-
-      (testing "list-services-handler:success-filter-version"
-        (doseq [[query-param filter-fn]
-                {"v1" #(= % "v1")
-                 "v2" #(= % "v2")
-                 "vn" #(= % "vn")
-                 "*v*" #(str/includes? % "v")
-                 "v*" #(str/starts-with? % "v")
-                 "*1" #(str/ends-with? % "1")
-                 "*2" #(str/ends-with? % "2")}]
-          (let [request (assoc request :query-string (str "token-version=" query-param))
-                {:keys [body] :as response}
-                ; without a run-as-user, should return all apps
-                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                       service-id->service-description-fn service-id->metrics-fn request)]
-            (assert-successful-json-response response)
-            (is (= (->> service-id->source-tokens
-                        (filter (fn [[_ source-tokens]]
-                                  (->> source-tokens (map :version) (some filter-fn))))
-                        keys
-                        set
-                        (set/intersection test-user-services))
-                   (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
-
-      (testing "list-services-handler:success-filter-token-and-version"
-        (let [request (assoc request :query-string "token=t1&token-version=v1")
-              {:keys [body] :as response}
-              ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
-          (assert-successful-json-response response)
-          (is (= (->> service-id->source-tokens
-                      (filter (fn [[_ source-tokens]]
-                                (and (->> source-tokens (map :token) (some #(= % "t1")))
-                                     (->> source-tokens (map :version) (some #(= % "v1"))))))
-                      keys
-                      set
-                      (set/intersection test-user-services))
-                 (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))))
+          (is (= 200 status))
+          (is (= "application/json" (get headers "content-type")))
+          (is (every? #(str/includes? (str body) (str "service" %)) (range 1 7)))
+          (is (instance-counts-present body)))))))
 
 (deftest test-delete-service-handler
   (let [test-user "test-user"
@@ -1087,8 +1046,8 @@
                                                               "interstitial-secs" 10)
                                       nil)]
             (cond-> service-description
-              (seq service-description)
-              (assoc "source-tokens" [(sd/source-tokens-entry token service-description)]))
+                    (seq service-description)
+                    (assoc "source-tokens" [(sd/source-tokens-entry token service-description)]))
             service-description))
         service-description->service-id (fn [service-description]
                                           (str "service-" (count service-description) "." (count (str service-description))))
