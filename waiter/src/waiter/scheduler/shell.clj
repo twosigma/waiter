@@ -539,7 +539,7 @@
 ;   :shell-scheduler/pid
 ;
 (defrecord ShellScheduler [work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
-                           syncer-state-atom service-id->password-fn]
+                           retrieve-syncer-state-fn service-id->password-fn]
 
   scheduler/PollableServiceScheduler
 
@@ -629,11 +629,11 @@
       (directory-content service-entry instance-id relative-directory)))
 
   (service-id->state [_ service-id]
-    (-> (scheduler/retrieve-scheduler-state syncer-state-atom service-id)
+    (-> (retrieve-syncer-state-fn service-id)
         (merge (get @id->service-agent service-id))))
 
   (state [_]
-    (-> (scheduler/retrieve-scheduler-state syncer-state-atom)
+    (-> (retrieve-syncer-state-fn)
         (assoc :id->service @id->service-agent
                :port->reservation @port->reservation-atom))))
 
@@ -643,6 +643,7 @@
   [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms
            port-range work-directory
            ;; functions provided in the context
+           retrieve-syncer-state-fn
            service-id->password-fn]}]
   {:pre [(utils/pos-int? failed-instance-retry-interval-ms)
          (utils/pos-int? health-check-interval-ms)
@@ -653,8 +654,7 @@
               (<= (first port-range) (second port-range)))
          (not (str/blank? work-directory))]}
   (let [id->service-agent (agent {})
-        port->reservation-atom (atom {})
-        syncer-state-atom (atom {})]
+        port->reservation-atom (atom {})]
     (->ShellScheduler (-> work-directory
                           io/file
                           (.getCanonicalPath))
@@ -662,7 +662,7 @@
                       port->reservation-atom
                       port-grace-period-ms
                       port-range
-                      syncer-state-atom
+                      retrieve-syncer-state-fn
                       service-id->password-fn)))
 
 (defn shell-scheduler
@@ -672,7 +672,10 @@
   {:pre [(not (nil? scheduler-state-chan))
          (utils/pos-int? scheduler-syncer-interval-secs)
          (not (nil? start-scheduler-syncer-fn))]}
-  (let [{:keys [id->service-agent port->reservation-atom syncer-state-atom] :as scheduler} (create-shell-scheduler config)
+  (let [syncer-state-atom (atom {})
+        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
+        {:keys [id->service-agent port->reservation-atom] :as scheduler}
+        (create-shell-scheduler (assoc config :retrieve-syncer-state-fn retrieve-syncer-state-fn))
         http-client (http/client {:connect-timeout health-check-timeout-ms
                                   :idle-timeout health-check-timeout-ms})]
     (start-updating-health id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)

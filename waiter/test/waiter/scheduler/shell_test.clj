@@ -170,6 +170,9 @@
    :health-check-timeout-ms 1
    :port-grace-period-ms 1
    :port-range [10000 11000]
+   :retrieve-syncer-state-fn (fn default-retrieve-syncer-state-fn
+                               ([] {:syncer-state :global})
+                               ([service-id] {:syncer-state service-id}))
    :service-id->password-fn (fn [service-id] (str service-id ".password"))
    :work-directory (work-dir)})
 
@@ -462,7 +465,7 @@
                                           :log-directory instance-dir
                                           :shell-scheduler/working-directory instance-dir
                                           :shell-scheduler/pid fake-pid})}
-                        :last-update-time nil}
+                        :syncer-state "foo"}
         process-keys [:id->instance "foo.bar" :shell-scheduler/process]
         host-keys [:id->instance "foo.bar" :host]]
     (with-redefs [pid (constantly fake-pid)

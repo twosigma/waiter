@@ -323,7 +323,7 @@
 
 (defrecord CookScheduler [service-id->password-fn service-id->service-description-fn
                           cook-api allowed-priorities allowed-users backend-port home-path-prefix
-                          search-interval service-id->failed-instances-transient-store syncer-state-atom]
+                          search-interval service-id->failed-instances-transient-store retrieve-syncer-state-fn]
 
   scheduler/PollableServiceScheduler
 
@@ -473,18 +473,18 @@
       (mesos/retrieve-directory-content-from-host cook-api host log-directory)))
 
   (service-id->state [_ service-id]
-    (-> (scheduler/retrieve-scheduler-state syncer-state-atom service-id)
+    (-> (retrieve-syncer-state-fn service-id)
         (assoc :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id))))
 
   (state [_]
-    (-> (scheduler/retrieve-scheduler-state syncer-state-atom)
+    (-> (retrieve-syncer-state-fn)
         (assoc :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store))))
 
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."
   [{:keys [allowed-users backend-port home-path-prefix instance-priorities search-interval-days
            service-id->password-fn service-id->service-description-fn]}
-   cook-api service-id->failed-instances-transient-store syncer-state-atom]
+   cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn]
   {:pre [(seq allowed-users)
          (or (nil? backend-port) (pos? backend-port))
          (not (str/blank? home-path-prefix))
@@ -497,7 +497,7 @@
         search-interval (t/days search-interval-days)]
     (->CookScheduler service-id->password-fn service-id->service-description-fn
                      cook-api allowed-priorities allowed-users backend-port home-path-prefix
-                     search-interval service-id->failed-instances-transient-store syncer-state-atom)))
+                     search-interval service-id->failed-instances-transient-store retrieve-syncer-state-fn)))
 
 (defn cook-scheduler
   "Creates and starts cook scheduler with associated daemons."
@@ -514,7 +514,8 @@
                   :url url}
         service-id->failed-instances-transient-store (atom {})
         syncer-state-atom (atom {})
-        scheduler (create-cook-scheduler config cook-api service-id->failed-instances-transient-store syncer-state-atom)]
+        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
+        scheduler (create-cook-scheduler config cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn)]
     (start-track-failed-instances service-id->failed-instances-transient-store scheduler failed-tracker-interval-ms)
     (start-scheduler-syncer-fn scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
     scheduler))

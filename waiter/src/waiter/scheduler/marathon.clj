@@ -322,7 +322,7 @@
                               service-id->kill-info-store service-id->out-of-sync-state-store
                               service-id->password-fn service-id->service-description
                               force-kill-after-ms is-waiter-app?-fn sync-deployment-maintainer-atom
-                              syncer-state-atom]
+                              retrieve-syncer-state-fn]
 
   scheduler/PollableServiceScheduler
 
@@ -427,13 +427,13 @@
       (mesos/retrieve-directory-content-from-host mesos-api host log-directory)))
 
   (service-id->state [_ service-id]
-    (-> (scheduler/retrieve-scheduler-state syncer-state-atom service-id)
+    (-> (retrieve-syncer-state-fn service-id)
         (assoc :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
                :kill-info (get @service-id->kill-info-store service-id)
                :out-of-sync-state (get @service-id->out-of-sync-state-store service-id))))
 
   (state [_]
-    (-> (scheduler/retrieve-scheduler-state syncer-state-atom)
+    (-> (retrieve-syncer-state-fn)
         (assoc :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
                :service-id->kill-info-store @service-id->kill-info-store
                :service-id->out-of-sync-state-store @service-id->out-of-sync-state-store))))
@@ -591,12 +591,13 @@
         retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)
         sync-deployment-maintainer-atom (atom nil)
         syncer-state-atom (atom {})
+        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
         marathon-scheduler (->MarathonScheduler
                              marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store
                              service-id->out-of-sync-state-store service-id->password-fn
                              service-id->service-description-fn force-kill-after-ms is-waiter-app?-fn
-                             sync-deployment-maintainer-atom syncer-state-atom)
+                             sync-deployment-maintainer-atom retrieve-syncer-state-fn)
         sync-deployment-maintainer (start-sync-deployment-maintainer
                                      leader?-fn service-id->out-of-sync-state-store marathon-scheduler sync-deployment)]
     (reset! sync-deployment-maintainer-atom sync-deployment-maintainer)

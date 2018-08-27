@@ -606,7 +606,7 @@
        :service-id->failed-instances-transient-store (atom {})
        :service-id->password-fn #(str % ".password")
        :service-id->service-description-fn (constantly {})
-       :syncer-state-atom (atom {})}
+       :retrieve-syncer-state-fn (constantly {})}
       (merge cook-config)
       map->CookScheduler))
 
@@ -831,10 +831,12 @@
 
 (deftest test-service-id->state
   (let [service-id "service-id"
+        syncer-state-atom (atom {:last-update-time :time
+                                 :service-id->health-check-context {}})
+        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
         cook-scheduler (create-cook-scheduler-helper
-                         :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]})
-                         :syncer-state-atom (atom {:last-update-time :time
-                                                   :service-id->health-check-context {}}))]
+                         :retrieve-syncer-state-fn retrieve-syncer-state-fn
+                         :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]}))]
     (is (= {:failed-instances [:failed-instances]
             :last-update-time :time}
            (scheduler/service-id->state cook-scheduler service-id)))

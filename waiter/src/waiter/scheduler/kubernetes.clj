@@ -414,8 +414,8 @@
                                 pod-suffix-length
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
+                                retrieve-syncer-state-fn
                                 service-id->failed-instances-transient-store
-                                syncer-state-atom
                                 service-id->password-fn
                                 service-id->service-description-fn]
   scheduler/PollableServiceScheduler
@@ -515,11 +515,11 @@
     [])
 
   (service-id->state [_ service-id]
-    (-> (scheduler/retrieve-scheduler-state syncer-state-atom service-id)
+    (-> (retrieve-syncer-state-fn service-id)
         (assoc :failed-instances (vals (get @service-id->failed-instances-transient-store service-id)))))
 
   (state [_]
-    (-> (scheduler/retrieve-scheduler-state syncer-state-atom)
+    (-> (retrieve-syncer-state-fn)
         (assoc :service-id->failed-instances @service-id->failed-instances-transient-store))))
 
 (defn default-replicaset-builder
@@ -644,20 +644,21 @@
                                      (fn [scheduler service-id service-description]
                                        (f scheduler service-id service-description replicaset-spec-builder)))
         syncer-state-atom (atom {})
-        k8s-scheduler (->KubernetesScheduler url
-                                             http-client
-                                             max-patch-retries
-                                             max-name-length
-                                             orchestrator-name
-                                             pod-base-port
-                                             pod-suffix-length
-                                             replicaset-api-version
-                                             replicaset-spec-builder-fn
-                                             service-id->failed-instances-transient-store
-                                             syncer-state-atom
-                                             service-id->password-fn
-                                             service-id->service-description-fn)]
+        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
+        scheduler (->KubernetesScheduler url
+                                         http-client
+                                         max-patch-retries
+                                         max-name-length
+                                         orchestrator-name
+                                         pod-base-port
+                                         pod-suffix-length
+                                         replicaset-api-version
+                                         replicaset-spec-builder-fn
+                                         retrieve-syncer-state-fn
+                                         service-id->failed-instances-transient-store
+                                         service-id->password-fn
+                                         service-id->service-description-fn)]
     (when authentication
       (start-auth-renewer authentication))
-    (start-scheduler-syncer-fn k8s-scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
-    k8s-scheduler))
+    (start-scheduler-syncer-fn scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
+    scheduler))

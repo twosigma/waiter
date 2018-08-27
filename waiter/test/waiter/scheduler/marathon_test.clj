@@ -584,13 +584,13 @@
        :marathon-api {}
        :mesos-api {}
        :retrieve-framework-id-fn (constantly nil)
+       :retrieve-syncer-state-fn (constantly {})
        :service-id->failed-instances-transient-store (atom {})
        :service-id->kill-info-store (atom {})
        :service-id->out-of-sync-state-store (atom {})
        :service-id->password-fn #(str % ".password")
        :service-id->service-description (constantly nil)
-       :sync-deployment-maintainer-atom (atom nil)
-       :syncer-state-atom (atom {})}
+       :sync-deployment-maintainer-atom (atom nil)}
       (merge marathon-config)
       map->MarathonScheduler))
 
@@ -655,7 +655,6 @@
         state (scheduler/service-id->state marathon-scheduler service-id)]
     (is (= {:failed-instances [:failed-instances]
             :kill-info :kill-call-info
-            :last-update-time nil
             :out-of-sync-state nil}
            state))))
 

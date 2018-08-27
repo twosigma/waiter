@@ -530,7 +530,7 @@
         (log/info (timing-message-fn) "and found no active services")
         {:service-id->health-check-context service-id->health-check-context}))))
 
-(defn retrieve-scheduler-state
+(defn retrieve-syncer-state
   "Retrieves the scheduler and syncer state either for the entire scheduler or when provided for a specific service."
   ([syncer-state-atom]
    @syncer-state-atom)
@@ -568,8 +568,8 @@
                        state-query-chan
                        ([{:keys [response-chan service-id]}]
                          (->> (if service-id
-                                (retrieve-scheduler-state syncer-state-atom service-id)
-                                (retrieve-scheduler-state syncer-state-atom))
+                                (retrieve-syncer-state syncer-state-atom service-id)
+                                (retrieve-syncer-state syncer-state-atom))
                               (async/>! response-chan))
                          current-state)
 
