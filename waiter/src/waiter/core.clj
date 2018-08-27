@@ -614,13 +614,15 @@
                        [:settings scheduler-config]
                        [:state service-id-prefix]
                        service-id->password-fn*
-                       service-id->service-description-fn*]
+                       service-id->service-description-fn*
+                       start-scheduler-syncer-fn]
                 (let [is-waiter-app?-fn (fn is-waiter-app? [^String service-id]
                                           (str/starts-with? service-id service-id-prefix))
                       scheduler-context {:is-waiter-app?-fn is-waiter-app?-fn
                                          :leader?-fn leader?-fn
                                          :service-id->password-fn service-id->password-fn*
-                                         :service-id->service-description-fn service-id->service-description-fn*}]
+                                         :service-id->service-description-fn service-id->service-description-fn*
+                                         :start-scheduler-syncer-fn start-scheduler-syncer-fn}]
                   (-> (utils/create-component scheduler-config :context scheduler-context)
                       (scheduler/attach-name (-> scheduler-config :kind utils/keyword->str)))))
    ; This function is only included here for initializing the scheduler above.
@@ -637,7 +639,22 @@
                                             [service-id & {:keys [effective?] :or {effective? true}}]
                                             (sd/service-id->service-description
                                               kv-store service-id service-description-defaults
-                                              metric-group-mappings :effective? effective?)))})
+                                              metric-group-mappings :effective? effective?)))
+   :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
+                                       [:state clock]
+                                       service-id->service-description-fn*]
+                                (let [http-client (http/client {:connect-timeout health-check-timeout-ms
+                                                                :idle-timeout health-check-timeout-ms})
+                                      available? (fn scheduler-available? [service-instance health-check-path]
+                                                   (scheduler/available? http-client service-instance health-check-path))]
+                                  (fn start-scheduler-syncer-fn
+                                    [scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs]
+                                    (let [timeout-chan (->> (t/seconds scheduler-syncer-interval-secs)
+                                                            (du/time-seq (t/now))
+                                                            chime/chime-ch)]
+                                      (scheduler/start-scheduler-syncer
+                                        clock timeout-chan service-id->service-description-fn* available?
+                                        failed-check-threshold scheduler scheduler-state-chan syncer-state-atom)))))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
@@ -942,19 +959,12 @@
                                    (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                          service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                                      (scheduler/scheduler-broken-services-gc service-gc-go-routine query-state-fn scheduler scheduler-gc-config)))
-   :scheduler-maintainer (pc/fnk [[:routines service-id->service-description-fn]
-                                  [:scheduler scheduler]
-                                  [:settings [:health-check-config health-check-timeout-ms failed-check-threshold] scheduler-syncer-interval-secs]
-                                  [:state clock scheduler-state-chan]]
-                           (let [http-client (http/client {:connect-timeout health-check-timeout-ms
-                                                           :idle-timeout health-check-timeout-ms})
-                                 available? (fn scheduler-available? [service-instance health-check-path]
-                                              (scheduler/available? http-client service-instance health-check-path))
-                                 timeout-chan (chime/chime-ch (du/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))
-                                 syncer-state-atom (atom {:service-id->health-check-context {}})]
-                             (scheduler/start-scheduler-syncer
-                               clock timeout-chan service-id->service-description-fn available?
-                               failed-check-threshold scheduler scheduler-state-chan syncer-state-atom)))
+   :scheduler-maintainer (pc/fnk [[:scheduler scheduler start-scheduler-syncer-fn]
+                                  [:settings scheduler-syncer-interval-secs]
+                                  [:state scheduler-state-chan]]
+                           (let [syncer-state-atom (atom {:service-id->health-check-context {}})]
+                             (start-scheduler-syncer-fn
+                               scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
                                    [:routines router-metrics-helpers service-id->idle-timeout]
                                    [:scheduler scheduler]
