@@ -513,7 +513,7 @@
                   :spnego-auth (:spnego-auth http-options false)
                   :url url}
         service-id->failed-instances-transient-store (atom {})
-        syncer-state-atom (atom {:service-id->health-check-context {}})
+        syncer-state-atom (atom {})
         scheduler (create-cook-scheduler config cook-api service-id->failed-instances-transient-store syncer-state-atom)]
     (start-track-failed-instances service-id->failed-instances-transient-store scheduler failed-tracker-interval-ms)
     (start-scheduler-syncer-fn scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)

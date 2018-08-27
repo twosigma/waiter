@@ -654,7 +654,7 @@
          (not (str/blank? work-directory))]}
   (let [id->service-agent (agent {})
         port->reservation-atom (atom {})
-        syncer-state-atom (atom {:service-id->health-check-context {}})]
+        syncer-state-atom (atom {})]
     (->ShellScheduler (-> work-directory
                           io/file
                           (.getCanonicalPath))

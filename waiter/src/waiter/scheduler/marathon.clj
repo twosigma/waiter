@@ -590,7 +590,7 @@
         service-id->out-of-sync-state-store (atom {})
         retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)
         sync-deployment-maintainer-atom (atom nil)
-        syncer-state-atom (atom {:service-id->health-check-context {}})
+        syncer-state-atom (atom {})
         marathon-scheduler (->MarathonScheduler
                              marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store

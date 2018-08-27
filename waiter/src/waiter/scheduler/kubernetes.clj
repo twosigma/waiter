@@ -643,7 +643,7 @@
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description]
                                        (f scheduler service-id service-description replicaset-spec-builder)))
-        syncer-state-atom (atom {:service-id->health-check-context {}})
+        syncer-state-atom (atom {})
         k8s-scheduler (->KubernetesScheduler url
                                              http-client
                                              max-patch-retries

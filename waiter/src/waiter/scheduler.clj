@@ -555,8 +555,7 @@
         state-query-chan (async/chan 32)]
     (async/go
       (try
-        (loop [{:keys [service-id->health-check-context] :as current-state}
-               @syncer-state-atom]
+        (loop [{:keys [service-id->health-check-context] :as current-state} @syncer-state-atom]
           (reset! syncer-state-atom current-state)
           (when-let [next-state
                      (async/alt!
@@ -584,8 +583,9 @@
                                                            failed-check-threshold service-id->health-check-context)]
                                (when scheduler-messages
                                  (async/>! scheduler-state-chan scheduler-messages))
-                               {:last-update-time (clock)
-                                :service-id->health-check-context service-id->health-check-context}))
+                               (assoc current-state
+                                 :last-update-time (clock)
+                                 :service-id->health-check-context service-id->health-check-context)))
                            (catch Throwable th
                              (log/error th "scheduler-syncer unable to receive updates")
                              (counters/inc! (metrics/waiter-counter "state" "scheduler-sync" "errors"))

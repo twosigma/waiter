@@ -242,7 +242,7 @@
                                  :else {:healthy? false
                                         :status 400})))
         start-time-ms (-> (clock) .getMillis)
-        syncer-state-atom (atom {:service-id->health-check-context {}})
+        syncer-state-atom (atom {})
         failed-check-threshold 5
         {:keys [exit-chan query-chan]}
         (start-scheduler-syncer clock timeout-chan service-id->service-description-fn available?
@@ -254,7 +254,7 @@
     (let [response-chan (async/promise-chan)]
       (async/>!! query-chan {:response-chan response-chan :service-id "s0"})
       (is (= {:last-update-time nil} (async/<!! response-chan)))
-      (is (= {:service-id->health-check-context {}} @syncer-state-atom)))
+      (is (= {} @syncer-state-atom)))
     (async/>!! timeout-chan :timeout)
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-services update-apps-msg))

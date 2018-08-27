@@ -606,7 +606,7 @@
        :service-id->failed-instances-transient-store (atom {})
        :service-id->password-fn #(str % ".password")
        :service-id->service-description-fn (constantly {})
-       :syncer-state-atom (atom {:service-id->health-check-context {}})}
+       :syncer-state-atom (atom {})}
       (merge cook-config)
       map->CookScheduler))
 
@@ -832,11 +832,14 @@
 (deftest test-service-id->state
   (let [service-id "service-id"
         cook-scheduler (create-cook-scheduler-helper
-                         :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]}))]
+                         :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]})
+                         :syncer-state-atom (atom {:last-update-time :time
+                                                   :service-id->health-check-context {}}))]
     (is (= {:failed-instances [:failed-instances]
-            :last-update-time nil}
+            :last-update-time :time}
            (scheduler/service-id->state cook-scheduler service-id)))
-    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
+    (is (= {:last-update-time :time
+            :service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
             :service-id->health-check-context {}}
            (scheduler/state cook-scheduler)))))
 
@@ -854,7 +857,7 @@
                         :service-id->service-description-fn (constantly {})}
           cook-api (Object.)
           service-id->failed-instances-transient-store (atom {})
-          syncer-state-atom (atom {:service-id->health-check-context {}})
+          syncer-state-atom (atom {})
           create-cook-scheduler-helper (fn create-cook-scheduler-helper [config]
                                          (create-cook-scheduler config cook-api service-id->failed-instances-transient-store syncer-state-atom))]
 
