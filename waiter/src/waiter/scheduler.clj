@@ -528,6 +528,19 @@
         (log/info (timing-message-fn) "and found no active services")
         {:service-id->health-check-context service-id->health-check-context}))))
 
+(defn retrieve-scheduler-state
+  "Retrieves the scheduler and syncer state either for the entire scheduler or when provided for a specific service."
+  ([scheduler syncer-state-atom]
+    (let [syncer-state @syncer-state-atom
+          scheduler-state (state scheduler)]
+      (merge syncer-state scheduler-state)))
+  ([scheduler syncer-state-atom service-id]
+    (let [{:keys [last-update-time service-id->health-check-context]} @syncer-state-atom
+          scheduler-state (service-id->state scheduler service-id)
+          health-check-context (service-id->health-check-context service-id)]
+      (-> {:last-update-time last-update-time}
+          (merge scheduler-state health-check-context)))))
+
 (defn start-scheduler-syncer
   "Starts loop to query marathon for the app and instance statuses,
   maintains a state consisting of one map with elements of shape:
@@ -544,7 +557,7 @@
         state-query-chan (async/chan 32)]
     (async/go
       (try
-        (loop [{:keys [last-update-time service-id->health-check-context] :as current-state}
+        (loop [{:keys [service-id->health-check-context] :as current-state}
                @syncer-state-atom]
           (reset! syncer-state-atom current-state)
           (when-let [next-state
@@ -557,12 +570,10 @@
 
                        state-query-chan
                        ([{:keys [response-chan service-id]}]
-                         (if service-id
-                           (let [scheduler-state (service-id->state scheduler service-id)
-                                 health-check-context (service-id->health-check-context service-id)]
-                             (async/>! response-chan (-> {:last-update-time last-update-time}
-                                                         (merge scheduler-state health-check-context))))
-                           (async/>! response-chan (merge current-state (state scheduler))))
+                         (->> (if service-id
+                                (retrieve-scheduler-state scheduler syncer-state-atom service-id)
+                                (retrieve-scheduler-state scheduler syncer-state-atom))
+                              (async/>! response-chan))
                          current-state)
 
                        timeout-chan
