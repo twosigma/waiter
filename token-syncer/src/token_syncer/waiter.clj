@@ -211,10 +211,8 @@
                                :method :get
                                :query-params {})
             (update :body async/<!!)))
-      (do
-        (log/info "health-check-token not performed"
-                  {:cluster-url cluster-url
-                   :deleted deleted
-                   :health-check-url health-check-url
-                   :token token})
-        nil))))
+      (log/info "health-check-token not performed"
+                {:cluster-url cluster-url
+                 :deleted deleted
+                 :health-check-url health-check-url
+                 :token token}))))
