@@ -85,14 +85,11 @@
         (is (= 1 @query-state-call-counter))
         (cancel-fn)
         (deliver cancel-triggered :called)
-        (is (= {:call-count 2
-                :cancel-triggered :called}
-               (query-state-fn)))
-        ;; since publisher has been cancelled, we should not have any intervening calls to query state
-        (Thread/sleep (* 2 sync-instances-interval-ms))
-        (is (= {:call-count 3
-                :cancel-triggered :called}
-               (query-state-fn)))))))
+        (Thread/sleep (* 3 sync-instances-interval-ms))
+        (let [current-state (query-state-fn)]
+          ;; since publisher has been cancelled, we should not have any intervening calls to query state
+          (Thread/sleep (* 3 sync-instances-interval-ms))
+          (is (= (update current-state :call-count inc) (query-state-fn))))))))
 
 (deftest test-router-state->metric-group->counts
   (testing "Conversion of scheduler messages to instance counts by metric group"
