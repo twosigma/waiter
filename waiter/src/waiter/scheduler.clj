@@ -31,8 +31,7 @@
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
-  (:import (clojure.lang PersistentQueue)
-           (java.io EOFException)
+  (:import (java.io EOFException)
            (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
            (org.joda.time DateTime)))
@@ -233,7 +232,7 @@
 (defn available?
   "Async go block which returns the status code and success of a health check.
   Returns false if such a connection cannot be established."
-  [{:keys [port] :as service-instance} health-check-path http-client]
+  [http-client {:keys [port] :as service-instance} health-check-path]
   (async/go
     (try
       (if (pos? port)
@@ -437,7 +436,7 @@
 
 (defn- update-scheduler-state
   "Queries marathon, sends data on app and instance statuses to router state maintainer, and returns scheduler state"
-  [scheduler service-id->service-description-fn available? http-client failed-check-threshold service-id->health-check-context]
+  [scheduler service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
   (let [^DateTime request-apps-time (t/now)
         timing-message-fn (fn [] (let [^DateTime now (t/now)]
                                    (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-apps-time)) " ms")))]
@@ -445,8 +444,7 @@
     (if-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "app->available-tasks")
                                           (do-health-checks (request-available-waiter-apps scheduler)
-                                                            (fn available [instance health-check-path]
-                                                              (available? instance health-check-path http-client))
+                                                            available?
                                                             service-id->service-description-fn))]
       (let [available-services (keys service->service-instances)
             available-service-ids (->> available-services (map :id) (set))]
@@ -550,8 +548,8 @@
                 :instance-id->failed-health-check-count {...}}
 
   and sends the data to the router state maintainer."
-  [clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn available? http-client
-   failed-check-threshold syncer-state-atom]
+  [clock timeout-chan service-id->service-description-fn available? failed-check-threshold
+   scheduler scheduler-state-chan syncer-state-atom]
   (log/info "Starting scheduler syncer")
   (let [exit-chan (async/chan 1)
         state-query-chan (async/chan 32)]
@@ -583,7 +581,7 @@
                              (metrics/waiter-timer "state" "scheduler-sync")
                              (let [{:keys [service-id->health-check-context scheduler-messages]}
                                    (update-scheduler-state scheduler service-id->service-description-fn available?
-                                                           http-client failed-check-threshold service-id->health-check-context)]
+                                                           failed-check-threshold service-id->health-check-context)]
                                (when scheduler-messages
                                  (async/>! scheduler-state-chan scheduler-messages))
                                {:last-update-time (clock)

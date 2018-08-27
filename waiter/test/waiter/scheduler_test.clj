@@ -239,7 +239,7 @@
                       {:service-specific-state []})
                     (state [_]
                       {:state []}))
-        available? (fn [{:keys [id]} url _]
+        available? (fn [{:keys [id]} url]
                      (async/go (cond
                                  (and (= "s1.i1" id) (= "/s1" url)) {:healthy? true
                                                                      :status 200}
@@ -247,9 +247,10 @@
                                         :status 400})))
         start-time-ms (-> (clock) .getMillis)
         syncer-state-atom (atom {:service-id->health-check-context {}})
+        failed-check-threshold 5
         {:keys [exit-chan query-chan]}
-        (start-scheduler-syncer clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
-                                available? {} 5 syncer-state-atom)
+        (start-scheduler-syncer clock timeout-chan service-id->service-description-fn available?
+                                failed-check-threshold scheduler scheduler-state-chan syncer-state-atom)
         instance3-unhealthy (assoc instance3
                               :flags #{:has-connected :has-responded}
                               :healthy? false
@@ -474,9 +475,9 @@
 
 (deftest test-available?
   (with-redefs [http/get (fn [_ _] (throw (IllegalArgumentException. "Unable to make request")))]
-    (let [resp (async/<!! (available? {:port 80 :protocol "http" :host "www.example.com"}
-                                      "/health-check"
-                                      (Object.)))]
+    (let [resp (async/<!! (available? (Object.)
+                                      {:port 80 :protocol "http" :host "www.example.com"}
+                                      "/health-check"))]
       (is (= {:healthy? false} resp)))))
 
 (defmacro check-trackers
