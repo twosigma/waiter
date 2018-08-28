@@ -17,6 +17,7 @@
             [slingshot.slingshot :as ss]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
+            [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
@@ -629,11 +630,11 @@
          (not (string/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
          (some? (io/as-url url))
-         (not (nil? scheduler-state-chan))
+         (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
-         (not (nil? service-id->password-fn))
-         (not (nil? service-id->service-description-fn))
-         (not (nil? start-scheduler-syncer-fn))]}
+         (fn? service-id->password-fn)
+         (fn? service-id->service-description-fn)
+         (fn? start-scheduler-syncer-fn)]}
   (let [http-client (http-utils/http-client-factory http-options)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder

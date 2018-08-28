@@ -25,6 +25,7 @@
             [waiter.mesos.mesos :as mesos]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
@@ -503,9 +504,9 @@
   "Creates and starts cook scheduler with associated daemons."
   [{:keys [failed-tracker-interval-ms http-options impersonate mesos-slave-port url
            scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
-  {:pre [(not (nil? scheduler-state-chan))
+  {:pre [(au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
-         (not (nil? start-scheduler-syncer-fn))]}
+         (fn? start-scheduler-syncer-fn)]}
   (let [http-client (http-utils/http-client-factory http-options)
         cook-api {:http-client http-client
                   :impersonate impersonate

@@ -27,6 +27,7 @@
             [schema.core :as s]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import java.io.File
@@ -669,9 +670,9 @@
   "Creates and starts shell scheduler with loops"
   [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
            scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
-  {:pre [(not (nil? scheduler-state-chan))
+  {:pre [(au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
-         (not (nil? start-scheduler-syncer-fn))]}
+         (fn? start-scheduler-syncer-fn)]}
   (let [syncer-state-atom (atom {})
         retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
         {:keys [id->service-agent port->reservation-atom] :as scheduler}
