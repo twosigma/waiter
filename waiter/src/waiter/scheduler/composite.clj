@@ -14,10 +14,13 @@
 ;; limitations under the License.
 ;;
 (ns waiter.scheduler.composite
-  (:require [clojure.tools.logging :as log]
+  (:require [clojure.core.async :as async]
+            [clojure.set :as set]
+            [clojure.tools.logging :as log]
             [plumbing.core :as pc]
             [schema.core :as s]
             [waiter.scheduler :as scheduler]
+            [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils]))
 
 (defn process-invalid-services
@@ -28,21 +31,6 @@
     (log/info "deleting misplaced service" service-id "in" scheduler)
     (scheduler/delete-service scheduler service-id))
   (log/info "deleted" (count service-ids) "misplaced services in" scheduler))
-
-(defn retrieve-service->instances
-  "Retrieves the service->instances for services that are configured to be running on the specified scheduler.
-   If any service is found (e.g. due to default scheduler being changed) which does not belong in the
-   specified scheduler, it is promptly deleted."
-  [scheduler service-id->scheduler]
-  (let [service->instances (scheduler/get-service->instances scheduler)
-        valid-service? #(-> % key :id service-id->scheduler (= scheduler))
-        {valid-service->instances true invalid-service->instances false} (group-by valid-service? service->instances)]
-    (when (seq invalid-service->instances)
-      (->> invalid-service->instances
-           keys
-           (map :id)
-           (process-invalid-services scheduler)))
-    (into {} valid-service->instances)))
 
 (defn retrieve-services
   "Retrieves the services for services that are configured to be running on the specified scheduler.
@@ -58,7 +46,7 @@
            (process-invalid-services scheduler)))
     (into [] valid-services)))
 
-(defrecord CompositeScheduler [service-id->scheduler scheduler-id->scheduler]
+(defrecord CompositeScheduler [service-id->scheduler scheduler-id->scheduler query-aggregator-state-fn]
 
   scheduler/ServiceScheduler
 
@@ -106,7 +94,8 @@
         (scheduler/service-id->state service-id)))
 
   (state [_]
-    (pc/map-vals scheduler/state scheduler-id->scheduler)))
+    {:aggregator (query-aggregator-state-fn)
+     :components (pc/map-vals scheduler/state scheduler-id->scheduler)}))
 
 (defn service-id->scheduler
   "Resolves the scheduler for a given service-id using the scheduler defined in the description.
@@ -132,6 +121,15 @@
   {s/Keyword {(s/required-key :factory-fn) s/Symbol
               s/Keyword s/Any}})
 
+(defn- initialize-component
+  "Initializes a component scheduler with its own scheduler-state-chan.
+   Returns a map containing the scheduler and scheduler-state-chan."
+  [context component-config]
+  (let [component-state-chan (au/latest-chan)
+        component-context (assoc context :scheduler-state-chan component-state-chan)]
+    {:scheduler (invoke-component-factory component-context component-config)
+     :scheduler-state-chan component-state-chan}))
+
 (defn initialize-component-schedulers
   "Initializes individual component schedulers."
   [{:keys [components] :as config}]
@@ -139,16 +137,79 @@
   (s/validate component-schema components)
   (let [context (dissoc config :components)]
     (->> components
-         (pc/map-vals #(invoke-component-factory context %))
+         (pc/map-vals #(initialize-component context %))
          (pc/map-keys name))))
+
+(defn start-scheduler-state-aggregator
+  "Aggregates scheduler messages from multiple schedulers; aggregates them; and forwards it along to the
+   scheduler-state-chan whenever there is a message received on the component scheduler-state-chan."
+  [scheduler-state-chan scheduler-id->scheduler-state-chan]
+  (log/info "starting scheduler state aggregator for schedulers:" (keys scheduler-id->scheduler-state-chan))
+  (let [scheduler-state-chan->scheduler-id (set/map-invert scheduler-id->scheduler-state-chan)
+        scheduler-state-aggregator-atom (atom {})]
+    {:query-state-fn (fn query-state-fn [] @scheduler-state-aggregator-atom)
+     :result-chan
+     (async/go
+       (loop [{:keys [scheduler-id->scheduler-messages scheduler-id->scheduler-state-chan] :as current-state}
+              {:scheduler-id->scheduler-messages (sorted-map)
+               :scheduler-id->scheduler-state-chan scheduler-id->scheduler-state-chan}]
+         (reset! scheduler-state-aggregator-atom current-state)
+         (if-not (seq scheduler-id->scheduler-state-chan)
+           (log/info "exiting scheduler state aggregator as all components scheduler-state-chan have been closed")
+           (let [[scheduler-messages selected-chan] (async/alts! (vals scheduler-id->scheduler-state-chan))
+                 scheduler-id (scheduler-state-chan->scheduler-id selected-chan)
+                 scheduler-chan-closed? (nil? scheduler-messages)]
+             (if scheduler-chan-closed?
+               (log/info scheduler-id "state chan has been closed")
+               (log/info "received" (count scheduler-messages) "scheduler messages from" scheduler-id))
+             (let [scheduler-id->scheduler-messages' (if scheduler-chan-closed?
+                                                       (dissoc scheduler-id->scheduler-messages scheduler-id)
+                                                       (assoc scheduler-id->scheduler-messages scheduler-id scheduler-messages))
+                   scheduler-id->scheduler-state-chan' (cond-> scheduler-id->scheduler-state-chan
+                                                         scheduler-chan-closed? (dissoc scheduler-id))
+                   available-services-messages (->> (vals scheduler-id->scheduler-messages')
+                                                    (mapcat (fn [scheduler-messages]
+                                                              (filter (fn available-services-filter [message]
+                                                                        (= :update-available-services (first message)))
+                                                                      scheduler-messages)))
+                                                    (map second))
+                   _ (when (not= (count scheduler-id->scheduler-messages') (count available-services-messages))
+                       (log/warn "mismatch in expected number of available services messages"
+                                 {:actual (count available-services-messages)
+                                  :expected (count scheduler-id->scheduler-messages')}))
+                   services-message (reduce (fn services-message-reducer
+                                              [{:keys [available-service-ids healthy-service-ids scheduler-sync-time]} message]
+                                              {:available-service-ids (->> message :available-service-ids (into available-service-ids))
+                                               :healthy-service-ids (->> message :healthy-service-ids (into healthy-service-ids))
+                                               :scheduler-sync-time (->> message :scheduler-sync-time (max scheduler-sync-time))})
+                                            {:available-service-ids #{}
+                                             :healthy-service-ids #{}
+                                             :scheduler-sync-time 0}
+                                            available-services-messages)
+                   instances-messages (->> (vals scheduler-id->scheduler-messages')
+                                           (mapcat (fn [scheduler-messages]
+                                                     (filter (fn service-instances-filter [message]
+                                                               (= :update-service-instances (first message)))
+                                                             scheduler-messages)))
+                                           doall)
+                   composite-scheduler-messages (conj instances-messages
+                                                      [:update-available-services services-message])]
+               (log/info "sending" (-> services-message :available-service-ids count) "services along scheduler-state-chan")
+               (async/>! scheduler-state-chan composite-scheduler-messages)
+               (recur (assoc current-state
+                        :scheduler-id->scheduler-messages scheduler-id->scheduler-messages'
+                        :scheduler-id->scheduler-state-chan scheduler-id->scheduler-state-chan')))))))}))
 
 (defn create-composite-scheduler
   "Creates and starts composite scheduler with components using their respective factory functions."
-  [{:keys [service-description-defaults service-id->service-description-fn] :as config}]
-  (let [scheduler-id->scheduler (initialize-component-schedulers config)
+  [{:keys [scheduler-state-chan service-description-defaults service-id->service-description-fn] :as config}]
+  (let [scheduler-id->component (initialize-component-schedulers config)
+        scheduler-id->scheduler (pc/map-vals :scheduler scheduler-id->component)
+        scheduler-id->scheduler-state-chan (pc/map-vals :scheduler-state-chan scheduler-id->component)
         default-scheduler-id (get service-description-defaults "scheduler")
         service-id->scheduler-fn (fn service-id->scheduler-fn [service-id]
                                    (service-id->scheduler
                                      service-id->service-description-fn scheduler-id->scheduler
-                                     default-scheduler-id service-id))]
-    (->CompositeScheduler service-id->scheduler-fn scheduler-id->scheduler)))
+                                     default-scheduler-id service-id))
+        {:keys [query-state-fn]} (start-scheduler-state-aggregator scheduler-state-chan scheduler-id->scheduler-state-chan)]
+    (->CompositeScheduler service-id->scheduler-fn scheduler-id->scheduler query-state-fn)))
