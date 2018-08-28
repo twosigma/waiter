@@ -409,7 +409,7 @@
         response-iterator (.iterator api-server-responses)
         actual (with-redefs [api-request (fn [& _] (.next response-iterator))]
                  (->> dummy-scheduler
-                      scheduler/get-service->instances
+                      get-service->instances
                       sanitize-k8s-service-records))]
     (assert-data-equal expected actual)))
 

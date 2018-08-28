@@ -405,6 +405,12 @@
              first
              replicaset->Service)))
 
+(defn get-service->instances
+  "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records."
+  [scheduler-config]
+  (pc/map-from-keys #(instances-breakdown! scheduler-config %)
+                    (get-services scheduler-config)))
+
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
                                 http-client
@@ -419,12 +425,6 @@
                                 service-id->failed-instances-transient-store
                                 service-id->password-fn
                                 service-id->service-description-fn]
-  scheduler/PollableServiceScheduler
-
-  (get-service->instances [this]
-    (pc/map-from-keys #(instances-breakdown! this %)
-                      (get-services this)))
-
   scheduler/ServiceScheduler
 
   (get-services [this]
@@ -644,22 +644,26 @@
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description]
                                        (f scheduler service-id service-description replicaset-spec-builder)))
-        syncer-state-atom (atom {})
-        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
-        scheduler (->KubernetesScheduler url
-                                         http-client
-                                         max-patch-retries
-                                         max-name-length
-                                         orchestrator-name
-                                         pod-base-port
-                                         pod-suffix-length
-                                         replicaset-api-version
-                                         replicaset-spec-builder-fn
-                                         retrieve-syncer-state-fn
-                                         service-id->failed-instances-transient-store
-                                         service-id->password-fn
-                                         service-id->service-description-fn)]
+        scheduler-config {:api-server-url url
+                          :http-client http-client
+                          :orchestrator-name orchestrator-name
+                          :replicaset-api-version replicaset-api-version
+                          :service-id->failed-instances-transient-store service-id->failed-instances-transient-store}
+        get-service->instances-fn #(get-service->instances scheduler-config)
+        {:keys [retrieve-syncer-state-fn]}
+        (start-scheduler-syncer-fn get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)]
     (when authentication
       (start-auth-renewer authentication))
-    (start-scheduler-syncer-fn scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
-    scheduler))
+    (->KubernetesScheduler url
+                           http-client
+                           max-patch-retries
+                           max-name-length
+                           orchestrator-name
+                           pod-base-port
+                           pod-suffix-length
+                           replicaset-api-version
+                           replicaset-spec-builder-fn
+                           retrieve-syncer-state-fn
+                           service-id->failed-instances-transient-store
+                           service-id->password-fn
+                           service-id->service-description-fn)))

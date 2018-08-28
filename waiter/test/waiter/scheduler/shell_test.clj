@@ -53,7 +53,8 @@
   "Gets the task-stats for the first service in the given scheduler"
   [scheduler]
   (-> scheduler
-      scheduler/get-service->instances
+      :id->service-agent
+      get-service->instances
       keys
       first
       :task-stats))
@@ -164,10 +165,12 @@
       (with-redefs [type (fn [_] (throw (ex-info "ERROR!" {})))]
         (is (nil? (pid (:process (launch-process "foo" (work-dir) "ls" {})))))))))
 
-(def ^:private common-scheduler-config
+(defn common-scheduler-config
+  []
   {:failed-instance-retry-interval-ms 500
    :health-check-interval-ms 500
    :health-check-timeout-ms 1
+   :id->service-agent (agent {})
    :port-grace-period-ms 1
    :port-range [10000 11000]
    :retrieve-syncer-state-fn (fn default-retrieve-syncer-state-fn
@@ -178,7 +181,7 @@
 
 (deftest test-shell-scheduler
   (testing "Creating a new ShellScheduler"
-    (let [valid-config common-scheduler-config]
+    (let [valid-config (common-scheduler-config)]
 
       (testing "should work with valid configuration"
         (is (instance? ShellScheduler (create-shell-scheduler valid-config))))
@@ -213,7 +216,7 @@
                @port->reservation-atom))))))
 
 (deftest test-create-service-if-new
-  (let [scheduler (create-shell-scheduler common-scheduler-config)]
+  (let [scheduler (create-shell-scheduler (common-scheduler-config))]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))
     (is (= {:success false, :result :already-exists, :message "foo already exists!"}
@@ -222,7 +225,7 @@
            (scheduler/delete-service scheduler "foo")))))
 
 (deftest test-delete-service
-  (let [scheduler (create-shell-scheduler common-scheduler-config)]
+  (let [scheduler (create-shell-scheduler (common-scheduler-config))]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))
     (ensure-agent-finished scheduler)
@@ -233,7 +236,7 @@
     (is (not (scheduler/service-exists? scheduler "foo")))))
 
 (deftest test-scale-service
-  (let [scheduler-config common-scheduler-config
+  (let [scheduler-config (common-scheduler-config)
         scheduler (create-shell-scheduler scheduler-config)]
     ;; Bogus service
     (is (= {:success false, :result :no-such-service-exists, :message "bar does not exist!"}
@@ -271,7 +274,7 @@
              (task-stats scheduler))))))
 
 (deftest test-kill-instance
-  (let [scheduler (create-shell-scheduler common-scheduler-config)]
+  (let [scheduler (create-shell-scheduler (common-scheduler-config))]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo")))
     (ensure-agent-finished scheduler)
@@ -308,7 +311,7 @@
                    (vals @port-reservation-atom)))))))))
 
 (deftest test-health-check-instances
-  (let [scheduler-config common-scheduler-config
+  (let [scheduler-config (common-scheduler-config)
         scheduler (create-shell-scheduler scheduler-config)
         health-check-count-atom (atom 0)]
     (is (= {:success true, :result :created, :message "Created foo"}
@@ -333,7 +336,7 @@
       (is (= 1 @health-check-count-atom)))))
 
 (deftest test-should-update-task-stats-in-service
-  (let [scheduler-config common-scheduler-config
+  (let [scheduler-config (common-scheduler-config)
         scheduler (create-shell-scheduler scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
@@ -349,7 +352,7 @@
            (scheduler/delete-service scheduler "foo")))))
 
 (deftest test-get-services
-  (let [scheduler-config common-scheduler-config
+  (let [scheduler-config (common-scheduler-config)
         scheduler (create-shell-scheduler scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo" {"cmd" "sleep 10000"})))
@@ -428,7 +431,7 @@
            (scheduler/delete-service scheduler "baz")))))
 
 (deftest test-service-id->state
-  (let [scheduler (create-shell-scheduler common-scheduler-config)
+  (let [scheduler (create-shell-scheduler (common-scheduler-config))
         instance-id "bar"
         fake-pid 1234
         started-at (t/now)
@@ -515,7 +518,7 @@
             (is (= "Unable to reserve 20 ports" (.getMessage ex)))))))))
 
 (deftest test-retry-failed-instances
-  (let [scheduler-config common-scheduler-config
+  (let [scheduler-config (common-scheduler-config)
         scheduler (create-shell-scheduler scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo" {"cmd" "exit 1" "mem" 0.1})))
@@ -534,7 +537,7 @@
            (scheduler/delete-service scheduler "foo")))))
 
 (deftest test-enforce-grace-period
-  (let [scheduler-config common-scheduler-config
+  (let [scheduler-config (common-scheduler-config)
         scheduler (create-shell-scheduler scheduler-config)]
     (is (= {:success true, :result :created, :message "Created foo"}
            (create-test-service scheduler "foo" {"cmd" "sleep 10000" "grace-period-secs" 0})))

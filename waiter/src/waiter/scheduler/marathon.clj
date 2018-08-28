@@ -317,20 +317,21 @@
             (conflict-handler-basic error-data)))]
     (start-new-service marathon-api service-id marathon-descriptor conflict-handler-retry)))
 
+(defn get-service->instances
+  "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records."
+  [marathon-api mesos-api is-waiter-app?-fn retrieve-framework-id-fn service-id->failed-instances-transient-store
+   service-id->service-description]
+  (let [apps (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})]
+    (response-data->service->service-instances
+      apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
+      service-id->service-description)))
+
 (defrecord MarathonScheduler [marathon-api mesos-api retrieve-framework-id-fn
                               home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store service-id->out-of-sync-state-store
                               service-id->password-fn service-id->service-description
                               force-kill-after-ms is-waiter-app?-fn sync-deployment-maintainer-atom
                               retrieve-syncer-state-fn]
-
-  scheduler/PollableServiceScheduler
-
-  (get-service->instances [_]
-    (let [apps (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})]
-      (response-data->service->service-instances
-        apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
-        service-id->service-description)))
 
   scheduler/ServiceScheduler
 
@@ -590,8 +591,11 @@
         service-id->out-of-sync-state-store (atom {})
         retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)
         sync-deployment-maintainer-atom (atom nil)
-        syncer-state-atom (atom {})
-        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
+        get-service->instances-fn
+        #(get-service->instances marathon-api mesos-api is-waiter-app?-fn retrieve-framework-id-fn
+                                 service-id->failed-instances-transient-store service-id->service-description-fn)
+        {:keys [retrieve-syncer-state-fn]}
+        (start-scheduler-syncer-fn get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
         marathon-scheduler (->MarathonScheduler
                              marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store
@@ -601,5 +605,4 @@
         sync-deployment-maintainer (start-sync-deployment-maintainer
                                      leader?-fn service-id->out-of-sync-state-store marathon-scheduler sync-deployment)]
     (reset! sync-deployment-maintainer-atom sync-deployment-maintainer)
-    (start-scheduler-syncer-fn marathon-scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
     marathon-scheduler))

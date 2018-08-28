@@ -229,12 +229,11 @@
         instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
-        scheduler (reify PollableServiceScheduler
-                    (get-service->instances [_]
-                      {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
-                                                  :failed-instances []}
-                       (->Service "s2" {} {} {}) {:active-instances []
-                                                  :failed-instances []}}))
+        get-service->instances (constantly
+                                 {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
+                                                             :failed-instances []}
+                                  (->Service "s2" {} {} {}) {:active-instances []
+                                                             :failed-instances []}})
         available? (fn [{:keys [id]} url]
                      (async/go (cond
                                  (and (= "s1.i1" id) (= "/s1" url)) {:healthy? true
@@ -242,11 +241,10 @@
                                  :else {:healthy? false
                                         :status 400})))
         start-time-ms (-> (clock) .getMillis)
-        syncer-state-atom (atom {})
         failed-check-threshold 5
-        {:keys [exit-chan query-chan]}
+        {:keys [exit-chan query-chan retrieve-syncer-state-fn]}
         (start-scheduler-syncer clock timeout-chan service-id->service-description-fn available?
-                                failed-check-threshold scheduler scheduler-state-chan syncer-state-atom)
+                                failed-check-threshold get-service->instances scheduler-state-chan)
         instance3-unhealthy (assoc instance3
                               :flags #{:has-connected :has-responded}
                               :healthy? false
@@ -254,7 +252,7 @@
     (let [response-chan (async/promise-chan)]
       (async/>!! query-chan {:response-chan response-chan :service-id "s0"})
       (is (= {:last-update-time nil} (async/<!! response-chan)))
-      (is (= {} @syncer-state-atom)))
+      (is (= {} (retrieve-syncer-state-fn))))
     (async/>!! timeout-chan :timeout)
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-services update-apps-msg))
@@ -284,7 +282,7 @@
               "s2" {:instance-id->failed-health-check-count {}
                     :instance-id->tracked-failed-instance {}
                     :instance-id->unhealthy-instance {}}}
-             (:service-id->health-check-context @syncer-state-atom))))
+             (:service-id->health-check-context (retrieve-syncer-state-fn)))))
     ;; Retrieves scheduler state with service-id
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan :service-id "s1"})

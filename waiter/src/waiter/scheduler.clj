@@ -121,16 +121,6 @@
   (state [this]
     "Returns the global (i.e. non-service-specific) state the scheduler is maintaining"))
 
-(defprotocol PollableServiceScheduler
-  "This protocol allows schedulers to support polling the underlying scheduler for the global state
-   of running services."
-
-  (get-service->instances [this]
-    "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records.
-     The nested map has the following keys: :active-instances and :failed-instances.
-     The active-instances should not be assumed to be healthy (or live).
-     The failed-instances are guaranteed to be dead."))
-
 (defn retry-on-transient-server-exceptions-fn
   "Helper function for `retry-on-transient-server-exceptions`.
    Calls the body which we assume includes calls to marathon.
@@ -369,12 +359,12 @@
 
 (defn- request-available-waiter-apps
   "Queries the scheduler and builds a list of available Waiter apps."
-  [scheduler]
+  [get-service->instances-fn]
   (when-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "get-services")
                                           (retry-on-transient-server-exceptions
                                             "request-available-waiter-apps"
-                                            (get-service->instances scheduler)))]
+                                            (get-service->instances-fn)))]
     (log/trace "request-available-waiter-apps:apps" (keys service->service-instances))
     service->service-instances))
 
@@ -440,28 +430,26 @@
 
 (defn- update-scheduler-state
   "Queries marathon, sends data on app and instance statuses to router state maintainer, and returns scheduler state"
-  [scheduler service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
+  [get-service->instances-fn service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
   (let [^DateTime request-apps-time (t/now)
         timing-message-fn (fn [] (let [^DateTime now (t/now)]
                                    (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-apps-time)) " ms")))]
-    (log/trace "scheduler-syncer: querying" (scheduler->name scheduler) "scheduler")
+    (log/trace "scheduler-syncer: querying for available waiter services")
     (if-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "core" "scheduler" "app->available-tasks")
-                                          (do-health-checks (request-available-waiter-apps scheduler)
+                                          (do-health-checks (request-available-waiter-apps get-service->instances-fn)
                                                             available?
                                                             service-id->service-description-fn))]
       (let [available-services (keys service->service-instances)
             available-service-ids (->> available-services (map :id) (set))]
-        (log/debug "scheduler-syncer:" (scheduler->name scheduler) "scheduler has" (count service->service-instances)
-                   "available services:" available-service-ids)
+        (log/debug "scheduler-syncer: found" (count service->service-instances) "available services:" available-service-ids)
         (doseq [service available-services]
           (when (->> (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])
                      vals
                      (filter number?)
                      (reduce + 0)
                      zero?)
-            (log/info "scheduler-syncer:" (:id service) "in" (scheduler->name scheduler) "scheduler"
-                      "has no live instances!" (:task-stats service))))
+            (log/info "scheduler-syncer:" (:id service) "has no live instances!" (:task-stats service))))
         (loop [service-id->health-check-context' {}
                healthy-service-ids #{}
                scheduler-messages []
@@ -547,12 +535,19 @@
                 :instance-id->tracked-failed-instance   {...}
                 :instance-id->failed-health-check-count {...}}
 
-  and sends the data to the router state maintainer."
+  and sends the data to the router state maintainer.
+
+  get-service->instances-fn is a function that returns
+  a map of scheduler/Service records -> map of scheduler/ServiceInstance records.
+  The nested map has the following keys: :active-instances and :failed-instances.
+  The active-instances should not be assumed to be healthy (or live).
+  The failed-instances are guaranteed to be dead.\""
   [clock timeout-chan service-id->service-description-fn available? failed-check-threshold
-   scheduler scheduler-state-chan syncer-state-atom]
+   get-service->instances-fn scheduler-state-chan]
   (log/info "Starting scheduler syncer")
   (let [exit-chan (async/chan 1)
-        state-query-chan (async/chan 32)]
+        state-query-chan (async/chan 32)
+        syncer-state-atom (atom {})]
     (async/go
       (try
         (loop [{:keys [service-id->health-check-context] :as current-state} @syncer-state-atom]
@@ -579,7 +574,7 @@
                            (timers/start-stop-time!
                              (metrics/waiter-timer "state" "scheduler-sync")
                              (let [{:keys [service-id->health-check-context scheduler-messages]}
-                                   (update-scheduler-state scheduler service-id->service-description-fn available?
+                                   (update-scheduler-state get-service->instances-fn service-id->service-description-fn available?
                                                            failed-check-threshold service-id->health-check-context)]
                                (when scheduler-messages
                                  (async/>! scheduler-state-chan scheduler-messages))
@@ -597,7 +592,8 @@
           (log/error e "fatal error in scheduler-syncer")
           (System/exit 1))))
     {:exit-chan exit-chan
-     :query-chan state-query-chan}))
+     :query-chan state-query-chan
+     :retrieve-syncer-state-fn (partial retrieve-syncer-state syncer-state-atom)}))
 
 ;;
 ;; Support for tracking killed instances

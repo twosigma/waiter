@@ -320,29 +320,29 @@
           (reset! last-start-time-atom end-time)))
       :delay-ms failed-tracker-interval-ms)))
 
+(defn get-service->instances
+  "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records."
+  [cook-api allowed-users search-interval service-id->failed-instances-transient-store]
+  (let [all-jobs (mapcat #(get-jobs cook-api % ["running" "waiting"] :search-interval search-interval)
+                         allowed-users)
+        service-id->jobs (group-by #(-> % :labels :service-id) all-jobs)]
+    (->> (keys service-id->jobs)
+         (reduce
+           (fn [service->instance-distribution service-id]
+             (let [jobs (service-id->jobs service-id)]
+               (assoc!
+                 service->instance-distribution
+                 (jobs->service jobs)
+                 {:active-instances (map job->service-instance jobs)
+                  :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})))
+           (transient {}))
+         (persistent!))))
+
 ;; Scheduler Interface and Factory Methods
 
 (defrecord CookScheduler [service-id->password-fn service-id->service-description-fn
                           cook-api allowed-priorities allowed-users backend-port home-path-prefix
                           search-interval service-id->failed-instances-transient-store retrieve-syncer-state-fn]
-
-  scheduler/PollableServiceScheduler
-
-  (get-service->instances [_]
-    (let [all-jobs (mapcat #(get-jobs cook-api % ["running" "waiting"] :search-interval search-interval)
-                           allowed-users)
-          service-id->jobs (group-by #(-> % :labels :service-id) all-jobs)]
-      (->> (keys service-id->jobs)
-           (reduce
-             (fn [service->instance-distribution service-id]
-               (let [jobs (service-id->jobs service-id)]
-                 (assoc!
-                   service->instance-distribution
-                   (jobs->service jobs)
-                   {:active-instances (map job->service-instance jobs)
-                    :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})))
-             (transient {}))
-           (persistent!))))
 
   scheduler/ServiceScheduler
 
@@ -502,9 +502,11 @@
 
 (defn cook-scheduler
   "Creates and starts cook scheduler with associated daemons."
-  [{:keys [failed-tracker-interval-ms http-options impersonate mesos-slave-port url
+  [{:keys [allowed-users failed-tracker-interval-ms http-options impersonate mesos-slave-port search-interval-days url
            scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
-  {:pre [(au/chan? scheduler-state-chan)
+  {:pre [(seq allowed-users)
+         (pos? search-interval-days)
+         (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
          (fn? start-scheduler-syncer-fn)]}
   (let [http-client (http-utils/http-client-factory http-options)
@@ -513,10 +515,12 @@
                   :slave-port mesos-slave-port
                   :spnego-auth (:spnego-auth http-options false)
                   :url url}
+        search-interval (t/days search-interval-days)
         service-id->failed-instances-transient-store (atom {})
-        syncer-state-atom (atom {})
-        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
+        get-service->instances-fn
+        #(get-service->instances cook-api allowed-users search-interval service-id->failed-instances-transient-store)
+        {:keys [retrieve-syncer-state-fn]}
+        (start-scheduler-syncer-fn get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
         scheduler (create-cook-scheduler config cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn)]
     (start-track-failed-instances service-id->failed-instances-transient-store scheduler failed-tracker-interval-ms)
-    (start-scheduler-syncer-fn scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
     scheduler))

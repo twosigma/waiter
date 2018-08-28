@@ -524,6 +524,16 @@
              (assoc :url (str (.toURL file)))))
          directory-content)))
 
+(defn get-service->instances
+  "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records."
+  [id->service-agent]
+  (let [id->service @id->service-agent]
+    (into {} (map (fn [[_ service-entry]]
+                    (service-entry->instances service-entry))
+                  id->service))))
+
+
+
 ; The ShellScheduler's shell-agent holds all of the state about which
 ; services and instances are running (and killed). It is a map of:
 ;
@@ -541,14 +551,6 @@
 ;
 (defrecord ShellScheduler [work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
                            retrieve-syncer-state-fn service-id->password-fn]
-
-  scheduler/PollableServiceScheduler
-
-  (get-service->instances [_]
-    (let [id->service @id->service-agent]
-      (into {} (map (fn [[_ service-entry]]
-                      (service-entry->instances service-entry))
-                    id->service))))
 
   scheduler/ServiceScheduler
 
@@ -641,9 +643,10 @@
 (s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the
   configuration against shell-scheduler-schema and throws if it's not valid."
-  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms
-           port-range work-directory
+  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms
+           port-grace-period-ms port-range work-directory
            ;; functions provided in the context
+           id->service-agent
            retrieve-syncer-state-fn
            service-id->password-fn]}]
   {:pre [(utils/pos-int? failed-instance-retry-interval-ms)
@@ -654,8 +657,7 @@
               (= 2 (count port-range))
               (<= (first port-range) (second port-range)))
          (not (str/blank? work-directory))]}
-  (let [id->service-agent (agent {})
-        port->reservation-atom (atom {})]
+  (let [port->reservation-atom (atom {})]
     (->ShellScheduler (-> work-directory
                           io/file
                           (.getCanonicalPath))
@@ -673,13 +675,16 @@
   {:pre [(au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
          (fn? start-scheduler-syncer-fn)]}
-  (let [syncer-state-atom (atom {})
-        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
+  (let [id->service-agent (agent {})
+        get-service->instances-fn #(get-service->instances id->service-agent)
+        {:keys [retrieve-syncer-state-fn]}
+        (start-scheduler-syncer-fn get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
         {:keys [id->service-agent port->reservation-atom] :as scheduler}
-        (create-shell-scheduler (assoc config :retrieve-syncer-state-fn retrieve-syncer-state-fn))
+        (create-shell-scheduler (assoc config
+                                  :id->service-agent id->service-agent
+                                  :retrieve-syncer-state-fn retrieve-syncer-state-fn))
         http-client (http/client {:connect-timeout health-check-timeout-ms
                                   :idle-timeout health-check-timeout-ms})]
     (start-updating-health id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)
     (start-retry-failed-instances id->service-agent port->reservation-atom port-range failed-instance-retry-interval-ms)
-    (start-scheduler-syncer-fn scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs)
     scheduler))

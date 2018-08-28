@@ -651,13 +651,13 @@
                                       available? (fn scheduler-available? [service-instance health-check-path]
                                                    (scheduler/available? http-client service-instance health-check-path))]
                                   (fn start-scheduler-syncer-fn
-                                    [scheduler scheduler-state-chan syncer-state-atom scheduler-syncer-interval-secs]
+                                    [get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
                                     (let [timeout-chan (->> (t/seconds scheduler-syncer-interval-secs)
                                                             (du/time-seq (t/now))
                                                             chime/chime-ch)]
                                       (scheduler/start-scheduler-syncer
                                         clock timeout-chan service-id->service-description-fn* available?
-                                        failed-check-threshold scheduler scheduler-state-chan syncer-state-atom)))))})
+                                        failed-check-threshold get-service->instances-fn scheduler-state-chan)))))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
