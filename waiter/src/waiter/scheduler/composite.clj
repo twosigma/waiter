@@ -101,9 +101,10 @@
 
 (defn service-id->scheduler
   "Resolves the scheduler for a given service-id using the scheduler defined in the description."
-  [service-id->service-description-fn scheduler-id->scheduler service-id]
+  [service-id->service-description-fn scheduler-id->scheduler default-scheduler service-id]
   (let [service-description (service-id->service-description-fn service-id)
-        scheduler-id (get service-description "scheduler")]
+        default-scheduler-id (when default-scheduler (name default-scheduler))
+        scheduler-id (get service-description "scheduler" default-scheduler-id)]
     (if-let [scheduler (scheduler-id->scheduler scheduler-id)]
       scheduler
       (throw (ex-info "No matching scheduler found!"
@@ -133,8 +134,10 @@
 
 (defn initialize-component-schedulers
   "Initializes individual component schedulers."
-  [{:keys [components] :as config}]
-  {:pre [(seq components)]}
+  [{:keys [components default-scheduler] :as config}]
+  {:pre [(seq components)
+         (or (nil? default-scheduler)
+             (contains? components default-scheduler))]}
   (s/validate component-schema components)
   (let [context (dissoc config :components)]
     (->> components
@@ -215,12 +218,12 @@
 
 (defn create-composite-scheduler
   "Creates and starts composite scheduler with components using their respective factory functions."
-  [{:keys [scheduler-state-chan service-id->service-description-fn] :as config}]
+  [{:keys [default-scheduler scheduler-state-chan service-id->service-description-fn] :as config}]
   (let [scheduler-id->component (initialize-component-schedulers config)
         scheduler-id->scheduler (pc/map-vals :scheduler scheduler-id->component)
         scheduler-id->state-chan (pc/map-vals :scheduler-state-chan scheduler-id->component)
         service-id->scheduler-fn (fn service-id->scheduler-fn [service-id]
                                    (service-id->scheduler
-                                     service-id->service-description-fn scheduler-id->scheduler service-id))
+                                     service-id->service-description-fn scheduler-id->scheduler default-scheduler service-id))
         {:keys [query-state-fn]} (start-scheduler-state-aggregator scheduler-state-chan scheduler-id->state-chan)]
     (->CompositeScheduler service-id->scheduler-fn scheduler-id->scheduler query-state-fn)))

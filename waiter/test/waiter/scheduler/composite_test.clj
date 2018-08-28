@@ -81,12 +81,18 @@
 
 (deftest test-service-id->scheduler
   (let [service-id->service-description-fn {"bar" {"scheduler" "lorem"}
+                                            "baz" {"name" "no-scheduler"}
                                             "foo" {"scheduler" "ipsum"}}
-        scheduler-id->scheduler {"lorem" "lorem-scheduler"}]
+        scheduler-id->scheduler {"lorem" "lorem-scheduler"}
+        default-scheduler :lorem]
 
-    (is (= "lorem-scheduler" (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler "bar")))
-    (is (thrown-with-msg? ExceptionInfo #"No matching scheduler found!"
-                          (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler "foo")))))
+    (is (= "lorem-scheduler"
+           (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler default-scheduler "bar")))
+    (is (= "lorem-scheduler"
+           (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler default-scheduler "baz")))
+    (is (thrown-with-msg?
+          ExceptionInfo #"No matching scheduler found!"
+          (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler default-scheduler "foo")))))
 
 (defn create-test-scheduler
   [{:keys [scheduler-id service-ids service-id->service-description-fn service-id->password-fn]}]
@@ -102,6 +108,7 @@
                             :scheduler-id "scheduler-ipsum"
                             :service-ids #{"s2-a" "s2-b" "s2-c" "s2-d" "s2-e"}}}
         config {:components components
+                :default-scheduler :ipsum
                 :service-id->password-fn (fn [service-id] (str service-id ".password"))
                 :service-id->service-description-fn (fn [service-id] {"name" service-id})}
         actual (initialize-component-schedulers config)]

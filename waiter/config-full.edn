@@ -252,7 +252,12 @@
                                              :kubernetes {;; a factory function must be provided
                                                           ;; see the :kubernetes entry for other configuration options
                                                           :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler
-                                                          :todo :additional-config}}}
+                                                          :todo :additional-config}}
+
+                                ;; The scheduler to use by default if the service does not specify one explicitly.
+                                ;; This is an optional config and can be nil. When provided it must match one of
+                                ;; the component schedulers that have been configured.
+                                :default-scheduler :marathon}
 
                     ;; :kind :cook uses Cook (https://github.com/twosigma/Cook) for scheduling instances:
                     ;; support for the cook scheduler is experimental and the config is subject to changes.
@@ -524,8 +529,7 @@
                                 "restart-backoff-factor" 2
                                 "scale-down-factor" 0.001
                                 "scale-factor" 1
-                                "scale-up-factor" 0.1
-                                "scheduler" "default"}
+                                "scale-up-factor" 0.1}
 
  ; ---------- Timeouts ----------
 

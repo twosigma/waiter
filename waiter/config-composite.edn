@@ -40,10 +40,8 @@
                                                          :health-check-timeout-ms 200
                                                          :port-grace-period-ms 120000
                                                          :port-range [10000 10299]
-                                                         :work-directory "scheduler/shell-low"}}}}
-
- ;; The default scheduler should match one of the components in the composite scheduler
- :service-description-defaults {"scheduler" "shell-high"}
+                                                         :work-directory "scheduler/shell-low"}}
+                                :default-scheduler :shell-high}}
 
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all}

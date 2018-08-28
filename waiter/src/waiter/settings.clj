@@ -129,8 +129,7 @@
                                                    (s/required-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
                                                    (s/required-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "scale-up-factor") schema/positive-fraction-less-than-1
-                                                   (s/required-key "scale-down-factor") schema/positive-fraction-less-than-1
-                                                   (s/required-key "scheduler") schema/non-empty-string}
+                                                   (s/required-key "scale-down-factor") schema/positive-fraction-less-than-1}
    (s/required-key :statsd) (s/either (s/eq :disabled)
                                       {(s/required-key :cluster) schema/non-empty-string
                                        (s/required-key :environment) schema/non-empty-string
@@ -352,8 +351,7 @@
                                   "restart-backoff-factor" 2
                                   "scale-down-factor" 0.001
                                   "scale-factor" 1
-                                  "scale-up-factor" 0.1
-                                  "scheduler" "default"}
+                                  "scale-up-factor" 0.1}
    :statsd :disabled
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
