@@ -48,9 +48,6 @@
 
   scheduler/ServiceScheduler
 
-  (get-service->instances [_]
-    (compute-service->instances service-ids))
-
   (get-services [_]
     (map compute-service service-ids))
 
@@ -114,10 +111,6 @@
           (is (nil? (service-id->scheduler-id "foo")))
           (is (= (-> scheduler-config :service-description-defaults (get "scheduler"))
                  (-> "foo" service-id->scheduler :scheduler-id))))))
-
-    (testing "get-service->instances"
-      (is (= (compute-service->instances all-service-ids)
-             (scheduler/get-service->instances composite-scheduler))))
 
     (testing "get-services"
       (is (= (map compute-service all-service-ids)

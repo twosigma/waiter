@@ -62,12 +62,6 @@
 
   scheduler/ServiceScheduler
 
-  (get-service->instances [_]
-    (->> (vals scheduler-id->scheduler)
-         (pmap #(retrieve-service->instances % service-id->scheduler))
-         doall
-         (reduce into {})))
-
   (get-services [_]
     (->> (vals scheduler-id->scheduler)
          (pmap #(retrieve-services % service-id->scheduler))
