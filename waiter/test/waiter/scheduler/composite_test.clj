@@ -14,12 +14,15 @@
 ;; limitations under the License.
 ;;
 (ns waiter.scheduler.composite-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clj-time.coerce :as tc]
+            [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [plumbing.core :as pc]
             [waiter.scheduler :as scheduler]
-            [waiter.scheduler.composite :refer :all]))
+            [waiter.scheduler.composite :refer :all])
+  (:import [clojure.lang ExceptionInfo]))
 
 (deftest test-process-invalid-services
   (let [delete-service-atom (atom [])
@@ -76,6 +79,15 @@
   (state [_]
     {:operation :scheduler-state :scheduler-id scheduler-id}))
 
+(deftest test-service-id->scheduler
+  (let [service-id->service-description-fn {"bar" {"scheduler" "lorem"}
+                                            "foo" {"scheduler" "ipsum"}}
+        scheduler-id->scheduler {"lorem" "lorem-scheduler"}]
+
+    (is (= "lorem-scheduler" (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler "bar")))
+    (is (thrown-with-msg? ExceptionInfo #"No matching scheduler found!"
+                          (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler "foo")))))
+
 (defn create-test-scheduler
   [{:keys [scheduler-id service-ids service-id->service-description-fn service-id->password-fn]}]
   (is service-id->service-description-fn)
@@ -83,10 +95,10 @@
   (->TestScheduler scheduler-id service-ids))
 
 (deftest test-initialize-component-schedulers
-  (let [components {:lorem {:factory-fn 'create-test-scheduler
+  (let [components {:lorem {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
                             :scheduler-id "scheduler-lorem"
                             :service-ids #{"s1-a" "s1-b" "s1-c"}}
-                    :ipsum {:factory-fn 'create-test-scheduler
+                    :ipsum {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
                             :scheduler-id "scheduler-ipsum"
                             :service-ids #{"s2-a" "s2-b" "s2-c" "s2-d" "s2-e"}}}
         config {:components components
@@ -102,130 +114,142 @@
                 (pc/map-vals #(select-keys % [:scheduler-id :service-ids])))))))
 
 (deftest test-start-scheduler-state-aggregator
-  (let [scheduler-state-chan (async/chan 10)
-        fee-scheduler-state-chan (async/chan)
-        fie-scheduler-state-chan (async/chan)
-        foe-scheduler-state-chan (async/chan)
-        scheduler-id->scheduler-state-chan {"fee" fee-scheduler-state-chan
-                                            "fie" fie-scheduler-state-chan
-                                            "foe" foe-scheduler-state-chan}
-        {:keys [query-state-fn result-chan]} (start-scheduler-state-aggregator scheduler-state-chan scheduler-id->scheduler-state-chan)]
-    (let [fee-available-1 {:available-service-ids #{"fee-s1" "fee-s2"} :healthy-service-ids #{"fee-s2"} :scheduler-sync-time 10000}
-          fie-available-1 {:available-service-ids #{"fie-s1" "fie-s2"} :healthy-service-ids #{"fie-s2"} :scheduler-sync-time 11000}
-          fee-available-2 {:available-service-ids #{"fee-s2"} :healthy-service-ids #{"fee-s2"} :scheduler-sync-time 12000}
-          foe-available-1 {:available-service-ids #{"foe-s1"} :healthy-service-ids #{"foe-s1"} :scheduler-sync-time 13000}]
+  (with-redefs [t/now (constantly (tc/from-long 8000))]
+    (let [scheduler-state-chan (async/chan 10)
+          fee-scheduler-state-chan (async/chan)
+          fie-scheduler-state-chan (async/chan)
+          foe-scheduler-state-chan (async/chan)
+          scheduler-id->state-chan {"fee" fee-scheduler-state-chan
+                                    "fie" fie-scheduler-state-chan
+                                    "foe" foe-scheduler-state-chan}
+          {:keys [query-state-fn result-chan]} (start-scheduler-state-aggregator scheduler-state-chan scheduler-id->state-chan)]
+      (let [fee-available-1 {:available-service-ids #{"fee-s1" "fee-s2"} :healthy-service-ids #{"fee-s2"} :scheduler-sync-time (tc/from-long 10000)}
+            fie-available-1 {:available-service-ids #{"fie-s1" "fie-s2"} :healthy-service-ids #{"fie-s2"} :scheduler-sync-time (tc/from-long 11000)}
+            fee-available-2 {:available-service-ids #{"fee-s2"} :healthy-service-ids #{"fee-s2"} :scheduler-sync-time (tc/from-long 12000)}
+            foe-available-1 {:available-service-ids #{"foe-s1"} :healthy-service-ids #{"foe-s1"} :scheduler-sync-time (tc/from-long 13000)}]
 
-      (testing "first message from scheduler"
-        (async/>!! fee-scheduler-state-chan [[:update-available-services fee-available-1]
-                                             [:update-service-instances "fee-s1"]
-                                             [:update-service-instances "fee-s2"]])
-        (is (= [[:update-available-services fee-available-1]
-                [:update-service-instances "fee-s1"]
-                [:update-service-instances "fee-s2"]]
-               (async/<!! scheduler-state-chan)))
-        (is (= {:scheduler-id->scheduler-messages {"fee" [[:update-available-services fee-available-1]
-                                                          [:update-service-instances "fee-s1"]
-                                                          [:update-service-instances "fee-s2"]]}
-                :scheduler-id->scheduler-state-chan scheduler-id->scheduler-state-chan}
-               (query-state-fn))))
+        (testing "first message from scheduler"
+          (async/>!! fee-scheduler-state-chan [[:update-available-services fee-available-1]
+                                               [:update-service-instances "fee-s1"]
+                                               [:update-service-instances "fee-s2"]])
+          (is (= [[:update-available-services fee-available-1]
+                  [:update-service-instances "fee-s1"]
+                  [:update-service-instances "fee-s2"]]
+                 (async/<!! scheduler-state-chan)))
+          (is (= {:scheduler-id->messages {"fee" [[:update-available-services fee-available-1]
+                                                  [:update-service-instances "fee-s1"]
+                                                  [:update-service-instances "fee-s2"]]}
+                  :scheduler-id->state-chan scheduler-id->state-chan
+                  :scheduler-id->sync-time {"fee" (tc/from-long 10000)}}
+                 (query-state-fn))))
 
-      (testing "messages from two schedulers"
-        (async/>!! fie-scheduler-state-chan [[:update-available-services fie-available-1]
-                                             [:update-service-instances "fie-s1"]
-                                             [:update-service-instances "fie-s2"]])
-        (is (= [[:update-available-services
-                 {:available-service-ids #{"fee-s1" "fee-s2" "fie-s1" "fie-s2"}
-                  :healthy-service-ids #{"fee-s2" "fie-s2"}
-                  :scheduler-sync-time 11000}]
-                [:update-service-instances "fee-s1"]
-                [:update-service-instances "fee-s2"]
-                [:update-service-instances "fie-s1"]
-                [:update-service-instances "fie-s2"]]
-               (async/<!! scheduler-state-chan)))
-        (is (= {:scheduler-id->scheduler-messages {"fee" [[:update-available-services fee-available-1]
-                                                          [:update-service-instances "fee-s1"]
-                                                          [:update-service-instances "fee-s2"]]
-                                                   "fie" [[:update-available-services fie-available-1]
-                                                          [:update-service-instances "fie-s1"]
-                                                          [:update-service-instances "fie-s2"]]}
-                :scheduler-id->scheduler-state-chan scheduler-id->scheduler-state-chan}
-               (query-state-fn))))
+        (testing "messages from two schedulers"
+          (async/>!! fie-scheduler-state-chan [[:update-available-services fie-available-1]
+                                               [:update-service-instances "fie-s1"]
+                                               [:update-service-instances "fie-s2"]])
+          (is (= [[:update-available-services
+                   {:available-service-ids #{"fee-s1" "fee-s2" "fie-s1" "fie-s2"}
+                    :healthy-service-ids #{"fee-s2" "fie-s2"}
+                    :scheduler-sync-time (tc/from-long 11000)}]
+                  [:update-service-instances "fee-s1"]
+                  [:update-service-instances "fee-s2"]
+                  [:update-service-instances "fie-s1"]
+                  [:update-service-instances "fie-s2"]]
+                 (async/<!! scheduler-state-chan)))
+          (is (= {:scheduler-id->messages {"fee" [[:update-available-services fee-available-1]
+                                                  [:update-service-instances "fee-s1"]
+                                                  [:update-service-instances "fee-s2"]]
+                                           "fie" [[:update-available-services fie-available-1]
+                                                  [:update-service-instances "fie-s1"]
+                                                  [:update-service-instances "fie-s2"]]}
+                  :scheduler-id->state-chan scheduler-id->state-chan
+                  :scheduler-id->sync-time {"fee" (tc/from-long 10000)
+                                            "fie" (tc/from-long 11000)}}
+                 (query-state-fn))))
 
-      (testing "update from first scheduler"
-        (async/>!! fee-scheduler-state-chan [[:update-available-services fee-available-2]
-                                             [:update-service-instances "fee-s2"]])
-        (is (= [[:update-available-services
-                 {:available-service-ids #{"fee-s2" "fie-s1" "fie-s2"}
-                  :healthy-service-ids #{"fee-s2" "fie-s2"}
-                  :scheduler-sync-time 12000}]
-                [:update-service-instances "fee-s2"]
-                [:update-service-instances "fie-s1"]
-                [:update-service-instances "fie-s2"]]
-               (async/<!! scheduler-state-chan)))
-        (is (= {:scheduler-id->scheduler-messages {"fee" [[:update-available-services fee-available-2]
-                                                          [:update-service-instances "fee-s2"]]
-                                                   "fie" [[:update-available-services fie-available-1]
-                                                          [:update-service-instances "fie-s1"]
-                                                          [:update-service-instances "fie-s2"]]}
-                :scheduler-id->scheduler-state-chan scheduler-id->scheduler-state-chan}
-               (query-state-fn))))
+        (testing "update from first scheduler"
+          (async/>!! fee-scheduler-state-chan [[:update-available-services fee-available-2]
+                                               [:update-service-instances "fee-s2"]])
+          (is (= [[:update-available-services
+                   {:available-service-ids #{"fee-s2" "fie-s1" "fie-s2"}
+                    :healthy-service-ids #{"fee-s2" "fie-s2"}
+                    :scheduler-sync-time (tc/from-long 12000)}]
+                  [:update-service-instances "fee-s2"]
+                  [:update-service-instances "fie-s1"]
+                  [:update-service-instances "fie-s2"]]
+                 (async/<!! scheduler-state-chan)))
+          (is (= {:scheduler-id->messages {"fee" [[:update-available-services fee-available-2]
+                                                  [:update-service-instances "fee-s2"]]
+                                           "fie" [[:update-available-services fie-available-1]
+                                                  [:update-service-instances "fie-s1"]
+                                                  [:update-service-instances "fie-s2"]]}
+                  :scheduler-id->state-chan scheduler-id->state-chan
+                  :scheduler-id->sync-time {"fee" (tc/from-long 12000)
+                                            "fie" (tc/from-long 11000)}}
+                 (query-state-fn))))
 
-      (testing "messages from three schedulers"
-        (async/>!! foe-scheduler-state-chan [[:update-available-services foe-available-1]
-                                             [:update-service-instances "foe-s1"]])
-        (is (= [[:update-available-services
-                 {:available-service-ids #{"fee-s2" "fie-s1" "fie-s2" "foe-s1"}
-                  :healthy-service-ids #{"fee-s2" "fie-s2" "foe-s1"}
-                  :scheduler-sync-time 13000}]
-                [:update-service-instances "fee-s2"]
-                [:update-service-instances "fie-s1"]
-                [:update-service-instances "fie-s2"]
-                [:update-service-instances "foe-s1"]]
-               (async/<!! scheduler-state-chan)))
-        (is (= {:scheduler-id->scheduler-messages {"fee" [[:update-available-services fee-available-2]
-                                                          [:update-service-instances "fee-s2"]]
-                                                   "fie" [[:update-available-services fie-available-1]
-                                                          [:update-service-instances "fie-s1"]
-                                                          [:update-service-instances "fie-s2"]]
-                                                   "foe" [[:update-available-services foe-available-1]
-                                                          [:update-service-instances "foe-s1"]]}
-                :scheduler-id->scheduler-state-chan scheduler-id->scheduler-state-chan}
-               (query-state-fn))))
+        (testing "messages from three schedulers"
+          (async/>!! foe-scheduler-state-chan [[:update-available-services foe-available-1]
+                                               [:update-service-instances "foe-s1"]])
+          (is (= [[:update-available-services
+                   {:available-service-ids #{"fee-s2" "fie-s1" "fie-s2" "foe-s1"}
+                    :healthy-service-ids #{"fee-s2" "fie-s2" "foe-s1"}
+                    :scheduler-sync-time (tc/from-long 13000)}]
+                  [:update-service-instances "fee-s2"]
+                  [:update-service-instances "fie-s1"]
+                  [:update-service-instances "fie-s2"]
+                  [:update-service-instances "foe-s1"]]
+                 (async/<!! scheduler-state-chan)))
+          (is (= {:scheduler-id->messages {"fee" [[:update-available-services fee-available-2]
+                                                  [:update-service-instances "fee-s2"]]
+                                           "fie" [[:update-available-services fie-available-1]
+                                                  [:update-service-instances "fie-s1"]
+                                                  [:update-service-instances "fie-s2"]]
+                                           "foe" [[:update-available-services foe-available-1]
+                                                  [:update-service-instances "foe-s1"]]}
+                  :scheduler-id->state-chan scheduler-id->state-chan
+                  :scheduler-id->sync-time {"fee" (tc/from-long 12000)
+                                            "fie" (tc/from-long 11000)
+                                            "foe" (tc/from-long 13000)}}
+                 (query-state-fn))))
 
-      (testing "first scheduler goes away"
-        (async/close! fee-scheduler-state-chan)
-        (is (= [[:update-available-services
-                 {:available-service-ids #{"fie-s1" "fie-s2" "foe-s1"}
-                  :healthy-service-ids #{"fie-s2" "foe-s1"}
-                  :scheduler-sync-time 13000}]
-                [:update-service-instances "fie-s1"]
-                [:update-service-instances "fie-s2"]
-                [:update-service-instances "foe-s1"]]
-               (async/<!! scheduler-state-chan))))
+        (testing "first scheduler goes away"
+          (async/close! fee-scheduler-state-chan)
+          (is (= [[:update-available-services
+                   {:available-service-ids #{"fie-s1" "fie-s2" "foe-s1"}
+                    :healthy-service-ids #{"fie-s2" "foe-s1"}
+                    :scheduler-sync-time (tc/from-long 13000)}]
+                  [:update-service-instances "fie-s1"]
+                  [:update-service-instances "fie-s2"]
+                  [:update-service-instances "foe-s1"]]
+                 (async/<!! scheduler-state-chan))))
 
-      (testing "second scheduler goes away"
-        (async/close! foe-scheduler-state-chan)
-        (is (= [[:update-available-services
-                 {:available-service-ids #{"fie-s1" "fie-s2"}
-                  :healthy-service-ids #{"fie-s2"}
-                  :scheduler-sync-time 11000}]
-                [:update-service-instances "fie-s1"]
-                [:update-service-instances "fie-s2"]]
-               (async/<!! scheduler-state-chan))))
+        (testing "second scheduler goes away"
+          (async/close! foe-scheduler-state-chan)
+          (is (= [[:update-available-services
+                   {:available-service-ids #{"fie-s1" "fie-s2"}
+                    :healthy-service-ids #{"fie-s2"}
+                    :scheduler-sync-time (tc/from-long 13000)}]
+                  [:update-service-instances "fie-s1"]
+                  [:update-service-instances "fie-s2"]]
+                 (async/<!! scheduler-state-chan))))
 
-      (testing "third scheduler goes away"
-        (async/close! fie-scheduler-state-chan)
-        (is (= [[:update-available-services
-                 {:available-service-ids #{}
-                  :healthy-service-ids #{}
-                  :scheduler-sync-time 0}]]
-               (async/<!! scheduler-state-chan)))
+        (testing "third scheduler goes away"
+          (async/close! fie-scheduler-state-chan)
+          (is (= [[:update-available-services
+                   {:available-service-ids #{}
+                    :healthy-service-ids #{}
+                    :scheduler-sync-time (tc/from-long 13000)}]]
+                 (async/<!! scheduler-state-chan)))
 
-        (testing "start-scheduler-state-aggregator go block must complete"
-          (is (nil? (async/<!! result-chan)))
-          (is (= {:scheduler-id->scheduler-messages {}
-                  :scheduler-id->scheduler-state-chan {}}
-                 (query-state-fn))))))))
+          (testing "start-scheduler-state-aggregator go block must complete"
+            (is (nil? (async/<!! result-chan)))
+            (is (= {:scheduler-id->messages {}
+                    :scheduler-id->state-chan {}
+                    :scheduler-id->sync-time {"fee" (tc/from-long 12000)
+                                              "fie" (tc/from-long 11000)
+                                              "foe" (tc/from-long 13000)}}
+                   (query-state-fn)))))))))
 
 (deftest test-composite-scheduler
   (let [scheduler-state-chan (async/chan)
@@ -245,7 +269,6 @@
                                                    :scheduler-id "ipsum"
                                                    :service-ids ["ipsum-fee" "ipsum-foo" "ipsum-fuu"]}}
                               :scheduler-state-chan scheduler-state-chan
-                              :service-description-defaults {"scheduler" "lorem"}
                               :service-id->service-description-fn service-id->service-description-fn
                               :service-id->password-fn service-id->password-fn}
             all-service-ids ["lorem-fie" "lorem-foe" "ipsum-fee" "ipsum-foo" "ipsum-fuu"]
@@ -257,11 +280,7 @@
         (testing "scheduler resolution"
           (let [service-id->scheduler (:service-id->scheduler composite-scheduler)]
             (doseq [service-id all-service-ids]
-              (is (= (service-id->scheduler-id service-id) (-> service-id service-id->scheduler :scheduler-id))))
-            (testing "default"
-              (is (nil? (service-id->scheduler-id "foo")))
-              (is (= (-> scheduler-config :service-description-defaults (get "scheduler"))
-                     (-> "foo" service-id->scheduler :scheduler-id))))))
+              (is (= (service-id->scheduler-id service-id) (-> service-id service-id->scheduler :scheduler-id))))))
 
         (testing "get-services"
           (is (= (map compute-service all-service-ids)
@@ -318,11 +337,12 @@
                    (scheduler/service-id->state composite-scheduler service-id)))))
 
         (testing "state"
-          (is (= {:aggregator {:scheduler-id->scheduler-messages {}
-                               :scheduler-id->scheduler-state-chan {"ipsum" component-channel
-                                                                    "lorem" component-channel}}
+          (is (= {:aggregator {:scheduler-id->messages {}
+                               :scheduler-id->state-chan {"ipsum" component-channel
+                                                          "lorem" component-channel}
+                               :scheduler-id->sync-time {}}
                   :components {"ipsum" {:operation :scheduler-state :scheduler-id "ipsum"}
-                              "lorem" {:operation :scheduler-state :scheduler-id "lorem"}}}
+                               "lorem" {:operation :scheduler-state :scheduler-id "lorem"}}}
                  (scheduler/state composite-scheduler))))))
 
     (async/close! component-channel)
