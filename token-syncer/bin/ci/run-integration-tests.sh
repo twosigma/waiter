@@ -15,6 +15,7 @@ TEST_SELECTOR=${2:-integration}
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../../../waiter
+KITCHEN_DIR=${DIR}/../../../kitchen
 SYNCER_DIR=${WAITER_DIR}/../token-syncer
 
 pushd ${WAITER_DIR}
@@ -33,6 +34,7 @@ done
 popd
 
 # Run the integration tests
+export WAITER_TEST_KITCHEN_CMD="${KITCHEN_DIR}/bin/kitchen"
 export WAITER_URIS="${WAITER_URIS%?}"
 ${SYNCER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || {
   # If there were failures, dump the logs

@@ -19,6 +19,7 @@
             [qbits.jet.client.http :as http]
             [token-syncer.cli :as cli]
             [token-syncer.commands.backup :as backup]
+            [token-syncer.commands.ping :as ping]
             [token-syncer.commands.syncer :as syncer]
             [token-syncer.waiter :as waiter])
   (:import (org.eclipse.jetty.client HttpClient))
@@ -50,20 +51,23 @@
 (defn init-waiter-api
   "Creates the map of methods used to interact with Waiter to load, store and delete tokens."
   [{:keys [dry-run] :as options}]
-  (let [http-client (http-client-factory options)]
+  (let [api-http-client (http-client-factory options)
+        health-check-http-client (->> (assoc options :idle-timeout-ms 300000)
+                                      (http-client-factory))]
     {:hard-delete-token (if dry-run
                           (fn hard-delete-dry-run-version [cluster-url token token-etag]
                             (log/info "[dry-run] hard-delete" token "on" cluster-url "with etag" token-etag)
                             {:status "dry-run"})
-                          (partial waiter/hard-delete-token http-client))
-     :load-token (partial waiter/load-token http-client)
-     :load-token-list (partial waiter/load-token-list http-client)
+                          (partial waiter/hard-delete-token api-http-client))
+     :health-check-token (partial waiter/health-check-token health-check-http-client)
+     :load-token (partial waiter/load-token api-http-client)
+     :load-token-list (partial waiter/load-token-list api-http-client)
      :store-token (if dry-run
                     (fn store-token-dry-run-version [cluster-url token token-etag token-description]
                       (log/info "[dry-run] store-token" token "on" cluster-url "with etag" token-etag
                                 "and description" token-description)
                       {:status "dry-run"})
-                    (partial waiter/store-token http-client))}))
+                    (partial waiter/store-token api-http-client))}))
 
 (def base-command-config
   {:execute-command (fn execute-base-command
@@ -109,6 +113,7 @@
     (log/info "command-line arguments:" (vec args))
     (let [token-syncer-command-config (assoc base-command-config :command-name "token-syncer")
           context {:sub-command->config {"backup-tokens" backup/backup-tokens-config
+                                         "ping-token" ping/ping-token-config
                                          "sync-clusters" syncer/sync-clusters-config}}
           {:keys [exit-code message]} (cli/process-command token-syncer-command-config context args)]
       (exit exit-code message))
