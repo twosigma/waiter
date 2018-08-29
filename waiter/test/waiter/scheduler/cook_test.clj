@@ -839,11 +839,11 @@
                          :retrieve-syncer-state-fn retrieve-syncer-state-fn
                          :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]}))]
     (is (= {:failed-instances [:failed-instances]
-            :last-update-time :time}
+            :syncer {:last-update-time :time}}
            (scheduler/service-id->state cook-scheduler service-id)))
-    (is (= {:last-update-time :time
-            :service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
-            :service-id->health-check-context {}}
+    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
+            :syncer {:last-update-time :time
+                     :service-id->health-check-context {}}}
            (scheduler/state cook-scheduler)))))
 
 (deftest test-cook-scheduler

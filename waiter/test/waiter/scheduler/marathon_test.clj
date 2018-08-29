@@ -655,7 +655,8 @@
         state (scheduler/service-id->state marathon-scheduler service-id)]
     (is (= {:failed-instances [:failed-instances]
             :kill-info :kill-call-info
-            :out-of-sync-state nil}
+            :out-of-sync-state nil
+            :syncer {}}
            state))))
 
 (deftest test-max-failed-instances-cache

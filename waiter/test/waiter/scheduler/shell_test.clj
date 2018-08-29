@@ -468,7 +468,7 @@
                                           :log-directory instance-dir
                                           :shell-scheduler/working-directory instance-dir
                                           :shell-scheduler/pid fake-pid})}
-                        :syncer-state "foo"}
+                        :syncer {:syncer-state "foo"}}
         process-keys [:id->instance "foo.bar" :shell-scheduler/process]
         host-keys [:id->instance "foo.bar" :host]]
     (with-redefs [pid (constantly fake-pid)

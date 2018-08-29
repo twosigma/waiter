@@ -632,13 +632,13 @@
       (directory-content service-entry instance-id relative-directory)))
 
   (service-id->state [_ service-id]
-    (-> (retrieve-syncer-state-fn service-id)
-        (merge (get @id->service-agent service-id))))
+    (assoc (get @id->service-agent service-id)
+      :syncer (retrieve-syncer-state-fn service-id)))
 
   (state [_]
-    (-> (retrieve-syncer-state-fn)
-        (assoc :id->service @id->service-agent
-               :port->reservation @port->reservation-atom))))
+    {:id->service @id->service-agent
+     :port->reservation @port->reservation-atom
+     :syncer (retrieve-syncer-state-fn)}))
 
 (s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the

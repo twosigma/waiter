@@ -474,12 +474,12 @@
       (mesos/retrieve-directory-content-from-host cook-api host log-directory)))
 
   (service-id->state [_ service-id]
-    (-> (retrieve-syncer-state-fn service-id)
-        (assoc :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id))))
+    {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
+     :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_]
-    (-> (retrieve-syncer-state-fn)
-        (assoc :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store))))
+    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
+     :syncer (retrieve-syncer-state-fn)}))
 
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."

@@ -428,16 +428,16 @@
       (mesos/retrieve-directory-content-from-host mesos-api host log-directory)))
 
   (service-id->state [_ service-id]
-    (-> (retrieve-syncer-state-fn service-id)
-        (assoc :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
-               :kill-info (get @service-id->kill-info-store service-id)
-               :out-of-sync-state (get @service-id->out-of-sync-state-store service-id))))
+    {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
+     :kill-info (get @service-id->kill-info-store service-id)
+     :out-of-sync-state (get @service-id->out-of-sync-state-store service-id)
+     :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_]
-    (-> (retrieve-syncer-state-fn)
-        (assoc :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
-               :service-id->kill-info-store @service-id->kill-info-store
-               :service-id->out-of-sync-state-store @service-id->out-of-sync-state-store))))
+    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
+     :service-id->kill-info-store @service-id->kill-info-store
+     :service-id->out-of-sync-state-store @service-id->out-of-sync-state-store
+     :syncer (retrieve-syncer-state-fn)}))
 
 (defn- get-apps-with-deployments
   "Retrieves the apps with the deployment info embedded."
