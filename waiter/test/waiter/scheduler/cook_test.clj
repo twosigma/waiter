@@ -834,7 +834,7 @@
   (let [service-id "service-id"
         syncer-state-atom (atom {:last-update-time :time
                                  :service-id->health-check-context {}})
-        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state syncer-state-atom)
+        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state @syncer-state-atom)
         cook-scheduler (create-cook-scheduler-helper
                          :retrieve-syncer-state-fn retrieve-syncer-state-fn
                          :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]}))]

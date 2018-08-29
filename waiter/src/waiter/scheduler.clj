@@ -520,11 +520,9 @@
 
 (defn retrieve-syncer-state
   "Retrieves the scheduler and syncer state either for the entire scheduler or when provided for a specific service."
-  ([syncer-state-atom]
-   @syncer-state-atom)
-  ([syncer-state-atom service-id]
-    (let [{:keys [last-update-time service-id->health-check-context]} @syncer-state-atom
-          health-check-context (get service-id->health-check-context service-id)]
+  ([syncer-state] syncer-state)
+  ([{:keys [last-update-time service-id->health-check-context]} service-id]
+    (let [health-check-context (get service-id->health-check-context service-id)]
       (assoc health-check-context :last-update-time last-update-time))))
 
 (defn start-scheduler-syncer
@@ -563,8 +561,8 @@
                        state-query-chan
                        ([{:keys [response-chan service-id]}]
                          (->> (if service-id
-                                (retrieve-syncer-state syncer-state-atom service-id)
-                                (retrieve-syncer-state syncer-state-atom))
+                                (retrieve-syncer-state current-state service-id)
+                                (retrieve-syncer-state current-state))
                               (async/>! response-chan))
                          current-state)
 
@@ -593,7 +591,9 @@
           (System/exit 1))))
     {:exit-chan exit-chan
      :query-chan state-query-chan
-     :retrieve-syncer-state-fn (partial retrieve-syncer-state syncer-state-atom)}))
+     :retrieve-syncer-state-fn (fn retrieve-syncer-state-fn
+                                 ([] (retrieve-syncer-state @syncer-state-atom))
+                                 ([service-id] (retrieve-syncer-state @syncer-state-atom service-id)))}))
 
 ;;
 ;; Support for tracking killed instances
