@@ -1277,10 +1277,11 @@
                              clock synchronize-fn kv-store token-root history-length waiter-hostnames entitlement-manager
                              make-inter-router-requests-sync-fn validate-service-description-fn request))))
    :token-list-handler-fn (pc/fnk [[:curator kv-store]
+                                   [:state entitlement-manager]
                                    wrap-secure-request-fn]
                             (wrap-secure-request-fn
                               (fn token-handler-fn [request]
-                                (token/handle-list-tokens-request kv-store request))))
+                                (token/handle-list-tokens-request kv-store entitlement-manager request))))
    :token-owners-handler-fn (pc/fnk [[:curator kv-store]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn

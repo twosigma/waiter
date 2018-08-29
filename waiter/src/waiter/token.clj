@@ -477,10 +477,10 @@
       (utils/exception->response ex request))))
 
 (defn handle-list-tokens-request
-  [kv-store {:keys [request-method] :as req}]
+  [kv-store entitlement-manager {:keys [request-method] :as req}]
   (try
     (case request-method
-      :get (let [request-params (-> req ru/query-params-request :query-params)
+      :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
                  owner (get request-params "owner")
@@ -492,11 +492,16 @@
                            (filter
                              (fn [[_ entry]]
                                (or include-deleted (not (:deleted entry)))))
+                           (filter
+                             (fn [[token _]]
+                               (or (nil? can-manage-as-user)
+                                   (->> {"owner" owner}
+                                        (authz/manage-token? entitlement-manager can-manage-as-user token)))))
                            (map
                              (fn [[token entry]]
                                (cond-> (assoc entry :owner owner :token token)
-                                       (not show-metadata)
-                                       (dissoc :deleted :etag)))))))
+                                 (not show-metadata)
+                                 (dissoc :deleted :etag)))))))
                   flatten
                   utils/clj->streaming-json-response))
       (throw (ex-info "Only GET supported" {:request-method request-method

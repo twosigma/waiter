@@ -316,6 +316,7 @@
         (let [{:keys [body status]}
               (handle-list-tokens-request
                 kv-store
+                entitlement-manager
                 {:authorization/user auth-user
                  :query-string "include=metadata"
                  :request-method :get})]
@@ -1585,6 +1586,8 @@
                          (locking lock
                            (f)))
         kv-store (kv/->LocalKeyValueStore (atom {}))
+        entitlement-manager (reify authz/EntitlementManager
+                              (authorized? [_ _ _ _] (throw (UnsupportedOperationException. "enexpected call"))))
         handle-list-tokens-request (wrap-handler-json-response handle-list-tokens-request)
         last-update-time-seed (clock-millis)
         token->token-hash (fn [token] (-> (kv/fetch kv-store token) sd/token-data->token-hash))]
@@ -1601,14 +1604,14 @@
       synchronize-fn kv-store history-length "token4"
       {"cpus" 4} {"deleted" true "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (let [request {:query-string "include=metadata" :request-method :get}
-          {:keys [body status]} (handle-list-tokens-request kv-store request)]
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
       (is (= #{{"deleted" false "etag" (token->token-hash "token1") "owner" "owner1" "token" "token1"}
                {"deleted" false "etag" (token->token-hash "token2") "owner" "owner1" "token" "token2"}
                {"deleted" false "etag" (token->token-hash "token3") "owner" "owner2" "token" "token3"}}
              (set (json/read-str body)))))
     (let [request {:query-string "include=metadata&include=deleted" :request-method :get}
-          {:keys [body status]} (handle-list-tokens-request kv-store request)]
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
       (is (= #{{"deleted" false "etag" (token->token-hash "token1") "owner" "owner1" "token" "token1"}
                {"deleted" false "etag" (token->token-hash "token2") "owner" "owner1" "token" "token2"}
@@ -1616,44 +1619,72 @@
                {"deleted" true "etag" (token->token-hash "token4") "owner" "owner2" "token" "token4"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get}
-          {:keys [body status]} (handle-list-tokens-request kv-store request)]
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
       (is (= #{{"owner" "owner1" "token" "token1"}
                {"owner" "owner1" "token" "token2"}
                {"owner" "owner2" "token" "token3"}}
              (set (json/read-str body)))))
+    (let [entitlement-manager (reify authz/EntitlementManager
+                                (authorized? [_ subject action resource]
+                                  (is (= :manage action))
+                                  (str/starts-with? (:user resource) subject)))]
+      (let [request {:query-string "can-manage-as-user=owner" :request-method :get}
+            {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+        (is (= 200 status))
+        (is (= #{{"owner" "owner1" "token" "token1"}
+                 {"owner" "owner1" "token" "token2"}
+                 {"owner" "owner2" "token" "token3"}}
+               (set (json/read-str body)))))
+      (let [request {:query-string "can-manage-as-user=owner1" :request-method :get}
+            {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+        (is (= 200 status))
+        (is (= #{{"owner" "owner1" "token" "token1"}
+                 {"owner" "owner1" "token" "token2"}}
+               (set (json/read-str body)))))
+      (let [request {:query-string "can-manage-as-user=owner2" :request-method :get}
+            {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+        (is (= 200 status))
+        (is (= #{{"owner" "owner2" "token" "token3"}}
+               (set (json/read-str body)))))
+      (let [request {:query-string "can-manage-as-user=test" :request-method :get}
+            {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
+        (is (= 200 status))
+        (is (= #{} (set (json/read-str body))))))
     (let [request {:query-string "owner=owner1" :request-method :get}
-          {:keys [body status]} (handle-list-tokens-request kv-store request)]
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
       (is (= #{{"owner" "owner1" "token" "token1"}
                {"owner" "owner1" "token" "token2"}}
              (set (json/read-str body)))))
     (let [request {:query-string "owner=owner1&include=metadata" :request-method :get}
-          {:keys [body status]} (handle-list-tokens-request kv-store request)]
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
       (is (= #{{"deleted" false "etag" (token->token-hash "token1") "owner" "owner1" "token" "token1"}
                {"deleted" false "etag" (token->token-hash "token2") "owner" "owner1" "token" "token2"}}
              (set (json/read-str body)))))
-    (let [{:keys [body status]} (handle-list-tokens-request kv-store {:headers {"accept" "application/json"}
-                                                                      :request-method :post})
+    (let [request {:headers {"accept" "application/json"}
+                 :request-method :post}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)
           json-response (try (json/read-str body)
                              (catch Exception _
                                (is (str "Failed to parse body as JSON:\n" body))))]
       (is (= 405 status))
       (is json-response))
     (let [request {:request-method :get :query-string "owner=owner2&include=metadata"}
-          {:keys [body status]} (handle-list-tokens-request kv-store request)]
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
       (is (= #{{"deleted" false "etag" (token->token-hash "token3") "owner" "owner2" "token" "token3"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "owner=owner2&include=metadata&include=deleted"}
-          {:keys [body status]} (handle-list-tokens-request kv-store request)]
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
       (is (= #{{"deleted" false "etag" (token->token-hash "token3") "owner" "owner2" "token" "token3"}
                {"deleted" true "etag" (token->token-hash "token4") "owner" "owner2" "token" "token4"}}
              (set (json/read-str body)))))
-    (let [{:keys [body]} (handle-list-token-owners-request kv-store {:headers {"accept" "application/json"}
-                                                                     :request-method :get})
+    (let [request {:headers {"accept" "application/json"}
+                   :request-method :get}
+          {:keys [body]} (handle-list-token-owners-request kv-store request)
           owner-map-keys (keys (json/read-str body))]
       (is (some #(= "owner1" %) owner-map-keys) "Should have had a key 'owner1'")
       (is (some #(= "owner2" %) owner-map-keys) "Should have had a key 'owner2'"))))
