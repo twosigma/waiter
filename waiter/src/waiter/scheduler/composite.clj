@@ -126,9 +126,12 @@
 (defn- initialize-component
   "Initializes a component scheduler with its own scheduler-state-chan.
    Returns a map containing the scheduler and scheduler-state-chan."
-  [context component-config]
-  (let [component-state-chan (au/latest-chan)
-        component-context (assoc context :scheduler-state-chan component-state-chan)]
+  [context component-key component-config]
+  (let [component-name (name component-key)
+        component-state-chan (au/latest-chan)
+        component-context (assoc context
+                            :scheduler-name component-name
+                            :scheduler-state-chan component-state-chan)]
     {:scheduler (invoke-component-factory component-context component-config)
      :scheduler-state-chan component-state-chan}))
 
@@ -140,8 +143,10 @@
              (contains? components default-scheduler))]}
   (s/validate component-schema components)
   (let [context (dissoc config :components)]
-    (->> components
-         (pc/map-vals #(initialize-component context %))
+    (->> (keys components)
+         (pc/map-from-keys (fn [component-key]
+                             (->> (get components component-key)
+                                  (initialize-component context component-key))))
          (pc/map-keys name))))
 
 (defn- services-message-reducer

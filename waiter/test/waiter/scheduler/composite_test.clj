@@ -48,7 +48,7 @@
        (pc/map-from-keys compute-service-instances)
        (pc/map-keys compute-service)))
 
-(defrecord TestScheduler [scheduler-id service-ids]
+(defrecord TestScheduler [scheduler-name service-ids]
 
   scheduler/ServiceScheduler
 
@@ -56,28 +56,28 @@
     (map compute-service service-ids))
 
   (kill-instance [_ instance]
-    {:identifier (:id instance) :operation :kill :scheduler-id scheduler-id})
+    {:identifier (:id instance) :operation :kill :scheduler-name scheduler-name})
 
   (service-exists? [_ service-id]
-    {:identifier service-id :operation :exists :scheduler-id scheduler-id})
+    {:identifier service-id :operation :exists :scheduler-name scheduler-name})
 
   (create-service-if-new [_ descriptor]
-    {:identifier (:service-id descriptor) :operation :create :scheduler-id scheduler-id})
+    {:identifier (:service-id descriptor) :operation :create :scheduler-name scheduler-name})
 
   (delete-service [_ service-id]
-    {:identifier service-id :operation :delete :scheduler-id scheduler-id})
+    {:identifier service-id :operation :delete :scheduler-name scheduler-name})
 
   (scale-service [_ service-id target-instances force]
-    {:identifier (str service-id ":" target-instances ":" force) :operation :scale :scheduler-id scheduler-id})
+    {:identifier (str service-id ":" target-instances ":" force) :operation :scale :scheduler-name scheduler-name})
 
   (retrieve-directory-content [_ service-id instance-id host directory]
-    {:identifier (str service-id ":" instance-id ":" host ":" directory) :operation :directory :scheduler-id scheduler-id})
+    {:identifier (str service-id ":" instance-id ":" host ":" directory) :operation :directory :scheduler-name scheduler-name})
 
   (service-id->state [_ service-id]
-    {:identifier service-id :operation :service-state :scheduler-id scheduler-id})
+    {:identifier service-id :operation :service-state :scheduler-name scheduler-name})
 
   (state [_]
-    {:operation :scheduler-state :scheduler-id scheduler-id}))
+    {:operation :scheduler-state :scheduler-name scheduler-name}))
 
 (deftest test-service-id->scheduler
   (let [service-id->service-description-fn {"bar" {"scheduler" "lorem"}
@@ -95,17 +95,17 @@
           (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler default-scheduler "foo")))))
 
 (defn create-test-scheduler
-  [{:keys [scheduler-id service-ids service-id->service-description-fn service-id->password-fn]}]
+  [{:keys [scheduler-name service-ids service-id->service-description-fn service-id->password-fn]}]
   (is service-id->service-description-fn)
   (is service-id->password-fn)
-  (->TestScheduler scheduler-id service-ids))
+  (->TestScheduler scheduler-name service-ids))
 
 (deftest test-initialize-component-schedulers
   (let [components {:lorem {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
-                            :scheduler-id "scheduler-lorem"
+                            :scheduler-name "scheduler-lorem"
                             :service-ids #{"s1-a" "s1-b" "s1-c"}}
                     :ipsum {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
-                            :scheduler-id "scheduler-ipsum"
+                            :scheduler-name "scheduler-ipsum"
                             :service-ids #{"s2-a" "s2-b" "s2-c" "s2-d" "s2-e"}}}
         config {:components components
                 :default-scheduler :ipsum
@@ -115,10 +115,10 @@
     (is (every? #(and (contains? % :scheduler) (contains? % :scheduler-state-chan)) (vals actual)))
     (is (= (->> components
                 (pc/map-keys name)
-                (pc/map-vals #(select-keys % [:scheduler-id :service-ids])))
+                (pc/map-vals #(select-keys % [:scheduler-name :service-ids])))
            (->> actual
                 (pc/map-vals :scheduler)
-                (pc/map-vals #(select-keys % [:scheduler-id :service-ids])))))))
+                (pc/map-vals #(select-keys % [:scheduler-name :service-ids])))))))
 
 (deftest test-start-scheduler-state-aggregator
   (with-redefs [t/now (constantly (tc/from-long 8000))]
@@ -270,10 +270,10 @@
                                                    {"scheduler" scheduler-id}))
             service-id->password-fn (constantly "password")
             scheduler-config {:components {:lorem {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
-                                                   :scheduler-id "lorem"
+                                                   :scheduler-name "lorem"
                                                    :service-ids ["lorem-fie" "lorem-foe" "ipsum-bar"]}
                                            :ipsum {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
-                                                   :scheduler-id "ipsum"
+                                                   :scheduler-name "ipsum"
                                                    :service-ids ["ipsum-fee" "ipsum-foo" "ipsum-fuu"]}}
                               :scheduler-state-chan scheduler-state-chan
                               :service-id->service-description-fn service-id->service-description-fn
@@ -287,7 +287,7 @@
         (testing "scheduler resolution"
           (let [service-id->scheduler (:service-id->scheduler composite-scheduler)]
             (doseq [service-id all-service-ids]
-              (is (= (service-id->scheduler-id service-id) (-> service-id service-id->scheduler :scheduler-id))))))
+              (is (= (service-id->scheduler-id service-id) (-> service-id service-id->scheduler :scheduler-name))))))
 
         (testing "get-services"
           (is (= (map compute-service all-service-ids)
@@ -297,7 +297,7 @@
           (doseq [service-id all-service-ids]
             (is (= {:identifier (str service-id ".instance-id")
                     :operation :kill
-                    :scheduler-id (service-id->scheduler-id service-id)}
+                    :scheduler-name (service-id->scheduler-id service-id)}
                    (->> {:id (str service-id ".instance-id") :service-id service-id}
                         (scheduler/kill-instance composite-scheduler))))))
 
@@ -305,42 +305,42 @@
           (doseq [service-id all-service-ids]
             (is (= {:identifier service-id
                     :operation :exists
-                    :scheduler-id (service-id->scheduler-id service-id)}
+                    :scheduler-name (service-id->scheduler-id service-id)}
                    (scheduler/service-exists? composite-scheduler service-id)))))
 
         (testing "create-service-if-new"
           (doseq [service-id all-service-ids]
             (is (= {:identifier service-id
                     :operation :create
-                    :scheduler-id (service-id->scheduler-id service-id)}
+                    :scheduler-name (service-id->scheduler-id service-id)}
                    (scheduler/create-service-if-new composite-scheduler {:service-id service-id})))))
 
         (testing "delete-service"
           (doseq [service-id all-service-ids]
             (is (= {:identifier service-id
                     :operation :delete
-                    :scheduler-id (service-id->scheduler-id service-id)}
+                    :scheduler-name (service-id->scheduler-id service-id)}
                    (scheduler/delete-service composite-scheduler service-id)))))
 
         (testing "scale-service"
           (doseq [service-id all-service-ids]
             (is (= {:identifier (str service-id ":5:false")
                     :operation :scale
-                    :scheduler-id (service-id->scheduler-id service-id)}
+                    :scheduler-name (service-id->scheduler-id service-id)}
                    (scheduler/scale-service composite-scheduler service-id 5 false)))))
 
         (testing "retrieve-directory-content"
           (doseq [service-id all-service-ids]
             (is (= {:identifier (str service-id ":i:h:d")
                     :operation :directory
-                    :scheduler-id (service-id->scheduler-id service-id)}
+                    :scheduler-name (service-id->scheduler-id service-id)}
                    (scheduler/retrieve-directory-content composite-scheduler service-id "i" "h" "d")))))
 
         (testing "service-id->state"
           (doseq [service-id all-service-ids]
             (is (= {:identifier service-id
                     :operation :service-state
-                    :scheduler-id (service-id->scheduler-id service-id)}
+                    :scheduler-name (service-id->scheduler-id service-id)}
                    (scheduler/service-id->state composite-scheduler service-id)))))
 
         (testing "state"
@@ -348,8 +348,8 @@
                                :scheduler-id->state-chan {"ipsum" component-channel
                                                           "lorem" component-channel}
                                :scheduler-id->sync-time {}}
-                  :components {"ipsum" {:operation :scheduler-state :scheduler-id "ipsum"}
-                               "lorem" {:operation :scheduler-state :scheduler-id "lorem"}}}
+                  :components {"ipsum" {:operation :scheduler-state :scheduler-name "ipsum"}
+                               "lorem" {:operation :scheduler-state :scheduler-name "lorem"}}}
                  (scheduler/state composite-scheduler))))))
 
     (async/close! component-channel)
