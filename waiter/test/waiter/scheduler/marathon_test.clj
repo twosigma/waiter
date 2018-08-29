@@ -689,6 +689,7 @@
   (testing "Creating a MarathonScheduler"
     (let [context {:is-waiter-app?-fn (constantly nil)
                    :leader?-fn (constantly nil)
+                   :scheduler-name "marathon"
                    :scheduler-state-chan (async/chan 4)
                    :scheduler-syncer-interval-secs 5
                    :service-id->password-fn (constantly nil)

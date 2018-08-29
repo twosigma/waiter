@@ -617,7 +617,7 @@
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication http-options max-patch-retries max-name-length orchestrator-name
            pod-base-port pod-suffix-length replicaset-api-version replicaset-spec-builder
-           scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
+           scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn url start-scheduler-syncer-fn]}]
   {:pre [(utils/pos-int? (:socket-timeout http-options))
          (utils/pos-int? (:conn-timeout http-options))
@@ -630,6 +630,7 @@
          (not (string/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
          (some? (io/as-url url))
+         (not (string/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
          (fn? service-id->password-fn)
@@ -651,7 +652,7 @@
                           :service-id->failed-instances-transient-store service-id->failed-instances-transient-store}
         get-service->instances-fn #(get-service->instances scheduler-config)
         {:keys [retrieve-syncer-state-fn]}
-        (start-scheduler-syncer-fn get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)]
+        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)]
     (when authentication
       (start-auth-renewer authentication))
     (->KubernetesScheduler url

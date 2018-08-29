@@ -503,9 +503,10 @@
 (defn cook-scheduler
   "Creates and starts cook scheduler with associated daemons."
   [{:keys [allowed-users failed-tracker-interval-ms http-options impersonate mesos-slave-port search-interval-days url
-           scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
+           scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(seq allowed-users)
          (pos? search-interval-days)
+         (not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
          (fn? start-scheduler-syncer-fn)]}
@@ -520,7 +521,7 @@
         get-service->instances-fn
         #(get-service->instances cook-api allowed-users search-interval service-id->failed-instances-transient-store)
         {:keys [retrieve-syncer-state-fn]}
-        (start-scheduler-syncer-fn get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
+        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
         scheduler (create-cook-scheduler config cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn)]
     (start-track-failed-instances service-id->failed-instances-transient-store scheduler failed-tracker-interval-ms)
     scheduler))

@@ -72,17 +72,6 @@
 (defn make-ServiceInstance [value-map]
   (map->ServiceInstance (merge {:extra-ports [] :flags #{}} value-map)))
 
-(defn attach-name
-  "Attaches the name metadata to the scheduler."
-  [scheduler scheduler-name]
-  {:pre [(not (str/blank? scheduler-name))]}
-  (vary-meta scheduler assoc ::name scheduler-name))
-
-(defn scheduler->name
-  "Retrieves the scheduler name."
-  [scheduler]
-  (some-> scheduler meta ::name))
-
 (defprotocol ServiceScheduler
 
   (get-services [this]
@@ -359,9 +348,9 @@
 
 (defn- request-available-waiter-apps
   "Queries the scheduler and builds a list of available Waiter apps."
-  [get-service->instances-fn]
+  [scheduler-name get-service->instances-fn]
   (when-let [service->service-instances (timers/start-stop-time!
-                                          (metrics/waiter-timer "core" "scheduler" "get-services")
+                                          (metrics/waiter-timer "core" "scheduler" scheduler-name "get-services")
                                           (retry-on-transient-server-exceptions
                                             "request-available-waiter-apps"
                                             (get-service->instances-fn)))]
@@ -430,26 +419,26 @@
 
 (defn- update-scheduler-state
   "Queries marathon, sends data on app and instance statuses to router state maintainer, and returns scheduler state"
-  [get-service->instances-fn service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
+  [scheduler-name get-service->instances-fn service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
   (let [^DateTime request-apps-time (t/now)
         timing-message-fn (fn [] (let [^DateTime now (t/now)]
                                    (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-apps-time)) " ms")))]
-    (log/trace "scheduler-syncer: querying for available waiter services")
+    (log/trace "scheduler-syncer: querying" scheduler-name "scheduler")
     (if-let [service->service-instances (timers/start-stop-time!
-                                          (metrics/waiter-timer "core" "scheduler" "app->available-tasks")
-                                          (do-health-checks (request-available-waiter-apps get-service->instances-fn)
+                                          (metrics/waiter-timer "core" "scheduler" scheduler-name "app->available-tasks")
+                                          (do-health-checks (request-available-waiter-apps scheduler-name get-service->instances-fn)
                                                             available?
                                                             service-id->service-description-fn))]
       (let [available-services (keys service->service-instances)
             available-service-ids (->> available-services (map :id) (set))]
-        (log/debug "scheduler-syncer: found" (count service->service-instances) "available services:" available-service-ids)
+        (log/debug "scheduler-syncer:" scheduler-name "has" (count service->service-instances) "available services:" available-service-ids)
         (doseq [service available-services]
           (when (->> (select-keys (:task-stats service) [:staged :running :healthy :unhealthy])
                      vals
                      (filter number?)
                      (reduce + 0)
                      zero?)
-            (log/info "scheduler-syncer:" (:id service) "has no live instances!" (:task-stats service))))
+            (log/info "scheduler-syncer:" (:id service) "in" scheduler-name "has no live instances!" (:task-stats service))))
         (loop [service-id->health-check-context' {}
                healthy-service-ids #{}
                scheduler-messages []
@@ -541,8 +530,8 @@
   The active-instances should not be assumed to be healthy (or live).
   The failed-instances are guaranteed to be dead.\""
   [clock timeout-chan service-id->service-description-fn available? failed-check-threshold
-   get-service->instances-fn scheduler-state-chan]
-  (log/info "Starting scheduler syncer")
+   scheduler-name get-service->instances-fn scheduler-state-chan]
+  (log/info "starting scheduler syncer")
   (let [exit-chan (async/chan 1)
         state-query-chan (async/chan 32)
         syncer-state-atom (atom {})]
@@ -554,7 +543,7 @@
                      (async/alt!
                        exit-chan
                        ([message]
-                         (log/warn "Stopping scheduler-syncer")
+                         (log/warn "stopping scheduler-syncer")
                          (when (not= :exit message)
                            (throw (ex-info "Stopping scheduler-syncer" {:time (t/now), :reason message}))))
 
@@ -570,10 +559,11 @@
                        ([]
                          (try
                            (timers/start-stop-time!
-                             (metrics/waiter-timer "state" "scheduler-sync")
+                             (metrics/waiter-timer "state" "scheduler-sync" scheduler-name)
                              (let [{:keys [service-id->health-check-context scheduler-messages]}
-                                   (update-scheduler-state get-service->instances-fn service-id->service-description-fn available?
-                                                           failed-check-threshold service-id->health-check-context)]
+                                   (update-scheduler-state
+                                     scheduler-name get-service->instances-fn service-id->service-description-fn available?
+                                     failed-check-threshold service-id->health-check-context)]
                                (when scheduler-messages
                                  (async/>! scheduler-state-chan scheduler-messages))
                                (assoc current-state
@@ -581,8 +571,8 @@
                                  :service-id->health-check-context service-id->health-check-context)))
                            (catch Throwable th
                              (log/error th "scheduler-syncer unable to receive updates")
-                             (counters/inc! (metrics/waiter-counter "state" "scheduler-sync" "errors"))
-                             (meters/mark! (metrics/waiter-meter "state" "scheduler-sync" "error-rate"))
+                             (counters/inc! (metrics/waiter-counter "state" "scheduler-sync" scheduler-name "errors"))
+                             (meters/mark! (metrics/waiter-meter "state" "scheduler-sync" scheduler-name "error-rate"))
                              current-state)))
                        :priority true)]
             (recur next-state)))

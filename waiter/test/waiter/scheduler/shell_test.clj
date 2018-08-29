@@ -176,6 +176,7 @@
    :retrieve-syncer-state-fn (fn default-retrieve-syncer-state-fn
                                ([] {:syncer-state :global})
                                ([service-id] {:syncer-state service-id}))
+   :scheduler-name "shell"
    :service-id->password-fn (fn [service-id] (str service-id ".password"))
    :work-directory (work-dir)})
 

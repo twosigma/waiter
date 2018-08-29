@@ -242,9 +242,10 @@
                                         :status 400})))
         start-time-ms (-> (clock) .getMillis)
         failed-check-threshold 5
+        scheduler-name "test-scheduler"
         {:keys [exit-chan query-chan retrieve-syncer-state-fn]}
         (start-scheduler-syncer clock timeout-chan service-id->service-description-fn available?
-                                failed-check-threshold get-service->instances scheduler-state-chan)
+                                failed-check-threshold scheduler-name get-service->instances scheduler-state-chan)
         instance3-unhealthy (assoc instance3
                               :flags #{:has-connected :has-responded}
                               :healthy? false
@@ -728,7 +729,3 @@
           (is (= expected-state-1 actual-state-1')))
         (testing "applied router state update"
           (is (= expected-state-2 actual-state-2)))))))
-
-(deftest test-scheduler-naming
-  (is (-> (reify ServiceScheduler) scheduler->name nil?))
-  (is (-> (reify ServiceScheduler) (attach-name "foo") scheduler->name (= "foo"))))

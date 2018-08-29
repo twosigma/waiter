@@ -563,8 +563,8 @@
   [{:keys [home-path-prefix http-options force-kill-after-ms framework-id-ttl mesos-slave-port
            slave-directory sync-deployment url
            ;; functions provided in the context
-           is-waiter-app?-fn leader?-fn scheduler-state-chan scheduler-syncer-interval-secs service-id->password-fn
-           service-id->service-description-fn start-scheduler-syncer-fn]}]
+           is-waiter-app?-fn leader?-fn scheduler-name scheduler-state-chan scheduler-syncer-interval-secs
+           service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn]}]
   {:pre [(not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
          (or (nil? mesos-slave-port) (utils/pos-int? mesos-slave-port))
@@ -576,6 +576,7 @@
          (utils/pos-int? (:timeout-cycles sync-deployment))
          (fn? is-waiter-app?-fn)
          (fn? leader?-fn)
+         (not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
          (fn? service-id->password-fn)
@@ -595,7 +596,7 @@
         #(get-service->instances marathon-api mesos-api is-waiter-app?-fn retrieve-framework-id-fn
                                  service-id->failed-instances-transient-store service-id->service-description-fn)
         {:keys [retrieve-syncer-state-fn]}
-        (start-scheduler-syncer-fn get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
+        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
         marathon-scheduler (->MarathonScheduler
                              marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store

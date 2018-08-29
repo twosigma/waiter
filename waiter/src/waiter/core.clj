@@ -620,14 +620,14 @@
                                           (str/starts-with? service-id service-id-prefix))
                       scheduler-context {:is-waiter-app?-fn is-waiter-app?-fn
                                          :leader?-fn leader?-fn
+                                         :scheduler-name (-> scheduler-config :kind utils/keyword->str)
                                          :scheduler-state-chan scheduler-state-chan
                                          ;; TODO scheduler-syncer-interval-secs should be inside the scheduler's config
                                          :scheduler-syncer-interval-secs scheduler-syncer-interval-secs
                                          :service-id->password-fn service-id->password-fn*
                                          :service-id->service-description-fn service-id->service-description-fn*
                                          :start-scheduler-syncer-fn start-scheduler-syncer-fn}]
-                  (-> (utils/create-component scheduler-config :context scheduler-context)
-                      (scheduler/attach-name (-> scheduler-config :kind utils/keyword->str)))))
+                  (utils/create-component scheduler-config :context scheduler-context)))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
    :service-id->password-fn* (pc/fnk [[:state passwords]]
@@ -651,13 +651,13 @@
                                       available? (fn scheduler-available? [service-instance health-check-path]
                                                    (scheduler/available? http-client service-instance health-check-path))]
                                   (fn start-scheduler-syncer-fn
-                                    [get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
+                                    [scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
                                     (let [timeout-chan (->> (t/seconds scheduler-syncer-interval-secs)
                                                             (du/time-seq (t/now))
                                                             chime/chime-ch)]
                                       (scheduler/start-scheduler-syncer
                                         clock timeout-chan service-id->service-description-fn* available?
-                                        failed-check-threshold get-service->instances-fn scheduler-state-chan)))))})
+                                        failed-check-threshold scheduler-name get-service->instances-fn scheduler-state-chan)))))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]

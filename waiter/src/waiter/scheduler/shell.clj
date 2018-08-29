@@ -671,14 +671,15 @@
 (defn shell-scheduler
   "Creates and starts shell scheduler with loops"
   [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
-           scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
-  {:pre [(au/chan? scheduler-state-chan)
+           scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
+  {:pre [(not (str/blank? scheduler-name))
+         (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
          (fn? start-scheduler-syncer-fn)]}
   (let [id->service-agent (agent {})
         get-service->instances-fn #(get-service->instances id->service-agent)
         {:keys [retrieve-syncer-state-fn]}
-        (start-scheduler-syncer-fn get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
+        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
         {:keys [id->service-agent port->reservation-atom] :as scheduler}
         (create-shell-scheduler (assoc config
                                   :id->service-agent id->service-agent
