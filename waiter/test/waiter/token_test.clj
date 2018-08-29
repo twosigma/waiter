@@ -535,8 +535,8 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key sd/token-metadata-keys]
-              (is (not (contains? body-map key)))))))
+            (doseq [key sd/system-metadata-keys]
+              (is (not (contains? body-map key)) (str key))))))
 
       (testing "get:updated-service-description:include-metadata-and-foo"
         (let [{:keys [body headers status]}
@@ -569,8 +569,8 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key sd/token-metadata-keys]
-              (is (not (contains? body-map key)))))))
+            (doseq [key sd/system-metadata-keys]
+              (is (not (contains? body-map key)) (str key))))))
 
       (testing "get:invalid-token"
         (let [{:keys [body status]}
@@ -651,32 +651,52 @@
                             "root" token-root))
                  (kv/fetch kv-store token)))))
 
-      (testing "post:new-user-metadata:fallback-period-secs"
-        (let [token (str token (rand-int 100000))
-              kv-store (kv/->LocalKeyValueStore (atom {}))
-              service-description (walk/stringify-keys
-                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
-                                     :fallback-period-secs 120
-                                     :token token})
-              {:keys [body status]}
-              (run-handle-token-request
-                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
-                {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
-                 :headers {}
-                 :request-method :post})]
-          (is (= 200 status))
-          (is (str/includes? body (str "Successfully created " token)))
-          (is (= (-> service-description (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
-                 (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
-          (is (= (-> service-description
-                     sd/transform-allowed-params-token-entry
-                     (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
-                            "last-update-user" auth-user
-                            "owner" "tu1"
-                            "root" token-root))
-                 (kv/fetch kv-store token)))))
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            token (str token (rand-int 100000))
+            service-description (walk/stringify-keys
+                                  {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
+                                   :fallback-period-secs 120
+                                   :token token})]
+        (testing "post:new-user-metadata:fallback-period-secs"
+          (let [{:keys [body status]}
+                (run-handle-token-request
+                  kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                  {:authorization/user auth-user
+                   :body (StringBufferInputStream. (utils/clj->json service-description))
+                   :headers {}
+                   :request-method :post})]
+            (is (= 200 status))
+            (is (str/includes? body (str "Successfully created " token)))
+            (is (= (-> service-description (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
+                   (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
+            (is (= (-> service-description
+                       sd/transform-allowed-params-token-entry
+                       (dissoc "token")
+                       (assoc "last-update-time" (clock-millis)
+                              "last-update-user" auth-user
+                              "owner" "tu1"
+                              "root" token-root))
+                   (kv/fetch kv-store token)))))
+
+        (testing "get:updated-service-description:fallback-period-secs"
+          (let [service-description (assoc service-description "owner" "tu1")
+                {:keys [body headers status]}
+                (run-handle-token-request
+                  kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil
+                  {:headers {"x-waiter-token" token}
+                   :query-params {"include" "foo"}
+                   :request-method :get})]
+            (is (= 200 status))
+            (is (= "application/json" (get headers "content-type")))
+            (is (not (str/includes? body "last-update-time")))
+            (let [body-map (-> body str json/read-str)]
+              (println body-map)
+              (doseq [key sd/service-parameter-keys]
+                (is (= (get service-description key) (get body-map key))))
+              (doseq [key (disj sd/user-metadata-keys "stale-timeout-mins")]
+                (is (= (get service-description key) (get body-map key))))
+              (doseq [key sd/system-metadata-keys]
+                (is (not (contains? body-map key)) (str key)))))))
 
       (testing "post:edit-user-metadata:fallback-period-secs"
         (let [token (str token (rand-int 100000))
