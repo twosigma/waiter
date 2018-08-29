@@ -124,9 +124,9 @@
         (is (contains? token-description# :owner))
         (is (contains? token-description# :root)))
       (is (= (cond-> {:health-check-url "/probe"
-                      :name ~service-id-prefix}
+                      :name ~service-id-prefix
+                      :owner (retrieve-username)}
                      ~include-metadata (assoc :last-update-user (retrieve-username)
-                                              :owner (retrieve-username)
                                               :root ~token-root)
                      (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
              (dissoc token-description# :last-update-time :previous))))))
