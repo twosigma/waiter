@@ -1195,6 +1195,13 @@
               post-response (post-token waiter-url token-description-1)
               _ (assert-response-status post-response 200)
               service-id-1 (retrieve-service-id waiter-url service-id-headers)]
+
+          (testing "token response contains fallback and owner"
+            (let [{:keys [body] :as response} (get-token waiter-url token :query-params {})]
+              (assert-response-status response 200)
+              (is (= (assoc service-description-1 :owner (retrieve-username))
+                     (-> body json/read-str walk/keywordize-keys)))))
+
           (with-service-cleanup
             service-id-1
 
