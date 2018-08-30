@@ -16,6 +16,7 @@
 (ns waiter.scheduler.shell
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.java.shell :as sh]
             [clojure.string :as str]
@@ -101,7 +102,8 @@
    port->reservation-atom port-grace-period-ms]
   (try
     (log/info "killing process:" instance)
-    (.destroyForcibly process)
+    (when process
+      (.destroyForcibly process))
     (sh/sh "pkill" "-9" "-g" (str pid))
     (release-port! port->reservation-atom port port-grace-period-ms)
     (doseq [port extra-ports]
@@ -682,9 +684,78 @@
                       retrieve-syncer-state-fn
                       service-id->password-fn)))
 
+(defn restore-state
+  "Restores shell scheduler state from the specified file."
+  [{:keys [id->service-agent port->reservation-atom scheduler-name work-directory]} ^String backup-file-name]
+  (try
+    (let [backup-file (File. ^String work-directory backup-file-name)
+          backup-file-path (.getAbsolutePath backup-file)]
+      (if (and (.exists backup-file) (.isFile backup-file))
+        (do
+          (log/info "restoring" scheduler-name "scheduler state from" backup-file-path)
+          (let [{:strs [id->service port->reservation time]} (-> backup-file-path slurp json/read-str)
+                str-to-date (fn str-to-date [date-str]
+                              (when date-str
+                                (du/str-to-date date-str)))]
+            (log/info scheduler-name "scheduler was last backed up at" time)
+            (let [id->service (->> id->service
+                                   (pc/map-vals
+                                     (fn [service]
+                                       (-> (pc/map-keys keyword service)
+                                           (update :id->instance
+                                                   (fn [id->instance]
+                                                     (pc/map-vals
+                                                       (fn [instance]
+                                                         (-> (pc/map-keys keyword instance)
+                                                             (update :started-at str-to-date)))
+                                                       id->instance)))
+                                           (update :service
+                                                   (fn [service]
+                                                     (-> (pc/map-keys keyword service)
+                                                         (update :task-stats
+                                                                 (fn [task-stats]
+                                                                   (pc/map-keys keyword task-stats))))))))))]
+              (log/info "restoring" (count id->service) "entries into id->service-agent")
+              (send id->service-agent (constantly id->service))
+              (log/info "awaiting completion of pending messages to id->service-agent")
+              (await id->service-agent))
+            (let [port->reservation (->> port->reservation
+                                         (pc/map-keys #(Integer/parseInt %))
+                                         (pc/map-vals
+                                           (fn [reservation]
+                                             (-> (pc/map-keys keyword reservation)
+                                                 (update :expiry-time str-to-date)
+                                                 (update :state keyword)))))]
+              (log/info "restoring" (count port->reservation) "entries into port->reservation-atom")
+              (reset! port->reservation-atom port->reservation))
+            (log/info "restored" scheduler-name "scheduler state from" time)))
+        (log/info "skipping" scheduler-name "scheduler restore as file" backup-file-path "does not exist")))
+    (catch Exception ex
+      (log/error ex "error in restoring" scheduler-name "scheduler state"))))
+
+(defn backup-state
+  "Backs up shell scheduler state to the specified file."
+  [{:keys [id->service-agent port->reservation-atom scheduler-name work-directory]} ^String backup-file-name]
+  (try
+    (let [backup-file (File. ^String work-directory backup-file-name)
+          backup-file-path (.getAbsolutePath backup-file)]
+      (log/info "backing up" scheduler-name "scheduler state to" backup-file-path)
+      (->> {:id->service (pc/map-vals
+                           (fn [service-entry]
+                             (update service-entry :id->instance
+                                     (fn [id->instance]
+                                       (pc/map-vals #(dissoc % :shell-scheduler/process) id->instance))))
+                           @id->service-agent)
+            :port->reservation @port->reservation-atom
+            :time (t/now)}
+           utils/clj->json
+           (spit backup-file-path)))
+    (catch Exception ex
+      (log/error ex "error in backing up" scheduler-name "scheduler state"))))
+
 (defn shell-scheduler
   "Creates and starts shell scheduler with loops"
-  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
+  [{:keys [backup failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
@@ -700,6 +771,14 @@
                                   :retrieve-syncer-state-fn retrieve-syncer-state-fn))
         http-client (http/client {:connect-timeout health-check-timeout-ms
                                   :idle-timeout health-check-timeout-ms})]
+    (let [{:keys [file-name interval-ms]} backup]
+      (when file-name
+        (restore-state scheduler file-name)
+        (when interval-ms
+          (du/start-timer-task
+            (t/millis interval-ms)
+            (fn backup-state-task [] (backup-state scheduler file-name))
+            :delay-ms interval-ms))))
     (start-updating-health scheduler-name id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)
     (start-retry-failed-instances scheduler-name id->service-agent port->reservation-atom port-range failed-instance-retry-interval-ms)
     scheduler))

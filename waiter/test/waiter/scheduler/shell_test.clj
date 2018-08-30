@@ -16,6 +16,7 @@
 (ns waiter.scheduler.shell-test
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.java.shell :as sh]
             [clojure.test :refer :all]
@@ -23,8 +24,10 @@
             [qbits.jet.client.http :as http]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.shell :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import clojure.lang.ExceptionInfo
+           java.io.File
            java.util.concurrent.TimeUnit
            waiter.scheduler.shell.ShellScheduler))
 
@@ -562,3 +565,113 @@
       (is (= 10 (pid->memory 2)))
       (is (= 1100 (pid->memory 3)))
       (is (= 1000 (pid->memory 4))))))
+
+(let [id->service {"w8r-kitchen"
+                   {:id->instance {"w8r-kitchen.a1" {:exit-code 1,
+                                                     :extra-ports [],
+                                                     :service-id "w8r-kitchen",
+                                                     :protocol "http",
+                                                     :started-at (du/str-to-date "2018-08-30T15:44:33.136Z"),
+                                                     :port 10000,
+                                                     :health-check-status nil,
+                                                     :log-directory "/tmp/w8r-kitchen/w8r-kitchen.a1",
+                                                     :host "127.0.0.5",
+                                                     :killed? true,
+                                                     :id "w8r-kitchen.a1",
+                                                     :shell-scheduler/pid 32432,
+                                                     :healthy? false,
+                                                     :shell-scheduler/working-directory
+                                                     "/tmp/w8r-kitchen/w8r-kitchen.a1",
+                                                     :flags [],
+                                                     :failed? true,
+                                                     :message "Exited with code 1"},
+                                   "w8r-kitchen.b2" {:exit-code nil,
+                                                     :extra-ports [],
+                                                     :service-id "w8r-kitchen",
+                                                     :protocol "http",
+                                                     :started-at (du/str-to-date "2018-08-30T15:44:37.393Z"),
+                                                     :port 10001,
+                                                     :health-check-status nil,
+                                                     :log-directory "/tmp/w8r-kitchen/w8r-kitchen.b2",
+                                                     :host "127.0.0.10",
+                                                     :id "w8r-kitchen.b2",
+                                                     :shell-scheduler/pid 76576,
+                                                     :healthy? true,
+                                                     :shell-scheduler/working-directory "/tmp/w8r-kitchen/w8r-kitchen.b2",
+                                                     :flags [],
+                                                     :message nil}},
+                    :service {:environment {"HOME" "/home/w8r",
+                                            "LOGNAME" "w8r",
+                                            "USER" "w8r",
+                                            "WAITER_CPUS" "0.1",
+                                            "WAITER_MEM_MB" "256",
+                                            "WAITER_PASSWORD" "7e37af",
+                                            "WAITER_SERVICE_ID" "w8r-kitchen",
+                                            "WAITER_USERNAME" "waiter"},
+                              :id "w8r-kitchen",
+                              :instances 1,
+                              :service-description {"scale-up-factor" 0.1,
+                                                    "mem" 256,
+                                                    "health-check-url" "/status",
+                                                    "grace-period-secs" 120,
+                                                    "backend-proto" "http",
+                                                    "authentication" "standard",
+                                                    "jitter-threshold" 0.5,
+                                                    "scale-factor" 1,
+                                                    "restart-backoff-factor" 2,
+                                                    "permitted-user" "w8r",
+                                                    "health-check-interval-secs" 10,
+                                                    "cmd-type" "shell",
+                                                    "name" "kitchen-app",
+                                                    "interstitial-secs" 0,
+                                                    "min-instances" 1,
+                                                    "concurrency-level" 1,
+                                                    "max-instances" 500,
+                                                    "metric-group" "waiter_kitchen",
+                                                    "scale-down-factor" 0.001,
+                                                    "metadata" {},
+                                                    "expired-instance-restart-rate" 0.1,
+                                                    "cmd" "/kitchen/bin/kitchen -p $PORT0",
+                                                    "env" {},
+                                                    "idle-timeout-mins" 10,
+                                                    "version" "v1",
+                                                    "blacklist-on-503" true,
+                                                    "health-check-max-consecutive-failures" 5,
+                                                    "cpus" 0.1,
+                                                    "allowed-params" [],
+                                                    "run-as-user" "w8r",
+                                                    "distribution-scheme" "balanced",
+                                                    "ports" 1,
+                                                    "max-queue-length" 1000000,
+                                                    "instance-expiry-mins" 7200},
+                              :shell-scheduler/mem 256,
+                              :task-count 1,
+                              :task-stats {:healthy 1, :running 1, :staged 0, :unhealthy 0}}}}
+      port->reservation {10000 {:expiry-time (du/str-to-date "2018-08-30T15:46:37.374Z")
+                                :state :in-grace-period-until-expiry}
+                         10001 {:expiry-time nil
+                                :state :in-use}}
+      work-directory (System/getProperty "user.dir")]
+
+  (deftest test-backup-state
+    (let [scheduler-config (assoc (common-scheduler-config) :work-directory work-directory)
+          {:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler scheduler-config)]
+      (reset! port->reservation-atom port->reservation)
+      (send id->service-agent (constantly id->service))
+      (await id->service-agent)
+
+      (let [file-content-atom (atom nil)
+            backup-file "test-files/test-backup-state.json"]
+        (with-redefs [spit (fn [file-name content]
+                             (is (= (str work-directory (File/separator) backup-file) file-name))
+                             (reset! file-content-atom content))]
+          (backup-state scheduler backup-file))
+        (is (= (-> "test-files/shell-scheduler-backup.json" slurp json/read-str (dissoc "time"))
+               (-> @file-content-atom json/read-str (dissoc "time")))))))
+
+  (deftest test-restore-state
+    (let [scheduler-config (assoc (common-scheduler-config) :work-directory work-directory)
+          {:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler scheduler-config)]
+      (restore-state scheduler "test-files/shell-scheduler-backup.json")
+      (is (= id->service @id->service-agent))
+      (is (= port->reservation @port->reservation-atom)))))
