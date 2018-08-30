@@ -932,10 +932,11 @@ if __name__ == '__main__':
         _auth_handler = BasicAuthHandler(username, password)
 
     if args.ssl:
-        keystore_path = os.environ.get('KEYSTORE')
-        keystore_password = os.environ.get('KEYSTORE_PASSWORD')
-        if not (keystore_path and keystore_password):
-            error_msg = 'Must set both KEYSTORE and KEYSTORE_PASSWORD environment variables for HTTPS mode.'
+        cert_path = os.environ.get('CERT_PATH')
+        key_path = os.environ.get('KEY_PATH')
+        key_password = os.environ.get('KEY_PASSWORD')
+        if not cert_path:
+            error_msg = 'Must set CERT_PATH environment variable for HTTPS mode. KEY_PATH and KEY_PASSWORD are optional.'
             kitchen_logger.error(error_msg)
             sys.exit(error_msg)
 
@@ -955,7 +956,7 @@ if __name__ == '__main__':
             except AttributeError:
                 ssl_protocol = ssl.PROTOCOL_TLSv1_2
             ssl_context = ssl.SSLContext(ssl_protocol)
-            ssl_context.load_cert_chain(keystore_path, password=keystore_password)
+            ssl_context.load_cert_chain(cert_path, key_path, key_password)
             kitchen.socket = ssl_context.wrap_socket(kitchen.socket, server_side=True)
             protocol = 'HTTPS'
         else:

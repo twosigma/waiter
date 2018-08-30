@@ -23,6 +23,13 @@ class TestBasicHttp:
         assert req.headers.get('Content-Type') == 'text/plain'
         assert req.text == 'Hello World'
 
+    def test_hello_https(self, kitchen_ssl_server):
+        """Test default 'Hello World' response with HTTPS"""
+        req = requests.get(kitchen_ssl_server.url(), verify='.')
+        assert req.status_code == requests.codes.ok
+        assert req.headers.get('Content-Type') == 'text/plain'
+        assert req.text == 'Hello World'
+
     def test_content_type(self, kitchen_server):
         """Test default 'Hello World' response"""
         req = requests.get(kitchen_server.url(), headers={'x-kitchen-content-type': 'text/html'})
