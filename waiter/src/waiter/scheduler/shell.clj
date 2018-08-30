@@ -251,7 +251,7 @@
 
 (defn- kill-instance
   "Deletes the instance corresponding to service-id/instance-id and returns the updated id->service map"
-  [id->service service-id instance-id port->reservation-atom port-grace-period-ms completion-promise]
+  [id->service service-id instance-id message port->reservation-atom port-grace-period-ms completion-promise]
   (try
     (if (contains? id->service service-id)
       (let [{:keys [id->instance]} (get id->service service-id)
@@ -263,8 +263,10 @@
             (deliver completion-promise :deleted)
             (-> id->service
                 (update-in [service-id :service :instances] dec)
-                (assoc-in [service-id :id->instance instance-id :killed?] true)
-                (assoc-in [service-id :id->instance instance-id :shell-scheduler/process] nil)))
+                (update-in [service-id :id->instance instance-id] assoc
+                           :killed? true
+                           :message message
+                           :shell-scheduler/process nil)))
           (do
             (log/info "instance" instance-id "does not exist")
             (deliver completion-promise :no-such-instance-exists)
@@ -325,10 +327,12 @@
     (let [exit-value (.exitValue process)]
       (log/info "instance exited with value" {:instance instance :exit-value exit-value})
       (release-port! port->reservation-atom port port-grace-period-ms)
-      (assoc instance :healthy? false
-                      :failed? (if (zero? exit-value) false true)
-                      :killed? true ; does not actually mean killed -- using this to mark inactive
-                      :exit-code exit-value))
+      (assoc instance
+        :exit-code exit-value
+        :failed? (if (zero? exit-value) false true)
+        :healthy? false
+        :killed? true ; does not actually mean killed -- using this to mark inactive
+        :message (str "Exited with code " exit-value)))
     instance))
 
 (defn- enforce-grace-period
@@ -340,10 +344,12 @@
         (do (log/info "unhealthy instance exceeded its grace period, killing instance"
                       {:instance instance :start-time started-at :current-time current-time :grace-period-secs grace-period-secs})
             (kill-process! instance port->reservation-atom port-grace-period-ms)
-            (assoc instance :failed? true
-                            :killed? true
-                            :flags #{:never-passed-health-checks}
-                            :shell-scheduler/process nil))
+            (assoc instance
+              :failed? true
+              :flags #{:never-passed-health-checks}
+              :killed? true
+              :message (str "Exceeded grace period of " grace-period-secs " seconds")
+              :shell-scheduler/process nil))
         instance))
     instance))
 
@@ -356,11 +362,13 @@
       (if (and memory-used (> memory-used memory-allocated))
         (do (log/info "instance exceeds memory limit, killing instance" {:instance instance :memory-limit memory-allocated :memory-used memory-used})
             (kill-process! instance port->reservation-atom port-grace-period-ms)
-            (assoc instance :healthy? false
-                            :failed? true
-                            :killed? true
-                            :flags #{:memory-limit-exceeded}
-                            :shell-scheduler/process nil))
+            (assoc instance
+              :failed? true
+              :flags #{:memory-limit-exceeded}
+              :healthy? false
+              :killed? true
+              :message "Exceeded allocated memory usage"
+              :shell-scheduler/process nil))
         instance))
     instance))
 
@@ -555,8 +563,9 @@
 
   (kill-instance [this {:keys [id service-id] :as instance}]
     (if (scheduler/service-exists? this service-id)
-      (let [completion-promise (promise)]
-        (send id->service-agent kill-instance service-id id
+      (let [completion-promise (promise)
+            message "Killed using scheduler API"]
+        (send id->service-agent kill-instance service-id id message
               port->reservation-atom port-grace-period-ms
               completion-promise)
         (let [result (deref completion-promise)
