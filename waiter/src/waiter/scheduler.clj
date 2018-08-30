@@ -559,7 +559,7 @@
                        ([]
                          (try
                            (timers/start-stop-time!
-                             (metrics/waiter-timer "state" "scheduler-sync" scheduler-name)
+                             (metrics/waiter-timer "core" "scheduler" scheduler-name "syncer")
                              (let [{:keys [service-id->health-check-context scheduler-messages]}
                                    (update-scheduler-state
                                      scheduler-name get-service->instances-fn service-id->service-description-fn available?
@@ -571,8 +571,8 @@
                                  :service-id->health-check-context service-id->health-check-context)))
                            (catch Throwable th
                              (log/error th "scheduler-syncer unable to receive updates")
-                             (counters/inc! (metrics/waiter-counter "state" "scheduler-sync" scheduler-name "errors"))
-                             (meters/mark! (metrics/waiter-meter "state" "scheduler-sync" scheduler-name "error-rate"))
+                             (counters/inc! (metrics/waiter-counter "core" "scheduler" scheduler-name "syncer" "errors"))
+                             (meters/mark! (metrics/waiter-meter "core" "scheduler" scheduler-name "syncer" "error-rate"))
                              current-state)))
                        :priority true)]
             (recur next-state)))
