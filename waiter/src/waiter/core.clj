@@ -611,18 +611,23 @@
 
 (def scheduler
   {:scheduler (pc/fnk [[:curator leader?-fn]
-                       [:settings scheduler-config]
-                       [:state service-id-prefix]
+                       [:settings scheduler-config scheduler-syncer-interval-secs]
+                       [:state scheduler-state-chan service-id-prefix]
                        service-id->password-fn*
-                       service-id->service-description-fn*]
+                       service-id->service-description-fn*
+                       start-scheduler-syncer-fn]
                 (let [is-waiter-app?-fn (fn is-waiter-app? [^String service-id]
                                           (str/starts-with? service-id service-id-prefix))
                       scheduler-context {:is-waiter-app?-fn is-waiter-app?-fn
                                          :leader?-fn leader?-fn
+                                         :scheduler-name (-> scheduler-config :kind utils/keyword->str)
+                                         :scheduler-state-chan scheduler-state-chan
+                                         ;; TODO scheduler-syncer-interval-secs should be inside the scheduler's config
+                                         :scheduler-syncer-interval-secs scheduler-syncer-interval-secs
                                          :service-id->password-fn service-id->password-fn*
-                                         :service-id->service-description-fn service-id->service-description-fn*}]
-                  (-> (utils/create-component scheduler-config :context scheduler-context)
-                      (scheduler/attach-name (-> scheduler-config :kind utils/keyword->str)))))
+                                         :service-id->service-description-fn service-id->service-description-fn*
+                                         :start-scheduler-syncer-fn start-scheduler-syncer-fn}]
+                  (utils/create-component scheduler-config :context scheduler-context)))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
    :service-id->password-fn* (pc/fnk [[:state passwords]]
@@ -637,7 +642,22 @@
                                             [service-id & {:keys [effective?] :or {effective? true}}]
                                             (sd/service-id->service-description
                                               kv-store service-id service-description-defaults
-                                              metric-group-mappings :effective? effective?)))})
+                                              metric-group-mappings :effective? effective?)))
+   :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
+                                       [:state clock]
+                                       service-id->service-description-fn*]
+                                (let [http-client (http/client {:connect-timeout health-check-timeout-ms
+                                                                :idle-timeout health-check-timeout-ms})
+                                      available? (fn scheduler-available? [service-instance health-check-path]
+                                                   (scheduler/available? http-client service-instance health-check-path))]
+                                  (fn start-scheduler-syncer-fn
+                                    [scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
+                                    (let [timeout-chan (->> (t/seconds scheduler-syncer-interval-secs)
+                                                            (du/time-seq (t/now))
+                                                            chime/chime-ch)]
+                                      (scheduler/start-scheduler-syncer
+                                        clock timeout-chan service-id->service-description-fn* available?
+                                        failed-check-threshold scheduler-name get-service->instances-fn scheduler-state-chan)))))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:curator kv-store]
@@ -926,10 +946,9 @@
                                                                                 websocket-client bytes-encryptor websocket-request-auth-cookie-attacher)}))
    :router-state-maintainer (pc/fnk [[:routines service-id->service-description-fn]
                                      [:settings deployment-error-config]
-                                     [:state router-id]
-                                     router-list-maintainer scheduler-maintainer]
-                              (let [scheduler-state-chan (async/tap (:scheduler-state-mult-chan scheduler-maintainer) (au/latest-chan))
-                                    exit-chan (async/chan)
+                                     [:state router-id scheduler-state-chan]
+                                     router-list-maintainer]
+                              (let [exit-chan (async/chan)
                                     router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))
                                     maintainer (state/start-router-state-maintainer
                                                  scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
@@ -943,19 +962,6 @@
                                    (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                          service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
                                      (scheduler/scheduler-broken-services-gc service-gc-go-routine query-state-fn scheduler scheduler-gc-config)))
-   :scheduler-maintainer (pc/fnk [[:routines service-id->service-description-fn]
-                                  [:scheduler scheduler]
-                                  [:settings [:health-check-config health-check-timeout-ms failed-check-threshold] scheduler-syncer-interval-secs]
-                                  [:state clock]]
-                           (let [scheduler-state-chan (au/latest-chan)
-                                 scheduler-state-mult-chan (async/mult scheduler-state-chan)
-                                 http-client (http/client {:connect-timeout health-check-timeout-ms
-                                                           :idle-timeout health-check-timeout-ms})
-                                 timeout-chan (chime/chime-ch (du/time-seq (t/now) (t/seconds scheduler-syncer-interval-secs)))]
-                             (assoc (scheduler/start-scheduler-syncer
-                                      clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn
-                                      scheduler/available? http-client failed-check-threshold)
-                               :scheduler-state-mult-chan scheduler-state-mult-chan)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
                                    [:routines router-metrics-helpers service-id->idle-timeout]
                                    [:scheduler scheduler]
@@ -1000,16 +1006,18 @@
                                 (async/tap router-state-push-mult state-chan)
                                 (state/start-service-chan-maintainer
                                   {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
-   :state-sources (pc/fnk [[:state query-app-maintainer-chan]
+   :state-sources (pc/fnk [[:scheduler scheduler]
+                           [:state query-app-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
-                           scheduler-broken-services-gc scheduler-maintainer scheduler-services-gc]
+                           scheduler-broken-services-gc scheduler-services-gc]
                     {:app-maintainer-state query-app-maintainer-chan
                      :autoscaler-state (:query-service-state-fn autoscaler)
                      :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
                      :interstitial-maintainer-state (:query-chan interstitial-maintainer)
                      :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
                      :scheduler-services-gc-state (:query scheduler-services-gc)
-                     :scheduler-state (:query-chan scheduler-maintainer)
+                     :scheduler-state (fn scheduler-state-fn [service-id]
+                                        (scheduler/service-id->state scheduler service-id))
                      :transient-metrics-gc-state (:query gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
@@ -1245,13 +1253,12 @@
                                         (wrap-secure-request-fn
                                           (fn r-router-metrics-state-handler-fn [request]
                                             (handler/get-router-metrics-state router-id router-metrics-state-fn request)))))
-   :state-scheduler-handler-fn (pc/fnk [[:daemons scheduler-maintainer]
+   :state-scheduler-handler-fn (pc/fnk [[:scheduler scheduler]
                                         [:state router-id]
                                         wrap-secure-request-fn]
-                                 (let [scheduler-query-chan (:query-chan scheduler-maintainer)]
-                                   (wrap-secure-request-fn
-                                     (fn scheduler-state-handler-fn [request]
-                                       (handler/get-query-chan-state-handler router-id scheduler-query-chan request)))))
+                                 (wrap-secure-request-fn
+                                   (fn scheduler-state-handler-fn [request]
+                                     (handler/get-scheduler-state router-id scheduler request))))
    :state-service-handler-fn (pc/fnk [[:daemons state-sources]
                                       [:state instance-rpc-chan local-usage-agent router-id]
                                       wrap-secure-request-fn]

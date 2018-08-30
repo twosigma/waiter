@@ -229,32 +229,31 @@
         instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "proto" "/log" "test")
         instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "proto" "/log" "test")
-        scheduler (reify ServiceScheduler
-                    (get-service->instances [_]
-                      {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
-                                                  :failed-instances []}
-                       (->Service "s2" {} {} {}) {:active-instances []
-                                                  :failed-instances []}})
-                    (service-id->state [_ _]
-                      {:service-specific-state []})
-                    (state [_]
-                      {:state []}))
-        available? (fn [{:keys [id]} url _]
+        get-service->instances (constantly
+                                 {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
+                                                             :failed-instances []}
+                                  (->Service "s2" {} {} {}) {:active-instances []
+                                                             :failed-instances []}})
+        available? (fn [{:keys [id]} url]
                      (async/go (cond
                                  (and (= "s1.i1" id) (= "/s1" url)) {:healthy? true
                                                                      :status 200}
                                  :else {:healthy? false
                                         :status 400})))
         start-time-ms (-> (clock) .getMillis)
-        {:keys [exit-chan query-chan]}
-        (start-scheduler-syncer clock scheduler scheduler-state-chan timeout-chan service-id->service-description-fn available? {} 5)
+        failed-check-threshold 5
+        scheduler-name "test-scheduler"
+        {:keys [exit-chan query-chan retrieve-syncer-state-fn]}
+        (start-scheduler-syncer clock timeout-chan service-id->service-description-fn available?
+                                failed-check-threshold scheduler-name get-service->instances scheduler-state-chan)
         instance3-unhealthy (assoc instance3
                               :flags #{:has-connected :has-responded}
                               :healthy? false
                               :health-check-status 400)]
     (let [response-chan (async/promise-chan)]
       (async/>!! query-chan {:response-chan response-chan :service-id "s0"})
-      (is (= {:last-update-time nil :service-specific-state []} (async/<!! response-chan))))
+      (is (= {:last-update-time nil} (async/<!! response-chan)))
+      (is (= {} (retrieve-syncer-state-fn))))
     (async/>!! timeout-chan :timeout)
     (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
       (is (= :update-available-services update-apps-msg))
@@ -270,16 +269,21 @@
           response (async/alt!!
                      response-chan ([state] state)
                      (async/timeout 10000) ([_] {:message "Request timed out!"}))]
-      (doseq [required-key [:service-id->health-check-context
-                            :state]]
-        (is (contains? response required-key)))
+      (is (contains? response :service-id->health-check-context))
       (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy},
                     :instance-id->tracked-failed-instance {},
                     :instance-id->failed-health-check-count {"s1.i3" 1}}
               "s2" {:instance-id->failed-health-check-count {}
                     :instance-id->tracked-failed-instance {}
                     :instance-id->unhealthy-instance {}}}
-             (:service-id->health-check-context response))))
+             (:service-id->health-check-context response)))
+      (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy},
+                    :instance-id->tracked-failed-instance {},
+                    :instance-id->failed-health-check-count {"s1.i3" 1}}
+              "s2" {:instance-id->failed-health-check-count {}
+                    :instance-id->tracked-failed-instance {}
+                    :instance-id->unhealthy-instance {}}}
+             (:service-id->health-check-context (retrieve-syncer-state-fn)))))
     ;; Retrieves scheduler state with service-id
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan :service-id "s1"})
@@ -290,8 +294,7 @@
       (doseq [required-key [:instance-id->failed-health-check-count
                             :instance-id->tracked-failed-instance
                             :instance-id->unhealthy-instance
-                            :last-update-time
-                            :service-specific-state]]
+                            :last-update-time]]
         (is (contains? response required-key)))
       (is (nil? (:service-id->health-check-context response)))
       (is (<= start-time-ms (-> response :last-update-time .getMillis) end-time-ms)))
@@ -464,9 +467,9 @@
 
 (deftest test-available?
   (with-redefs [http/get (fn [_ _] (throw (IllegalArgumentException. "Unable to make request")))]
-    (let [resp (async/<!! (available? {:port 80 :protocol "http" :host "www.example.com"}
-                                      "/health-check"
-                                      (Object.)))]
+    (let [resp (async/<!! (available? (Object.)
+                                      {:port 80 :protocol "http" :host "www.example.com"}
+                                      "/health-check"))]
       (is (= {:healthy? false} resp)))))
 
 (defmacro check-trackers
@@ -726,7 +729,3 @@
           (is (= expected-state-1 actual-state-1')))
         (testing "applied router state update"
           (is (= expected-state-2 actual-state-2)))))))
-
-(deftest test-scheduler-naming
-  (is (-> (reify ServiceScheduler) scheduler->name nil?))
-  (is (-> (reify ServiceScheduler) (attach-name "foo") scheduler->name (= "foo"))))

@@ -603,6 +603,9 @@
        :cook-api {}
        :home-path-prefix "/home/path/"
        :search-interval (t/minutes 10)
+       ;; context
+       :retrieve-syncer-state-fn (constantly {})
+       :scheduler-name "cook"
        :service-id->failed-instances-transient-store (atom {})
        :service-id->password-fn #(str % ".password")
        :service-id->service-description-fn (constantly {})}
@@ -610,7 +613,8 @@
       map->CookScheduler))
 
 (deftest test-get-services->instances
-  (let [{:keys [service-id->failed-instances-transient-store] :as scheduler} (create-cook-scheduler-helper)
+  (let [{:keys [allowed-users cook-api search-interval service-id->failed-instances-transient-store] :as scheduler}
+        (create-cook-scheduler-helper)
         suffix (System/nanoTime)
         jobs [{:labels {:service-id "S1"} :name (str "healthy-S1.1." suffix) :status "running"}
               {:labels {:service-id "S1"} :name (str "healthy-S1.2." suffix) :status "running"}
@@ -648,7 +652,7 @@
           (is (seq (service-id->failed-instances service-id->failed-instances-transient-store "S2")))
 
           (is (= {service-1 service-1-instances, service-2 service-2-instances}
-                 (scheduler/get-service->instances scheduler))))
+                 (get-service->instances cook-api allowed-users search-interval service-id->failed-instances-transient-store))))
         (finally
           (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store []))))))
 
@@ -830,11 +834,18 @@
 
 (deftest test-service-id->state
   (let [service-id "service-id"
+        syncer-state-atom (atom {:last-update-time :time
+                                 :service-id->health-check-context {}})
+        retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state @syncer-state-atom)
         cook-scheduler (create-cook-scheduler-helper
+                         :retrieve-syncer-state-fn retrieve-syncer-state-fn
                          :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]}))]
-    (is (= {:failed-instances [:failed-instances]}
+    (is (= {:failed-instances [:failed-instances]
+            :syncer {:last-update-time :time}}
            (scheduler/service-id->state cook-scheduler service-id)))
-    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}}
+    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
+            :syncer {:last-update-time :time
+                     :service-id->health-check-context {}}}
            (scheduler/state cook-scheduler)))))
 
 (deftest test-cook-scheduler
@@ -847,12 +858,14 @@
                                               :max 70
                                               :min 30}
                         :search-interval-days 10
+                        :scheduler-name "cook"
                         :service-id->password-fn #(str % ".password")
                         :service-id->service-description-fn (constantly {})}
           cook-api (Object.)
           service-id->failed-instances-transient-store (atom {})
+          syncer-state-atom (atom {})
           create-cook-scheduler-helper (fn create-cook-scheduler-helper [config]
-                                         (create-cook-scheduler config cook-api service-id->failed-instances-transient-store))]
+                                         (create-cook-scheduler config cook-api service-id->failed-instances-transient-store syncer-state-atom))]
 
       (testing "should throw on invalid configuration"
         (is (thrown? Throwable (create-cook-scheduler-helper (assoc valid-config :allowed-users #{}))))

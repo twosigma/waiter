@@ -25,6 +25,7 @@
             [waiter.mesos.mesos :as mesos]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
@@ -319,29 +320,31 @@
           (reset! last-start-time-atom end-time)))
       :delay-ms failed-tracker-interval-ms)))
 
+(defn get-service->instances
+  "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records."
+  [cook-api allowed-users search-interval service-id->failed-instances-transient-store]
+  (let [all-jobs (mapcat #(get-jobs cook-api % ["running" "waiting"] :search-interval search-interval)
+                         allowed-users)
+        service-id->jobs (group-by #(-> % :labels :service-id) all-jobs)]
+    (->> (keys service-id->jobs)
+         (reduce
+           (fn [service->instance-distribution service-id]
+             (let [jobs (service-id->jobs service-id)]
+               (assoc!
+                 service->instance-distribution
+                 (jobs->service jobs)
+                 {:active-instances (map job->service-instance jobs)
+                  :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})))
+           (transient {}))
+         (persistent!))))
+
 ;; Scheduler Interface and Factory Methods
 
-(defrecord CookScheduler [service-id->password-fn service-id->service-description-fn
+(defrecord CookScheduler [scheduler-name service-id->password-fn service-id->service-description-fn
                           cook-api allowed-priorities allowed-users backend-port home-path-prefix
-                          search-interval service-id->failed-instances-transient-store]
+                          search-interval service-id->failed-instances-transient-store retrieve-syncer-state-fn]
 
   scheduler/ServiceScheduler
-
-  (get-service->instances [_]
-    (let [all-jobs (mapcat #(get-jobs cook-api % ["running" "waiting"] :search-interval search-interval)
-                           allowed-users)
-          service-id->jobs (group-by #(-> % :labels :service-id) all-jobs)]
-      (->> (keys service-id->jobs)
-           (reduce
-             (fn [service->instance-distribution service-id]
-               (let [jobs (service-id->jobs service-id)]
-                 (assoc!
-                   service->instance-distribution
-                   (jobs->service jobs)
-                   {:active-instances (map job->service-instance jobs)
-                    :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})))
-             (transient {}))
-           (persistent!))))
 
   (get-services [_]
     (let [all-jobs (mapcat #(get-jobs cook-api % ["running" "waiting"] :search-interval search-interval)
@@ -389,7 +392,7 @@
   (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (if-not (scheduler/service-exists? this service-id)
       (timers/start-stop-time!
-        (metrics/waiter-timer "core" "create-app")
+        (metrics/waiter-timer "scheduler" scheduler-name "create-app")
         (let [success (try
                         (let [{:keys [service-description]} descriptor
                               {:strs [min-instances run-as-user]} service-description]
@@ -471,40 +474,59 @@
       (mesos/retrieve-directory-content-from-host cook-api host log-directory)))
 
   (service-id->state [_ service-id]
-    {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)})
+    {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
+     :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_]
-    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store}))
+    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
+     :syncer (retrieve-syncer-state-fn)}))
 
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."
   [{:keys [allowed-users backend-port home-path-prefix instance-priorities search-interval-days
-           service-id->password-fn service-id->service-description-fn]}
-   cook-api service-id->failed-instances-transient-store]
+           ;; entries from the context
+           scheduler-name service-id->password-fn service-id->service-description-fn]}
+   cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn]
   {:pre [(seq allowed-users)
          (or (nil? backend-port) (pos? backend-port))
          (not (str/blank? home-path-prefix))
          (> (:max instance-priorities) (:min instance-priorities))
          (pos? (:delta instance-priorities))
-         (pos? search-interval-days)]}
+         (pos? search-interval-days)
+         (not (str/blank? scheduler-name))
+         (fn? service-id->password-fn)
+         (fn? service-id->service-description-fn)]}
   (let [allowed-priorities (range (:max instance-priorities)
                                   (:min instance-priorities)
                                   (unchecked-negate-int (:delta instance-priorities)))
         search-interval (t/days search-interval-days)]
-    (->CookScheduler service-id->password-fn service-id->service-description-fn
+    (->CookScheduler scheduler-name service-id->password-fn service-id->service-description-fn
                      cook-api allowed-priorities allowed-users backend-port home-path-prefix
-                     search-interval service-id->failed-instances-transient-store)))
+                     search-interval service-id->failed-instances-transient-store retrieve-syncer-state-fn)))
 
 (defn cook-scheduler
   "Creates and starts cook scheduler with associated daemons."
-  [{:keys [failed-tracker-interval-ms http-options impersonate mesos-slave-port url] :as config}]
+  [{:keys [allowed-users failed-tracker-interval-ms http-options impersonate mesos-slave-port search-interval-days url
+           ;; entries from the context
+           scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
+  {:pre [(seq allowed-users)
+         (pos? search-interval-days)
+         (not (str/blank? scheduler-name))
+         (au/chan? scheduler-state-chan)
+         (utils/pos-int? scheduler-syncer-interval-secs)
+         (fn? start-scheduler-syncer-fn)]}
   (let [http-client (http-utils/http-client-factory http-options)
         cook-api {:http-client http-client
                   :impersonate impersonate
                   :slave-port mesos-slave-port
                   :spnego-auth (:spnego-auth http-options false)
                   :url url}
+        search-interval (t/days search-interval-days)
         service-id->failed-instances-transient-store (atom {})
-        scheduler (create-cook-scheduler config cook-api service-id->failed-instances-transient-store)]
+        get-service->instances-fn
+        #(get-service->instances cook-api allowed-users search-interval service-id->failed-instances-transient-store)
+        {:keys [retrieve-syncer-state-fn]}
+        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
+        scheduler (create-cook-scheduler config cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn)]
     (start-track-failed-instances service-id->failed-instances-transient-store scheduler failed-tracker-interval-ms)
     scheduler))

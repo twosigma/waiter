@@ -317,19 +317,23 @@
             (conflict-handler-basic error-data)))]
     (start-new-service marathon-api service-id marathon-descriptor conflict-handler-retry)))
 
-(defrecord MarathonScheduler [marathon-api mesos-api retrieve-framework-id-fn
+(defn get-service->instances
+  "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records."
+  [marathon-api mesos-api is-waiter-app?-fn retrieve-framework-id-fn service-id->failed-instances-transient-store
+   service-id->service-description]
+  (let [apps (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})]
+    (response-data->service->service-instances
+      apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
+      service-id->service-description)))
+
+(defrecord MarathonScheduler [scheduler-name marathon-api mesos-api retrieve-framework-id-fn
                               home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store service-id->out-of-sync-state-store
                               service-id->password-fn service-id->service-description
-                              force-kill-after-ms is-waiter-app?-fn sync-deployment-maintainer-atom]
+                              force-kill-after-ms is-waiter-app?-fn sync-deployment-maintainer-atom
+                              retrieve-syncer-state-fn]
 
   scheduler/ServiceScheduler
-
-  (get-service->instances [_]
-    (let [apps (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})]
-      (response-data->service->service-instances
-        apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
-        service-id->service-description)))
 
   (get-services [_]
     (map response->Service (get-apps marathon-api is-waiter-app?-fn {"embed" ["apps.lastTaskFailure" "apps.tasks"]})))
@@ -359,7 +363,7 @@
 
   (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (timers/start-stop-time!
-      (metrics/waiter-timer "core" "create-app")
+      (metrics/waiter-timer "scheduler" scheduler-name "create-app")
       (let [marathon-descriptor (marathon-descriptor home-path-prefix service-id->password-fn descriptor)]
         (when-not (scheduler/service-exists? this service-id)
           (start-new-service-wrapper marathon-api service-id marathon-descriptor)))))
@@ -426,12 +430,14 @@
   (service-id->state [_ service-id]
     {:failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)
      :kill-info (get @service-id->kill-info-store service-id)
-     :out-of-sync-state (get @service-id->out-of-sync-state-store service-id)})
+     :out-of-sync-state (get @service-id->out-of-sync-state-store service-id)
+     :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_]
     {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
      :service-id->kill-info-store @service-id->kill-info-store
-     :service-id->out-of-sync-state-store @service-id->out-of-sync-state-store}))
+     :service-id->out-of-sync-state-store @service-id->out-of-sync-state-store
+     :syncer (retrieve-syncer-state-fn)}))
 
 (defn- get-apps-with-deployments
   "Retrieves the apps with the deployment info embedded."
@@ -557,7 +563,8 @@
   [{:keys [home-path-prefix http-options force-kill-after-ms framework-id-ttl mesos-slave-port
            slave-directory sync-deployment url
            ;; functions provided in the context
-           is-waiter-app?-fn leader?-fn service-id->password-fn service-id->service-description-fn]}]
+           is-waiter-app?-fn leader?-fn scheduler-name scheduler-state-chan scheduler-syncer-interval-secs
+           service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn]}]
   {:pre [(not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
          (or (nil? mesos-slave-port) (utils/pos-int? mesos-slave-port))
@@ -566,7 +573,15 @@
          (utils/pos-int? (:socket-timeout http-options))
          (not (str/blank? home-path-prefix))
          (utils/pos-int? (:interval-ms sync-deployment))
-         (utils/pos-int? (:timeout-cycles sync-deployment))]}
+         (utils/pos-int? (:timeout-cycles sync-deployment))
+         (fn? is-waiter-app?-fn)
+         (fn? leader?-fn)
+         (not (str/blank? scheduler-name))
+         (au/chan? scheduler-state-chan)
+         (utils/pos-int? scheduler-syncer-interval-secs)
+         (fn? service-id->password-fn)
+         (fn? service-id->service-description-fn)
+         (fn? start-scheduler-syncer-fn)]}
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
   (let [http-client (http-utils/http-client-factory http-options)
@@ -577,12 +592,17 @@
         service-id->out-of-sync-state-store (atom {})
         retrieve-framework-id-fn (memo/ttl #(retrieve-framework-id marathon-api) :ttl/threshold framework-id-ttl)
         sync-deployment-maintainer-atom (atom nil)
+        get-service->instances-fn
+        #(get-service->instances marathon-api mesos-api is-waiter-app?-fn retrieve-framework-id-fn
+                                 service-id->failed-instances-transient-store service-id->service-description-fn)
+        {:keys [retrieve-syncer-state-fn]}
+        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
         marathon-scheduler (->MarathonScheduler
-                             marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
+                             scheduler-name marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store
                              service-id->out-of-sync-state-store service-id->password-fn
                              service-id->service-description-fn force-kill-after-ms is-waiter-app?-fn
-                             sync-deployment-maintainer-atom)
+                             sync-deployment-maintainer-atom retrieve-syncer-state-fn)
         sync-deployment-maintainer (start-sync-deployment-maintainer
                                      leader?-fn service-id->out-of-sync-state-store marathon-scheduler sync-deployment)]
     (reset! sync-deployment-maintainer-atom sync-deployment-maintainer)
