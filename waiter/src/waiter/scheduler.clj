@@ -350,7 +350,7 @@
   "Queries the scheduler and builds a list of available Waiter apps."
   [scheduler-name get-service->instances-fn]
   (when-let [service->service-instances (timers/start-stop-time!
-                                          (metrics/waiter-timer "core" "scheduler" scheduler-name "get-services")
+                                          (metrics/waiter-timer "scheduler" scheduler-name "get-services")
                                           (retry-on-transient-server-exceptions
                                             "request-available-waiter-apps"
                                             (get-service->instances-fn)))]
@@ -425,7 +425,7 @@
                                    (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-apps-time)) " ms")))]
     (log/trace "scheduler-syncer: querying" scheduler-name "scheduler")
     (if-let [service->service-instances (timers/start-stop-time!
-                                          (metrics/waiter-timer "core" "scheduler" scheduler-name "app->available-tasks")
+                                          (metrics/waiter-timer "scheduler" scheduler-name "app->available-tasks")
                                           (do-health-checks (request-available-waiter-apps scheduler-name get-service->instances-fn)
                                                             available?
                                                             service-id->service-description-fn))]
@@ -559,7 +559,7 @@
                        ([]
                          (try
                            (timers/start-stop-time!
-                             (metrics/waiter-timer "core" "scheduler" scheduler-name "syncer")
+                             (metrics/waiter-timer "scheduler" scheduler-name "syncer")
                              (let [{:keys [service-id->health-check-context scheduler-messages]}
                                    (update-scheduler-state
                                      scheduler-name get-service->instances-fn service-id->service-description-fn available?
@@ -571,8 +571,8 @@
                                  :service-id->health-check-context service-id->health-check-context)))
                            (catch Throwable th
                              (log/error th "scheduler-syncer unable to receive updates")
-                             (counters/inc! (metrics/waiter-counter "core" "scheduler" scheduler-name "syncer" "errors"))
-                             (meters/mark! (metrics/waiter-meter "core" "scheduler" scheduler-name "syncer" "error-rate"))
+                             (counters/inc! (metrics/waiter-counter "scheduler" scheduler-name "syncer" "errors"))
+                             (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "syncer" "error-rate"))
                              current-state)))
                        :priority true)]
             (recur next-state)))

@@ -585,6 +585,7 @@
        :mesos-api {}
        :retrieve-framework-id-fn (constantly nil)
        :retrieve-syncer-state-fn (constantly {})
+       :scheduler-name "marathon"
        :service-id->failed-instances-transient-store (atom {})
        :service-id->kill-info-store (atom {})
        :service-id->out-of-sync-state-store (atom {})

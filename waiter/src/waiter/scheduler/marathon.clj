@@ -326,7 +326,7 @@
       apps retrieve-framework-id-fn mesos-api service-id->failed-instances-transient-store
       service-id->service-description)))
 
-(defrecord MarathonScheduler [marathon-api mesos-api retrieve-framework-id-fn
+(defrecord MarathonScheduler [scheduler-name marathon-api mesos-api retrieve-framework-id-fn
                               home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store service-id->out-of-sync-state-store
                               service-id->password-fn service-id->service-description
@@ -363,7 +363,7 @@
 
   (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (timers/start-stop-time!
-      (metrics/waiter-timer "core" "create-app")
+      (metrics/waiter-timer "scheduler" scheduler-name "create-app")
       (let [marathon-descriptor (marathon-descriptor home-path-prefix service-id->password-fn descriptor)]
         (when-not (scheduler/service-exists? this service-id)
           (start-new-service-wrapper marathon-api service-id marathon-descriptor)))))
@@ -598,7 +598,7 @@
         {:keys [retrieve-syncer-state-fn]}
         (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
         marathon-scheduler (->MarathonScheduler
-                             marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
+                             scheduler-name marathon-api mesos-api retrieve-framework-id-fn home-path-prefix
                              service-id->failed-instances-transient-store service-id->last-force-kill-store
                              service-id->out-of-sync-state-store service-id->password-fn
                              service-id->service-description-fn force-kill-after-ms is-waiter-app?-fn

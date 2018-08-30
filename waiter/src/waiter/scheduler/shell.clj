@@ -400,10 +400,10 @@
 
 (defn update-service-health
   "Runs health checks against all active instances of service and returns the updated service-entry"
-  [id->service port->reservation-atom port-grace-period-ms http-client]
+  [id->service scheduler-name port->reservation-atom port-grace-period-ms http-client]
   (try
     (timers/start-stop-time!
-      (metrics/waiter-timer "shell-scheduler" "update-health")
+      (metrics/waiter-timer "scheduler" scheduler-name "update-health")
       (let [pid->memory (get-pid->memory)
             exit-codes-check #(associate-exit-codes % port->reservation-atom port-grace-period-ms)]
         (reduce
@@ -425,12 +425,12 @@
 
 (defn- start-updating-health
   "Runs health checks against all active instances of all services in a loop"
-  [id->service-agent port->reservation-atom port-grace-period-ms timeout-ms http-client]
+  [scheduler-name id->service-agent port->reservation-atom port-grace-period-ms timeout-ms http-client]
   (log/info "starting update-health")
   (du/start-timer-task
     (t/millis timeout-ms)
     (fn []
-      (send id->service-agent update-service-health port->reservation-atom port-grace-period-ms http-client))))
+      (send id->service-agent update-service-health scheduler-name port->reservation-atom port-grace-period-ms http-client))))
 
 (defn- set-service-scale
   "Given the current id->service map, sets the scale of the service-id to the
@@ -460,9 +460,9 @@
 
 (defn maintain-instance-scale
   "Relaunches failed instances or otherwise ensures scale"
-  [id->service port->reservation-atom port-range]
+  [id->service scheduler-name port->reservation-atom port-range]
   (timers/start-stop-time!
-    (metrics/waiter-timer "shell-scheduler" "retry-failed-instances")
+    (metrics/waiter-timer "scheduler" scheduler-name "retry-failed-instances")
     (loop [remaining-service-entries (vals id->service)
            id->service' {}]
       (if-let [{:keys [service id->instance] :as service-entry} (first remaining-service-entries)]
@@ -483,12 +483,12 @@
 
 (defn- start-retry-failed-instances
   "Relaunches failed instances in a loop"
-  [id->service-agent port->reservation-atom port-range timeout-ms]
+  [scheduler-name id->service-agent port->reservation-atom port-range timeout-ms]
   (log/info "starting retry-failed-instances")
   (du/start-timer-task
     (t/millis timeout-ms)
     (fn []
-      (send id->service-agent maintain-instance-scale port->reservation-atom port-range))))
+      (send id->service-agent maintain-instance-scale scheduler-name port->reservation-atom port-range))))
 
 (defn- service-entry->instances
   "Converts the given service-entry to a map of shape:
@@ -549,7 +549,7 @@
 ;   :shell-scheduler/working-directory
 ;   :shell-scheduler/pid
 ;
-(defrecord ShellScheduler [work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
+(defrecord ShellScheduler [scheduler-name work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
                            retrieve-syncer-state-fn service-id->password-fn]
 
   scheduler/ServiceScheduler
@@ -648,6 +648,7 @@
            ;; functions provided in the context
            id->service-agent
            retrieve-syncer-state-fn
+           scheduler-name
            service-id->password-fn]}]
   {:pre [(utils/pos-int? failed-instance-retry-interval-ms)
          (utils/pos-int? health-check-interval-ms)
@@ -656,9 +657,13 @@
          (and (every? utils/pos-int? port-range)
               (= 2 (count port-range))
               (<= (first port-range) (second port-range)))
-         (not (str/blank? work-directory))]}
+         (not (str/blank? work-directory))
+         (fn? retrieve-syncer-state-fn)
+         (not (str/blank? scheduler-name))
+         (fn? service-id->password-fn)]}
   (let [port->reservation-atom (atom {})]
-    (->ShellScheduler (-> work-directory
+    (->ShellScheduler scheduler-name
+                      (-> work-directory
                           io/file
                           (.getCanonicalPath))
                       id->service-agent
@@ -686,6 +691,6 @@
                                   :retrieve-syncer-state-fn retrieve-syncer-state-fn))
         http-client (http/client {:connect-timeout health-check-timeout-ms
                                   :idle-timeout health-check-timeout-ms})]
-    (start-updating-health id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)
-    (start-retry-failed-instances id->service-agent port->reservation-atom port-range failed-instance-retry-interval-ms)
+    (start-updating-health scheduler-name id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)
+    (start-retry-failed-instances scheduler-name id->service-agent port->reservation-atom port-range failed-instance-retry-interval-ms)
     scheduler))

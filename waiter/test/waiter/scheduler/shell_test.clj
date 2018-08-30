@@ -66,14 +66,14 @@
 
 (defn- force-update-service-health
   "Forces a call to update-service-health"
-  [{:keys [id->service-agent port->reservation-atom] :as scheduler} {:keys [port-grace-period-ms]}]
-  (send id->service-agent update-service-health port->reservation-atom port-grace-period-ms nil)
+  [{:keys [id->service-agent port->reservation-atom scheduler-name] :as scheduler} {:keys [port-grace-period-ms]}]
+  (send id->service-agent update-service-health scheduler-name port->reservation-atom port-grace-period-ms nil)
   (ensure-agent-finished scheduler))
 
 (defn- force-maintain-instance-scale
   "Forces a call to maintain-instance-scale"
-  [{:keys [id->service-agent port->reservation-atom port-range] :as scheduler}]
-  (send id->service-agent maintain-instance-scale port->reservation-atom port-range)
+  [{:keys [id->service-agent port->reservation-atom port-range scheduler-name] :as scheduler}]
+  (send id->service-agent maintain-instance-scale scheduler-name port->reservation-atom port-range)
   (ensure-agent-finished scheduler))
 
 (deftest test-update-task-stats

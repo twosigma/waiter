@@ -603,10 +603,12 @@
        :cook-api {}
        :home-path-prefix "/home/path/"
        :search-interval (t/minutes 10)
+       ;; context
+       :retrieve-syncer-state-fn (constantly {})
+       :scheduler-name "cook"
        :service-id->failed-instances-transient-store (atom {})
        :service-id->password-fn #(str % ".password")
-       :service-id->service-description-fn (constantly {})
-       :retrieve-syncer-state-fn (constantly {})}
+       :service-id->service-description-fn (constantly {})}
       (merge cook-config)
       map->CookScheduler))
 
@@ -856,6 +858,7 @@
                                               :max 70
                                               :min 30}
                         :search-interval-days 10
+                        :scheduler-name "cook"
                         :service-id->password-fn #(str % ".password")
                         :service-id->service-description-fn (constantly {})}
           cook-api (Object.)

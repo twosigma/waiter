@@ -287,9 +287,21 @@
         (is (= 405 status))))))
 
 (deftest test-service-view-logs-handler
-  (let [scheduler (marathon/->MarathonScheduler (Object.) {:slave-port 5051} (fn [] nil) "/home/path/"
-                                                (atom {}) (atom {}) (atom {}) {} 0
-                                                (constantly true) (constantly true) (atom nil) (atom nil))
+  (let [scheduler (marathon/map->MarathonScheduler
+                    {:force-kill-after-ms 1000
+                     :home-path-prefix "/home/path/"
+                     :is-waiter-app?-fn (constantly true)
+                     :marathon-api (Object.)
+                     :mesos-api {:slave-port 5051}
+                     :retrieve-framework-id-fn (constantly nil)
+                     :retrieve-syncer-state-fn (constantly {})
+                     :scheduler-name "marathon"
+                     :service-id->failed-instances-transient-store (atom {})
+                     :service-id->kill-info-store (atom {})
+                     :service-id->out-of-sync-state-store (atom {})
+                     :service-id->password-fn #(str % ".password")
+                     :service-id->service-description (constantly nil)
+                     :sync-deployment-maintainer-atom (atom nil)})
         configuration {:routines {:generate-log-url-fn (partial handler/generate-log-url identity)}
                        :scheduler {:scheduler scheduler}
                        :wrap-secure-request-fn utils/wrap-identity}

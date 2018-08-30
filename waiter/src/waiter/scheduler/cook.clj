@@ -340,7 +340,7 @@
 
 ;; Scheduler Interface and Factory Methods
 
-(defrecord CookScheduler [service-id->password-fn service-id->service-description-fn
+(defrecord CookScheduler [scheduler-name service-id->password-fn service-id->service-description-fn
                           cook-api allowed-priorities allowed-users backend-port home-path-prefix
                           search-interval service-id->failed-instances-transient-store retrieve-syncer-state-fn]
 
@@ -392,7 +392,7 @@
   (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (if-not (scheduler/service-exists? this service-id)
       (timers/start-stop-time!
-        (metrics/waiter-timer "core" "create-app")
+        (metrics/waiter-timer "scheduler" scheduler-name "create-app")
         (let [success (try
                         (let [{:keys [service-description]} descriptor
                               {:strs [min-instances run-as-user]} service-description]
@@ -484,25 +484,30 @@
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."
   [{:keys [allowed-users backend-port home-path-prefix instance-priorities search-interval-days
-           service-id->password-fn service-id->service-description-fn]}
+           ;; entries from the context
+           scheduler-name service-id->password-fn service-id->service-description-fn]}
    cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn]
   {:pre [(seq allowed-users)
          (or (nil? backend-port) (pos? backend-port))
          (not (str/blank? home-path-prefix))
          (> (:max instance-priorities) (:min instance-priorities))
          (pos? (:delta instance-priorities))
-         (pos? search-interval-days)]}
+         (pos? search-interval-days)
+         (not (str/blank? scheduler-name))
+         (fn? service-id->password-fn)
+         (fn? service-id->service-description-fn)]}
   (let [allowed-priorities (range (:max instance-priorities)
                                   (:min instance-priorities)
                                   (unchecked-negate-int (:delta instance-priorities)))
         search-interval (t/days search-interval-days)]
-    (->CookScheduler service-id->password-fn service-id->service-description-fn
+    (->CookScheduler scheduler-name service-id->password-fn service-id->service-description-fn
                      cook-api allowed-priorities allowed-users backend-port home-path-prefix
                      search-interval service-id->failed-instances-transient-store retrieve-syncer-state-fn)))
 
 (defn cook-scheduler
   "Creates and starts cook scheduler with associated daemons."
   [{:keys [allowed-users failed-tracker-interval-ms http-options impersonate mesos-slave-port search-interval-days url
+           ;; entries from the context
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(seq allowed-users)
          (pos? search-interval-days)
