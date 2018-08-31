@@ -419,12 +419,9 @@
                             :factory-fn waiter.scheduler.shell/shell-scheduler
 
                             ;; The shell scheduler can persist its state and use this state when it restarts.
-                            :backup {
-                                     ;; The file in the work directory which contains the scheduler state:
-                                     :file-name "backup.json"
-
-                                     ;; The interval (milliseconds) at which to persist the scheduler state:
-                                     :interval-ms 5000}
+                            ;; This is an optional config, when not provided no backup state will be persisted.
+                            ;; The file in the work directory which contains the scheduler state:
+                            :backup-file-name "backup.json"
 
                             ;; The interval (milliseconds) at which instance health will be checked:
                             :health-check-interval-ms 10000

@@ -735,27 +735,25 @@
 
 (defn backup-state
   "Backs up shell scheduler state to the specified file."
-  [{:keys [id->service-agent port->reservation-atom scheduler-name work-directory]} ^String backup-file-name]
+  [scheduler-name id->service port->reservation backup-file-path]
   (try
-    (let [backup-file (File. ^String work-directory backup-file-name)
-          backup-file-path (.getAbsolutePath backup-file)]
-      (log/info "backing up" scheduler-name "scheduler state to" backup-file-path)
-      (->> {:id->service (pc/map-vals
-                           (fn [service-entry]
-                             (update service-entry :id->instance
-                                     (fn [id->instance]
-                                       (pc/map-vals #(dissoc % :shell-scheduler/process) id->instance))))
-                           @id->service-agent)
-            :port->reservation @port->reservation-atom
-            :time (t/now)}
-           utils/clj->json
-           (spit backup-file-path)))
+    (log/info "backing up" scheduler-name "scheduler state to" backup-file-path)
+    (->> {:id->service (pc/map-vals
+                         (fn [service-entry]
+                           (update service-entry :id->instance
+                                   (fn [id->instance]
+                                     (pc/map-vals #(dissoc % :shell-scheduler/process) id->instance))))
+                         id->service)
+          :port->reservation port->reservation
+          :time (t/now)}
+         utils/clj->json
+         (spit backup-file-path))
     (catch Exception ex
       (log/error ex "error in backing up" scheduler-name "scheduler state"))))
 
 (defn shell-scheduler
   "Creates and starts shell scheduler with loops"
-  [{:keys [backup failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
+  [{:keys [backup-file-name failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
@@ -765,20 +763,20 @@
         get-service->instances-fn #(get-service->instances id->service-agent)
         {:keys [retrieve-syncer-state-fn]}
         (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
-        {:keys [id->service-agent port->reservation-atom] :as scheduler}
+        {:keys [id->service-agent port->reservation-atom work-directory] :as scheduler}
         (create-shell-scheduler (assoc config
                                   :id->service-agent id->service-agent
                                   :retrieve-syncer-state-fn retrieve-syncer-state-fn))
         http-client (http/client {:connect-timeout health-check-timeout-ms
                                   :idle-timeout health-check-timeout-ms})]
-    (let [{:keys [file-name interval-ms]} backup]
-      (when file-name
-        (restore-state scheduler file-name)
-        (when interval-ms
-          (du/start-timer-task
-            (t/millis interval-ms)
-            (fn backup-state-task [] (backup-state scheduler file-name))
-            :delay-ms interval-ms))))
+    (when backup-file-name
+      (let [backup-file-path (str work-directory (File/separator) backup-file-name)]
+        ;; restore the state of the shell scheduler
+        (restore-state scheduler backup-file-path)
+        ;; persist scheduler state any time the id->service-agent state changes
+        (add-watch id->service-agent ::shell-backup
+                   (fn backup-state-watch [_ _ _ id->service]
+                     (backup-state scheduler-name id->service @port->reservation-atom backup-file-path)))))
     (start-updating-health scheduler-name id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)
     (start-retry-failed-instances scheduler-name id->service-agent port->reservation-atom port-range failed-instance-retry-interval-ms)
     scheduler))

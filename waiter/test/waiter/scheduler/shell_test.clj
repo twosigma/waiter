@@ -654,20 +654,14 @@
       work-directory (System/getProperty "user.dir")]
 
   (deftest test-backup-state
-    (let [scheduler-config (assoc (common-scheduler-config) :work-directory work-directory)
-          {:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler scheduler-config)]
-      (reset! port->reservation-atom port->reservation)
-      (send id->service-agent (constantly id->service))
-      (await id->service-agent)
-
-      (let [file-content-atom (atom nil)
-            backup-file "test-files/test-backup-state.json"]
-        (with-redefs [spit (fn [file-name content]
-                             (is (= (str work-directory (File/separator) backup-file) file-name))
-                             (reset! file-content-atom content))]
-          (backup-state scheduler backup-file))
-        (is (= (-> "test-files/shell-scheduler-backup.json" slurp json/read-str (dissoc "time"))
-               (-> @file-content-atom json/read-str (dissoc "time")))))))
+    (let [file-content-atom (atom nil)
+          backup-file-path (str work-directory (File/separator) "test-files/test-backup-state.json")]
+      (with-redefs [spit (fn [file-name content]
+                           (is (= backup-file-path file-name))
+                           (reset! file-content-atom content))]
+        (backup-state "shell-scheduler" id->service port->reservation backup-file-path))
+      (is (= (-> "test-files/shell-scheduler-backup.json" slurp json/read-str (dissoc "time"))
+             (-> @file-content-atom json/read-str (dissoc "time"))))))
 
   (deftest test-restore-state
     (let [scheduler-config (assoc (common-scheduler-config) :work-directory work-directory)
