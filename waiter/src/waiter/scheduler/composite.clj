@@ -34,7 +34,7 @@
     (scheduler/delete-service scheduler service-id))
   (log/info "deleted" (count service-ids) "misplaced services in" scheduler))
 
-(defn retrieve-services
+(defn- retrieve-services
   "Retrieves the services for services that are configured to be running on the specified scheduler.
    If any service is found (e.g. due to default scheduler being changed) which does not belong in the
    specified scheduler, it is promptly deleted."
@@ -46,7 +46,7 @@
       (->> invalid-services
            (map :id)
            (process-invalid-services scheduler)))
-    (into [] valid-services)))
+    valid-services))
 
 (defrecord CompositeScheduler [service-id->scheduler scheduler-id->scheduler query-aggregator-state-fn]
 
@@ -55,7 +55,6 @@
   (get-services [_]
     (->> (vals scheduler-id->scheduler)
          (pmap #(retrieve-services % service-id->scheduler))
-         doall
          (reduce into [])))
 
   (kill-instance [_ instance]
@@ -149,14 +148,6 @@
                                   (initialize-component context component-key))))
          (pc/map-keys name))))
 
-(defn- services-message-reducer
-  "Merges :update-available-services messages from multiple schedulers."
-  [{acc-available-ids :available-service-ids acc-healthy-ids :healthy-service-ids acc-sync-time :scheduler-sync-time}
-   {:keys [available-service-ids healthy-service-ids scheduler-sync-time]}]
-  {:available-service-ids (into acc-available-ids available-service-ids)
-   :healthy-service-ids (into acc-healthy-ids healthy-service-ids)
-   :scheduler-sync-time (if (t/after? acc-sync-time scheduler-sync-time) acc-sync-time scheduler-sync-time)})
-
 (defn start-scheduler-state-aggregator
   "Aggregates scheduler messages from multiple schedulers; aggregates them; and forwards it along to the
    scheduler-state-chan whenever there is a message received on the component scheduler-state-chan."
@@ -169,9 +160,9 @@
      :result-chan
      (async/go
        (loop [{:keys [scheduler-id->messages scheduler-id->state-chan scheduler-id->sync-time] :as current-state}
-              {:scheduler-id->messages (sorted-map)
+              {:scheduler-id->messages {}
                :scheduler-id->state-chan scheduler-id->state-chan
-               :scheduler-id->sync-time (sorted-map)}]
+               :scheduler-id->sync-time {}}]
          (reset! scheduler-state-aggregator-atom current-state)
          (if-not (seq scheduler-id->state-chan)
            (log/info "exiting scheduler state aggregator as all components scheduler-state-chan have been closed")
