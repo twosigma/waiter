@@ -566,87 +566,111 @@
       (is (= 1100 (pid->memory 3)))
       (is (= 1000 (pid->memory 4))))))
 
+(deftest test-handle-orphaned-processes
+  (let [id->service {"s1" {:id->instance {"s1.a" {:killed? true :shell-scheduler/pid 1234}
+                                          "s1.b" {:killed? false :shell-scheduler/pid 1212}
+                                          "s1.c" {:killed? false :shell-scheduler/pid 1245}}}
+                     "s2" {:id->instance {"s2.a" {:killed? true :shell-scheduler/pid 3456}
+                                          "s2.b" {:killed? false :shell-scheduler/pid 3434}
+                                          "s2.c" {:killed? false :shell-scheduler/pid 3467}
+                                          "s2.d" {:killed? false :shell-scheduler/pid 5678}}}
+                     "s3" {:id->instance {"s3.a" {:killed? false :shell-scheduler/pid 5656}
+                                          "s3.b" {:killed? false :shell-scheduler/pid 7878}}}}
+        running-pids #{1212 3434 5656 7878}
+        killed-process-group-ids (atom #{})]
+    (with-redefs [sh/sh (fn [command arg1 arg2 pgid]
+                          (is (= ["pkill" "-9" "-g"] [command arg1 arg2]))
+                          (swap! killed-process-group-ids conj pgid))]
+      (handle-orphaned-processes id->service running-pids))
+    (is (= #{"1245" "3467" "5678"} @killed-process-group-ids))))
+
+(defn- make-instance
+  [service-id instance-id & {:as config}]
+  (merge {:exit-code nil
+          :extra-ports []
+          :flags []
+          :health-check-status nil,
+          :id instance-id
+          :log-directory (str "/tmp/" service-id "/" instance-id)
+          :message nil
+          :protocol "http"
+          :service-id service-id
+          :shell-scheduler/working-directory (str "/tmp/" service-id "/" instance-id)}
+         config))
+
 (let [id->service {"w8r-kitchen"
-                   {:id->instance {"w8r-kitchen.a1" {:exit-code 1,
-                                                     :extra-ports [],
-                                                     :service-id "w8r-kitchen",
-                                                     :protocol "http",
-                                                     :started-at (du/str-to-date "2018-08-30T15:44:33.136Z"),
-                                                     :port 10000,
-                                                     :health-check-status nil,
-                                                     :log-directory "/tmp/w8r-kitchen/w8r-kitchen.a1",
-                                                     :host "127.0.0.5",
-                                                     :killed? true,
-                                                     :id "w8r-kitchen.a1",
-                                                     :shell-scheduler/pid 32432,
-                                                     :healthy? false,
-                                                     :shell-scheduler/working-directory
-                                                     "/tmp/w8r-kitchen/w8r-kitchen.a1",
-                                                     :flags [],
-                                                     :failed? true,
-                                                     :message "Exited with code 1"},
-                                   "w8r-kitchen.b2" {:exit-code nil,
-                                                     :extra-ports [],
-                                                     :service-id "w8r-kitchen",
-                                                     :protocol "http",
-                                                     :started-at (du/str-to-date "2018-08-30T15:44:37.393Z"),
-                                                     :port 10001,
-                                                     :health-check-status nil,
-                                                     :log-directory "/tmp/w8r-kitchen/w8r-kitchen.b2",
-                                                     :host "127.0.0.10",
-                                                     :id "w8r-kitchen.b2",
-                                                     :shell-scheduler/pid 76576,
-                                                     :healthy? true,
-                                                     :shell-scheduler/working-directory "/tmp/w8r-kitchen/w8r-kitchen.b2",
-                                                     :flags [],
-                                                     :message nil}},
-                    :service {:environment {"HOME" "/home/w8r",
-                                            "LOGNAME" "w8r",
-                                            "USER" "w8r",
-                                            "WAITER_CPUS" "0.1",
-                                            "WAITER_MEM_MB" "256",
-                                            "WAITER_PASSWORD" "7e37af",
-                                            "WAITER_SERVICE_ID" "w8r-kitchen",
-                                            "WAITER_USERNAME" "waiter"},
-                              :id "w8r-kitchen",
-                              :instances 1,
-                              :service-description {"scale-up-factor" 0.1,
-                                                    "mem" 256,
-                                                    "health-check-url" "/status",
-                                                    "grace-period-secs" 120,
-                                                    "backend-proto" "http",
+                   {:id->instance {"w8r-kitchen.a1" (make-instance
+                                                      "w8r-kitchen" "w8r-kitchen.a1"
+                                                      :exit-code 1
+                                                      :healthy? false
+                                                      :host "127.0.0.5"
+                                                      :killed? true
+                                                      :started-at (du/str-to-date "2018-08-30T15:44:33.136Z")
+                                                      :port 10000
+                                                      :shell-scheduler/pid 32432
+                                                      :failed? true
+                                                      :message "Exited with code 1")
+                                   "w8r-kitchen.b2" (make-instance
+                                                      "w8r-kitchen" "w8r-kitchen.b2"
+                                                      :healthy? true
+                                                      :host "127.0.0.10"
+                                                      :port 10001
+                                                      :started-at (du/str-to-date "2018-08-30T15:44:37.393Z")
+                                                      :shell-scheduler/pid 76576)
+                                   "w8r-kitchen.c3" (make-instance
+                                                      "w8r-kitchen" "w8r-kitchen.c3"
+                                                      :healthy? true
+                                                      :host "127.0.0.8"
+                                                      :port 10002
+                                                      :started-at (du/str-to-date "2018-08-30T15:45:37.393Z")
+                                                      :shell-scheduler/pid 82982)}
+                    :service {:environment {"HOME" "/home/w8r"
+                                            "LOGNAME" "w8r"
+                                            "USER" "w8r"
+                                            "WAITER_CPUS" "0.1"
+                                            "WAITER_MEM_MB" "256"
+                                            "WAITER_PASSWORD" "7e37af"
+                                            "WAITER_SERVICE_ID" "w8r-kitchen"
+                                            "WAITER_USERNAME" "waiter"}
+                              :id "w8r-kitchen"
+                              :instances 1
+                              :service-description {"allowed-params" [],
                                                     "authentication" "standard",
-                                                    "jitter-threshold" 0.5,
-                                                    "scale-factor" 1,
-                                                    "restart-backoff-factor" 2,
-                                                    "permitted-user" "w8r",
-                                                    "health-check-interval-secs" 10,
-                                                    "cmd-type" "shell",
-                                                    "name" "kitchen-app",
-                                                    "interstitial-secs" 0,
-                                                    "min-instances" 1,
-                                                    "concurrency-level" 1,
-                                                    "max-instances" 500,
-                                                    "metric-group" "waiter_kitchen",
-                                                    "scale-down-factor" 0.001,
-                                                    "metadata" {},
-                                                    "expired-instance-restart-rate" 0.1,
-                                                    "cmd" "/kitchen/bin/kitchen -p $PORT0",
-                                                    "env" {},
-                                                    "idle-timeout-mins" 10,
-                                                    "version" "v1",
+                                                    "backend-proto" "http",
                                                     "blacklist-on-503" true,
-                                                    "health-check-max-consecutive-failures" 5,
+                                                    "cmd" "/kitchen/bin/kitchen -p $PORT0",
+                                                    "cmd-type" "shell",
+                                                    "concurrency-level" 1,
                                                     "cpus" 0.1,
-                                                    "allowed-params" [],
-                                                    "run-as-user" "w8r",
                                                     "distribution-scheme" "balanced",
-                                                    "ports" 1,
+                                                    "env" {},
+                                                    "expired-instance-restart-rate" 0.1,
+                                                    "grace-period-secs" 120,
+                                                    "health-check-interval-secs" 10,
+                                                    "health-check-max-consecutive-failures" 5,
+                                                    "health-check-url" "/status",
+                                                    "idle-timeout-mins" 10,
+                                                    "instance-expiry-mins" 7200,
+                                                    "interstitial-secs" 0,
+                                                    "jitter-threshold" 0.5,
+                                                    "max-instances" 500,
                                                     "max-queue-length" 1000000,
-                                                    "instance-expiry-mins" 7200},
-                              :shell-scheduler/mem 256,
-                              :task-count 1,
-                              :task-stats {:healthy 1, :running 1, :staged 0, :unhealthy 0}}}}
+                                                    "mem" 256,
+                                                    "metadata" {},
+                                                    "metric-group" "waiter_kitchen",
+                                                    "min-instances" 1,
+                                                    "name" "kitchen-app",
+                                                    "permitted-user" "w8r",
+                                                    "ports" 1,
+                                                    "restart-backoff-factor" 2,
+                                                    "run-as-user" "w8r",
+                                                    "scale-down-factor" 0.001,
+                                                    "scale-factor" 1,
+                                                    "scale-up-factor" 0.1,
+                                                    "version" "v1"}
+                              :shell-scheduler/mem 256
+                              :task-count 2
+                              :task-stats {:healthy 2 :running 2 :staged 0 :unhealthy 0}}}}
       port->reservation {10000 {:expiry-time (du/str-to-date "2018-08-30T15:46:37.374Z")
                                 :state :in-grace-period-until-expiry}
                          10001 {:expiry-time nil
@@ -663,9 +687,27 @@
       (is (= (-> "test-files/shell-scheduler-backup.json" slurp json/read-str (dissoc "time"))
              (-> @file-content-atom json/read-str (dissoc "time"))))))
 
-  (deftest test-restore-state
+  (deftest test-restore-state-matching-running-pids
     (let [scheduler-config (assoc (common-scheduler-config) :work-directory work-directory)
           {:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler scheduler-config)]
-      (restore-state scheduler "test-files/shell-scheduler-backup.json")
+      (with-redefs [sh/sh (fn [& _] {:out "76576\n82982"})]
+        (restore-state scheduler "test-files/shell-scheduler-backup.json"))
       (is (= id->service @id->service-agent))
+      (is (= port->reservation @port->reservation-atom))))
+
+  (deftest test-restore-state-with-orphaned-pids
+    (let [scheduler-config (assoc (common-scheduler-config) :work-directory work-directory)
+          {:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler scheduler-config)]
+      (with-redefs [sh/sh (fn [& _] {:out "76576"})]
+        (restore-state scheduler "test-files/shell-scheduler-backup.json"))
+      (is (= (-> id->service
+                 (update-in ["w8r-kitchen" :id->instance "w8r-kitchen.c3"]
+                            (fn [instance]
+                              (assoc instance
+                                :killed? true
+                                :message "Process lost after restart")))
+                 (update-in ["w8r-kitchen" :service] assoc
+                         :task-count 1
+                         :task-stats {:healthy 1 :running 1 :staged 0 :unhealthy 0}))
+             @id->service-agent))
       (is (= port->reservation @port->reservation-atom)))))

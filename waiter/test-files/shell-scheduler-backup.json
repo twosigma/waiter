@@ -37,6 +37,23 @@
           "shell-scheduler/pid": 76576,
           "shell-scheduler/working-directory": "/tmp/w8r-kitchen/w8r-kitchen.b2",
           "started-at": "2018-08-30T15:44:37.393Z"
+        },
+        "w8r-kitchen.c3": {
+          "exit-code": null,
+          "extra-ports": [],
+          "flags": [],
+          "health-check-status": null,
+          "healthy?": true,
+          "host": "127.0.0.8",
+          "id": "w8r-kitchen.c3",
+          "log-directory": "/tmp/w8r-kitchen/w8r-kitchen.c3",
+          "message": null,
+          "port": 10002,
+          "protocol": "http",
+          "service-id": "w8r-kitchen",
+          "shell-scheduler/pid": 82982,
+          "shell-scheduler/working-directory": "/tmp/w8r-kitchen/w8r-kitchen.c3",
+          "started-at": "2018-08-30T15:45:37.393Z"
         }
       },
       "service": {
@@ -89,10 +106,10 @@
           "version": "v1"
         },
         "shell-scheduler/mem": 256,
-        "task-count": 1,
+        "task-count": 2,
         "task-stats": {
-          "healthy": 1,
-          "running": 1,
+          "healthy": 2,
+          "running": 2,
           "staged": 0,
           "unhealthy": 0
         }
