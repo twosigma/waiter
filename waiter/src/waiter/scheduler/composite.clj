@@ -159,10 +159,10 @@
     {:query-state-fn (fn query-state-fn [] @scheduler-state-aggregator-atom)
      :result-chan
      (async/go
-       (loop [{:keys [scheduler-id->messages scheduler-id->state-chan scheduler-id->sync-time] :as current-state}
-              {:scheduler-id->messages {}
-               :scheduler-id->state-chan scheduler-id->state-chan
-               :scheduler-id->sync-time {}}]
+       (loop [{:keys [scheduler-id->state-chan scheduler-id->sync-time scheduler-id->type->messages] :as current-state}
+              {:scheduler-id->state-chan scheduler-id->state-chan
+               :scheduler-id->sync-time {}
+               :scheduler-id->type->messages {}}]
          (reset! scheduler-state-aggregator-atom current-state)
          (if-not (seq scheduler-id->state-chan)
            (log/info "exiting scheduler state aggregator as all components scheduler-state-chan have been closed")
@@ -172,45 +172,40 @@
              (if scheduler-chan-closed?
                (log/info scheduler-id "state chan has been closed")
                (log/info "received" (count scheduler-messages) "scheduler messages from" scheduler-id))
-             (let [scheduler-id->messages' (if scheduler-chan-closed?
-                                             (dissoc scheduler-id->messages scheduler-id)
-                                             (assoc scheduler-id->messages scheduler-id scheduler-messages))
+             (let [type->messages (group-by first scheduler-messages)
+                   scheduler-id->type->messages' (if scheduler-chan-closed?
+                                                   (dissoc scheduler-id->type->messages scheduler-id)
+                                                   (assoc scheduler-id->type->messages
+                                                     scheduler-id type->messages))
                    scheduler-id->state-chan' (cond-> scheduler-id->state-chan
                                                scheduler-chan-closed? (dissoc scheduler-id))
-                   available-services-filter (fn available-services-filter [message]
-                                               (= :update-available-services (first message)))
                    scheduler-id->sync-time' (cond-> scheduler-id->sync-time
                                               (not scheduler-chan-closed?)
                                               (assoc scheduler-id
-                                                     (->> scheduler-messages
-                                                          (filter available-services-filter)
-                                                          first
-                                                          second
-                                                          :scheduler-sync-time)))
-                   available-services-messages (->> (vals scheduler-id->messages')
-                                                    (mapcat (fn [scheduler-messages]
-                                                              (filter available-services-filter scheduler-messages)))
-                                                    (map second))
+                                                     (-> type->messages
+                                                         :update-available-services
+                                                         first
+                                                         second
+                                                         :scheduler-sync-time)))
+                   available-services-messages (->> (vals scheduler-id->type->messages')
+                                                    (mapcat :update-available-services))
                    services-message (->> available-services-messages
-                                         (map #(select-keys % [:available-service-ids :healthy-service-ids]))
+                                         (map #(select-keys (second %) [:available-service-ids :healthy-service-ids]))
                                          (apply merge-with set/union)
                                          (merge {:available-service-ids #{}
                                                  :healthy-service-ids #{}
                                                  :scheduler-sync-time (reduce du/max-time start-time (vals scheduler-id->sync-time'))}))
-                   instances-messages (->> (vals scheduler-id->messages')
-                                           (mapcat (fn [scheduler-messages]
-                                                     (filter (fn service-instances-filter [message]
-                                                               (= :update-service-instances (first message)))
-                                                             scheduler-messages)))
+                   instances-messages (->> (vals scheduler-id->type->messages')
+                                           (mapcat :update-service-instances)
                                            doall)
                    composite-scheduler-messages (conj instances-messages
                                                       [:update-available-services services-message])]
                (log/info "sending" (-> services-message :available-service-ids count) "services along scheduler-state-chan")
                (async/>! scheduler-state-chan composite-scheduler-messages)
                (recur (assoc current-state
-                        :scheduler-id->messages scheduler-id->messages'
                         :scheduler-id->state-chan scheduler-id->state-chan'
-                        :scheduler-id->sync-time scheduler-id->sync-time')))))))}))
+                        :scheduler-id->sync-time scheduler-id->sync-time'
+                        :scheduler-id->type->messages scheduler-id->type->messages')))))))}))
 
 (defn create-composite-scheduler
   "Creates and starts composite scheduler with components using their respective factory functions."
