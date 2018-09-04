@@ -36,6 +36,16 @@ matrix:
       before_script: cd waiter
       script: ./bin/ci/run-unit-tests.sh
 
+    - env: "NAME='Waiter integration tests: composite-fast'"
+      services: docker
+      before_script: cd waiter
+      script: ./bin/ci/run-integration-tests-composite-scheduler.sh parallel-test integration-fast
+
+    - env: "NAME='Waiter integration tests: composite-slow'"
+      services: docker
+      before_script: cd waiter
+      script: ./bin/ci/run-integration-tests-composite-scheduler.sh parallel-test integration-slow
+
     - env: "NAME='Waiter integration tests: kubernetes-heavy'"
       services: docker
       before_script: cd waiter
@@ -55,13 +65,3 @@ matrix:
       services: docker
       before_script: cd waiter
       script: ./bin/ci/run-integration-tests.sh parallel-test integration-slow
-
-    - env: "NAME='Waiter integration tests: shell-fast'"
-      services: docker
-      before_script: cd waiter
-      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-fast
-
-    - env: "NAME='Waiter integration tests: shell-slow'"
-      services: docker
-      before_script: cd waiter
-      script: ./bin/ci/run-integration-tests-shell-scheduler.sh parallel-test integration-slow
