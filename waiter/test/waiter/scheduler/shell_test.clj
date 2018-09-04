@@ -573,16 +573,16 @@
                      "s2" {:id->instance {"s2.a" {:killed? true :shell-scheduler/pid 3456}
                                           "s2.b" {:killed? false :shell-scheduler/pid 3434}
                                           "s2.c" {:killed? false :shell-scheduler/pid 3467}
-                                          "s2.d" {:killed? false :shell-scheduler/pid 5678}}}
+                                          "s2.d" {:killed? false :shell-scheduler/pid 3478}}}
                      "s3" {:id->instance {"s3.a" {:killed? false :shell-scheduler/pid 5656}
-                                          "s3.b" {:killed? false :shell-scheduler/pid 7878}}}}
-        running-pids #{1212 3434 5656 7878}
+                                          "s3.b" {:killed? false :shell-scheduler/pid 5678}}}}
+        running-pids #{1212 1245 3434 3467 3478 3489 4567 4578 5656 5678}
         killed-process-group-ids (atom #{})]
     (with-redefs [sh/sh (fn [command arg1 arg2 pgid]
                           (is (= ["pkill" "-9" "-g"] [command arg1 arg2]))
                           (swap! killed-process-group-ids conj pgid))]
       (kill-orphaned-processes! id->service running-pids))
-    (is (= #{"1245" "3467" "5678"} @killed-process-group-ids))))
+    (is (= #{"3489" "4567" "4578"} @killed-process-group-ids))))
 
 (defn- make-instance
   [service-id instance-id & {:as config}]
