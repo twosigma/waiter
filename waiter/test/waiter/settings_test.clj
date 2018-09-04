@@ -94,6 +94,11 @@
   []
   (load-config-file "config-shell.edn"))
 
+(defn- load-composite-settings
+  "Loads config-composite.edn"
+  []
+  (load-config-file "config-composite.edn"))
+
 (deftest test-validate-minimal-settings
   (testing "Test validating minimal settings"
     (is (nil? (s/check settings-schema (load-min-settings))))))
@@ -253,6 +258,20 @@
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-shell-settings)]
+          (is (nil? (s/check settings-schema settings)))
+          (is (= port (:port settings)))
+          (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
+
+(deftest test-validate-composite-settings
+  (testing "Test validating composite scheduler settings"
+    (let [port 12345
+          run-as-user "foo"]
+      (with-redefs [env (fn [name _]
+                          (case name
+                            "WAITER_PORT" (str port)
+                            "WAITER_AUTH_RUN_AS_USER" run-as-user
+                            (throw (ex-info "Unexpected environment variable" {:name name}))))]
+        (let [settings (load-composite-settings)]
           (is (nil? (s/check settings-schema settings)))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))

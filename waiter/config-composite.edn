@@ -1,0 +1,50 @@
+{
+ ; ---------- Cluster ----------
+
+ :zookeeper {
+             ;; Use an in-process ZK (not for production use):
+             :connect-string :in-process}
+
+ ; ---------- Network ----------
+
+ ;; Set the bind address to a specific IP:
+ :host "127.0.0.1"
+
+ ;; Set the port:
+ :port #config/env-int "WAITER_PORT"
+
+ ; ---------- Security ----------
+
+ :authenticator-config {:kind :one-user
+                        :one-user {;; The user account used to launch services:
+                                   :run-as-user #config/env "WAITER_AUTH_RUN_AS_USER"}}
+
+ ; ---------- Scheduling ----------
+
+ :scheduler-config {
+                    ;; :kind :composite simply uses a shell scheduler that schedules instances
+                    ;; on your local machine (for testing purposes only):
+                    :kind :composite
+                    :composite {:factory-fn waiter.scheduler.composite/create-composite-scheduler
+                                ;; two shell schedulers that have reserved comparatively high and low ports
+                                :components {:shell-high {:factory-fn waiter.scheduler.shell/shell-scheduler
+                                                          :failed-instance-retry-interval-ms 5000
+                                                          :health-check-interval-ms 10000
+                                                          :health-check-timeout-ms 200
+                                                          :port-grace-period-ms 120000
+                                                          :port-range [10500 10999]
+                                                          :work-directory "scheduler/shell-high"}
+                                             :shell-low {:factory-fn waiter.scheduler.shell/shell-scheduler
+                                                         :failed-instance-retry-interval-ms 5000
+                                                         :health-check-interval-ms 5000
+                                                         :health-check-timeout-ms 200
+                                                         :port-grace-period-ms 120000
+                                                         :port-range [10000 10299]
+                                                         :work-directory "scheduler/shell-low"}}
+                                :default-scheduler :shell-high}}
+
+ ; ---------- CORS ----------
+ :cors-config {:kind :allow-all}
+
+ ;; Require fewer failed health checks
+ :health-check-config {:failed-check-threshold 2}}

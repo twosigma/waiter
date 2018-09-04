@@ -71,3 +71,10 @@
   ;; clj-time.core doesn't have a in-nanos function.
   ;; We shouldn't need to worry about overflows here if our intervals are < 200 years.
   (-> interval t/in-millis (* 1e6)))
+
+(defn max-time
+  "Returns the max time of the two input time instances."
+  [t1 t2]
+  (if (t/after? t1 t2)
+    t1
+    t2))
