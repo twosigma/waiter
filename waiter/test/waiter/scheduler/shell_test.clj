@@ -566,7 +566,7 @@
       (is (= 1100 (pid->memory 3)))
       (is (= 1000 (pid->memory 4))))))
 
-(deftest test-handle-orphaned-processes
+(deftest test-kill-orphaned-processes!
   (let [id->service {"s1" {:id->instance {"s1.a" {:killed? true :shell-scheduler/pid 1234}
                                           "s1.b" {:killed? false :shell-scheduler/pid 1212}
                                           "s1.c" {:killed? false :shell-scheduler/pid 1245}}}
@@ -581,7 +581,7 @@
     (with-redefs [sh/sh (fn [command arg1 arg2 pgid]
                           (is (= ["pkill" "-9" "-g"] [command arg1 arg2]))
                           (swap! killed-process-group-ids conj pgid))]
-      (handle-orphaned-processes id->service running-pids))
+      (kill-orphaned-processes! id->service running-pids))
     (is (= #{"1245" "3467" "5678"} @killed-process-group-ids))))
 
 (defn- make-instance
@@ -598,41 +598,41 @@
           :shell-scheduler/working-directory (str "/tmp/" service-id "/" instance-id)}
          config))
 
-(let [id->service {"w8r-kitchen"
-                   {:id->instance {"w8r-kitchen.a1" (make-instance
-                                                      "w8r-kitchen" "w8r-kitchen.a1"
-                                                      :exit-code 1
-                                                      :healthy? false
-                                                      :host "127.0.0.5"
-                                                      :killed? true
-                                                      :started-at (du/str-to-date "2018-08-30T15:44:33.136Z")
-                                                      :port 10000
-                                                      :shell-scheduler/pid 32432
-                                                      :failed? true
-                                                      :message "Exited with code 1")
-                                   "w8r-kitchen.b2" (make-instance
-                                                      "w8r-kitchen" "w8r-kitchen.b2"
-                                                      :healthy? true
-                                                      :host "127.0.0.10"
-                                                      :port 10001
-                                                      :started-at (du/str-to-date "2018-08-30T15:44:37.393Z")
-                                                      :shell-scheduler/pid 76576)
-                                   "w8r-kitchen.c3" (make-instance
-                                                      "w8r-kitchen" "w8r-kitchen.c3"
-                                                      :healthy? true
-                                                      :host "127.0.0.8"
-                                                      :port 10002
-                                                      :started-at (du/str-to-date "2018-08-30T15:45:37.393Z")
-                                                      :shell-scheduler/pid 82982)}
-                    :service {:environment {"HOME" "/home/w8r"
-                                            "LOGNAME" "w8r"
-                                            "USER" "w8r"
+(let [id->service {"waiter-kitchen"
+                   {:id->instance {"waiter-kitchen.a1" (make-instance
+                                                         "waiter-kitchen" "waiter-kitchen.a1"
+                                                         :exit-code 1
+                                                         :healthy? false
+                                                         :host "127.0.0.5"
+                                                         :killed? true
+                                                         :started-at (du/str-to-date "2018-08-30T15:44:33.136Z")
+                                                         :port 10000
+                                                         :shell-scheduler/pid 32432
+                                                         :failed? true
+                                                         :message "Exited with code 1")
+                                   "waiter-kitchen.b2" (make-instance
+                                                         "waiter-kitchen" "waiter-kitchen.b2"
+                                                         :healthy? true
+                                                         :host "127.0.0.10"
+                                                         :port 10001
+                                                         :started-at (du/str-to-date "2018-08-30T15:44:37.393Z")
+                                                         :shell-scheduler/pid 76576)
+                                   "waiter-kitchen.c3" (make-instance
+                                                         "waiter-kitchen" "waiter-kitchen.c3"
+                                                         :healthy? true
+                                                         :host "127.0.0.8"
+                                                         :port 10002
+                                                         :started-at (du/str-to-date "2018-08-30T15:45:37.393Z")
+                                                         :shell-scheduler/pid 82982)}
+                    :service {:environment {"HOME" "/home/waiter"
+                                            "LOGNAME" "hiro"
+                                            "USER" "hiro"
                                             "WAITER_CPUS" "0.1"
                                             "WAITER_MEM_MB" "256"
                                             "WAITER_PASSWORD" "7e37af"
-                                            "WAITER_SERVICE_ID" "w8r-kitchen"
+                                            "WAITER_SERVICE_ID" "waiter-kitchen"
                                             "WAITER_USERNAME" "waiter"}
-                              :id "w8r-kitchen"
+                              :id "waiter-kitchen"
                               :instances 1
                               :service-description {"allowed-params" [],
                                                     "authentication" "standard",
@@ -660,10 +660,10 @@
                                                     "metric-group" "waiter_kitchen",
                                                     "min-instances" 1,
                                                     "name" "kitchen-app",
-                                                    "permitted-user" "w8r",
+                                                    "permitted-user" "hiro",
                                                     "ports" 1,
                                                     "restart-backoff-factor" 2,
-                                                    "run-as-user" "w8r",
+                                                    "run-as-user" "hiro",
                                                     "scale-down-factor" 0.001,
                                                     "scale-factor" 1,
                                                     "scale-up-factor" 0.1,
@@ -701,13 +701,13 @@
       (with-redefs [sh/sh (fn [& _] {:out "76576"})]
         (restore-state scheduler "test-files/shell-scheduler-backup.json"))
       (is (= (-> id->service
-                 (update-in ["w8r-kitchen" :id->instance "w8r-kitchen.c3"]
+                 (update-in ["waiter-kitchen" :id->instance "waiter-kitchen.c3"]
                             (fn [instance]
                               (assoc instance
                                 :killed? true
                                 :message "Process lost after restart")))
-                 (update-in ["w8r-kitchen" :service] assoc
-                         :task-count 1
-                         :task-stats {:healthy 1 :running 1 :staged 0 :unhealthy 0}))
+                 (update-in ["waiter-kitchen" :service] assoc
+                            :task-count 1
+                            :task-stats {:healthy 1 :running 1 :staged 0 :unhealthy 0}))
              @id->service-agent))
       (is (= port->reservation @port->reservation-atom)))))

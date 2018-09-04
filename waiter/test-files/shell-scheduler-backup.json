@@ -1,8 +1,8 @@
 {
   "id->service": {
-    "w8r-kitchen": {
+    "waiter-kitchen": {
       "id->instance": {
-        "w8r-kitchen.a1": {
+        "waiter-kitchen.a1": {
           "exit-code": 1,
           "extra-ports": [],
           "failed?": true,
@@ -10,64 +10,64 @@
           "health-check-status": null,
           "healthy?": false,
           "host": "127.0.0.5",
-          "id": "w8r-kitchen.a1",
+          "id": "waiter-kitchen.a1",
           "killed?": true,
-          "log-directory": "/tmp/w8r-kitchen/w8r-kitchen.a1",
+          "log-directory": "/tmp/waiter-kitchen/waiter-kitchen.a1",
           "message": "Exited with code 1",
           "port": 10000,
           "protocol": "http",
-          "service-id": "w8r-kitchen",
+          "service-id": "waiter-kitchen",
           "shell-scheduler/pid": 32432,
-          "shell-scheduler/working-directory": "/tmp/w8r-kitchen/w8r-kitchen.a1",
+          "shell-scheduler/working-directory": "/tmp/waiter-kitchen/waiter-kitchen.a1",
           "started-at": "2018-08-30T15:44:33.136Z"
         },
-        "w8r-kitchen.b2": {
+        "waiter-kitchen.b2": {
           "exit-code": null,
           "extra-ports": [],
           "flags": [],
           "health-check-status": null,
           "healthy?": true,
           "host": "127.0.0.10",
-          "id": "w8r-kitchen.b2",
-          "log-directory": "/tmp/w8r-kitchen/w8r-kitchen.b2",
+          "id": "waiter-kitchen.b2",
+          "log-directory": "/tmp/waiter-kitchen/waiter-kitchen.b2",
           "message": null,
           "port": 10001,
           "protocol": "http",
-          "service-id": "w8r-kitchen",
+          "service-id": "waiter-kitchen",
           "shell-scheduler/pid": 76576,
-          "shell-scheduler/working-directory": "/tmp/w8r-kitchen/w8r-kitchen.b2",
+          "shell-scheduler/working-directory": "/tmp/waiter-kitchen/waiter-kitchen.b2",
           "started-at": "2018-08-30T15:44:37.393Z"
         },
-        "w8r-kitchen.c3": {
+        "waiter-kitchen.c3": {
           "exit-code": null,
           "extra-ports": [],
           "flags": [],
           "health-check-status": null,
           "healthy?": true,
           "host": "127.0.0.8",
-          "id": "w8r-kitchen.c3",
-          "log-directory": "/tmp/w8r-kitchen/w8r-kitchen.c3",
+          "id": "waiter-kitchen.c3",
+          "log-directory": "/tmp/waiter-kitchen/waiter-kitchen.c3",
           "message": null,
           "port": 10002,
           "protocol": "http",
-          "service-id": "w8r-kitchen",
+          "service-id": "waiter-kitchen",
           "shell-scheduler/pid": 82982,
-          "shell-scheduler/working-directory": "/tmp/w8r-kitchen/w8r-kitchen.c3",
+          "shell-scheduler/working-directory": "/tmp/waiter-kitchen/waiter-kitchen.c3",
           "started-at": "2018-08-30T15:45:37.393Z"
         }
       },
       "service": {
         "environment": {
-          "HOME": "/home/w8r",
-          "LOGNAME": "w8r",
-          "USER": "w8r",
+          "HOME": "/home/waiter",
+          "LOGNAME": "hiro",
+          "USER": "hiro",
           "WAITER_CPUS": "0.1",
           "WAITER_MEM_MB": "256",
           "WAITER_PASSWORD": "7e37af",
-          "WAITER_SERVICE_ID": "w8r-kitchen",
+          "WAITER_SERVICE_ID": "waiter-kitchen",
           "WAITER_USERNAME": "waiter"
         },
-        "id": "w8r-kitchen",
+        "id": "waiter-kitchen",
         "instances": 1,
         "service-description": {
           "allowed-params": [],
@@ -96,10 +96,10 @@
           "metric-group": "waiter_kitchen",
           "min-instances": 1,
           "name": "kitchen-app",
-          "permitted-user": "w8r",
+          "permitted-user": "hiro",
           "ports": 1,
           "restart-backoff-factor": 2,
-          "run-as-user": "w8r",
+          "run-as-user": "hiro",
           "scale-down-factor": 0.001,
           "scale-factor": 1,
           "scale-up-factor": 0.1,

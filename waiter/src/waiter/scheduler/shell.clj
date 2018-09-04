@@ -97,9 +97,10 @@
     (swap! port->reservation-atom assoc port {:state :in-grace-period-until-expiry
                                               :expiry-time port-expiry-time})))
 
-(defn- kill-process-group
+(defn- kill-process-group!
   "Kills the process group with group iod pgid."
   [pgid]
+  (log/info "killing orphaned process group with group" pid)
   (sh/sh "pkill" "-9" "-g" (str pgid)))
 
 (defn kill-process!
@@ -110,7 +111,7 @@
     (log/info "killing process:" instance)
     (when process
       (.destroyForcibly process))
-    (kill-process-group pid)
+    (kill-process-group! pid)
     (release-port! port->reservation-atom port port-grace-period-ms)
     (doseq [port extra-ports]
       (release-port! port->reservation-atom port port-grace-period-ms))
@@ -694,32 +695,57 @@
   "Finds all processes that are running the command 'run-service.sh'.
    Returns the set of pids."
   [work-directory]
-  (->> (-> (sh/sh "pgrep" "-f" (str "bash " work-directory ".*run-service.sh"))
-           :out
-           (str/split #"\n"))
-       (remove str/blank?)
-       (map #(Integer/parseInt %))
-       set))
+  (let [running-pids (-> (sh/sh "pgrep" "-f" (str "bash " work-directory ".*run-service.sh"))
+                         :out
+                         (str/split #"\n"))]
+    (->> running-pids
+         (remove str/blank?)
+         (map #(Integer/parseInt %))
+         set)))
 
-(defn handle-orphaned-processes
+(defn kill-orphaned-processes!
   "Finds and deletes any orphaned processes given the expected running instances."
   [id->service running-pids]
-  (let [expected-running-pids (->> id->service
+  (let [service->running-pids (fn service->running-pids [{:keys [id->instance]}]
+                                (->> id->instance
+                                     vals
+                                     (remove :killed?)
+                                     (map :shell-scheduler/pid)))
+        expected-running-pids (->> id->service
                                    vals
-                                   (mapcat (fn [{:keys [id->instance]}]
-                                             (->> id->instance
-                                                  vals
-                                                  (filter #(-> % :killed? not))
-                                                  (map :shell-scheduler/pid))))
+                                   (mapcat service->running-pids)
                                    set)
         orphaned-pids (set/difference expected-running-pids running-pids)]
     (log/info {:expected-running-pids expected-running-pids
                :orphaned-pids orphaned-pids
                :running-pids running-pids})
-    (when (seq orphaned-pids)
-      (doseq [pid orphaned-pids]
-        (log/info "killing orphaned process with pid" pid)
-        (kill-process-group pid)))))
+    (run! kill-process-group! orphaned-pids)))
+
+(defn- str-to-date-safe
+  "nil-safe str-to-date call"
+  [date-str]
+  (when date-str
+    (du/str-to-date date-str)))
+
+(defn- update-lost-processes
+  "Detects and marks lost processes."
+  [running-pids id->instance]
+  (pc/map-vals
+    (fn [{:strs [killed? shell-scheduler/pid] :as instance}]
+      (cond-> (-> (pc/map-keys keyword instance)
+                  (update :started-at str-to-date-safe))
+        (and (not killed?) (not (contains? running-pids pid)))
+        (assoc :killed? true
+               :message "Process lost after restart")))
+    id->instance))
+
+(defn- keywordize-task-stats
+  "Keywordizes task-stats entry in the provided service."
+  [service]
+  (-> (pc/map-keys keyword service)
+      (update :task-stats
+              (fn [task-stats]
+                (pc/map-keys keyword task-stats)))))
 
 (defn restore-state
   "Restores shell scheduler state from the specified file."
@@ -730,36 +756,19 @@
       (if (and (.exists backup-file) (.isFile backup-file))
         (do
           (log/info "restoring" scheduler-name "scheduler state from" backup-file-path)
-          (let [{:strs [id->service port->reservation time]} (-> backup-file-path slurp json/read-str)
-                str-to-date (fn str-to-date [date-str]
-                              (when date-str
-                                (du/str-to-date date-str)))]
+          (let [{:strs [id->service port->reservation time]} (-> backup-file-path slurp json/read-str)]
             (log/info scheduler-name "scheduler was last backed up at" time)
             (let [actually-running-pids (get-running-pids work-directory)
                   id->service (->> id->service
                                    (pc/map-vals
                                      (fn [service]
                                        (-> (pc/map-keys keyword service)
-                                           (update :id->instance
-                                                   (fn [id->instance]
-                                                     (pc/map-vals
-                                                       (fn [{:strs [killed? shell-scheduler/pid] :as instance}]
-                                                         (cond-> (-> (pc/map-keys keyword instance)
-                                                                     (update :started-at str-to-date))
-                                                           (and (not killed?) (not (contains? actually-running-pids pid)))
-                                                           (assoc :killed? true
-                                                                  :message "Process lost after restart")))
-                                                       id->instance)))
-                                           (update :service
-                                                   (fn [service]
-                                                     (-> (pc/map-keys keyword service)
-                                                         (update :task-stats
-                                                                 (fn [task-stats]
-                                                                   (pc/map-keys keyword task-stats))))))
+                                           (update :id->instance #(update-lost-processes actually-running-pids %))
+                                           (update :service keywordize-task-stats)
                                            update-task-stats))))]
               (log/info "restoring" (count id->service) "entries into id->service-agent")
               (send id->service-agent (constantly id->service))
-              (handle-orphaned-processes id->service actually-running-pids)
+              (kill-orphaned-processes! id->service actually-running-pids)
               (log/info "awaiting completion of pending messages to id->service-agent")
               (await id->service-agent))
             (let [port->reservation (->> port->reservation
@@ -767,7 +776,7 @@
                                          (pc/map-vals
                                            (fn [reservation]
                                              (-> (pc/map-keys keyword reservation)
-                                                 (update :expiry-time str-to-date)
+                                                 (update :expiry-time str-to-date-safe)
                                                  (update :state keyword)))))]
               (log/info "restoring" (count port->reservation) "entries into port->reservation-atom")
               (reset! port->reservation-atom port->reservation))
