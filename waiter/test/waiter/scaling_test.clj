@@ -23,7 +23,8 @@
             [waiter.correlation-id :as cid]
             [waiter.mocks :refer :all]
             [waiter.scaling :refer :all]
-            [waiter.scheduler :as scheduler])
+            [waiter.scheduler :as scheduler]
+            [waiter.util.async-utils :as au])
   (:import (java.util.concurrent CountDownLatch)))
 
 (defn- retrieve-state-fn
@@ -605,13 +606,15 @@
               (async/>!! exit-chan :exit))))))))
 
 (deftest test-apply-scaling
-  (let [executor-multiplexer-chan (async/chan 10)]
-    (apply-scaling! executor-multiplexer-chan "test-service-id"
-                    {:total-instances 10
-                     :task-count 10
-                     :scale-to-instances 12
-                     :scale-amount 2
-                     :outstanding-requests 12})
+  (let [executor-multiplexer-chan (async/chan 10)
+        async-handle (apply-scaling! executor-multiplexer-chan "test-service-id"
+                                     {:total-instances 10
+                                      :task-count 10
+                                      :scale-to-instances 12
+                                      :scale-amount 2
+                                      :outstanding-requests 12})]
+    (when (au/chan? async-handle)
+      (async/<!! async-handle))
     (async/>!! executor-multiplexer-chan :test-data)
     (let [channel-data (async/<!! executor-multiplexer-chan)]
       (is (every? #(contains? channel-data %)
