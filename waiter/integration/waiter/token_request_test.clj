@@ -328,10 +328,11 @@
 
       ;; wait for all routers to receive scheduler updates
       (doseq [[_ router-url] (routers waiter-url)]
-        (is (wait-for-services-on-router router-url @service-ids-atom)
-            (str "All services are not listed on the /apps endpoint of router"
-                 {:router-url router-url
-                  :service-ids @service-ids-atom})))
+        (let [{:keys [missing-service-ids] :as result}
+              (wait-for-services-on-router router-url @service-ids-atom :cookies cookies)]
+          (is (empty? missing-service-ids)
+              (str "All services are not listed on the /apps endpoint of router"
+                   (assoc result :router-url router-url)))))
 
       (testing "star in token filter"
         (doseq [[_ router-url] (routers waiter-url)]

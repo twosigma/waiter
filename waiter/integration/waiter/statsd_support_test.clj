@@ -42,11 +42,15 @@
       (is (= 200 status))
       (when (statsd-enabled? waiter-url)
         ;; wait for all routers to receive scheduler updates
-        (doseq [[_ router-url] (routers waiter-url)]
-          (is (wait-for-services-on-router router-url [service-id])
-              (str "Service is not listed on the /apps endpoint of router"
-                   {:router-url router-url
-                    :service-id service-id})))
+        (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
+          (doseq [[_ router-url] (routers waiter-url)]
+            (let [{:keys [missing-service-ids] :as result}
+                  (wait-for-services-on-router router-url [service-id] :cookies cookies)]
+              (is (empty? missing-service-ids)
+                  (str "Service is not listed on the /apps endpoint of router"
+                       (assoc result
+                         :router-url router-url
+                         :service-id service-id))))))
 
         (let [{:keys [metric-group]} (response->service-description waiter-url response)
               metric-group-keyword (keyword metric-group)
