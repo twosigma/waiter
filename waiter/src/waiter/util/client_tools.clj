@@ -917,3 +917,16 @@
   (when-let [last-request-time-str (-> (service waiter-url service-id {})
                                        (get "last-request-time"))]
     (du/str-to-date last-request-time-str)))
+
+(defn wait-for-services-on-router
+  "Waits for the service to appear on the specified router."
+  [router-url service-ids & {:keys [cookies] :or {cookies {}}}]
+  (wait-for
+    (fn wait-for-services-on-router-helper []
+      (let [running-service-ids (some->> (make-request router-url "/apps" :cookies cookies)
+                                         :body
+                                         json/read-str
+                                         walk/keywordize-keys
+                                         (map :service-id)
+                                         set)]
+        (every? #(contains? running-service-ids %) service-ids)))))
