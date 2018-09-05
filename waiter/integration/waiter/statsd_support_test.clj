@@ -41,6 +41,13 @@
           (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
       (is (= 200 status))
       (when (statsd-enabled? waiter-url)
+        ;; wait for all routers to receive scheduler updates
+        (doseq [[_ router-url] (routers waiter-url)]
+          (is (wait-for-services-on-router router-url [service-id])
+              (str "Service is not listed on the /apps endpoint of router"
+                   {:router-url router-url
+                    :service-id service-id})))
+
         (let [{:keys [metric-group]} (response->service-description waiter-url response)
               metric-group-keyword (keyword metric-group)
               {:keys [sync-instances-interval-ms]} (get (waiter-settings waiter-url) :statsd)]
