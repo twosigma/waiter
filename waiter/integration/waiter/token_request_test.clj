@@ -303,6 +303,7 @@
           token->version->etag-atom (atom {})
           all-tokens [token-1 token-2]
           all-version-suffixes ["v1" "v2" "v3"]
+          router-id->router-url (routers waiter-url)
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")]
 
       (doseq [version-suffix all-version-suffixes]
@@ -323,18 +324,17 @@
                                                         #(make-request waiter-url "/environment" :headers %))]
                 (assert-response-status response 200)
                 (is (-> service-id str/blank? not))
-                (swap! service-ids-atom conj service-id))
+                (swap! service-ids-atom conj service-id)
+                ;; ensure all routers know about the service
+                (doseq [[_ router-url] router-id->router-url]
+                  (let [response (make-request-with-debug-info
+                                   {:x-waiter-token token}
+                                   #(make-request router-url "/environment" :headers % :cookies cookies))]
+                    (assert-response-status response 200)
+                    (is (= service-id (:service-id response))))))
               (swap! token->version->etag-atom assoc-in [token version-suffix] token-etag)))))
       (is (= (* (count all-tokens) (count all-version-suffixes)) (count @service-ids-atom))
           (str {:service-ids @service-ids-atom}))
-
-      ;; wait for all routers to receive scheduler updates
-      (doseq [[_ router-url] (routers waiter-url)]
-        (let [{:keys [missing-service-ids] :as result}
-              (wait-for-services-on-router router-url @service-ids-atom :cookies cookies)]
-          (is (empty? missing-service-ids)
-              (str "All services are not listed on the /apps endpoint of router"
-                   (assoc result :router-url router-url)))))
 
       (testing "star in token filter"
         (doseq [[_ router-url] (routers waiter-url)]

@@ -394,10 +394,10 @@
 
 (defn service-settings
   "Fetches and returns the service data at the /apps/<service-id> endpoint."
-  [waiter-url service-id & {:keys [keywordize-keys query-params]
-                            :or {keywordize-keys true query-params {}}}]
+  [waiter-url service-id & {:keys [cookies keywordize-keys query-params]
+                            :or {cookies [] keywordize-keys true query-params {}}}]
   (let [settings-path (str "/apps/" service-id)
-        settings-result (make-request waiter-url settings-path :query-params query-params)]
+        settings-result (make-request waiter-url settings-path :cookies cookies :query-params query-params)]
     (log/debug "service" service-id ":" settings-result)
     (cond-> (some-> settings-result :body try-parse-json)
             keywordize-keys walk/keywordize-keys)))
@@ -919,27 +919,12 @@
                                        (get "last-request-time"))]
     (du/str-to-date last-request-time-str)))
 
-(defn wait-for-services-on-router
-  "Waits for the service to appear on the specified router.
-   Returns a map which includes missing service-ids at the end of the wait period."
-  [router-url service-ids & {:keys [cookies] :or {cookies {}}}]
-  (wait-for
-    (fn wait-for-services-on-router-helper []
-      (try
-        (let [{:keys [status] :as response} (make-request router-url "/apps" :cookies cookies)
-              running-service-ids (some->> response
-                                           :body
-                                           json/read-str
-                                           walk/keywordize-keys
-                                           (map :service-id)
-                                           set)
-              missing-service-ids (set/difference (set service-ids) running-service-ids)]
-          {:missing-service-ids missing-service-ids
-           :queried-service-ids service-ids
-           :running-service-ids running-service-ids
-           :status-response status})
-        (catch Exception ex
-          (log/error ex "unable to retrieve /apps")
-          {:error-message (.getMessage ex)
-           :missing-service-ids service-ids
-           :queried-service-ids service-ids})))))
+(defn retrieve-services-on-router
+  "Returns the service-ids of services known to be running at specified router."
+  [router-url & {:keys [cookies] :or {cookies {}}}]
+  (some->> (make-request router-url "/apps" :cookies cookies)
+           :body
+           json/read-str
+           walk/keywordize-keys
+           (map :service-id)
+           set))

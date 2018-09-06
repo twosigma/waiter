@@ -34,24 +34,21 @@
 
 (deftest ^:parallel ^:integration-fast test-statsd-instance-metrics-aggregation
   (testing-using-waiter-url
-    (let [metric-group (rand-name "foo")
-          headers {:x-waiter-name (rand-name)
+    (let [router-id->router-url (routers waiter-url)
+          {:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          metric-group (rand-name "foo")
+          headers {:x-waiter-concurrency-level (count router-id->router-url)
+                   :x-waiter-name (rand-name)
                    :x-waiter-metric-group metric-group}
-          {:keys [status service-id] :as response}
-          (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (is (= 200 status))
+          {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+      (assert-response-status response 200)
+      ;; ensure all routers know about the service
+      (doseq [[_ router-url] router-id->router-url]
+        (let [response (make-request-with-debug-info headers #(make-kitchen-request router-url % :cookies cookies))]
+          (assert-response-status response 200)
+          (is (= service-id (:service-id response)))))
+      ;; verify metric groups when statsd is enabled
       (when (statsd-enabled? waiter-url)
-        ;; wait for all routers to receive scheduler updates
-        (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
-          (doseq [[_ router-url] (routers waiter-url)]
-            (let [{:keys [missing-service-ids] :as result}
-                  (wait-for-services-on-router router-url [service-id] :cookies cookies)]
-              (is (empty? missing-service-ids)
-                  (str "Service is not listed on the /apps endpoint of router"
-                       (assoc result
-                         :router-url router-url
-                         :service-id service-id))))))
-
         (let [{:keys [metric-group]} (response->service-description waiter-url response)
               metric-group-keyword (keyword metric-group)
               {:keys [sync-instances-interval-ms]} (get (waiter-settings waiter-url) :statsd)]
