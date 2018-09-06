@@ -282,7 +282,8 @@
             quanta-constraints {:cpus 64 :mem 100000}
             equilibrium-state {}
             make-scaling-message (fn [service-id scale-amount scale-to-instances task-count total-instances response-chan]
-                                   {:service-id service-id, :scale-amount scale-amount, :scale-to-instances scale-to-instances,
+                                   {:correlation-id (first *testing-contexts*)
+                                    :service-id service-id, :scale-amount scale-amount, :scale-to-instances scale-to-instances,
                                     :task-count task-count, :total-instances total-instances, :response-chan response-chan})
             run-service-scaling-executor (fn [scheduler instance-rpc-chan &
                                               {:keys [delegate-instance-kill-request-fn
@@ -305,7 +306,7 @@
                   scheduler instance-rpc-chan
                   :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
-            (async/>!! executor-chan {:service-id test-service-id, :scale-amount 0})
+            (async/>!! executor-chan {:correlation-id (first *testing-contexts*) :service-id test-service-id, :scale-amount 0})
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
             (async/>!! exit-chan :exit)))
 
