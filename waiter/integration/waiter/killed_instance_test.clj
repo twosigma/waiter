@@ -15,12 +15,13 @@
 ;;
 (ns waiter.killed-instance-test
   (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.date-utils :as du]
-            [clojure.core.async :as async]))
+            [waiter.util.date-utils :as du]))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-delegate-kill-instance
   (testing-using-waiter-url
@@ -76,7 +77,7 @@
     (let [router-id->router-url (routers waiter-url)
           num-routers (count router-id->router-url)
           extra-headers {:x-waiter-blacklist-on-503 true
-                         :x-waiter-concurrency-level (inc num-routers)
+                         :x-waiter-concurrency-level (* 2 num-routers)
                          :x-waiter-name (rand-name)
                          :x-waiter-scale-up-factor 0.99}
           make-request-fn (fn make-request-fn []
@@ -95,27 +96,32 @@
                (map async/<!!)
                doall))
 
-        (let [router-id->blacklist-time
+        (let [router-id->blacklist-expiry-time-str
               (pc/map-from-keys
                 (fn [router-id]
                   (let [router-url (router-id->router-url router-id)]
-                    (-> #(instance-blacklisted-by-router? router-url service-id instance-id cookies)
-                        (wait-for :interval 5 :timeout 10))))
+                    (instance-blacklisted-by-router? router-url service-id instance-id cookies)))
                 (keys router-id->router-url))]
           (doseq [[router-id _] router-id->router-url]
-            (is (router-id->blacklist-time router-id)
-                (str "instance not blacklisted " {:instance-id instance-id :router-id router-id})))
+            (is (-> router-id router-id->blacklist-expiry-time-str str/blank? not)
+                (str "instance not blacklisted on router"
+                     {:instance-id instance-id
+                      :router-id router-id
+                      :router-id->blacklist-expiry-time-str router-id->blacklist-expiry-time-str})))
 
-          (let [new-request-instance-ids-atom (atom #{})]
+          (let [router-id->blacklist-expiry-time (pc/map-vals du/str-to-date router-id->blacklist-expiry-time-str)
+                instance-id->request-count (atom {})]
             (parallelize-requests
-              10 1
+              (max 10 (* 4 num-routers))
+              1
               (fn []
-                (let [{:keys [instance-id router-id]} (make-request-fn)]
-                  (if (t/before? (t/now) (du/str-to-date (router-id->blacklist-time router-id)))
-                    (swap! new-request-instance-ids-atom conj instance-id)
+                (let [request-start-time (t/now)
+                      {:keys [instance-id router-id]} (make-request-fn)]
+                  (if (t/before? request-start-time (router-id->blacklist-expiry-time router-id))
+                    (swap! instance-id->request-count update instance-id (fnil inc 0))
                     (log/warn "request responded after blacklist period, not including instance" instance-id)))))
-            (log/info "new-request-instance-ids:" @new-request-instance-ids-atom)
-            (if-not (seq @new-request-instance-ids-atom)
+            (log/info "instance-id->request-count:" @instance-id->request-count)
+            (if-not (seq @instance-id->request-count)
               (log/warn "no requests completed after blacklist expiry time of" instance-id)
-              (is (not (contains? @new-request-instance-ids-atom instance-id))
-                  (str {:instance-id instance-id :new-request-instance-ids @new-request-instance-ids-atom})))))))))
+              (is (not (contains? @instance-id->request-count instance-id))
+                  (str {:instance-id instance-id :instance-id->request-count @instance-id->request-count})))))))))
