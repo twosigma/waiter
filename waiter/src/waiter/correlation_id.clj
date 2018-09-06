@@ -41,23 +41,28 @@
 (def default-correlation-id "UNKNOWN")
 (def ^:dynamic dynamic-correlation-id default-correlation-id)
 
-(defmacro with-correlation-id
-  "Executes the body with the specified value of correlation-id."
-  [correlation-id & body]
-  `(binding [dynamic-correlation-id ~correlation-id]
-     (let [start-thread-id# (.getId (Thread/currentThread))
-           result# (do ~@body)
-           end-thread-id# (.getId (Thread/currentThread))]
-       (when (not= start-thread-id# end-thread-id#)
-         (log/warn "with-correlation-id binding executed on different threads"
-                   {:correlation-id ~correlation-id
-                    :thread-ids {:end end-thread-id# :start start-thread-id#}}))
-       result#)))
-
 (defn get-correlation-id
   "Retrieve the value of the current correlation-id."
   []
   dynamic-correlation-id)
+
+(defmacro with-correlation-id
+  "Executes the body with the specified value of correlation-id."
+  [correlation-id & body]
+  `(binding [dynamic-correlation-id ~correlation-id]
+     (let [correlation-id# ~correlation-id
+           start-thread# (Thread/currentThread)
+           result# (do ~@body)
+           end-thread# (Thread/currentThread)]
+       (when (not= (.getId start-thread#) (.getId end-thread#))
+         (log/warn "with-correlation-id binding executed on different threads"
+                   {:end {:correlation-id (get-correlation-id)
+                          :thread-id (.getId end-thread#)
+                          :thread-name (.getName end-thread#)}
+                    :start {:correlation-id correlation-id#
+                            :thread-id (.getId start-thread#)
+                            :thread-name (.getName start-thread#)}}))
+       result#)))
 
 
 (defmacro correlation-id->str
