@@ -30,7 +30,8 @@
             [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils])
+            [waiter.util.utils :as utils]
+            [clojure.set :as set])
   (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
            (org.eclipse.jetty.util HttpCookieStore$Empty)
@@ -917,3 +918,28 @@
   (when-let [last-request-time-str (-> (service waiter-url service-id {})
                                        (get "last-request-time"))]
     (du/str-to-date last-request-time-str)))
+
+(defn wait-for-services-on-router
+  "Waits for the service to appear on the specified router.
+   Returns a map which includes missing service-ids at the end of the wait period."
+  [router-url service-ids & {:keys [cookies] :or {cookies {}}}]
+  (wait-for
+    (fn wait-for-services-on-router-helper []
+      (try
+        (let [{:keys [status] :as response} (make-request router-url "/apps" :cookies cookies)
+              running-service-ids (some->> response
+                                           :body
+                                           json/read-str
+                                           walk/keywordize-keys
+                                           (map :service-id)
+                                           set)
+              missing-service-ids (set/difference (set service-ids) running-service-ids)]
+          {:missing-service-ids missing-service-ids
+           :queried-service-ids service-ids
+           :running-service-ids running-service-ids
+           :status-response status})
+        (catch Exception ex
+          (log/error ex "unable to retrieve /apps")
+          {:error-message (.getMessage ex)
+           :missing-service-ids service-ids
+           :queried-service-ids service-ids})))))
