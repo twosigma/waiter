@@ -186,8 +186,10 @@
   (testing-using-waiter-url
     (if (or (using-cook? waiter-url) (using-marathon? waiter-url))
       (let [waiter-headers {:x-waiter-name (rand-name)}
-            {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
-        (let [active-instances (get-in (service-settings waiter-url service-id) [:instances :active-instances])
+            {:keys [cookies router-id service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))
+            router-url (get (routers waiter-url) router-id)]
+        (let [active-instances (get-in (service-settings router-url service-id :cookies cookies)
+                                       [:instances :active-instances])
               log-url (:log-url (first active-instances))
               _ (log/debug "Log Url:" log-url)
               make-request-fn (fn [url] (make-request url "" :verbose true))
