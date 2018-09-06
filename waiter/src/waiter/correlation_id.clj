@@ -45,7 +45,14 @@
   "Executes the body with the specified value of correlation-id."
   [correlation-id & body]
   `(binding [dynamic-correlation-id ~correlation-id]
-     ~@body))
+     (let [start-thread-id# (.getId (Thread/currentThread))
+           result# (do ~@body)
+           end-thread-id# (.getId (Thread/currentThread))]
+       (when (not= start-thread-id# end-thread-id#)
+         (log/warn "with-correlation-id binding executed on different threads"
+                   {:correlation-id ~correlation-id
+                    :thread-ids {:end end-thread-id# :start start-thread-id#}}))
+       result#)))
 
 (defn get-correlation-id
   "Retrieve the value of the current correlation-id."
