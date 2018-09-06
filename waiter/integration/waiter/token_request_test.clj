@@ -274,14 +274,16 @@
         (doseq [[_ router-url] (routers waiter-url)]
           (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
             (assert-response-status response 404)
-            (is (str/includes? (str body) "Couldn't find token") (str body)))
+            (is (str/includes? (str body) "Couldn't find token") (str {:body body :token token})))
           (let [{:keys [body] :as tokens-response}
                 (list-tokens router-url current-user cookies {"include" ["deleted" "metadata"]})
-                tokens (json/read-str body)]
+                token-entries (json/read-str body)]
             (assert-response-status tokens-response 200)
-            (is (every? (fn [token-entry] (contains? token-entry "deleted")) tokens))
-            (is (every? (fn [token-entry] (contains? token-entry "etag")) tokens))
-            (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
+            (is (every? (fn [token-entry] (contains? token-entry "deleted")) token-entries))
+            (is (every? (fn [token-entry] (contains? token-entry "etag")) token-entries))
+            (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) token-entries)
+                (str token "entry found in list of deleted tokens!"
+                     (->> token-entries (filter (fn [token-entry] (= token (get token-entry "token")))) vec))))))
 
       (log/info "ensuring tokens can no longer be retrieved on each router with include=deleted parameter after hard-delete")
       (doseq [token tokens-to-create]
