@@ -600,22 +600,26 @@
     (let [num-ports 8
           waiter-headers {:x-waiter-name (rand-name)
                           :x-waiter-ports num-ports}
-          {:keys [body service-id]}
+          {:keys [body router-id service-id]}
           (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :path "/environment"))
           body-json (json/read-str (str body))]
       (is (every? #(contains? body-json (str "PORT" %)) (range num-ports))
           (str body-json))
-      (let [{:keys [extra-ports port] :as active-instance}
-            (get-in (service-settings waiter-url service-id) [:instances :active-instances 0])]
+      (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+            router-url (get (routers waiter-url) router-id)
+            {:keys [extra-ports port] :as active-instance} (-> (service-settings router-url service-id :cookies cookies)
+                                                               (get-in [:instances :active-instances 0]))]
         (log/info service-id "active-instance:" active-instance)
-        (is (pos? port))
-        (is (= (get body-json "PORT0") (str port)))
-        (is (= (dec num-ports) (count extra-ports)) extra-ports)
-        (is (every? pos? extra-ports) extra-ports)
+        (is (seq active-instance) (str active-instance))
+        (is (pos? port) (str active-instance))
+        (is (= (get body-json "PORT0") (str port)) (str {:active-instance active-instance :body body-json}))
+        (is (= (dec num-ports) (count extra-ports)) (str active-instance))
+        (is (every? pos? extra-ports) (str active-instance))
         (is (->> (map #(= (get body-json (str "PORT" %1)) (str %2))
                       (range 1 (-> extra-ports count inc))
                       extra-ports)
-                 (every? true?))))
+                 (every? true?))
+            (str {:active-instance active-instance :body body-json})))
       (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-identical-version

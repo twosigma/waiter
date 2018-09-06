@@ -394,10 +394,10 @@
 
 (defn service-settings
   "Fetches and returns the service data at the /apps/<service-id> endpoint."
-  [waiter-url service-id & {:keys [keywordize-keys query-params]
-                            :or {keywordize-keys true query-params {}}}]
+  [waiter-url service-id & {:keys [cookies keywordize-keys query-params]
+                            :or {cookies [] keywordize-keys true query-params {}}}]
   (let [settings-path (str "/apps/" service-id)
-        settings-result (make-request waiter-url settings-path :query-params query-params)]
+        settings-result (make-request waiter-url settings-path :cookies cookies :query-params query-params)]
     (log/debug "service" service-id ":" settings-result)
     (cond-> (some-> settings-result :body try-parse-json)
             keywordize-keys walk/keywordize-keys)))
