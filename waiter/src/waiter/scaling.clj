@@ -43,7 +43,7 @@
             (map #(select-keys % [:instances :task-count]) apps))))
 
 (defn service-scaling-multiplexer
-  "Sends request to scale instances to the correct scaling executor go rountine.
+  "Sends request to scale instances to the correct scaling executor go routine.
    Maintains the mapping of service to service-scaling-executor."
   [scaling-executor-factory initial-state]
   (let [executor-multiplexer-chan (async/chan)
@@ -56,6 +56,7 @@
               (condp = channel
                 executor-multiplexer-chan
                 (let [{:keys [service-id scale-amount correlation-id] :as scaling-data} data]
+                  (counters/dec! (metrics/waiter-counter "autoscaler" "scaling" "pending"))
                   (cid/with-correlation-id
                     correlation-id
                     (log/info "service-scaling-multiplexer received" {:service-id service-id :scale-amount scale-amount})
@@ -315,9 +316,12 @@
   "Given a scale-amount and scale-to-instances, performs the scaling operation."
   [executor-multiplexer-chan service-id scaling-data]
   (try
-    (log/info "scaling service" service-id "with" scaling-data)
-    (async/put! executor-multiplexer-chan
-                (assoc scaling-data :correlation-id (cid/get-correlation-id) :service-id service-id))
+    (let [correlation-id (cid/get-correlation-id)]
+      (log/info "scaling service" service-id "with" scaling-data)
+      (counters/inc! (metrics/waiter-counter "autoscaler" "scaling" "pending"))
+      (async/go
+        (->> (assoc scaling-data :correlation-id correlation-id :service-id service-id)
+             (async/>! executor-multiplexer-chan))))
     (catch Exception e
       (log/warn e "Unexpected error when trying to scale" service-id))))
 
