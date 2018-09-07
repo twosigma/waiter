@@ -281,7 +281,7 @@
                              :home-path-prefix "/home/"
                              :http-options {:conn-timeout 10000
                                             :socket-timeout 10000
-                                            :spnego-auth true}
+                                            :spnego-auth false}
                              :impersonate false
                              :instance-priorities {:delta 5
                                                    :max 75
@@ -305,7 +305,7 @@
                                  :home-path-prefix "/home/"
                                  :http-options {:conn-timeout 10000
                                                 :socket-timeout 10000
-                                                :spnego-auth true}
+                                                :spnego-auth false}
                                  :force-kill-after-ms 60000
                                  :framework-id-ttl 900000
                                  :sync-deployment {:interval-ms (-> 15 t/seconds t/in-millis)
@@ -386,7 +386,7 @@
                   y-sub-map (get y kind)]
               (-> x
                   (merge y)
-                  (assoc kind (merge x-sub-map y-sub-map))))
+                  (assoc kind (deep-merge-settings x-sub-map y-sub-map))))
             (deep-merge-settings x y)))
         y))
     map-1 map-2))

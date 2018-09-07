@@ -226,6 +226,22 @@
                                    :foo {:other 3}
                                    :qux {:one "a"
                                          :two "c"}}}
+               (deep-merge-settings defaults configured)))))
+
+    (testing "should merge sub-sub-maps within the configured :kind"
+      (let [defaults {:scheduler-config {:kind :foo
+                                         :foo {:bar 1
+                                               :baz {:x 2
+                                                     :y 3}}}}
+            configured {:scheduler-config {:kind :foo
+                                           :foo {:bar 1
+                                                 :baz {:y 4
+                                                       :z 4}}}}]
+        (is (= {:scheduler-config {:kind :foo
+                                   :foo {:bar 1
+                                         :baz {:x 2
+                                               :y 4
+                                               :z 4}}}}
                (deep-merge-settings defaults configured)))))))
 
 (deftest test-validate-minimesos-settings
