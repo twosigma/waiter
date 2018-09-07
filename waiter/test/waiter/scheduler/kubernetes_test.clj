@@ -20,6 +20,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.kubernetes :refer :all]
             [waiter.util.client-tools :as ct]
+            [waiter.util.http-utils :as hu]
             [waiter.util.date-utils :as du])
   (:import (waiter.scheduler Service ServiceInstance)
            (waiter.scheduler.kubernetes KubernetesScheduler)))
@@ -38,7 +39,9 @@
   ([service-ids] (make-dummy-scheduler service-ids {}))
   ([service-ids args]
    (->
-     {:max-patch-retries 5
+     {:fileserver {:port 9090
+                   :scheme "http"}
+      :max-patch-retries 5
       :max-name-length 63
       :orchestrator-name "waiter"
       :pod-base-port 8080
@@ -613,6 +616,45 @@
                   :message "Error while scaling waiter service"}
                  actual)))))))
 
+(deftest test-retrieve-directory-content
+  (let [service-id "test-service-id"
+        instance-id "test-service-instance-id"
+        host "host.local"
+        path "/some/path/"
+        dummy-scheduler (make-dummy-scheduler [service-id])
+        port (get-in dummy-scheduler [:fileserver :port])
+        make-file (fn [file-name size]
+                    {:url (str "http://" host ":" port path file-name)
+                     :name file-name
+                     :size 1
+                     :type "file"})
+        make-dir (fn [dir-name]
+                   {:url (str "http://" host ":" port path dir-name "/")
+                    :name dir-name
+                    :type "directory"})
+        strip-links (partial mapv #(dissoc % :url))
+        inputs [{:description "empty directory"
+                 :expected []}
+                {:description "single file"
+                 :expected [(make-file "foo" 1)]}
+                {:description "single directory"
+                 :expected [(make-dir "foo")]}
+                {:description "lots of stuff"
+                 :expected [(make-file "a" 10)
+                            (make-file "b" 30)
+                            (make-file "c" 40)
+                            (make-file "d" 50)
+                            (make-dir "w")
+                            (make-dir "x")
+                            (make-dir "y")
+                            (make-dir "z")]}]]
+    (doseq [{:keys [description expected]} inputs]
+      (testing description
+        (let [actual (with-redefs [hu/http-request (constantly (strip-links expected))]
+                       (scheduler/retrieve-directory-content
+                         dummy-scheduler service-id instance-id host path))]
+          (is (= expected actual)))))))
+
 (defn test-auth-refresher
   "Test implementation of the authentication action-fn"
   [{:keys [refresh-value] :as context}]
@@ -628,6 +670,8 @@
                  :service-id->service-description-fn (constantly nil)
                  :start-scheduler-syncer-fn (constantly nil)}
         k8s-config {:authentication nil
+                    :fileserver {:port 9090
+                                 :scheme "http"}
                     :http-options {:conn-timeout 10000
                                    :socket-timeout 10000}
                     :max-patch-retries 5

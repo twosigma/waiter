@@ -371,7 +371,7 @@
         response-json (api-request http-client request-url
                                    :body (utils/clj->json spec-json)
                                    :request-method :post)]
-    (replicaset->Service response-json)))
+    (some-> response-json replicaset->Service)))
 
 (defn- delete-service
   "Delete the Kubernetes ReplicaSet corresponding to a Waiter Service.
@@ -413,6 +413,7 @@
 
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
+                                fileserver
                                 http-client
                                 max-patch-retries
                                 max-name-length
@@ -511,9 +512,35 @@
          :result :failed
          :message "Error while scaling waiter service"})))
 
-  (retrieve-directory-content [_ service-id instance-id _ relative-directory]
-    ;; TODO (#357) - get access to the working directory contents in the pod
-    [])
+  (retrieve-directory-content
+    [{:keys [http-client] {:keys [port scheme]} :fileserver}
+     _ _ host browse-path]
+    (let [auth-str @k8s-api-auth-str
+          headers (when auth-str {"Authorization" auth-str})
+          browse-path (if (string/blank? browse-path) "/" browse-path)
+          browse-path (cond->
+                        browse-path
+                        (not (string/ends-with? browse-path "/"))
+                        (str "/")
+                        (not (string/starts-with? browse-path "/"))
+                        (->> (str "/")))
+          target-url (str scheme "://" host ":" port browse-path)]
+      (when port
+        (ss/try+
+          (let [result (http-utils/http-request
+                         http-client
+                         target-url
+                         :accept "application/json"
+                         :content-type "application/json"
+                         :headers headers)]
+            (for [{entry-name :name entry-type :type :as entry} result]
+              (if (= "file" entry-type)
+                (assoc entry :url (str target-url entry-name))
+                (assoc entry :path (str browse-path entry-name)))))
+          (catch [:client http-client] response
+            (log/error "request to fileserver failed: " target-url response))
+          (catch Throwable t
+            (log/error t "request to fileserver failed"))))))
 
   (service-id->state [_ service-id]
     {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))
@@ -525,7 +552,7 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [orchestrator-name pod-base-port replicaset-api-version
+  [{:keys [fileserver orchestrator-name pod-base-port replicaset-api-version
            service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
@@ -553,45 +580,69 @@
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")
         ssl? (= "https" backend-protocol-lower)]
-    {:kind "ReplicaSet"
-     :apiVersion replicaset-api-version
-     :metadata {:annotations {:waiter/service-id service-id}
-                :labels {:app k8s-name
-                         :managed-by orchestrator-name}
-                :name k8s-name}
-     :spec {:replicas min-instances
-            :selector {:matchLabels {:app k8s-name
-                                     :managed-by orchestrator-name}}
-            :template {:metadata {:annotations {:waiter/port-count (str ports)
-                                                :waiter/protocol backend-protocol-lower
-                                                :waiter/service-id service-id}
-                                  :labels {:app k8s-name
-                                           :managed-by orchestrator-name}}
-                       :spec {:containers [{:command ["/usr/bin/waiter-init" cmd]
-                                            :env env
-                                            :image default-container-image
-                                            :imagePullPolicy "IfNotPresent"
-                                            :livenessProbe {:httpGet {:path health-check-url
-                                                                      :port port0
-                                                                      :scheme backend-protocol-upper}
-                                                            :failureThreshold health-check-max-consecutive-failures
-                                                            :initialDelaySeconds grace-period-secs
-                                                            :periodSeconds health-check-interval-secs
-                                                            :timeoutSeconds 1}
-                                            :name k8s-name
-                                            :ports [{:containerPort port0}]
-                                            :readinessProbe {:httpGet {:path health-check-url
-                                                                       :port port0
-                                                                       :scheme backend-protocol-upper}
-                                                             :failureThreshold 1
-                                                             :periodSeconds health-check-interval-secs
-                                                             :timeoutSeconds 1}
-                                            :resources {:limits {:cpu cpus
-                                                                 :memory memory}
-                                                        :requests {:cpu cpus
-                                                                   :memory memory}}
-                                            :workingDir home-path}]
-                              :terminationGracePeriodSeconds 0}}}}))
+    (cond->
+      {:kind "ReplicaSet"
+       :apiVersion replicaset-api-version
+       :metadata {:annotations {:waiter/service-id service-id}
+                  :labels {:app k8s-name
+                           :managed-by orchestrator-name}
+                  :name k8s-name}
+       :spec {:replicas min-instances
+              :selector {:matchLabels {:app k8s-name
+                                       :managed-by orchestrator-name}}
+              :template {:metadata {:annotations {:waiter/port-count (str ports)
+                                                  :waiter/protocol backend-protocol-lower
+                                                  :waiter/service-id service-id}
+                                    :labels {:app k8s-name
+                                             :managed-by orchestrator-name}}
+                         :spec {:containers [{:command ["/usr/bin/waiter-init" cmd]
+                                              :env env
+                                              :image default-container-image
+                                              :imagePullPolicy "IfNotPresent"
+                                              :livenessProbe {:httpGet {:path health-check-url
+                                                                        :port port0
+                                                                        :scheme backend-protocol-upper}
+                                                              :failureThreshold health-check-max-consecutive-failures
+                                                              :initialDelaySeconds grace-period-secs
+                                                              :periodSeconds health-check-interval-secs
+                                                              :timeoutSeconds 1}
+                                              :name "waiter-app"
+                                              :ports [{:containerPort port0}]
+                                              :readinessProbe {:httpGet {:path health-check-url
+                                                                         :port port0
+                                                                         :scheme backend-protocol-upper}
+                                                               :failureThreshold 1
+                                                               :periodSeconds health-check-interval-secs
+                                                               :timeoutSeconds 1}
+                                              :resources {:limits {:cpu cpus
+                                                                   :memory memory}
+                                                          :requests {:cpu cpus
+                                                                     :memory memory}}
+                                              :volumeMounts [{:mountPath home-path
+                                                              :name "user-home"}]
+                                              :workingDir home-path}]
+                                :volumes [{:name "user-home"
+                                           :emptyDir {}}]
+                                :terminationGracePeriodSeconds 0}}}}
+      ;; Optional fileserver sidecar container
+      (integer? (:port fileserver))
+      (update-in
+        [:spec :template :spec :containers]
+        conj
+        (let [{:keys [image port] {:keys [cpu mem]} :resources} fileserver
+              memory (str mem "Mi")]
+          {:command ["/bin/fileserver-start"]
+           :env [{:name "WAITER_FILESERVER_PORT"
+                  :value (str port)}]
+           :image image
+           :imagePullPolicy "IfNotPresent"
+           :name "waiter-fileserver"
+           :ports [{:containerPort port}]
+           :resources {:limits {:cpu cpu :memory memory}
+                       :requests {:cpu cpu :memory memory}}
+           :volumeMounts [{:mountPath "/srv/www"
+                           :name "user-home"}]
+           :workingDir home-path})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,
@@ -618,8 +669,13 @@
   [{:keys [authentication http-options max-patch-retries max-name-length orchestrator-name
            pod-base-port pod-suffix-length replicaset-api-version replicaset-spec-builder
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
-           service-id->password-fn url start-scheduler-syncer-fn]}]
-  {:pre [(utils/pos-int? (:socket-timeout http-options))
+           service-id->password-fn url start-scheduler-syncer-fn]
+    {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver}]
+  {:pre [(or (nil? fileserver-port)
+             (and (integer? fileserver-port)
+                  (< 0 fileserver-port 65535)))
+         (re-matches #"https?" fileserver-scheme)
+         (utils/pos-int? (:socket-timeout http-options))
          (utils/pos-int? (:conn-timeout http-options))
          (utils/non-neg-int? max-patch-retries)
          (utils/pos-int? max-name-length)
@@ -656,6 +712,7 @@
     (when authentication
       (start-auth-renewer authentication))
     (->KubernetesScheduler url
+                           fileserver
                            http-client
                            max-patch-retries
                            max-name-length

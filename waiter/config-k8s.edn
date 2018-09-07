@@ -21,8 +21,8 @@
  ; ---------- Scheduling ----------
 
  :scheduler-config {:kind :kubernetes
-                    :kubernetes {:url "http://localhost:8001"
-                                 :replicaset-spec-file-path "./specs/k8s-default-pod.edn"}}
+                    :kubernetes {:fileserver {:port 591}
+                                 :url "http://localhost:8001"}}
 
  ; ---------- Error Handling ----------
 

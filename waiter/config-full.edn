@@ -334,6 +334,17 @@
                                                            ;; The default factory function accepts an option for the docker container to use in the pod.
                                                            :default-container-image "twosigma/kitchen:latest"}
 
+                                 ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
+                                 ;; running a server for directory listings (in JSON) and serving file contents.
+                                 ;; Waiter expects the directory listings in the format returned by nginx's autoindex module when configured for JSON.
+                                 ;; See the behavior of the default container image below for reference.
+                                 ;; The sidecar container is only added to Waiter-managed pods if the :port number is set in this map,
+                                 ;; otherwise, the file browsing API is disabled (always returning an empty array).
+                                 :fileserver {:image "twosigma/waiter-fileserver:latest"
+                                              :port 9090
+                                              :resources {:cpu 0.1 :mem 128}
+                                              :scheme "http"}
+
                                  ;; HTTP options that will be used when accessing the Kubernetes API:
                                  :http-options {:conn-timeout 10000
                                                 :socket-timeout 10000}
