@@ -36,7 +36,7 @@
   (testing-using-waiter-url
     (let [router-id->router-url (routers waiter-url)
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")
-          metric-group (rand-name "foo")
+          metric-group (str "test-" (rand-int 3000000))
           headers {:x-waiter-concurrency-level (count router-id->router-url)
                    :x-waiter-name (rand-name)
                    :x-waiter-metric-group metric-group}
