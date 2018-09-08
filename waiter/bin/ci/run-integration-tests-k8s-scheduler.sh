@@ -7,7 +7,7 @@
 #   run-integration-tests-k8s-scheduler.sh parallel-test
 #   run-integration-tests-k8s-scheduler.sh
 #
-# Runs the Waiter integration tests using the (local) k8s scheduler, and dumps log files if the tests fail.
+# Runs the Waiter integration tests using the (local) k8s scheduler.
 
 set -e
 
@@ -25,18 +25,18 @@ ${DIR}/minikube-setup.sh
 ${KITCHEN_DIR}/bin/build-docker-image.sh
 
 # Start waiter
-WAITER_PORT=9091
+: ${WAITER_PORT:=9091}
 ${WAITER_DIR}/bin/run-using-k8s.sh ${WAITER_PORT} &
 
 # Start monitoring state of Kubernetes pods
 bash +x ${DIR}/monitor-pods.sh &
 
 # Run the integration tests
-LEIN_TEST_THREADS=4 \
-    WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen \
-    WAITER_AUTH_RUN_AS_USER=${USER} \
-    WAITER_URI=127.0.0.1:${WAITER_PORT} \
-    ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
+export LEIN_TEST_THREADS=4
+export WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen
+export WAITER_AUTH_RUN_AS_USER=${USER}
+export WAITER_URI=127.0.0.1:${WAITER_PORT}
+${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR}
 
 # If there were failures, dump the logs
 if [ "$test_failures" = true ]; then

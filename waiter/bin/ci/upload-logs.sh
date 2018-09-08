@@ -6,7 +6,8 @@ cd ${TRAVIS_BUILD_DIR}
 
 tarball=./dump.txz
 log_dirs=./waiter/log
-dump_name="${TRAVIS_JOB_NUMBER:-dump}"
+repo=${TRAVIS_PULL_REQUEST_SLUG:-${TRAVIS_REPO_SLUG}}
+dump_name="${repo//\//-}-${TRAVIS_JOB_NUMBER:-dump}"
 
 # Grab Mesos logs
 if [ -d ./waiter/.minimesos ]; then
@@ -49,4 +50,4 @@ if [ "$exitcode" == 2 ]; then
   echo "The tar command exited with a fatal error (exit code $exitcode), exiting..."
   exit $exitcode
 fi
-./waiter/bin/ci/gdrive_upload "travis-${dump_name}" $tarball
+./waiter/bin/ci/gdrive-upload "travis-${dump_name}" $tarball
