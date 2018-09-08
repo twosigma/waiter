@@ -629,7 +629,7 @@
                      :size 1
                      :type "file"})
         make-dir (fn [dir-name]
-                   {:url (str "http://" host ":" port path dir-name "/")
+                   {:path (str path dir-name)
                     :name dir-name
                     :type "directory"})
         strip-links (partial mapv #(dissoc % :url))
