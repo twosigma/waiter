@@ -67,7 +67,7 @@
     (when (some #(= "blacklisted" %) (:status-tags instance-state))
       (get-in responder-state [:instance-id->blacklist-expiry-time instance-keyword]))))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-blacklisted-instance-not-reserved
+(deftest ^:parallel ^:integration-slow test-blacklisted-instance-not-reserved
   ;; Verifies that a blacklisted instance is not used to process a request.
   ;; The test first blacklists an instance on all routers.
   ;; It then makes a few requests and verifies if they responded inside the blacklist

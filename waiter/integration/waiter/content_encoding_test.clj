@@ -75,7 +75,7 @@
 (deftest ^:parallel ^:integration-fast test-support-success-gzip-response
   (testing-using-waiter-url
     (log/info "Test successful gzip response")
-    (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name "testgzipsuccesschunked"))
+    (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name "testgzipsuccessunchunked"))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
       (try
         (let [response-size 2000000
@@ -103,7 +103,7 @@
 (deftest ^:parallel ^:integration-fast test-support-failed-gzip-response
   (testing-using-waiter-url
     (log/info "Test failed gzip response")
-    (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name "testgzipfailedchunked"))
+    (let [service-headers (assoc (kitchen-request-headers) :x-waiter-name (rand-name "testgzipfailedunchunked"))
           {:keys [service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))]
       (try
         (let [req-headers (assoc service-headers
