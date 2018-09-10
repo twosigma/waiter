@@ -411,8 +411,9 @@
           (log/info "basic hostname as token test")
           (let [current-user (retrieve-username)
                 service-description (assoc (kitchen-request-headers)
-                                      :x-waiter-permitted-user "*"
-                                      :x-waiter-run-as-user current-user)]
+                                           :x-waiter-metric-group token-prefix
+                                           :x-waiter-permitted-user "*"
+                                           :x-waiter-run-as-user current-user)]
             (testing "hostname-token-creation"
               (log/info "creating configuration using token" token)
               (let [{:keys [body status]}

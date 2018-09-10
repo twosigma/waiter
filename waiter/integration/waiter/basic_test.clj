@@ -176,8 +176,8 @@
           (let [response (make-request 24000)]
             (assert-response-status response 200))))
 
-      (testing "metric group should be waiter_kitchen"
-        (is (= "waiter_kitchen" (service-id->metric-group waiter-url service-id))
+      (testing "metric group should be waiter_kitchen_test"
+        (is (= "waiter_kitchen_test" (service-id->metric-group waiter-url service-id))
             (str "Invalid metric group for " service-id)))
 
       (delete-service waiter-url service-id))))
@@ -753,7 +753,7 @@
                                          (assoc
                                            :concurrency-level 20
                                            :interstitial-secs interstitial-secs
-                                           :metric-group "waiter_kitchen"
+                                           :metric-group "waiter_kitchen_test"
                                            :name token
                                            :permitted-user (retrieve-username)
                                            :run-as-user (retrieve-username)
