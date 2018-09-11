@@ -121,7 +121,7 @@
   (set/union service-override-keys service-non-override-keys))
 
 ; keys allowed in service description metadata, these need to be distinct from service parameter keys
-(def ^:const service-metadata-keys #{"source-tokens"})
+(def ^:const service-metadata-keys #{})
 
 ; keys used in computing the service-id from the service description
 (def ^:const service-description-keys (set/union service-parameter-keys service-metadata-keys))
@@ -530,19 +530,11 @@
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
   (token->token-data kv-store token service-parameter-keys error-on-missing false))
 
-(defn source-tokens-entry
-  "Creates an entry for the source-tokens field"
-  [token token-data]
-  {"token" token "version" (token-data->token-hash token-data)})
-
 (defn token->service-description-template
   "Retrieves the service description template for the given token including the service metadata values."
   [kv-store ^String token & {:keys [error-on-missing] :or {error-on-missing true}}]
-  (let [token-data (token->token-data kv-store token token-data-keys error-on-missing false)
-        service-parameter-template (select-keys token-data service-parameter-keys)]
-    (cond-> service-parameter-template
-            (seq service-parameter-template)
-            (assoc "source-tokens" [(source-tokens-entry token token-data)]))))
+  (let [token-data (token->token-data kv-store token token-data-keys error-on-missing false)]
+    (select-keys token-data service-parameter-keys)))
 
 (defn token->token-metadata
   "Retrieves the token metadata for the given token."
@@ -590,18 +582,21 @@
              remaining-tokens)
       loop-token-data)))
 
+(defn source-tokens-entry
+  "Creates an entry for the source-tokens field"
+  [token token-data]
+  {"token" token "version" (token-data->token-hash token-data)})
+
 (defn compute-service-description-template-from-tokens
   "Computes the service description, preauthorization and authentication data using the token-sequence and token-data."
   [token-defaults token-sequence token->token-data]
   (let [merged-token-data (->> (token-sequence->merged-data token->token-data token-sequence)
                                (merge token-defaults))
-        service-parameter-template (select-keys merged-token-data service-parameter-keys)
-        service-description-template (cond-> service-parameter-template
-                                             (seq service-parameter-template)
-                                             (assoc "source-tokens"
-                                                    (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)))]
+        service-description-template (select-keys merged-token-data service-parameter-keys)
+        source-tokens (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
      :service-description-template service-description-template
+     :source-tokens source-tokens
      :token->token-data token->token-data
      :token-authentication-disabled (and (= 1 (count token-sequence))
                                          (token-authentication-disabled? service-description-template))
@@ -748,7 +743,7 @@
      If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
-    [{:keys [defaults headers service-description-template token-authentication-disabled token-preauthorized]}
+    [{:keys [defaults headers service-description-template source-tokens token-authentication-disabled token-preauthorized]}
      waiter-headers passthrough-headers kv-store service-id-prefix username metric-group-mappings
      service-description-builder assoc-run-as-user-approved?]
     (let [headers-without-params (dissoc headers "param")
@@ -812,7 +807,8 @@
            :service-authentication-disabled service-authentication-disabled
            :service-description service-description
            :service-id service-id
-           :service-preauthorized service-preauthorized})
+           :service-preauthorized service-preauthorized
+           :source-tokens source-tokens})
         (catch [:type :service-description-error] ex-data
           (throw (ex-info (:message ex-data)
                           (merge (error-message-map-fn passthrough-headers waiter-headers) (dissoc ex-data :message))
@@ -878,20 +874,63 @@
   "Computes the idle timeout, in minutes, for a given service.
    If the service is active or was created by on-the-fly, the idle timeout is retrieved from the service description.
    Else, the idle timeout is the sum of the fallback period seconds and the stale service timeout."
-  [service-id->service-description-fn token->token-hash token->token-metadata token-defaults service-id]
-  (let [{:strs [idle-timeout-mins source-tokens]} (service-id->service-description-fn service-id)]
-    (if (and (seq source-tokens)
-             (some (fn [{:strs [token version]}]
-                     (not= (token->token-hash token) version))
-                   source-tokens))
+  [service-id->service-description-fn service-id->source-tokens-set-fn token->token-hash token->token-metadata
+   token-defaults service-id]
+  (let [{:strs [idle-timeout-mins]} (service-id->service-description-fn service-id)
+        source-tokens-set (service-id->source-tokens-set-fn service-id)]
+    (if (and (seq source-tokens-set)
+             (some (fn [source-tokens]
+                     (and (seq source-tokens)
+                          (some (fn [{:strs [token version]}]
+                                  (not= (token->token-hash token) version))
+                                source-tokens)))
+                   source-tokens-set))
       (do
-        (log/info service-id "that uses tokens" (mapv #(get % "token") source-tokens) "is stale")
-        (let [{:strs [fallback-period-secs stale-timeout-mins]}
-              (->> source-tokens
-                   (map #(token->token-metadata (get % "token")))
-                   (reduce merge token-defaults))]
-          (+ (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds))) ;; ceiling
-                 t/seconds
-                 t/in-minutes)
-             stale-timeout-mins)))
+        (log/info service-id "that uses tokens is stale")
+        (->> source-tokens-set
+             (map (fn source-tokens->idle-timeout [source-tokens]
+                    (let [{:strs [fallback-period-secs stale-timeout-mins]}
+                          (->> source-tokens
+                               (map #(token->token-metadata (get % "token")))
+                               (reduce merge token-defaults))]
+                      (+ (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds))) ;; ceiling
+                             t/seconds
+                             t/in-minutes)
+                         stale-timeout-mins))))
+             (reduce max)))
       idle-timeout-mins)))
+
+(let [source-tokens-lock "SOURCE-TOKENS-LOCK"
+      service-id->key #(str "^SOURCE-TOKENS#" %)]
+
+  (defn service-id->source-tokens-entries
+    "Retrieves the source-tokens entries (as a set) for a service from the key-value store."
+    [kv-store service-id & {:keys [refresh] :or {refresh false}}]
+    (let [keys (service-id->key service-id)]
+      (kv/fetch kv-store keys :refresh refresh)))
+
+  (defn- has-source-tokens?
+    "Returns true if the source-tokens are already mapped against the service-id."
+    [kv-store service-id source-tokens]
+    (-> (service-id->source-tokens-entries kv-store service-id)
+        (or #{})
+        (contains? source-tokens)))
+
+  (defn store-source-tokens!
+    "Stores a source-tokens entry in the key-value store against a service."
+    [synchronize-fn kv-store service-id source-tokens]
+    (when (and (seq source-tokens)
+               (not (has-source-tokens? kv-store service-id source-tokens)))
+      (synchronize-fn
+        source-tokens-lock
+        (fn inner-store-source-tokens! []
+          (let [existing-entries (-> (service-id->source-tokens-entries kv-store service-id :refresh true)
+                                     (or #{}))]
+            (if-not (contains? existing-entries source-tokens)
+              (do
+                (log/info "associating" source-tokens "with" service-id "source-tokens entries")
+                (->> (conj existing-entries source-tokens)
+                     (kv/store kv-store (service-id->key service-id)))
+                ;; refresh the entry
+                (service-id->source-tokens-entries kv-store service-id :refresh true))
+              (log/info source-tokens "source-tokens already associated with" service-id))))))))

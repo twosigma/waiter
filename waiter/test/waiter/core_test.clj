@@ -411,7 +411,8 @@
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
                                   :make-inter-router-requests-sync-fn nil
-                                  :service-id->service-description-fn (constantly {})}
+                                  :service-id->service-description-fn (constantly {})
+                                  :service-id->source-tokens-entries-fn (constantly #{})}
                        :scheduler {:scheduler (Object.)}
                        :state {:router-id "router-id"}
                        :wrap-secure-request-fn utils/wrap-identity}
@@ -486,7 +487,8 @@
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
                                   :make-inter-router-requests-sync-fn nil
-                                  :service-id->service-description-fn (constantly {})}
+                                  :service-id->service-description-fn (constantly {})
+                                  :service-id->source-tokens-entries-fn (constantly #{})}
                        :scheduler {:scheduler (Object.)}
                        :state {:router-id "router-id"}
                        :wrap-secure-request-fn utils/wrap-identity}

@@ -389,12 +389,12 @@
                                        "owner" "token-owner"
                                        "previous" {}
                                        "version" "token"}
-                                      (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
-                                      (str/includes? token "cpus") (assoc "cpus" "1")
-                                      (str/includes? token "fall") (assoc "fallback-period-secs" 600)
-                                      (str/includes? token "mem") (assoc "mem" "2")
-                                      (str/includes? token "per") (assoc "permitted-user" "puser")
-                                      (str/includes? token "run") (assoc "run-as-user" "ruser"))
+                                (str/includes? token "allowed") (assoc "allowed-params" #{"BAR" "FOO"})
+                                (str/includes? token "cpus") (assoc "cpus" "1")
+                                (str/includes? token "fall") (assoc "fallback-period-secs" 600)
+                                (str/includes? token "mem") (assoc "mem" "2")
+                                (str/includes? token "per") (assoc "permitted-user" "puser")
+                                (str/includes? token "run") (assoc "run-as-user" "ruser"))
                               {}))
         build-source-tokens (fn [& tokens]
                               (mapv (fn [token] (source-tokens-entry token (create-token-data token))) tokens))]
@@ -424,8 +424,8 @@
                                                "run-as-user" test-user}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -449,6 +449,7 @@
                                                "version" "test-version"
                                                "run-as-user" test-user}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -473,8 +474,8 @@
                                                "run-as-user" test-user}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -497,6 +498,7 @@
                                                "version" "test-version"
                                                "run-as-user" test-user}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -512,8 +514,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -529,8 +531,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token"
-                                                                    "source-tokens" (build-source-tokens "test-token")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token")
                                      :token->token-data {"test-token" (create-token-data "test-token")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -547,8 +549,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token2"
-                                                                    "source-tokens" (build-source-tokens "test-token" "test-token2")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token" "test-token2")
                                      :token->token-data {"test-token" (create-token-data "test-token")
                                                          "test-token2" (create-token-data "test-token2")}
                                      :token-authentication-disabled false
@@ -566,8 +568,8 @@
                                                                     "cpus" "1"
                                                                     "mem" "2"
                                                                     "name" "test-mem-token"
-                                                                    "source-tokens" (build-source-tokens "test-token" "test-token2" "test-cpus-token" "test-mem-token")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token" "test-token2" "test-cpus-token" "test-mem-token")
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-mem-token" (create-token-data "test-mem-token")
                                                          "test-token" (create-token-data "test-token")
@@ -585,8 +587,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
@@ -601,8 +603,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-host"
-                                                                    "source-tokens" (build-source-tokens "test-host")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host")
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -618,8 +620,8 @@
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token-run"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-token-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token-run")
                                      :token->token-data {"test-token-run" (create-token-data "test-token-run")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -634,8 +636,8 @@
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
                                                                     "name" "test-token-per-fall"
-                                                                    "source-tokens" (build-source-tokens "test-token-per-fall")
                                                                     "version" "token" "permitted-user" "puser"}
+                                     :source-tokens (build-source-tokens "test-token-per-fall")
                                      :token->token-data {"test-token-per-fall" (create-token-data "test-token-per-fall")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -652,8 +654,8 @@
                                                                     "name" "test-token-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-token-per-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token-per-run")
                                      :token->token-data {"test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -671,8 +673,8 @@
                                                                     "name" "test-cpus-token"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-token-per-run" "test-cpus-token")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token-per-run" "test-cpus-token")
                                      :token->token-data {"test-cpus-token" (create-token-data "test-cpus-token")
                                                          "test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
@@ -690,6 +692,7 @@
                                                            "baz" "quux"}
                                                "cpus" "1"}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -706,6 +709,7 @@
                                                       "FOO_BAR" "bar"}
                                                "cpus" "1"}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -726,8 +730,8 @@
                                                                     "name" "test-host-allowed-cpus-mem-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -750,8 +754,8 @@
                                                                     "name" "test-host-allowed-cpus-mem-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -773,8 +777,8 @@
                                                                     "name" "test-host-allowed-cpus-mem-per-run"
                                                                     "permitted-user" "puser"
                                                                     "run-as-user" "ruser"
-                                                                    "source-tokens" (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                                                     "version" "token"}
+                                     :source-tokens (build-source-tokens "test-host-allowed-cpus-mem-per-run")
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
@@ -791,6 +795,7 @@
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -811,6 +816,7 @@
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar"}}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -831,6 +837,7 @@
                                                "param" {"BAZ" "quux"
                                                         "FOO_BAR" "bar2"}}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -847,6 +854,7 @@
                                                "env" {"1" "quux"
                                                       "FOO-BAR" "bar"}}
                                      :service-description-template {},
+                                     :source-tokens []
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
@@ -894,9 +902,8 @@
                 expected {:defaults service-description-defaults
                           :fallback-period-secs 300
                           :headers {}
-                          :service-description-template (-> token-data
-                                                            (select-keys service-parameter-keys)
-                                                            (assoc "source-tokens" [(source-tokens-entry test-token token-data)]))
+                          :service-description-template (select-keys token-data service-parameter-keys)
+                          :source-tokens [(source-tokens-entry test-token token-data)]
                           :token->token-data {test-token token-data}
                           :token-authentication-disabled true
                           :token-preauthorized true
@@ -927,9 +934,8 @@
                 expected {:defaults service-description-defaults
                           :fallback-period-secs 300
                           :headers {}
-                          :service-description-template (-> token-data
-                                                            (select-keys service-parameter-keys)
-                                                            (assoc "source-tokens" [(source-tokens-entry test-token token-data)]))
+                          :service-description-template (select-keys token-data service-parameter-keys)
+                          :source-tokens [(source-tokens-entry test-token token-data)]
                           :token->token-data {test-token token-data}
                           :token-authentication-disabled false
                           :token-preauthorized true
@@ -968,6 +974,17 @@
     (is (nil? (compute-on-the-fly {"cmd" "on-the-fly-cmd", "run-as-user" "on-the-fly-ru"})))
     (is (compute-on-the-fly {"x-waiter-cmd" "on-the-fly-cmd", "x-waiter-run-as-user" "on-the-fly-ru"}))
     (is (compute-on-the-fly {"x-waiter-token" "value-does-not-matter"}))))
+
+(deftest test-compute-service-description-source-tokens
+  (let [defaults {"health-check-url" "/ping", "permitted-user" "bob"}
+        source-tokens (Object.)
+        sources {:defaults defaults
+                 :service-description-template {"cmd" "token-cmd"}
+                 :source-tokens source-tokens}
+        compute-source-tokens (fn compute-source-tokens [waiter-headers]
+                                (-> (compute-service-description-helper sources :waiter-headers waiter-headers)
+                                    :source-tokens))]
+    (is (= source-tokens (compute-source-tokens {})))))
 
 (deftest test-compute-service-description
   (testing "Service description computation"
@@ -1422,7 +1439,6 @@
             "current-request-user"
             {"scale-factor" 0.3})
           (is (= (-> basic-service-description
-                     (dissoc "source-tokens")
                      (assoc "health-check-url" "/ping" "permitted-user" "bob" "scale-factor" 0.3))
                  (service-description {:defaults {"health-check-url" "/ping"
                                                   "permitted-user" "bob"
@@ -1437,7 +1453,6 @@
             basic-service-id
             "current-request-user")
           (is (= (-> basic-service-description
-                     (dissoc "source-tokens")
                      (assoc "health-check-url" "/ping" "permitted-user" "bob"))
                  (service-description {:defaults {"health-check-url" "/ping"
                                                   "permitted-user" "bob"}
@@ -1918,17 +1933,10 @@
       (testing "should use mapping when metric group not specified"
         (is (= "mapped" (mg-filter {"name" "foo"}))))
 
-      (testing "should ignore source-tokens when single token specified"
-        (is (= "other" (mg-filter {"cpus" 1 "source-tokens" [{"token" "example-1.app.com" "version" "hash-1"}]}))))
+      (testing "should use 'other' when metric group not specified and name not mapped - 1"
+        (is (= "other" (mg-filter {"cpus" 1 "mem" 1024}))))
 
-      (testing "should use other when token in source-tokens does not validate"
-        (is (= "other" (mg-filter {"cpus" 1 "source-tokens" [{"token" "example-1@app.com" "version" "hash-1"}]}))))
-
-      (testing "should use other when source-tokens has multiple tokens"
-        (is (= "other" (mg-filter {"cpus" 1 "source-tokens" [{"token" "example-1.app.com" "version" "hash-1"}
-                                                             {"token" "example-2.app.com" "version" "hash-2"}]}))))
-
-      (testing "should use 'other' when metric group not specified and name not mapped"
+      (testing "should use 'other' when metric group not specified and name not mapped - 2"
         (is (= "other" (mg-filter {})))))))
 
 (deftest test-name->metric-group
@@ -2134,57 +2142,63 @@
       (let [token->token-data {"t1" {"cpus" 1}}
             service-id->service-description-fn (fn [in-service-id]
                                                  (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}]})
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->source-token-entries-fn (fn [in-service-id]
+                                                  (is (= service-id in-service-id))
+                                                  #{[{"token" "t1" "version" "t1.hash1"}]})
             token->token-metadata (token->token-metadata-fn token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))
+                 service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
+                 token->token-metadata token-defaults service-id)))))
 
     (testing "service with multiple tokens is active"
       (let [token->token-data {"t1" {"cpus" 1}
                                "t2" {"mem" 2048}}
             service-id->service-description-fn (fn [in-service-id]
                                                  (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}
-                                                                   {"token" "t2" "version" "t2.hash1"}]})
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->source-token-entries-fn (fn [in-service-id]
+                                                  (is (= service-id in-service-id))
+                                                  #{[{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash1"}]})
             token->token-metadata (token->token-metadata-fn token->token-data)]
         (is (= idle-timeout-mins
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))
+                 service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
+                 token->token-metadata token-defaults service-id)))))
 
     (testing "service outdated but fallback not configured"
       (let [token->token-data {"t1" {"cpus" 1}
                                "t2" {"mem" 2048}}
             service-id->service-description-fn (fn [in-service-id]
                                                  (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash0"}]})
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->source-token-entries-fn (fn [in-service-id]
+                                                  (is (= service-id in-service-id))
+                                                  #{[{"token" "t1" "version" "t1.hash0"}]})
             token->token-metadata (token->token-metadata-fn token->token-data)]
         (is (= (-> (+ fallback-period-secs (dec (-> 1 t/minutes t/in-seconds)))
                    t/seconds
                    t/in-minutes
                    (+ stale-timeout-mins))
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))
+                 service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
+                 token->token-metadata token-defaults service-id)))))
 
     (testing "service outdated and fallback configured on one token"
       (let [token->token-data {"t1" {"cpus" 1 "fallback-period-secs" 300}
                                "t2" {"mem" 2048}}
             service-id->service-description-fn (fn [in-service-id]
                                                  (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}
-                                                                   {"token" "t2" "version" "t2.hash0"}]})
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->source-token-entries-fn (fn [in-service-id]
+                                                  (is (= service-id in-service-id))
+                                                  #{[{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash0"}]})
             token->token-metadata (token->token-metadata-fn token->token-data)]
         (is (= (-> 300 t/seconds t/in-minutes (+ stale-timeout-mins))
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))
+                 service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
+                 token->token-metadata token-defaults service-id)))))
 
     (testing "service outdated and fallback and timeout configured on all tokens"
       (let [stale-timeout-mins 45
@@ -2193,12 +2207,74 @@
                                "t3" {"cmd" "tc" "fallback-period-secs" 900}}
             service-id->service-description-fn (fn [in-service-id]
                                                  (is (= service-id in-service-id))
-                                                 {"idle-timeout-mins" idle-timeout-mins
-                                                  "source-tokens" [{"token" "t1" "version" "t1.hash1"}
-                                                                   {"token" "t2" "version" "t2.hash0"}
-                                                                   {"token" "t3" "version" "t3.hash0"}]})
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->source-token-entries-fn (fn [in-service-id]
+                                                  (is (= service-id in-service-id))
+                                                  #{[{"token" "t1" "version" "t1.hash1"}
+                                                     {"token" "t2" "version" "t2.hash0"}
+                                                     {"token" "t3" "version" "t3.hash0"}]})
             token->token-metadata (token->token-metadata-fn token->token-data)]
         (is (= (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
                (service-id->idle-timeout
-                 service-id->service-description-fn token->token-hash token->token-metadata
-                 token-defaults service-id)))))))
+                 service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
+                 token->token-metadata token-defaults service-id)))))
+
+    (testing "service outdated and fallback and timeout configured on multiple source tokens"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+                               "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (= service-id in-service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->source-token-entries-fn (fn [in-service-id]
+                                                  (is (= service-id in-service-id))
+                                                  #{[{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash0"}]
+                                                    [{"token" "t3" "version" "t3.hash0"} {"token" "t4" "version" "t4.hash0"}]})
+            token->token-metadata (token->token-metadata-fn token->token-data)]
+        (is (= (max (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))
+                    (-> 1200 t/seconds t/in-minutes (+ stale-timeout-mins 15)))
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
+                 token->token-metadata token-defaults service-id)))))))
+
+(defn- synchronize-fn
+  [lock f]
+  (locking lock
+    (f)))
+
+(deftest test-store-source-tokens!
+  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        service-id "test-service-id"
+        token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32}
+        token-data-2 {"run-as-user" "ru1" "version" "foo"}
+        token-data-3 {"mem" 64 "run-as-user2" "ru" "version" "foo"}
+        source-tokens-1 [(source-tokens-entry "token-1" token-data-1)
+                         (source-tokens-entry "token-2" token-data-2)]
+        source-tokens-2 [(source-tokens-entry "token-1" token-data-1)
+                         (source-tokens-entry "token-2" token-data-2)]
+        source-tokens-3 [(source-tokens-entry "token-3" token-data-3)
+                         (source-tokens-entry "token-2" token-data-2)]
+        source-tokens-4 [(source-tokens-entry "token-2" token-data-2)
+                         (source-tokens-entry "token-3" token-data-3)]]
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-1)
+    (is (= #{source-tokens-1}
+           (service-id->source-tokens-entries kv-store service-id)))
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-2)
+    (is (= #{source-tokens-1}
+           (service-id->source-tokens-entries kv-store service-id)))
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-3)
+    (is (= #{source-tokens-1 source-tokens-3}
+           (service-id->source-tokens-entries kv-store service-id)))
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-1)
+    (is (= #{source-tokens-1 source-tokens-3}
+           (service-id->source-tokens-entries kv-store service-id)))
+
+    (store-source-tokens! synchronize-fn kv-store service-id source-tokens-4)
+    (is (= #{source-tokens-1 source-tokens-3 source-tokens-4}
+           (service-id->source-tokens-entries kv-store service-id)))))

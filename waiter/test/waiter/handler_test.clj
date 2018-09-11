@@ -441,17 +441,20 @@
                                           (is (= 200 status))
                                           (is (= "application/json" (get headers "content-type")))
                                           (is (instance-counts-present body)))]
-    (letfn [(service-id->service-description-fn [service-id & _]
-              (cond-> {"run-as-user" (if (contains? test-user-services service-id) test-user "another-user")}
-                (contains? service-id->source-tokens service-id)
-                (assoc "source-tokens" (-> service-id service-id->source-tokens walk/stringify-keys))))
-            (service-id->metrics-fn []
-              {})]
+    (letfn [(service-id->metrics-fn []
+              {})
+            (service-id->service-description-fn [service-id & _]
+              {"run-as-user" (if (contains? test-user-services service-id) test-user "another-user")})
+            (service-id->source-tokens-entries-fn [service-id]
+              (when (contains? service-id->source-tokens service-id)
+                (let [source-tokens (-> service-id service-id->source-tokens walk/stringify-keys)]
+                  #{source-tokens})))]
 
       (testing "list-services-handler:success-regular-user"
         (let [{:keys [body] :as response}
               (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
+                                     service-id->service-description-fn service-id->metrics-fn
+                                     service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
           (is (= test-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
 
@@ -459,7 +462,8 @@
         (let [request (assoc request :query-string "run-as-user=another-user")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                       service-id->service-description-fn service-id->metrics-fn request)]
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
@@ -471,7 +475,8 @@
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                       service-id->service-description-fn service-id->metrics-fn request)]
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
@@ -483,7 +488,8 @@
               prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status 400})))
               list-services-handler (core/wrap-error-handling
                                       #(list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                                              service-id->service-description-fn service-id->metrics-fn %))
+                                                              service-id->service-description-fn service-id->metrics-fn
+                                                              service-id->source-tokens-entries-fn %))
               {:keys [body headers status]} (list-services-handler request)]
           (is (= 400 status))
           (is (= "text/plain" (get headers "content-type")))
@@ -498,7 +504,8 @@
               {:keys [body] :as response}
               ; without a run-as-user, should return all apps
               (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
+                                     service-id->service-description-fn service-id->metrics-fn
+                                     service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
           (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
 
@@ -516,7 +523,8 @@
                 {:keys [body] :as response}
                 ; without a run-as-user, should return all apps
                 (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                       service-id->service-description-fn service-id->metrics-fn request)]
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= (->> service-id->source-tokens
                         (filter (fn [[_ source-tokens]]
@@ -539,7 +547,8 @@
                 {:keys [body] :as response}
                 ; without a run-as-user, should return all apps
                 (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                       service-id->service-description-fn service-id->metrics-fn request)]
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->source-tokens-entries-fn request)]
             (assert-successful-json-response response)
             (is (= (->> service-id->source-tokens
                         (filter (fn [[_ source-tokens]]
@@ -554,7 +563,8 @@
               {:keys [body] :as response}
               ; without a run-as-user, should return all apps
               (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
-                                     service-id->service-description-fn service-id->metrics-fn request)]
+                                     service-id->service-description-fn service-id->metrics-fn
+                                     service-id->source-tokens-entries-fn request)]
           (assert-successful-json-response response)
           (is (= (->> service-id->source-tokens
                       (filter (fn [[_ source-tokens]]
