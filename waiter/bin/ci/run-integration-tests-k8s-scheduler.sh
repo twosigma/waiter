@@ -32,7 +32,8 @@ ${WAITER_DIR}/bin/run-using-k8s.sh ${WAITER_PORT} &
 bash +x ${DIR}/monitor-pods.sh &
 
 # Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen \
+LEIN_TEST_THREADS=4 \
+    WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen \
     WAITER_AUTH_RUN_AS_USER=${USER} \
     WAITER_URI=127.0.0.1:${WAITER_PORT} \
     ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
