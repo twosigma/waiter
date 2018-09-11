@@ -173,7 +173,7 @@
       (get-in ["state" "service-id->launch-tracker" service-id])
       some?))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-launch-metrics-output
+(deftest ^:parallel ^:integration-slow test-launch-metrics-output
   (testing-using-waiter-url
     (let [waiter-settings (waiter-settings waiter-url)
           metrics-sync-interval-ms (get-in waiter-settings [:metrics-config :metrics-sync-interval-ms])

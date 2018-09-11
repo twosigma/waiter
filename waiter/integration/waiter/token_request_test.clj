@@ -294,7 +294,7 @@
             (assert-response-status response 404)
             (is (str/includes? (str body) "Couldn't find token") (str body))))))))
 
-(deftest ^:parallel ^:integration-fast test-service-list-filtering
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-service-list-filtering
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token-1 (create-token-name waiter-url (str "www." service-name ".t1"))

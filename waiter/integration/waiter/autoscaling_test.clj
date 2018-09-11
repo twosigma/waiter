@@ -142,7 +142,7 @@
             waiter-url cookies request-fn requests-per-thread delay-secs service-id
             num-threads expected-instances))))))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-expired-instance
+(deftest ^:parallel ^:integration-slow test-expired-instance
   (testing-using-waiter-url
     (let [extra-headers {:x-waiter-instance-expiry-mins 1 ;; can't set it any lower :(
                          :x-waiter-name (rand-name)}
@@ -185,7 +185,7 @@
             (is (contains? killed-instances instance-id)
                 (str {:instance-id instance-id :killed-instances killed-instances}))))))))
 
-(deftest ^:parallel ^:integration-fast test-minmax-instances
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-minmax-instances
   (testing-using-waiter-url
     (let [min-instances 2
           max-instances 5
