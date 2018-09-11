@@ -111,54 +111,52 @@
   [notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn scheduler instance-rpc-chan timeout-config
    service-id correlation-id num-instances-to-kill response-chan]
   (let [{:keys [blacklist-backoff-base-time-ms inter-kill-request-wait-time-ms max-blacklist-time-ms]} timeout-config]
-    (async/go
-      (try
-        (let [request-id (utils/unique-identifier) ; new unique identifier for this reservation request
-              reason-map-fn (fn [] {:cid correlation-id :reason :kill-instance :request-id request-id :time (t/now)})
-              result-map-fn (fn [status] {:cid correlation-id :request-id request-id :status status})]
-          (cid/cinfo correlation-id "requested to scale down by" num-instances-to-kill "but will attempt to kill only one instance")
-          (timers/start-stop-time!
-            (metrics/service-timer service-id "kill-instance")
-            (loop [exclude-ids-set #{}]
-              (let [instance (service/get-rand-inst instance-rpc-chan service-id (reason-map-fn) exclude-ids-set
-                                                    inter-kill-request-wait-time-ms)]
-                (if-let [instance-id (:id instance)]
-                  (if (cid/with-correlation-id
-                        correlation-id
-                        (peers-acknowledged-blacklist-requests-fn instance true blacklist-backoff-base-time-ms :prepare-to-kill))
-                    (do
-                      (cid/cinfo correlation-id "scaling down instance candidate" instance)
-                      (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
-                      (let [{:keys [killed?] :as kill-result} (scheduler/kill-instance scheduler instance)]
-                        (if killed?
-                          (do
-                            (cid/cinfo correlation-id "marking instance" instance-id "as killed")
-                            (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
-                            (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
-                            (service/release-instance! instance-rpc-chan instance (result-map-fn :killed))
-                            (cid/with-correlation-id
-                              correlation-id
+    (cid/with-correlation-id
+      correlation-id
+      (async/go
+        (try
+          (let [request-id (utils/unique-identifier) ; new unique identifier for this reservation request
+                reason-map-fn (fn [] {:cid correlation-id :reason :kill-instance :request-id request-id :time (t/now)})
+                result-map-fn (fn [status] {:cid correlation-id :request-id request-id :status status})]
+            (log/info "requested to scale down by" num-instances-to-kill "but will attempt to kill only one instance")
+            (timers/start-stop-time!
+              (metrics/service-timer service-id "kill-instance")
+              (loop [exclude-ids-set #{}]
+                (let [instance (service/get-rand-inst instance-rpc-chan service-id (reason-map-fn) exclude-ids-set
+                                                      inter-kill-request-wait-time-ms)]
+                  (if-let [instance-id (:id instance)]
+                    (if (peers-acknowledged-blacklist-requests-fn instance true blacklist-backoff-base-time-ms :prepare-to-kill)
+                      (do
+                        (log/info "scaling down instance candidate" instance)
+                        (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
+                        (let [{:keys [killed?] :as kill-result} (scheduler/kill-instance scheduler instance)]
+                          (if killed?
+                            (do
+                              (log/info "marking instance" instance-id "as killed")
+                              (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
+                              (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
+                              (service/release-instance! instance-rpc-chan instance (result-map-fn :killed))
                               (notify-instance-killed-fn instance)
-                              (peers-acknowledged-blacklist-requests-fn instance false max-blacklist-time-ms :killed)))
-                          (do
-                            (cid/cinfo correlation-id "failed kill attempt, releasing instance" instance-id)
-                            (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
-                            (service/release-instance! instance-rpc-chan instance (result-map-fn :not-killed))))
-                        (when response-chan (async/>! response-chan kill-result))
-                        killed?))
+                              (peers-acknowledged-blacklist-requests-fn instance false max-blacklist-time-ms :killed))
+                            (do
+                              (log/info "failed kill attempt, releasing instance" instance-id)
+                              (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
+                              (service/release-instance! instance-rpc-chan instance (result-map-fn :not-killed))))
+                          (when response-chan (async/>! response-chan kill-result))
+                          killed?))
+                      (do
+                        (log/info "kill was vetoed, releasing instance" instance-id)
+                        (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "vetoed-instance"))
+                        (service/release-instance! instance-rpc-chan instance (result-map-fn :not-killed))
+                        ;; make best effort to find another instance that is not veto-ed
+                        (recur (conj exclude-ids-set instance-id))))
                     (do
-                      (cid/cinfo correlation-id "kill was vetoed, releasing instance" instance-id)
-                      (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "vetoed-instance"))
-                      (service/release-instance! instance-rpc-chan instance (result-map-fn :not-killed))
-                      ;; make best effort to find another instance that is not veto-ed
-                      (recur (conj exclude-ids-set instance-id))))
-                  (do
-                    (cid/cinfo correlation-id "no instance available to kill")
-                    (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "unavailable"))
-                    false))))))
-        (catch Exception ex
-          (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "fail"))
-          (cid/cerror correlation-id ex "unable to scale down service" service-id))))))
+                      (log/info "no instance available to kill")
+                      (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "unavailable"))
+                      false))))))
+          (catch Exception ex
+            (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "fail"))
+            (log/error ex "unable to scale down service" service-id)))))))
 
 (defn kill-instance-handler
   "Handler that supports killing instances of a particular service on a specific router."
