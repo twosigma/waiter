@@ -332,7 +332,8 @@
 
 (defn- alive?
   "Returns true if the process is running.
-   It first tries to query the process handle, which is absent we fallback to the shell."
+   It first tries to query the process handle to check if the process is alive.
+   If the process handle is missing, we fallback to the shell to check the state of the process."
   [{:keys [:shell-scheduler/pid :shell-scheduler/process] :as instance}]
   (cond
     process (.isAlive process)
