@@ -29,7 +29,7 @@
             [waiter.test-helpers :as test-helpers]
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils])
-  (:import (com.codahale.metrics MetricFilter)
+  (:import (com.codahale.metrics MetricFilter MetricRegistry)
            (org.joda.time DateTime)))
 
 (deftest test-compress-strings
@@ -56,75 +56,70 @@
   (is (= '(.concat (.concat "a.b." c) ".d") (metric-name ["a" "b" 'c "d"])))
   (is (= '(.concat (.concat "a." b) ".c.d") (metric-name ["a" 'b "c" "d"]))))
 
+(def ^:private all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true)))
+
+(defmacro with-isolated-registry
+  [& body]
+  `(with-redefs [mc/default-registry (MetricRegistry.)]
+     (.removeMatching mc/default-registry all-metrics-match-filter)
+     (do ~@body)
+     (.removeMatching mc/default-registry all-metrics-match-filter)))
+
 (deftest test-service-counter
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (service-counter "service-id" "foo")
     (service-counter "service-id" "foo" "bar")
     (service-counter "service-id" "fee" "fie")
     (is (every? #(str/starts-with? % "services.service-id.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getCounters mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getCounters mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-service-histogram
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (service-histogram "service-id" "foo")
     (service-histogram "service-id" "foo" "bar")
     (service-histogram "service-id" "fee" "fie")
     (is (every? #(str/starts-with? % "services.service-id.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getHistograms mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getHistograms mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-service-timer
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (service-timer "service-id" "foo")
     (service-timer "service-id" "foo" "bar")
     (service-timer "service-id" "fee" "fie")
     (is (every? #(str/starts-with? % "services.service-id.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getTimers mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getTimers mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-service-meter
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (service-meter "service-id" "foo")
     (service-meter "service-id" "foo" "bar")
     (service-meter "service-id" "fee" "fie")
     (is (every? #(str/starts-with? % "services.service-id.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getMeters mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getMeters mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-waiter-counter
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (waiter-counter "core" "foo")
     (waiter-counter "core" "foo" "bar")
     (waiter-counter "core" "fee" "fie")
     (is (every? #(str/starts-with? % "waiter.core.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getCounters mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getCounters mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-waiter-meter
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (waiter-meter "core" "foo")
     (waiter-meter "core" "foo" "bar")
     (waiter-meter "core" "fee" "fie")
     (is (every? #(str/starts-with? % "waiter.core.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getMeters mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getMeters mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-waiter-timer
-  (let [all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true))]
-    (.removeMatching mc/default-registry all-metrics-match-filter)
+  (with-isolated-registry
     (waiter-timer "core" "foo")
     (waiter-timer "core" "foo" "bar")
     (waiter-timer "core" "fee" "fie")
     (is (every? #(str/starts-with? % "waiter.core.") (.getNames mc/default-registry)))
-    (is (= 3 (count (.getTimers mc/default-registry all-metrics-match-filter))))
-    (.removeMatching mc/default-registry all-metrics-match-filter)))
+    (is (= 3 (count (.getTimers mc/default-registry all-metrics-match-filter))))))
 
 (deftest test-update-counter
   (let [test-cases [{:name "nil-inputs", :input {:old nil, :new nil}, :expected 0}
