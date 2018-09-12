@@ -567,7 +567,7 @@
                                                 :waiter/service-id service-id}
                                   :labels {:app k8s-name
                                            :managed-by orchestrator-name}}
-                       :spec {:containers [{:command ["/bin/sh" "-c" cmd]
+                       :spec {:containers [{:command ["/usr/bin/waiter-init" cmd]
                                             :env env
                                             :image default-container-image
                                             :imagePullPolicy "IfNotPresent"
