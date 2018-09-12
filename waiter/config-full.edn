@@ -340,6 +340,7 @@
                                  ;; See the behavior of the default container image below for reference.
                                  ;; The sidecar container is only added to Waiter-managed pods if the :port number is set in this map,
                                  ;; otherwise, the file browsing API is disabled (always returning an empty array).
+                                 ;; You must ensure that the fileserver port number does not intersect with the pod-base-port range.
                                  :fileserver {:image "twosigma/waiter-fileserver:latest"
                                               :port 9090
                                               :resources {:cpu 0.1 :mem 128}
