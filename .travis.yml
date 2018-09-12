@@ -24,44 +24,44 @@ install:
 
 matrix:
   include:
-    - env: NAME='Kitchen tests'
+    - name: 'Kitchen tests'
       before_script: cd kitchen && ./bin/ci/setup.sh
       script: ./bin/ci/run.sh
 
-    - env: NAME='Token syncer tests'
+    - name: 'Token syncer tests'
       before_script: cd token-syncer
       script: ./bin/ci/run-all-tests.sh
 
-    - env: NAME='Waiter unit tests'
+    - name: 'Waiter unit tests'
       before_script: cd waiter
       script: ./bin/ci/run-unit-tests.sh
 
-    - env: "NAME='Waiter integration tests: composite-fast'"
+    - name: 'Waiter integration tests: composite-fast'
       services: docker
       before_script: cd waiter
-      script: ./bin/ci/run-integration-tests-composite-scheduler.sh parallel-test integration-fast
+      script: ./bin/ci/run-integration-tests.sh composite parallel-test integration-fast
 
-    - env: "NAME='Waiter integration tests: composite-slow'"
+    - name: 'Waiter integration tests: composite-slow'
       services: docker
       before_script: cd waiter
-      script: ./bin/ci/run-integration-tests-composite-scheduler.sh parallel-test integration-slow
+      script: ./bin/ci/run-integration-tests.sh composite parallel-test integration-slow
 
-    - env: "NAME='Waiter integration tests: kubernetes-heavy'"
+    - name: 'Waiter integration tests: kubernetes-heavy'
       services: docker
       before_script: cd waiter
-      script: ./bin/ci/run-integration-tests-k8s-scheduler.sh test integration-heavy
+      script: ./bin/ci/run-integration-tests.sh k8s test integration-heavy
 
-    - env: "NAME='Waiter integration tests: kubernetes-lite'"
+    - name: 'Waiter integration tests: kubernetes-lite'
       services: docker
       before_script: cd waiter
-      script: ./bin/ci/run-integration-tests-k8s-scheduler.sh parallel-test integration-lite
+      script: ./bin/ci/run-integration-tests.sh k8s parallel-test integration-lite
 
-    - env: "NAME='Waiter integration tests: marathon-fast'"
+    - name: 'Waiter integration tests: marathon-fast'
       services: docker
       before_script: cd waiter
-      script: ./bin/ci/run-integration-tests.sh parallel-test integration-fast
+      script: ./bin/ci/run-integration-tests.sh marathon parallel-test integration-fast
 
-    - env: "NAME='Waiter integration tests: marathon-slow'"
+    - name: 'Waiter integration tests: marathon-slow'
       services: docker
       before_script: cd waiter
-      script: ./bin/ci/run-integration-tests.sh parallel-test integration-slow
+      script: ./bin/ci/run-integration-tests.sh marathon parallel-test integration-slow

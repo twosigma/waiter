@@ -1,44 +1,31 @@
 #!/usr/bin/env bash
-# Usage: run-integration-tests.sh [TEST_COMMAND] [TEST_SELECTOR]
+# Usage: run-integration-tests.sh [SCHEDULER_NAME] [TEST_COMMAND] [TEST_SELECTOR]
 #
 # Examples:
-#   run-integration-tests.sh parallel-test integration-fast
-#   run-integration-tests.sh parallel-test integration-slow
-#   run-integration-tests.sh parallel-test
+#   run-integration-tests.sh shell parallel-test integration-fast
+#   run-integration-tests.sh shell parallel-test integration-slow
+#   run-integration-tests.sh shell parallel-test
+#   run-integration-tests.sh shell
 #   run-integration-tests.sh
 #
 # Runs the Waiter integration tests, and dumps log files if the tests fail.
 
-set -ev
-
-TEST_COMMAND=${1:-parallel-test}
-TEST_SELECTOR=${2:-integration}
-
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WAITER_DIR=${DIR}/../..
-KITCHEN_DIR=${WAITER_DIR}/../kitchen
+SCHEDULER="${1:-shell}-scheduler"
+SUBCMD="${DIR}/run-integration-tests-${SCHEDULER}.sh ${2:-parallel-test} ${3:-integration}"
 
-# Build mesos agent with kitchen backed in
-export PATH=${KITCHEN_DIR}/..:$PATH
-${KITCHEN_DIR}/bin/build-docker-image.sh
+if [ "${TRAVIS}" == true ]; then
+    # Capture integration test command output into a log file
+    mkdir -p ${WAITER_DIR}/log
+    bash -x -c "${SUBCMD}" &> >(tee ${WAITER_DIR}/log/travis.log)
 
-# Start minimesos
-export PATH=${DIR}:${PATH}
-which minimesos
-pushd ${WAITER_DIR}
-minimesos up
-popd
-
-# Start waiter
-WAITER_PORT=9091
-${WAITER_DIR}/bin/run-using-minimesos.sh ${WAITER_PORT} &
-
-# Run the integration tests
-WAITER_TEST_KITCHEN_CMD=/opt/kitchen/kitchen WAITER_URI=127.0.0.1:${WAITER_PORT} ${WAITER_DIR}/bin/test.sh ${TEST_COMMAND} ${TEST_SELECTOR} || test_failures=true
-
-# If there were failures, dump the logs
-if [ "$test_failures" = true ]; then
-    echo "Uploading logs..."
-    ${WAITER_DIR}/bin/ci/upload_logs.sh
-    exit 1
+    # If there were failures, dump the logs
+    if [ $? -ne 0 ]; then
+        echo 'Uploading logs...'
+        ${DIR}/upload-logs.sh
+        exit 1
+    fi
+else
+    eval ${SUBCMD}
 fi
