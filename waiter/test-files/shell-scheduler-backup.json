@@ -1,0 +1,129 @@
+{
+  "id->service": {
+    "waiter-kitchen": {
+      "id->instance": {
+        "waiter-kitchen.a1": {
+          "exit-code": 1,
+          "extra-ports": [],
+          "failed?": true,
+          "flags": [],
+          "health-check-status": null,
+          "healthy?": false,
+          "host": "127.0.0.5",
+          "id": "waiter-kitchen.a1",
+          "killed?": true,
+          "log-directory": "/tmp/waiter-kitchen/waiter-kitchen.a1",
+          "message": "Exited with code 1",
+          "port": 10000,
+          "protocol": "http",
+          "service-id": "waiter-kitchen",
+          "shell-scheduler/pid": 32432,
+          "shell-scheduler/working-directory": "/tmp/waiter-kitchen/waiter-kitchen.a1",
+          "started-at": "2018-08-30T15:44:33.136Z"
+        },
+        "waiter-kitchen.b2": {
+          "exit-code": null,
+          "extra-ports": [],
+          "flags": [],
+          "health-check-status": null,
+          "healthy?": true,
+          "host": "127.0.0.10",
+          "id": "waiter-kitchen.b2",
+          "log-directory": "/tmp/waiter-kitchen/waiter-kitchen.b2",
+          "message": null,
+          "port": 10001,
+          "protocol": "http",
+          "service-id": "waiter-kitchen",
+          "shell-scheduler/pid": 76576,
+          "shell-scheduler/working-directory": "/tmp/waiter-kitchen/waiter-kitchen.b2",
+          "started-at": "2018-08-30T15:44:37.393Z"
+        },
+        "waiter-kitchen.c3": {
+          "exit-code": null,
+          "extra-ports": [],
+          "flags": [],
+          "health-check-status": null,
+          "healthy?": true,
+          "host": "127.0.0.8",
+          "id": "waiter-kitchen.c3",
+          "log-directory": "/tmp/waiter-kitchen/waiter-kitchen.c3",
+          "message": null,
+          "port": 10002,
+          "protocol": "http",
+          "service-id": "waiter-kitchen",
+          "shell-scheduler/pid": 82982,
+          "shell-scheduler/working-directory": "/tmp/waiter-kitchen/waiter-kitchen.c3",
+          "started-at": "2018-08-30T15:45:37.393Z"
+        }
+      },
+      "service": {
+        "environment": {
+          "HOME": "/home/waiter",
+          "LOGNAME": "hiro",
+          "USER": "hiro",
+          "WAITER_CPUS": "0.1",
+          "WAITER_MEM_MB": "256",
+          "WAITER_PASSWORD": "7e37af",
+          "WAITER_SERVICE_ID": "waiter-kitchen",
+          "WAITER_USERNAME": "waiter"
+        },
+        "id": "waiter-kitchen",
+        "instances": 1,
+        "service-description": {
+          "allowed-params": [],
+          "authentication": "standard",
+          "backend-proto": "http",
+          "blacklist-on-503": true,
+          "cmd": "/kitchen/bin/kitchen -p $PORT0",
+          "cmd-type": "shell",
+          "concurrency-level": 1,
+          "cpus": 0.1,
+          "distribution-scheme": "balanced",
+          "env": {},
+          "expired-instance-restart-rate": 0.1,
+          "grace-period-secs": 120,
+          "health-check-interval-secs": 10,
+          "health-check-max-consecutive-failures": 5,
+          "health-check-url": "/status",
+          "idle-timeout-mins": 10,
+          "instance-expiry-mins": 7200,
+          "interstitial-secs": 0,
+          "jitter-threshold": 0.5,
+          "max-instances": 500,
+          "max-queue-length": 1000000,
+          "mem": 256,
+          "metadata": {},
+          "metric-group": "waiter_kitchen",
+          "min-instances": 1,
+          "name": "kitchen-app",
+          "permitted-user": "hiro",
+          "ports": 1,
+          "restart-backoff-factor": 2,
+          "run-as-user": "hiro",
+          "scale-down-factor": 0.001,
+          "scale-factor": 1,
+          "scale-up-factor": 0.1,
+          "version": "v1"
+        },
+        "shell-scheduler/mem": 256,
+        "task-count": 2,
+        "task-stats": {
+          "healthy": 2,
+          "running": 2,
+          "staged": 0,
+          "unhealthy": 0
+        }
+      }
+    }
+  },
+  "port->reservation": {
+    "10000": {
+      "expiry-time": "2018-08-30T15:46:37.374Z",
+      "state": "in-grace-period-until-expiry"
+    },
+    "10001": {
+      "expiry-time": null,
+      "state": "in-use"
+    }
+  }
+}

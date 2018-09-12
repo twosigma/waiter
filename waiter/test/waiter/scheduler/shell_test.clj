@@ -16,6 +16,7 @@
 (ns waiter.scheduler.shell-test
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.java.shell :as sh]
             [clojure.test :refer :all]
@@ -23,8 +24,10 @@
             [qbits.jet.client.http :as http]
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.shell :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import clojure.lang.ExceptionInfo
+           java.io.File
            java.util.concurrent.TimeUnit
            waiter.scheduler.shell.ShellScheduler))
 
@@ -562,3 +565,149 @@
       (is (= 10 (pid->memory 2)))
       (is (= 1100 (pid->memory 3)))
       (is (= 1000 (pid->memory 4))))))
+
+(deftest test-kill-orphaned-processes!
+  (let [id->service {"s1" {:id->instance {"s1.a" {:killed? true :shell-scheduler/pid 1234}
+                                          "s1.b" {:killed? false :shell-scheduler/pid 1212}
+                                          "s1.c" {:killed? false :shell-scheduler/pid 1245}}}
+                     "s2" {:id->instance {"s2.a" {:killed? true :shell-scheduler/pid 3456}
+                                          "s2.b" {:killed? false :shell-scheduler/pid 3434}
+                                          "s2.c" {:killed? false :shell-scheduler/pid 3467}
+                                          "s2.d" {:killed? false :shell-scheduler/pid 3478}}}
+                     "s3" {:id->instance {"s3.a" {:killed? false :shell-scheduler/pid 5656}
+                                          "s3.b" {:killed? false :shell-scheduler/pid 5678}}}}
+        running-pids #{1212 1245 3434 3467 3478 3489 4567 4578 5656 5678}
+        killed-process-group-ids (atom #{})]
+    (with-redefs [sh/sh (fn [command arg1 arg2 pgid]
+                          (is (= ["pkill" "-9" "-g"] [command arg1 arg2]))
+                          (swap! killed-process-group-ids conj pgid))]
+      (kill-orphaned-processes! id->service running-pids))
+    (is (= #{"3489" "4567" "4578"} @killed-process-group-ids))))
+
+(defn- make-instance
+  [service-id instance-id & {:as config}]
+  (merge {:exit-code nil
+          :extra-ports []
+          :flags []
+          :health-check-status nil,
+          :id instance-id
+          :log-directory (str "/tmp/" service-id "/" instance-id)
+          :message nil
+          :protocol "http"
+          :service-id service-id
+          :shell-scheduler/working-directory (str "/tmp/" service-id "/" instance-id)}
+         config))
+
+(let [id->service {"waiter-kitchen"
+                   {:id->instance {"waiter-kitchen.a1" (make-instance
+                                                         "waiter-kitchen" "waiter-kitchen.a1"
+                                                         :exit-code 1
+                                                         :healthy? false
+                                                         :host "127.0.0.5"
+                                                         :killed? true
+                                                         :started-at (du/str-to-date "2018-08-30T15:44:33.136Z")
+                                                         :port 10000
+                                                         :shell-scheduler/pid 32432
+                                                         :failed? true
+                                                         :message "Exited with code 1")
+                                   "waiter-kitchen.b2" (make-instance
+                                                         "waiter-kitchen" "waiter-kitchen.b2"
+                                                         :healthy? true
+                                                         :host "127.0.0.10"
+                                                         :port 10001
+                                                         :started-at (du/str-to-date "2018-08-30T15:44:37.393Z")
+                                                         :shell-scheduler/pid 76576)
+                                   "waiter-kitchen.c3" (make-instance
+                                                         "waiter-kitchen" "waiter-kitchen.c3"
+                                                         :healthy? true
+                                                         :host "127.0.0.8"
+                                                         :port 10002
+                                                         :started-at (du/str-to-date "2018-08-30T15:45:37.393Z")
+                                                         :shell-scheduler/pid 82982)}
+                    :service {:environment {"HOME" "/home/waiter"
+                                            "LOGNAME" "hiro"
+                                            "USER" "hiro"
+                                            "WAITER_CPUS" "0.1"
+                                            "WAITER_MEM_MB" "256"
+                                            "WAITER_PASSWORD" "7e37af"
+                                            "WAITER_SERVICE_ID" "waiter-kitchen"
+                                            "WAITER_USERNAME" "waiter"}
+                              :id "waiter-kitchen"
+                              :instances 1
+                              :service-description {"allowed-params" [],
+                                                    "authentication" "standard",
+                                                    "backend-proto" "http",
+                                                    "blacklist-on-503" true,
+                                                    "cmd" "/kitchen/bin/kitchen -p $PORT0",
+                                                    "cmd-type" "shell",
+                                                    "concurrency-level" 1,
+                                                    "cpus" 0.1,
+                                                    "distribution-scheme" "balanced",
+                                                    "env" {},
+                                                    "expired-instance-restart-rate" 0.1,
+                                                    "grace-period-secs" 120,
+                                                    "health-check-interval-secs" 10,
+                                                    "health-check-max-consecutive-failures" 5,
+                                                    "health-check-url" "/status",
+                                                    "idle-timeout-mins" 10,
+                                                    "instance-expiry-mins" 7200,
+                                                    "interstitial-secs" 0,
+                                                    "jitter-threshold" 0.5,
+                                                    "max-instances" 500,
+                                                    "max-queue-length" 1000000,
+                                                    "mem" 256,
+                                                    "metadata" {},
+                                                    "metric-group" "waiter_kitchen",
+                                                    "min-instances" 1,
+                                                    "name" "kitchen-app",
+                                                    "permitted-user" "hiro",
+                                                    "ports" 1,
+                                                    "restart-backoff-factor" 2,
+                                                    "run-as-user" "hiro",
+                                                    "scale-down-factor" 0.001,
+                                                    "scale-factor" 1,
+                                                    "scale-up-factor" 0.1,
+                                                    "version" "v1"}
+                              :shell-scheduler/mem 256
+                              :task-count 2
+                              :task-stats {:healthy 2 :running 2 :staged 0 :unhealthy 0}}}}
+      port->reservation {10000 {:expiry-time (du/str-to-date "2018-08-30T15:46:37.374Z")
+                                :state :in-grace-period-until-expiry}
+                         10001 {:expiry-time nil
+                                :state :in-use}}
+      work-directory (System/getProperty "user.dir")]
+
+  (deftest test-backup-state
+    (let [file-content-atom (atom nil)
+          backup-file-path (str work-directory (File/separator) "test-files/test-backup-state.json")]
+      (with-redefs [spit (fn [file-name content]
+                           (is (= backup-file-path file-name))
+                           (reset! file-content-atom content))]
+        (backup-state "shell-scheduler" id->service port->reservation backup-file-path))
+      (is (= (-> "test-files/shell-scheduler-backup.json" slurp json/read-str (dissoc "time"))
+             (-> @file-content-atom json/read-str (dissoc "time"))))))
+
+  (deftest test-restore-state-matching-running-pids
+    (let [scheduler-config (assoc (common-scheduler-config) :work-directory work-directory)
+          {:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler scheduler-config)]
+      (with-redefs [sh/sh (fn [& _] {:out "76576\n82982"})]
+        (restore-state scheduler "test-files/shell-scheduler-backup.json"))
+      (is (= id->service @id->service-agent))
+      (is (= port->reservation @port->reservation-atom))))
+
+  (deftest test-restore-state-with-orphaned-pids
+    (let [scheduler-config (assoc (common-scheduler-config) :work-directory work-directory)
+          {:keys [id->service-agent port->reservation-atom] :as scheduler} (create-shell-scheduler scheduler-config)]
+      (with-redefs [sh/sh (fn [& _] {:out "76576"})]
+        (restore-state scheduler "test-files/shell-scheduler-backup.json"))
+      (is (= (-> id->service
+                 (update-in ["waiter-kitchen" :id->instance "waiter-kitchen.c3"]
+                            (fn [instance]
+                              (assoc instance
+                                :killed? true
+                                :message "Process lost after restart")))
+                 (update-in ["waiter-kitchen" :service] assoc
+                            :task-count 1
+                            :task-stats {:healthy 1 :running 1 :staged 0 :unhealthy 0}))
+             @id->service-agent))
+      (is (= port->reservation @port->reservation-atom)))))

@@ -16,8 +16,10 @@
 (ns waiter.scheduler.shell
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.java.shell :as sh]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
@@ -95,14 +97,21 @@
     (swap! port->reservation-atom assoc port {:state :in-grace-period-until-expiry
                                               :expiry-time port-expiry-time})))
 
+(defn- kill-process-group!
+  "Kills the process group with group iod pgid."
+  [pgid]
+  (log/info "killing process group with group" pgid)
+  (sh/sh "pkill" "-9" "-g" (str pgid)))
+
 (defn kill-process!
   "Triggers killing of process and any children processes it spawned"
   [{:keys [:shell-scheduler/process :shell-scheduler/pid extra-ports port] :as instance}
    port->reservation-atom port-grace-period-ms]
   (try
     (log/info "killing process:" instance)
-    (.destroyForcibly process)
-    (sh/sh "pkill" "-9" "-g" (str pid))
+    (when process
+      (.destroyForcibly process))
+    (kill-process-group! pid)
     (release-port! port->reservation-atom port port-grace-period-ms)
     (doseq [port extra-ports]
       (release-port! port->reservation-atom port port-grace-period-ms))
@@ -321,24 +330,46 @@
     (assoc instance :healthy? (perform-health-check instance health-check-url http-client))
     instance))
 
+(defn- alive?
+  "Returns true if the process is running.
+   It first tries to query the process handle to check if the process is alive.
+   If the process handle is missing, we fallback to the shell to check the state of the process."
+  [{:keys [:shell-scheduler/pid :shell-scheduler/process] :as instance}]
+  (cond
+    process (.isAlive process)
+    ;; a restored instance will not have a handle on the process
+    pid (-> (sh/sh "ps" "-p" (str pid)) :exit zero?)
+    :else (throw (ex-info "cannot check if instance is running" instance))))
+
+(defn- instance->exit-details
+  "Returns the exit code and message from the process handle if available, else return -1."
+  [{:keys [:shell-scheduler/pid :shell-scheduler/process]}]
+  (cond
+    process (let [exit-value (.exitValue process)]
+              {:exit-value exit-value
+               :message (str "Exited with code " exit-value)})
+    ;; a restored instance will not have a handle on the process
+    :else {:exit-value -1
+           :message (str "Exit code not known for restored instance with pid " pid)}))
+
 (defn- associate-exit-codes
   "Associates exit codes with exited instances"
-  [{:keys [:shell-scheduler/process port] :as instance} port->reservation-atom port-grace-period-ms]
-  (if (and (active? instance) (not (.isAlive process)))
-    (let [exit-value (.exitValue process)]
-      (log/info "instance exited with value" {:instance instance :exit-value exit-value})
+  [{:keys [port] :as instance} port->reservation-atom port-grace-period-ms]
+  (if (and (active? instance) (not (alive? instance)))
+    (let [{:keys [exit-value message]} (instance->exit-details instance)]
+      (log/info "instance exited with value" {:instance instance :exit-value exit-value :message message})
       (release-port! port->reservation-atom port port-grace-period-ms)
       (assoc instance
         :exit-code exit-value
         :failed? (if (zero? exit-value) false true)
         :healthy? false
         :killed? true ; does not actually mean killed -- using this to mark inactive
-        :message (str "Exited with code " exit-value)))
+        :message message))
     instance))
 
 (defn- enforce-grace-period
   "Kills processes for unhealthy instances exceeding their grace period"
-  [{:keys [:shell-scheduler/process started-at] :as instance} grace-period-secs port->reservation-atom port-grace-period-ms]
+  [{:keys [started-at] :as instance} grace-period-secs port->reservation-atom port-grace-period-ms]
   (if (unhealthy? instance)
     (let [current-time (t/now)]
       (if (>= (t/in-seconds (t/interval started-at current-time)) grace-period-secs)
@@ -356,8 +387,8 @@
 
 (defn- enforce-instance-limits
   "Kills processes that exceed allocated memory usage"
-  [{:keys [:shell-scheduler/process :shell-scheduler/pid] :as instance} mem pid->memory port->reservation-atom port-grace-period-ms]
-  (if (and (active? instance) (.isAlive process))
+  [{:keys [:shell-scheduler/pid] :as instance} mem pid->memory port->reservation-atom port-grace-period-ms]
+  (if (and (active? instance) (alive? instance))
     (let [memory-allocated (* mem 1024)
           memory-used (pid->memory pid)]
       (if (and memory-used (> memory-used memory-allocated))
@@ -682,9 +713,120 @@
                       retrieve-syncer-state-fn
                       service-id->password-fn)))
 
+(defn get-running-pids
+  "Finds all processes that are running the command 'run-service.sh'.
+   Returns the set of pids."
+  [work-directory]
+  (let [running-pids (-> (sh/sh "pgrep" "-f" (str "bash " work-directory ".*run-service.sh"))
+                         :out
+                         (str/split #"\n"))]
+    (->> running-pids
+         (remove str/blank?)
+         (map #(Integer/parseInt %))
+         set)))
+
+(defn kill-orphaned-processes!
+  "Finds and deletes any orphaned processes given the expected running instances."
+  [id->service running-pids]
+  (let [service->running-pids (fn service->running-pids [{:keys [id->instance]}]
+                                (->> id->instance
+                                     vals
+                                     (remove :killed?)
+                                     (map :shell-scheduler/pid)))
+        expected-running-pids (->> id->service
+                                   vals
+                                   (mapcat service->running-pids)
+                                   set)
+        orphaned-pids (set/difference running-pids expected-running-pids)]
+    (log/info {:expected-running-pids expected-running-pids
+               :orphaned-pids orphaned-pids
+               :running-pids running-pids})
+    (run! kill-process-group! orphaned-pids)))
+
+(defn- str-to-date-safe
+  "nil-safe str-to-date call"
+  [date-str]
+  (when date-str
+    (du/str-to-date date-str)))
+
+(defn- mark-lost-processes
+  "Detects and marks lost processes."
+  [running-pids id->instance]
+  (pc/map-vals
+    (fn [{:strs [killed? shell-scheduler/pid] :as instance}]
+      (cond-> (-> (pc/map-keys keyword instance)
+                  (update :started-at str-to-date-safe))
+        (and (not killed?) (not (contains? running-pids pid)))
+        (assoc :killed? true
+               :message "Process lost after restart")))
+    id->instance))
+
+(defn- keywordize-task-stats
+  "Keywordizes task-stats entry in the provided service."
+  [service]
+  (-> (pc/map-keys keyword service)
+      (update :task-stats
+              (fn [task-stats]
+                (pc/map-keys keyword task-stats)))))
+
+(defn restore-state
+  "Restores shell scheduler state from the specified file."
+  [{:keys [id->service-agent port->reservation-atom scheduler-name work-directory]} ^String backup-file-path]
+  (try
+    (let [backup-file (File. ^String backup-file-path)]
+      (if (and (.exists backup-file) (.isFile backup-file))
+        (do
+          (log/info "restoring" scheduler-name "scheduler state from" backup-file-path)
+          (let [{:strs [id->service port->reservation time]} (-> backup-file-path slurp json/read-str)]
+            (log/info scheduler-name "scheduler was last backed up at" time)
+            (let [actually-running-pids (get-running-pids work-directory)
+                  id->service (->> id->service
+                                   (pc/map-vals
+                                     (fn [service]
+                                       (-> (pc/map-keys keyword service)
+                                           (update :id->instance #(mark-lost-processes actually-running-pids %))
+                                           (update :service keywordize-task-stats)
+                                           update-task-stats))))]
+              (log/info "restoring" (count id->service) "entries into id->service-agent")
+              (send id->service-agent (constantly id->service))
+              (kill-orphaned-processes! id->service actually-running-pids)
+              (log/info "awaiting completion of pending messages to id->service-agent")
+              (await id->service-agent))
+            (let [port->reservation (->> port->reservation
+                                         (pc/map-keys #(Integer/parseInt %))
+                                         (pc/map-vals
+                                           (fn [reservation]
+                                             (-> (pc/map-keys keyword reservation)
+                                                 (update :expiry-time str-to-date-safe)
+                                                 (update :state keyword)))))]
+              (log/info "restoring" (count port->reservation) "entries into port->reservation-atom")
+              (reset! port->reservation-atom port->reservation))
+            (log/info "restored" scheduler-name "scheduler state from" time)))
+        (log/info "skipping" scheduler-name "scheduler restore as file" backup-file-path "does not exist")))
+    (catch Exception ex
+      (log/error ex "error in restoring" scheduler-name "scheduler state"))))
+
+(defn backup-state
+  "Backs up shell scheduler state to the specified file."
+  [scheduler-name id->service port->reservation backup-file-path]
+  (try
+    (log/info "backing up" (count id->service) "services in" scheduler-name "scheduler state to" backup-file-path)
+    (->> {:id->service (pc/map-vals
+                         (fn [service-entry]
+                           (update service-entry :id->instance
+                                   (fn [id->instance]
+                                     (pc/map-vals #(dissoc % :shell-scheduler/process) id->instance))))
+                         id->service)
+          :port->reservation port->reservation
+          :time (t/now)}
+         utils/clj->json
+         (spit backup-file-path))
+    (catch Exception ex
+      (log/error ex "error in backing up" scheduler-name "scheduler state"))))
+
 (defn shell-scheduler
   "Creates and starts shell scheduler with loops"
-  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
+  [{:keys [backup-file-name failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
@@ -694,12 +836,21 @@
         get-service->instances-fn #(get-service->instances id->service-agent)
         {:keys [retrieve-syncer-state-fn]}
         (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
-        {:keys [id->service-agent port->reservation-atom] :as scheduler}
+        {:keys [id->service-agent port->reservation-atom work-directory] :as scheduler}
         (create-shell-scheduler (assoc config
                                   :id->service-agent id->service-agent
                                   :retrieve-syncer-state-fn retrieve-syncer-state-fn))
         http-client (http/client {:connect-timeout health-check-timeout-ms
                                   :idle-timeout health-check-timeout-ms})]
+    (when backup-file-name
+      (let [backup-file-path (str work-directory (File/separator) backup-file-name)]
+        ;; restore the state of the shell scheduler
+        (restore-state scheduler backup-file-path)
+        ;; persist scheduler state any time the id->service-agent state changes
+        (add-watch id->service-agent ::shell-backup
+                   (fn backup-state-watch [_ _ id->service id->service']
+                     (when-not (= id->service id->service')
+                       (backup-state scheduler-name id->service' @port->reservation-atom backup-file-path))))))
     (start-updating-health scheduler-name id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)
     (start-retry-failed-instances scheduler-name id->service-agent port->reservation-atom port-range failed-instance-retry-interval-ms)
     scheduler))
