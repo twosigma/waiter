@@ -184,7 +184,7 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-logs
   (testing-using-waiter-url
-    (if (or (using-cook? waiter-url) (using-marathon? waiter-url))
+    (if (contains? #{"cook" "kubernetes" "marathon"} (scheduler-kind waiter-url))
       (let [waiter-headers {:x-waiter-name (rand-name)}
             {:keys [cookies router-id service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))
             router-url (get (routers waiter-url) router-id)]

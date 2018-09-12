@@ -289,8 +289,11 @@
                              :mesos-slave-port 5051
                              :search-interval-days 10}
                       :kubernetes {; Default values are not provided below for the following keys:
-                                   ; :authentication :url
+                                   ; :authentication [:fileserver :port] :url
                                    :factory-fn 'waiter.scheduler.kubernetes/kubernetes-scheduler
+                                   :fileserver {:image "twosigma/waiter-fileserver:latest"
+                                                :resources {:cpu 0.1 :mem 128}
+                                                :scheme "http"}
                                    :http-options {:conn-timeout 10000
                                                   :socket-timeout 10000}
                                    :max-patch-retries 5

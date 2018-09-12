@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# Set default server port
+: ${WAITER_FILESERVER_PORT:=9090}
+export WAITER_FILESERVER_PORT
+
+# Generate server config from template
+envsubst </root/nginx.conf.template >/root/nginx.conf
+
+# Start server in non-daemon mode
+nginx -c /root/nginx.conf

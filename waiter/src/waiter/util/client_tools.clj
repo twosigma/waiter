@@ -850,7 +850,7 @@
     (log/debug "router url with slots assigned:" router-url)
     router-url))
 
-(defn- scheduler-kind
+(defn scheduler-kind
   "Returns the configured :scheduler-config :kind"
   [waiter-url & {:keys [verbose] :or {verbose false}}]
   (setting waiter-url [:scheduler-config :kind] :verbose verbose))
@@ -865,9 +865,14 @@
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 
 (defn using-cook?
-  "Returns true if Waiter is configured to use Marathon for scheduling"
+  "Returns true if Waiter is configured to use Cook for scheduling"
   [waiter-url]
   (= "cook" (scheduler-kind waiter-url :verbose true)))
+
+(defn using-k8s?
+  "Returns true if Waiter is configured to use Kubernetes for scheduling"
+  [waiter-url]
+  (= "kubernetes" (scheduler-kind waiter-url :verbose true)))
 
 (defn using-marathon?
   "Returns true if Waiter is configured to use Marathon for scheduling"
