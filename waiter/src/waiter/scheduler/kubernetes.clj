@@ -629,9 +629,9 @@
       (update-in
         [:spec :template :spec :containers]
         conj
-        (let [{:keys [image port] {:keys [cpu mem]} :resources} fileserver
+        (let [{:keys [cmd image port] {:keys [cpu mem]} :resources} fileserver
               memory (str mem "Mi")]
-          {:command ["/bin/fileserver-start"]
+          {:command cmd
            :env [{:name "WAITER_FILESERVER_PORT"
                   :value (str port)}]
            :image image
