@@ -835,8 +835,14 @@
   "Loads the service description for the specified service-id including any overrides."
   [kv-store service-id service-description-defaults metric-group-mappings &
    {:keys [effective? nil-on-missing? refresh] :or {effective? true nil-on-missing? true refresh false}}]
-  (cond-> (fetch-core kv-store service-id :nil-on-missing? nil-on-missing? :refresh refresh)
-          effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
+  (let [service-description (fetch-core kv-store service-id :nil-on-missing? nil-on-missing? :refresh refresh)
+        service-description (if (and (empty? service-description) (not refresh))
+                              (do
+                                (log/info "force refreshing fetch of service description for" service-id)
+                                (fetch-core kv-store service-id :nil-on-missing? nil-on-missing? :refresh true))
+                              service-description)]
+    (cond-> service-description
+      effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id))))
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."

@@ -15,6 +15,7 @@
 ;;
 (ns waiter.service-description-test
   (:require [clj-time.core :as t]
+            [clojure.core.cache :as cache]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -1762,6 +1763,72 @@
           (is (empty? service-description-template-2))
           (is (= (select-keys in-service-description service-description-keys) service-parameter-template))
           (is (= {"deleted" true, "owner" "tu3", "previous" {}} token-metadata)))))))
+
+(deftest test-fetch-core
+  (let [service-id "test-service-1"
+        service-key (str "^SERVICE-ID#" service-id)]
+
+    (testing "no data available"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
+        (is (empty? (kv/fetch kv-store service-key)))
+        (is (empty? (fetch-core kv-store service-id :refresh false)))
+        (is (empty? (kv/fetch kv-store service-key)))))
+
+    (testing "data without refresh"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+        (is (empty? (kv/fetch kv-store service-key)))
+        (kv/store kv-store service-key service-description)
+        (is (= service-description (fetch-core kv-store service-id :refresh false)))
+        (is (= service-description (kv/fetch kv-store service-key)))))
+
+    (testing "cached empty data"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            cache (atom (cache/fifo-cache-factory {} :threshold 10))
+            cache-kv-store (kv/->CachedKeyValueStore kv-store cache)
+            service-id "test-service-1"
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+        (kv/store kv-store service-key {})
+        (is (empty? (fetch-core cache-kv-store service-id :refresh false)))
+        (kv/store kv-store service-key service-description)
+        (is (empty? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (empty? (fetch-core cache-kv-store service-id :refresh false)))
+        (is (empty? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (= service-description (fetch-core cache-kv-store service-id :refresh true)))
+        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))))))
+
+(deftest test-service-id->service-description
+  (let [service-id "test-service-1"
+        service-key (str "^SERVICE-ID#" service-id)
+        fetch-service-description (fn [kv-store]
+                                    (service-id->service-description kv-store service-id {} [] :effective? false))]
+
+    (testing "no data available"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
+        (is (empty? (kv/fetch kv-store service-key)))
+        (is (empty? (fetch-service-description kv-store)))
+        (is (empty? (kv/fetch kv-store service-key)))))
+
+    (testing "data without refresh"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+        (is (empty? (kv/fetch kv-store service-key)))
+        (kv/store kv-store service-key service-description)
+        (is (= service-description (fetch-service-description kv-store)))
+        (is (= service-description (kv/fetch kv-store service-key)))))
+
+    (testing "cached empty data"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            cache (atom (cache/fifo-cache-factory {} :threshold 10))
+            cache-kv-store (kv/->CachedKeyValueStore kv-store cache)
+            service-id "test-service-1"
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+        (kv/store kv-store service-key {})
+        (is (empty? (fetch-service-description cache-kv-store)))
+        (kv/store kv-store service-key service-description)
+        (is (empty? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (= service-description (fetch-service-description cache-kv-store)))
+        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))))))
 
 (deftest test-service-suspend-resume
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))

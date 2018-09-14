@@ -427,7 +427,7 @@
     (when (str/blank? service-id)
       (throw (ex-info "Missing service-id" {:status 400})))
     ; throw exception if no service description for service-id exists
-    (sd/fetch-core kv-store service-id :nil-on-missing? false)
+    (sd/fetch-core kv-store service-id :refresh true :nil-on-missing? false)
     (let [auth-user (get request :authorization/user)
           mode-str (name mode)]
       (log/info auth-user "wants to" mode-str " " service-id)
@@ -456,7 +456,7 @@
   (when (str/blank? service-id)
     (throw (ex-info "Missing service-id" {:status 400})))
   ; throw exception if no service description for service-id exists
-  (sd/fetch-core kv-store service-id :nil-on-missing? false)
+  (sd/fetch-core kv-store service-id :refresh true :nil-on-missing? false)
   (let [auth-user (get request :authorization/user)]
     (case request-method
       :delete

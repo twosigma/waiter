@@ -49,7 +49,7 @@
 
 (defn fetch
   "Wrapper to work around Clojure's limitation of not supporting variable argument lists in defprotocol.
-  This method supports optional arguments and delegates to the protocl retrieve method."
+  This method supports optional arguments and delegates to the protocol retrieve method."
   [kv-protocol key & {:keys [refresh] :or {refresh false}}]
   (retrieve kv-protocol key refresh))
 
