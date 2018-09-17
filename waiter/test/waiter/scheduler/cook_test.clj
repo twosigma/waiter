@@ -122,6 +122,12 @@
         test-user "test-user"
         current-time (t/now)
         service-id "test-service-id"
+        cook-job-1 {:application {:name "test-job" :version "123456"}
+                    :labels {:user test-user}}
+        cook-job-2 {:application {:name "test-service-1" :version "123456"}
+                    :labels {:source "waiter" :user test-user}}
+        cook-job-3 {:application {:name "test-service-3" :version "238723"}
+                    :labels {:source "waiter" :user test-user}}
         http-request-fn-factory (fn [expected-query-string]
                                   (fn [in-http-client in-request-url & {:as options}]
                                     (is (= http-client in-http-client))
@@ -131,71 +137,77 @@
                                             :query-string expected-query-string
                                             :request-method :get
                                             :spnego-auth "test-spnego-auth"}
-                                           options))))]
+                                           options))
+                                    [cook-job-1 cook-job-2 cook-job-3]))]
     (with-redefs [t/now (constantly current-time)]
 
       (testing "no optional arguments"
-        (let [end-time current-time
-              search-interval (t/days 7)
-              start-time (t/minus end-time search-interval)
-              states ["running"]
-              query-string {:end (du/date-to-str end-time)
-                            :start (du/date-to-str start-time)
-                            :state states
-                            :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
-            (get-jobs cook-api test-user states))))
+               (let [end-time current-time
+                     search-interval (t/days 7)
+                     start-time (t/minus end-time search-interval)
+                     states ["running"]
+                     query-string {:end (du/date-to-str end-time)
+                                   :start (du/date-to-str start-time)
+                                   :state states
+                                   :user test-user}]
+                 (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+                   (is (= [cook-job-2 cook-job-3]
+                          (get-jobs cook-api test-user states))))))
 
       (testing "only search interval argument"
-        (let [end-time current-time
-              search-interval (t/days 4)
-              start-time (t/minus end-time search-interval)
-              states ["running"]
-              query-string {:end (du/date-to-str end-time)
-                            :start (du/date-to-str start-time)
-                            :state states
-                            :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
-            (get-jobs cook-api test-user states :search-interval search-interval))))
+               (let [end-time current-time
+                     search-interval (t/days 4)
+                     start-time (t/minus end-time search-interval)
+                     states ["running"]
+                     query-string {:end (du/date-to-str end-time)
+                                   :start (du/date-to-str start-time)
+                                   :state states
+                                   :user test-user}]
+                 (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+                   (is (= [cook-job-2 cook-job-3]
+                          (get-jobs cook-api test-user states :search-interval search-interval))))))
 
       (testing "only end-time argument"
-        (let [end-time (t/minus current-time (t/days 1))
-              search-interval (t/days 7)
-              start-time (t/minus end-time search-interval)
-              states ["running"]
-              query-string {:end (du/date-to-str end-time)
-                            :start (du/date-to-str start-time)
-                            :state states
-                            :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
-            (get-jobs cook-api test-user states :end-time end-time))))
+               (let [end-time (t/minus current-time (t/days 1))
+                     search-interval (t/days 7)
+                     start-time (t/minus end-time search-interval)
+                     states ["running"]
+                     query-string {:end (du/date-to-str end-time)
+                                   :start (du/date-to-str start-time)
+                                   :state states
+                                   :user test-user}]
+                 (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+                   (is (= [cook-job-2 cook-job-3]
+                          (get-jobs cook-api test-user states :end-time end-time))))))
 
       (testing "only service-id argument"
-        (let [end-time current-time
-              search-interval (t/days 7)
-              start-time (t/minus end-time search-interval)
-              states ["running"]
-              query-string {:end (du/date-to-str end-time)
-                            :name (str service-id "*")
-                            :start (du/date-to-str start-time)
-                            :state states
-                            :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
-            (get-jobs cook-api test-user states :service-id service-id))))
+               (let [end-time current-time
+                     search-interval (t/days 7)
+                     start-time (t/minus end-time search-interval)
+                     states ["running"]
+                     query-string {:end (du/date-to-str end-time)
+                                   :name (str service-id "*")
+                                   :start (du/date-to-str start-time)
+                                   :state states
+                                   :user test-user}]
+                 (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+                   (is (= [cook-job-2 cook-job-3]
+                          (get-jobs cook-api test-user states :service-id service-id))))))
 
       (testing "all arguments"
-        (let [end-time current-time
-              search-interval (t/days 2)
-              start-time (t/minus end-time search-interval)
-              states ["running" "waiting"]
-              query-string {:end (du/date-to-str end-time)
-                            :start (du/date-to-str start-time)
-                            :state states
-                            :user test-user}]
-          (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
-            (get-jobs cook-api test-user states
-                      :end-time end-time
-                      :start-time start-time)))))))
+               (let [end-time current-time
+                     search-interval (t/days 2)
+                     start-time (t/minus end-time search-interval)
+                     states ["running" "waiting"]
+                     query-string {:end (du/date-to-str end-time)
+                                   :start (du/date-to-str start-time)
+                                   :state states
+                                   :user test-user}]
+                 (with-redefs [http-utils/http-request (http-request-fn-factory query-string)]
+                   (is (= [cook-job-2 cook-job-3]
+                          (get-jobs cook-api test-user states
+                                    :end-time end-time
+                                    :start-time start-time)))))))))
 
 (deftest test-job-healthy?
   (with-redefs [http-utils/http-request (fn [_ in-health-check-url]
