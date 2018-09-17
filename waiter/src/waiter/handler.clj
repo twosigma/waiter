@@ -677,13 +677,13 @@
               query-chans-state (loop [[[key query-response-or-chan] & remaining] (seq query-chans)
                                        result initial-result]
                                   (if (and key query-response-or-chan)
-                                    (let [state (let [response-chan (async/promise-chan)]
-                                                  (async/>! query-response-or-chan
-                                                            (assoc query-params :response-chan response-chan))
-                                                  (log/info "waiting on response from" key "channel")
-                                                  (async/alt!
-                                                    response-chan ([state] state)
-                                                    (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
+                                    (let [response-chan (async/promise-chan)
+                                          timeout-chan (async/timeout timeout-ms)
+                                          _ (->> (assoc query-params :response-chan response-chan)
+                                                 (async/>! query-response-or-chan))
+                                          _ (log/info "waiting on response from" key "channel")
+                                          [data _] (async/alts! [response-chan timeout-chan] :priority true)
+                                          state (or data {:message "Request timeout"})]
                                       (recur remaining (assoc result key state)))
                                     result))]
           (utils/clj->streaming-json-response {:router-id router-id, :state query-chans-state})))
