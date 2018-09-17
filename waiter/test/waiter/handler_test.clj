@@ -735,6 +735,22 @@
               (str "Body did not include necessary JSON keys:\n" body))
           (is (= 200 status)))))))
 
+(deftest test-get-autoscaler-state
+  (let [router-id "test-router-id"
+        test-fn (wrap-handler-json-response get-autoscaler-state)]
+    (testing "successful response"
+      (let [state {"autoscaler" "state"}
+            query-state-fn (constantly state)
+            {:keys [body status]} (test-fn router-id query-state-fn {})]
+        (is (= 200 status))
+        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+
+    (testing "exception response"
+      (let [query-state-fn (fn [] (throw (Exception. "from test")))
+            {:keys [body status]} (test-fn router-id query-state-fn {})]
+        (is (= 500 status))
+        (is (str/includes? body "Waiter Error 500"))))))
+
 (deftest test-get-kv-store-state
   (let [router-id "test-router-id"
         test-fn (wrap-handler-json-response get-kv-store-state)]

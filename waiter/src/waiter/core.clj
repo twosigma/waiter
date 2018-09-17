@@ -97,6 +97,8 @@
                      "settings" :display-settings-handler-fn
                      "sim" :sim-request-handler
                      "state" [["" :state-all-handler-fn]
+                              ["/autoscaler" :state-autoscaler-handler-fn]
+                              ["/autoscaling-multiplexer" :state-autoscaling-multiplexer-handler-fn]
                               ["/fallback" :state-fallback-handler-fn]
                               ["/interstitial" :state-interstitial-handler-fn]
                               ["/launch-metrics" :state-launch-metrics-handler-fn]
@@ -1214,6 +1216,20 @@
                              (wrap-secure-request-fn
                                (fn state-all-handler-fn [request]
                                  (handler/get-router-state router-id query-state-fn request)))))
+   :state-autoscaler-handler-fn (pc/fnk [[:daemons autoscaler]
+                                         [:state router-id]
+                                         wrap-secure-request-fn]
+                                  (let [{:keys [query-state-fn]} autoscaler]
+                                    (wrap-secure-request-fn
+                                      (fn state-autoscaler-handler-fn [request]
+                                        (handler/get-autoscaler-state router-id query-state-fn request)))))
+   :state-autoscaling-multiplexer-handler-fn (pc/fnk [[:daemons autoscaling-multiplexer]
+                                                      [:state router-id]
+                                                      wrap-secure-request-fn]
+                                               (let [{:keys [query-chan]} autoscaling-multiplexer]
+                                                 (wrap-secure-request-fn
+                                                   (fn state-autoscaling-multiplexer-handler-fn [request]
+                                                     (handler/get-query-chan-state-handler router-id query-chan request)))))
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]

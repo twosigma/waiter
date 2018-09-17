@@ -575,5 +575,6 @@
             (System/exit 1)))))
     {:exit exit-chan
      :query query-chan
+     :query-state-fn (fn query-state-fn [] @state-atom)
      :query-service-state-fn (fn query-service-state-fn [query-params]
                                (query-autoscaler-service-state @state-atom query-params))}))

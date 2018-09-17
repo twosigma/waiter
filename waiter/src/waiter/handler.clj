@@ -555,8 +555,8 @@
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (-> {:details (->> ["fallback" "interstitial" "kv-store" "launch-metrics" "leader"
-                          "local-usage" "maintainer" "router-metrics" "scheduler" "statsd"]
+      (-> {:details (->> ["autoscaler" "autoscaling-multiplexer" "fallback" "interstitial" "kv-store"
+                          "launch-metrics" "leader" "local-usage" "maintainer" "router-metrics" "scheduler" "statsd"]
                          (pc/map-from-keys make-url))
            :router-id router-id
            :routers routers}
@@ -601,6 +601,11 @@
         (utils/clj->streaming-json-response))
     (catch Exception ex
       (utils/exception->response ex request))))
+
+(defn get-autoscaler-state
+  "Outputs the autoscaler state."
+  [router-id query-state-fn request]
+  (get-function-state query-state-fn router-id request))
 
 (defn get-kv-store-state
   "Outputs the kv-store state."
