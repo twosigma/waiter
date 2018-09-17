@@ -215,10 +215,10 @@
 (defn available?
   "Async go block which returns the status code and success of a health check.
   Returns false if such a connection cannot be established."
-  [http-client {:keys [port] :as service-instance} health-check-path]
+  [http-client {:keys [host port] :as service-instance} health-check-path]
   (async/go
     (try
-      (if (pos? port)
+      (if (and (pos? port) host)
         (let [instance-health-check-url (health-check-url service-instance health-check-path)
               {:keys [status error]} (async/<! (http/get http-client instance-health-check-url))
               error-flag (cond
