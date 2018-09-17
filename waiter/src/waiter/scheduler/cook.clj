@@ -68,19 +68,19 @@
   (let [end-time (or end-time (t/now))
         end-time-str (du/date-to-str end-time)
         start-time (or start-time (t/minus end-time search-interval))
-        start-time-str (du/date-to-str start-time)]
-    (http-utils/http-request
-      http-client
-      (str url "/jobs")
-      :accept "application/json"
-      :content-type "application/json"
-      :query-string (cond-> {:end end-time-str
-                             :start start-time-str
-                             :state states
-                             :user user}
-                      service-id (assoc :name (str service-id "*")))
-      :request-method :get
-      :spnego-auth spnego-auth)))
+        start-time-str (du/date-to-str start-time)
+        jobs (http-utils/http-request
+               http-client (str url "/jobs")
+               :accept "application/json"
+               :content-type "application/json"
+               :query-string (cond-> {:end end-time-str
+                                      :start start-time-str
+                                      :state states
+                                      :user user}
+                               service-id (assoc :name (str service-id "*")))
+               :request-method :get
+               :spnego-auth spnego-auth)]
+    (filter (fn [job] (= "waiter" (-> job :labels :source))) jobs)))
 
 ;; Instance health checks
 
