@@ -662,8 +662,9 @@
             removed-instance-ids (set/difference known-instance-ids known-instance-ids')
             ;; React to upward-scaling
             instance-counts' (get service-id->instance-counts service-id instance-counts-zero)
-            instances-requested-delta (- (:requested instance-counts')
-                                         (:requested instance-counts))
+            instances-requested-delta (+ (count removed-instance-ids)
+                                         (- (:requested instance-counts')
+                                            (:requested instance-counts)))
             instance-scheduling-start-times'
             (->> current-time
                  (repeat instances-requested-delta)
@@ -673,6 +674,11 @@
                                         (count instance-scheduling-start-times'))
             [matched-start-times instance-scheduling-start-times'']
             (split-at (count new-instance-ids) instance-scheduling-start-times')
+            ;; React to downward-scaling
+            instance-scheduling-start-times'''
+            (cond->> instance-scheduling-start-times''
+              (neg? instances-requested-delta)
+              (drop (Math/abs instances-requested-delta)))
             ;; Track starting instances
             new-instance-id->start-timestamp
             (pc/map-from-keys (constantly current-time) new-instance-ids)
@@ -709,7 +715,7 @@
         ;; tracker-state'
         (assoc tracker-state
                :instance-counts instance-counts'
-               :instance-scheduling-start-times (vec instance-scheduling-start-times'')
+               :instance-scheduling-start-times (vec instance-scheduling-start-times''')
                :known-instance-ids known-instance-ids'
                :starting-instance-id->start-timestamp starting-instance-id->start-timestamp'')))))
 

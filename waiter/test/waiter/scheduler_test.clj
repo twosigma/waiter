@@ -513,7 +513,9 @@
         empty-service-id->service-description {}
         leader? true
         req1 {:requested 1}
+        req2 {:requested 2}
         req3 {:requested 3}
+        req5 {:requested 5}
         waiter-timer (metrics/waiter-timer "launch-overhead" "schedule-time")
 
         empty-trackers' (update-launch-trackers
@@ -597,11 +599,12 @@
                                                      :starting-instance-ids ["inst-5.1"]}}))
 
         service-id->instance-counts-7 {"service-1" req1 "service-4" req1 "service-5" req3}
+        service-id->healthy-instances-7 {"service-1" [(make-service-instance 1 1)]
+                                         "service-4" [(make-service-instance 4 1)]}
+        service-id->unhealthy-instances-7 {"service-5" [(make-service-instance 5 1)]}
         trackers-7 (update-launch-trackers
                      trackers-6 empty-new-service-ids empty-removed-service-ids
-                     {"service-1" [(make-service-instance 1 1)]
-                      "service-4" [(make-service-instance 4 1)]}
-                     {"service-5" [(make-service-instance 5 1)]}
+                     service-id->healthy-instances-7 service-id->unhealthy-instances-7
                      service-id->instance-counts-7 empty-service-id->service-description
                      leader? waiter-timer)
         _ (testing "update-launch-trackers: service 5 scales to 3 instances"
@@ -610,6 +613,84 @@
                                         "service-5" {:known-instance-ids #{"inst-5.1"}
                                                      :scheduling-instance-count 2
                                                      :starting-instance-ids ["inst-5.1"]}}))
+
+        service-id->instance-counts-7a {"service-1" req1 "service-4" req1 "service-5" req1}
+        trackers-7a (update-launch-trackers
+                      (assoc-in trackers-7 ["service-5" :instance-scheduling-start-times]
+                                [:timestamp-older :timestamp-newer])
+                      empty-new-service-ids empty-removed-service-ids
+                      service-id->healthy-instances-7 empty-service-id->unhealthy-instances
+                      service-id->instance-counts-7a empty-service-id->service-description
+                      leader? waiter-timer)
+        _ (testing "update-launch-trackers: service 5 scales down to 1 instance, killing a scheduled instance"
+            (check-trackers trackers-7a {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                         "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                         "service-5" {:scheduling-instance-count 1}}))
+        _ (testing "update-launch-trackers: older start-times are dropped first (to avoid negative schedule times)"
+            (is (= (get-in trackers-7a ["service-5" :instance-scheduling-start-times])
+                   [:timestamp-newer])))
+
+        service-id->instance-counts-7b {"service-1" req1 "service-4" req1 "service-5" req1}
+        trackers-7b (update-launch-trackers
+                      trackers-7 empty-new-service-ids empty-removed-service-ids
+                      service-id->healthy-instances-7 service-id->unhealthy-instances-7
+                      service-id->instance-counts-7b empty-service-id->service-description
+                      leader? waiter-timer)
+        _ (testing "update-launch-trackers: service 5 scales down to 1 instance, with a known instance"
+            (check-trackers trackers-7b {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                         "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                         "service-5" {:known-instance-ids #{"inst-5.1"}
+                                                      :starting-instance-ids ["inst-5.1"]}}))
+
+        service-id->instance-counts-7c {"service-1" req1 "service-4" req1 "service-5" req2}
+        trackers-7c (update-launch-trackers
+                      trackers-7 empty-new-service-ids empty-removed-service-ids
+                      service-id->healthy-instances-7 service-id->unhealthy-instances-7
+                      service-id->instance-counts-7c empty-service-id->service-description
+                      leader? waiter-timer)
+        _ (testing "update-launch-trackers: service 5 scales down to 2 instances, with a known instance"
+            (check-trackers trackers-7c {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                         "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                         "service-5" {:known-instance-ids #{"inst-5.1"}
+                                                      :scheduling-instance-count 1
+                                                      :starting-instance-ids ["inst-5.1"]}}))
+
+        service-id->instance-counts-7d {"service-1" req1 "service-4" req1 "service-5" req3}
+        trackers-7d (update-launch-trackers
+                      trackers-7 empty-new-service-ids empty-removed-service-ids
+                      service-id->healthy-instances-7 empty-service-id->unhealthy-instances
+                      service-id->instance-counts-7d empty-service-id->service-description
+                      leader? waiter-timer)
+        _ (testing "update-launch-trackers: service 5 stays at 3 instances, but kills a scheduled instance"
+            (check-trackers trackers-7d {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                         "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                         "service-5" {:scheduling-instance-count 3}}))
+
+        service-id->instance-counts-7e {"service-1" req1 "service-4" req1 "service-5" req5}
+        trackers-7e (update-launch-trackers
+                      trackers-7 empty-new-service-ids empty-removed-service-ids
+                      service-id->healthy-instances-7 empty-service-id->unhealthy-instances
+                      service-id->instance-counts-7e empty-service-id->service-description
+                      leader? waiter-timer)
+        _ (testing "update-launch-trackers: service 5 scales up to 5 instances, killing a scheduled instance"
+            (check-trackers trackers-7e {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                         "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                         "service-5" {:scheduling-instance-count 5}}))
+
+        service-id->instance-counts-7f {"service-1" req1 "service-4" req1 "service-5" req2}
+        trackers-7f (update-launch-trackers
+                      trackers-7 empty-new-service-ids empty-removed-service-ids
+                      service-id->healthy-instances-7
+                      {"service-5" [(make-service-instance 5 2)
+                                    (make-service-instance 5 3)]}
+                      service-id->instance-counts-7f empty-service-id->service-description
+                      leader? waiter-timer)
+        _ (testing "update-launch-trackers: service 5 scales down to 2 instances,
+                    removing the current known instance, but getting two scheduled instances"
+            (check-trackers trackers-7f {"service-1" {:known-instance-ids #{"inst-1.1"}}
+                                         "service-4" {:known-instance-ids #{"inst-4.1"}}
+                                         "service-5" {:known-instance-ids #{"inst-5.2" "inst-5.3"}
+                                                      :starting-instance-ids ["inst-5.2" "inst-5.3"]}}))
 
         service-id->instance-counts-8 {"service-1" req1 "service-4" req1 "service-5" req3}
         trackers-8 (update-launch-trackers
