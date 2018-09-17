@@ -43,7 +43,7 @@
             (map #(select-keys % [:instances :task-count]) apps))))
 
 (defn service-scaling-multiplexer
-  "Sends request to scale instances to the correct scaling executor go rountine.
+  "Sends request to scale instances to the correct scaling executor go routine.
    Maintains the mapping of service to service-scaling-executor."
   [scaling-executor-factory initial-state]
   (let [executor-multiplexer-chan (async/chan)
@@ -75,15 +75,19 @@
                           (dissoc service-id->scaling-executor-chan service-id))))))
 
                 query-chan
-                (let [{:keys [response-chan service-id]} data]
+                (let [{:keys [cid response-chan service-id]} data]
+                  (log/info "service-scaling-multiplexer received query" {:cid cid :service-id service-id})
                   (if service-id
                     (if-let [query-chan (get-in service-id->scaling-executor-chan [service-id :query-chan])]
-                      (async/>! query-chan data)
+                      (do
+                        (log/info "service-scaling-multiplexer forwarding query to scaling executor"
+                                  {:cid cid :service-id service-id})
+                        (async/>! query-chan data))
                       (async/>! response-chan :no-data-available))
                     (async/>! response-chan service-id->scaling-executor-chan))
                   service-id->scaling-executor-chan)))))
         (catch Exception e
-          (log/error e "error in instance-killer-multiplexer"))))
+          (log/error e "error in service-scaling-multiplexer"))))
     {:executor-multiplexer-chan executor-multiplexer-chan
      :query-chan query-chan}))
 
@@ -204,7 +208,7 @@
   [notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn delegate-instance-kill-request-fn service-id->service-description-fn
    scheduler instance-rpc-chan quanta-constraints {:keys [inter-kill-request-wait-time-ms] :as timeout-config} service-id]
   {:pre [(>= inter-kill-request-wait-time-ms 0)]}
-  (log/info "[scaling-executor] starting instance killer for" service-id)
+  (log/info "[scaling-executor] starting scaling executor for" service-id)
   (let [base-correlation-id (str "scaling-executor-" service-id)
         inter-kill-request-wait-time-in-millis (t/millis inter-kill-request-wait-time-ms)
         executor-chan (au/latest-chan)
@@ -218,7 +222,8 @@
                 executor-state'
                 (cond
                   (= channel query-chan)
-                  (let [{:keys [response-chan]} data]
+                  (let [{:keys [cid response-chan]} data]
+                    (cid/cinfo (str base-correlation-id "|" cid) "received query")
                     (async/>! response-chan executor-state)
                     executor-state)
 

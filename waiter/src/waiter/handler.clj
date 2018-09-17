@@ -675,7 +675,7 @@
                                     (let [state (let [response-chan (async/promise-chan)]
                                                   (async/>! query-response-or-chan
                                                             (assoc query-params :response-chan response-chan))
-                                                  (log/info (str "waiting on response from " key " channel"))
+                                                  (log/info "waiting on response from" key "channel")
                                                   (async/alt!
                                                     response-chan ([state] state)
                                                     (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
