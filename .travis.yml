@@ -7,7 +7,9 @@ addons:
   artifacts: true
 
 branches:
-  only: master
+  only:
+    - master
+    - /^build\/.*$/
 
 cache:
   directories:
