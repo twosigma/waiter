@@ -375,7 +375,7 @@
         request-params (-> request ru/query-params-request :query-params)
         include-effective-parameters? (utils/request-flag request-params "effective-parameters")
         result-map (cond-> {:router-id router-id, :num-routers (count router->metrics)}
-                     include-effective-parameters?
+                     (and (not-empty core-service-description) include-effective-parameters?)
                      (assoc :effective-parameters (service-id->service-description-fn service-id :effective? true))
                      (not-empty service-instance-maps)
                      (assoc :instances service-instance-maps
