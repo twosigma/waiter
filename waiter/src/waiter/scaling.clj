@@ -43,7 +43,7 @@
             (map #(select-keys % [:instances :task-count]) apps))))
 
 (defn service-scaling-multiplexer
-  "Sends request to scale instances to the correct scaling executor go rountine.
+  "Sends request to scale instances to the correct scaling executor go routine.
    Maintains the mapping of service to service-scaling-executor."
   [scaling-executor-factory initial-state]
   (let [executor-multiplexer-chan (async/chan)
@@ -56,23 +56,22 @@
               (condp = channel
                 executor-multiplexer-chan
                 (let [{:keys [service-id scale-amount correlation-id] :as scaling-data} data]
-                  (cid/with-correlation-id
-                    correlation-id
-                    (log/info "service-scaling-multiplexer received" {:service-id service-id :scale-amount scale-amount})
-                    (let [service-id->scaling-executor-chan
-                          (cond-> service-id->scaling-executor-chan
-                            (not (get service-id->scaling-executor-chan service-id))
-                            (assoc service-id (scaling-executor-factory service-id)))
-                          {:keys [executor-chan]} (get service-id->scaling-executor-chan service-id)]
-                      (if scale-amount
-                        (do
-                          (log/info "sending" service-id "executor to scale by" scale-amount "instances")
-                          (async/put! executor-chan scaling-data)
-                          service-id->scaling-executor-chan)
-                        (do
-                          (log/info "shutting down scaling executor channel for" service-id)
-                          (async/close! executor-chan)
-                          (dissoc service-id->scaling-executor-chan service-id))))))
+                  (cid/cinfo correlation-id "service-scaling-multiplexer received"
+                             {:service-id service-id :scale-amount scale-amount})
+                  (let [service-id->scaling-executor-chan
+                        (cond-> service-id->scaling-executor-chan
+                          (not (get service-id->scaling-executor-chan service-id))
+                          (assoc service-id (scaling-executor-factory service-id)))
+                        {:keys [executor-chan]} (get service-id->scaling-executor-chan service-id)]
+                    (if scale-amount
+                      (do
+                        (cid/cinfo correlation-id "sending" service-id "executor to scale by" scale-amount "instances")
+                        (async/put! executor-chan scaling-data)
+                        service-id->scaling-executor-chan)
+                      (do
+                        (cid/cinfo correlation-id "shutting down scaling executor channel for" service-id)
+                        (async/close! executor-chan)
+                        (dissoc service-id->scaling-executor-chan service-id)))))
 
                 query-chan
                 (let [{:keys [response-chan service-id]} data]
