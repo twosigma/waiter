@@ -645,6 +645,8 @@
   (defn fetch-core
     "Loads the service description for the specified service-id from the key-value store."
     [kv-store ^String service-id & {:keys [refresh nil-on-missing?] :or {refresh false nil-on-missing? true}}]
+    (when refresh
+      (log/info "force fetching core service description for" service-id))
     (let [service-description (kv/fetch kv-store (service-id->key service-id) :refresh refresh)]
       (if (map? service-description)
         service-description
@@ -834,14 +836,9 @@
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
   [kv-store service-id service-description-defaults metric-group-mappings & {:keys [effective?] :or {effective? true}}]
-  (let [service-description (fetch-core kv-store service-id :refresh false)
-        service-description (if (and (empty? service-description))
-                              (do
-                                (log/info "force refreshing fetch of service description for" service-id)
-                                (fetch-core kv-store service-id :refresh true))
-                              service-description)]
-    (cond-> service-description
-      effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id))))
+  (cond-> (or (fetch-core kv-store service-id :refresh false)
+              (fetch-core kv-store service-id :refresh true))
+    effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."
