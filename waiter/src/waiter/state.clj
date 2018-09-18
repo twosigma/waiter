@@ -449,30 +449,31 @@
   [{:keys [instance-id->request-id->use-reason-map instance-id->state] :as current-state}
    update-status-tag-fn update-state-by-blacklisting-instance-fn lingering-request-threshold-ms
    [{:keys [instance-id blacklist-period-ms cid]} response-chan]]
-  (cid/with-correlation-id cid
-                           (log/info "attempt to blacklist" instance-id "which has"
-                                     (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
-                                     (get instance-id->state instance-id))
-                           ;; cannot blacklist if the instance is not killable
-                           (let [instance-not-allowed? (and (contains? instance-id->state instance-id)
-                                                            (let [request-id->use-reason-map (instance-id->request-id->use-reason-map instance-id)
-                                                                  earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
-                                                                  has-expired-instances (expired-instances? instance-id->state)
-                                                                  has-starting-instances (starting-instances? instance-id->state)
-                                                                  state (instance-id->state instance-id)]
-                                                              (not
-                                                                (killable? request-id->use-reason-map earliest-request-threshold-time
-                                                                           has-expired-instances has-starting-instances state))))
-                                 response-code (if instance-not-allowed? :in-use :blacklisted)]
-                             {:current-state' (if (= :blacklisted response-code)
-                                                (-> current-state
-                                                    ; mark instance as blacklisted and set the expiry time
-                                                    (update-in [:instance-id->state instance-id] sanitize-instance-state)
-                                                    (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
-                                                    (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
-                                                current-state)
-                              :response-chan response-chan
-                              :response response-code})))
+  (cid/with-correlation-id
+    cid
+    (log/info "attempt to blacklist" instance-id "which has"
+              (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
+              (get instance-id->state instance-id))
+    ;; cannot blacklist if the instance is not killable
+    (let [instance-not-allowed? (and (contains? instance-id->state instance-id)
+                                     (let [request-id->use-reason-map (instance-id->request-id->use-reason-map instance-id)
+                                           earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
+                                           has-expired-instances (expired-instances? instance-id->state)
+                                           has-starting-instances (starting-instances? instance-id->state)
+                                           state (instance-id->state instance-id)]
+                                       (not
+                                         (killable? request-id->use-reason-map earliest-request-threshold-time
+                                                    has-expired-instances has-starting-instances state))))
+          response-code (if instance-not-allowed? :in-use :blacklisted)]
+      {:current-state' (if (= :blacklisted response-code)
+                         (-> current-state
+                             ; mark instance as blacklisted and set the expiry time
+                             (update-in [:instance-id->state instance-id] sanitize-instance-state)
+                             (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
+                             (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
+                         current-state)
+       :response-chan response-chan
+       :response response-code})))
 
 (defn- unblacklist-instance
   [{:keys [instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
