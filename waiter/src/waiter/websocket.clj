@@ -150,10 +150,8 @@
               (async/put! response {:error error})))))
       (ws-client/connect! websocket-client instance-endpoint
                           (fn [request]
-                            (cid/with-correlation-id
-                              correlation-id
-                              (log/info "successfully connected with backend")
-                              (async/put! response {:ctrl-mult control-mult, :request request})))
+                            (cid/cinfo correlation-id "successfully connected with backend")
+                            (async/put! response {:ctrl-mult control-mult, :request request}))
                           ws-request-properties)
       (let [{:keys [requests-waiting-to-stream]} (metrics/stream-metric-map service-id)]
         (counters/inc! requests-waiting-to-stream))
