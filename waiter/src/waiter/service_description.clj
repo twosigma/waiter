@@ -833,13 +833,12 @@
 
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
-  [kv-store service-id service-description-defaults metric-group-mappings &
-   {:keys [effective? nil-on-missing? refresh] :or {effective? true nil-on-missing? true refresh false}}]
-  (let [service-description (fetch-core kv-store service-id :nil-on-missing? nil-on-missing? :refresh refresh)
-        service-description (if (and (empty? service-description) (not refresh))
+  [kv-store service-id service-description-defaults metric-group-mappings & {:keys [effective?] :or {effective? true}}]
+  (let [service-description (fetch-core kv-store service-id :refresh false)
+        service-description (if (and (empty? service-description))
                               (do
                                 (log/info "force refreshing fetch of service description for" service-id)
-                                (fetch-core kv-store service-id :nil-on-missing? nil-on-missing? :refresh true))
+                                (fetch-core kv-store service-id :refresh true))
                               service-description)]
     (cond-> service-description
       effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id))))
