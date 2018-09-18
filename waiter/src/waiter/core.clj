@@ -812,17 +812,13 @@
                                            (partial sd/service-id->source-tokens-entries kv-store))
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
                                   [:state authenticator start-app-cache-atom task-threadpool]
-                                  store-service-description-fn store-source-tokens-fn]
-                           (fn start-new-service [{:keys [service-id source-tokens] :as descriptor}]
+                                  store-service-description-fn]
+                           (fn start-new-service [{:keys [service-id] :as descriptor}]
                              (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
                                (auth/check-user authenticator run-as-user service-id))
-                             (let [pre-start-fn (fn pre-start-new-service-fn []
-                                                  (when (seq source-tokens)
-                                                    (store-source-tokens-fn service-id source-tokens))
-                                                  (store-service-description-fn descriptor))]
-                               (service/start-new-service
-                                 scheduler descriptor start-app-cache-atom task-threadpool
-                                 :pre-start-fn pre-start-fn))))
+                             (service/start-new-service
+                               scheduler descriptor start-app-cache-atom task-threadpool
+                               :pre-start-fn #(store-service-description-fn descriptor))))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]
