@@ -19,12 +19,14 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
+            [metrics.meters :as meters]
             [plumbing.core :as pc]
             [schema.core :as s]
             [slingshot.slingshot :as sling]
             [waiter.authorization :as authz]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
+            [waiter.metrics :as metrics]
             [waiter.schema :as schema]
             [waiter.util.utils :as utils])
   (:import (java.util.regex Pattern)
@@ -900,8 +902,7 @@
              (reduce max)))
       idle-timeout-mins)))
 
-(let [source-tokens-lock "SOURCE-TOKENS-LOCK"
-      service-id->key #(str "^SOURCE-TOKENS#" %)]
+(let [service-id->key #(str "^SOURCE-TOKENS#" %)]
 
   (defn service-id->source-tokens-entries
     "Retrieves the source-tokens entries (as a set) for a service from the key-value store."
@@ -921,16 +922,23 @@
     [synchronize-fn kv-store service-id source-tokens]
     (when (and (seq source-tokens)
                (not (has-source-tokens? kv-store service-id source-tokens)))
-      (synchronize-fn
-        source-tokens-lock
-        (fn inner-store-source-tokens! []
-          (let [existing-entries (-> (service-id->source-tokens-entries kv-store service-id :refresh true)
-                                     (or #{}))]
-            (if-not (contains? existing-entries source-tokens)
-              (do
-                (log/info "associating" source-tokens "with" service-id "source-tokens entries")
-                (->> (conj existing-entries source-tokens)
-                     (kv/store kv-store (service-id->key service-id)))
-                ;; refresh the entry
-                (service-id->source-tokens-entries kv-store service-id :refresh true))
-              (log/info source-tokens "source-tokens already associated with" service-id))))))))
+      (let [source-tokens-lock-prefix "SOURCE-TOKENS-LOCK-"
+            bucket (-> service-id hash int (Math/abs) (mod 16))
+            source-tokens-lock (str source-tokens-lock-prefix bucket)]
+        (meters/mark! (metrics/waiter-meter "core" "source-tokens" "store" "all"))
+        (meters/mark! (metrics/waiter-meter "core" "source-tokens" "store" (str "bucket-" bucket)))
+        (synchronize-fn
+          source-tokens-lock
+          (fn inner-store-source-tokens! []
+            (let [existing-entries (-> (service-id->source-tokens-entries kv-store service-id :refresh true)
+                                       (or #{}))]
+              (if-not (contains? existing-entries source-tokens)
+                (do
+                  (log/info "associating" source-tokens "with" service-id "source-tokens entries")
+                  (->> (conj existing-entries source-tokens)
+                       (kv/store kv-store (service-id->key service-id)))
+                  ;; refresh the entry
+                  (service-id->source-tokens-entries kv-store service-id :refresh true))
+                (do
+                  (meters/mark! (metrics/waiter-meter "core" "source-tokens" "store" "no-op"))
+                  (log/info source-tokens "source-tokens already associated with" service-id))))))))))
