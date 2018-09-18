@@ -326,27 +326,27 @@
   {:pre (pos? timeout-interval-ms)}
   (let [query-chan (async/chan 10)
         exit-chan (async/chan 1)]
-    (async/go-loop [iter 0
-                    timeout-chan (async/timeout timeout-interval-ms)]
-      (let [[chan args] (async/alt!
-                          exit-chan ([_] [:exit])
-                          query-chan ([args] [:query args])
-                          timeout-chan ([_] [:continue])
-                          :priority true)]
-        (case chan
-          :exit (log/info "[service-gc-go-routine] exiting" name)
-          :query (let [{:keys [service-id response-chan]} args
-                       state (get (read-state-fn name) service-id)]
-                   (async/>! response-chan (or state {}))
-                   (recur (inc iter) timeout-chan))
-          :continue
-          (do
-            (when (leader?)
-              (let [service->raw-data (if (fn? service->raw-data-source)
-                                        (service->raw-data-source)
-                                        (async/<! service->raw-data-source))]
-                (cid/with-correlation-id
-                  (str name "-" iter)
+    (cid/with-correlation-id
+      name
+      (async/go-loop [iter 0
+                      timeout-chan (async/timeout timeout-interval-ms)]
+        (let [[chan args] (async/alt!
+                            exit-chan ([_] [:exit])
+                            query-chan ([args] [:query args])
+                            timeout-chan ([_] [:continue])
+                            :priority true)]
+          (case chan
+            :exit (log/info "[service-gc-go-routine] exiting" name)
+            :query (let [{:keys [service-id response-chan]} args
+                         state (get (read-state-fn name) service-id)]
+                     (async/>! response-chan (or state {}))
+                     (recur (inc iter) timeout-chan))
+            :continue
+            (do
+              (when (leader?)
+                (let [service->raw-data (if (fn? service->raw-data-source)
+                                          (service->raw-data-source)
+                                          (async/<! service->raw-data-source))]
                   (timers/start-stop-time!
                     (metrics/waiter-timer "gc" name "iteration-duration")
                     (try
@@ -375,7 +375,7 @@
                                                                (when (leader?) ; check to ensure still the leader
                                                                  (perform-gc-fn service))
                                                                (catch Exception e
-                                                                 (log/error e (str "error in deleting: " service)))))
+                                                                 (log/error e "error in deleting:" service))))
                                                            apps-to-gc)
                             apps-failed-to-delete (apply disj (set apps-to-gc) apps-successfully-gced)
                             service->state'' (apply dissoc service->state' apps-successfully-gced)]
@@ -387,8 +387,8 @@
                           (log/warn "unable to delete services:" apps-failed-to-delete))
                         (write-state-fn name service->state''))
                       (catch Exception e
-                        (log/error e "error in" name {:iteration iter})))))))
-            (recur (inc iter) (async/timeout timeout-interval-ms))))))
+                        (log/error e "error in" name {:iteration iter}))))))
+              (recur (inc iter) (async/timeout timeout-interval-ms)))))))
     {:exit exit-chan
      :query query-chan}))
 
