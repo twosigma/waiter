@@ -555,8 +555,8 @@
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (-> {:details (->> ["fallback" "interstitial" "kv-store" "launch-metrics" "leader"
-                          "local-usage" "maintainer" "router-metrics" "scheduler" "statsd"]
+      (-> {:details (->> ["autoscaler" "autoscaling-multiplexer" "fallback" "interstitial" "kv-store"
+                          "launch-metrics" "leader" "local-usage" "maintainer" "router-metrics" "scheduler" "statsd"]
                          (pc/map-from-keys make-url))
            :router-id router-id
            :routers routers}
@@ -601,6 +601,11 @@
         (utils/clj->streaming-json-response))
     (catch Exception ex
       (utils/exception->response ex request))))
+
+(defn get-autoscaler-state
+  "Outputs the autoscaler state."
+  [router-id query-state-fn request]
+  (get-function-state query-state-fn router-id request))
 
 (defn get-kv-store-state
   "Outputs the kv-store state."
@@ -672,13 +677,13 @@
               query-chans-state (loop [[[key query-response-or-chan] & remaining] (seq query-chans)
                                        result initial-result]
                                   (if (and key query-response-or-chan)
-                                    (let [state (let [response-chan (async/promise-chan)]
-                                                  (async/>! query-response-or-chan
-                                                            (assoc query-params :response-chan response-chan))
-                                                  (log/info (str "waiting on response from " key " channel"))
-                                                  (async/alt!
-                                                    response-chan ([state] state)
-                                                    (async/timeout timeout-ms) ([_] {:message "Request timeout"})))]
+                                    (let [response-chan (async/promise-chan)
+                                          timeout-chan (async/timeout timeout-ms)
+                                          _ (->> (assoc query-params :response-chan response-chan)
+                                                 (async/>! query-response-or-chan))
+                                          _ (log/info "waiting on response from" key "channel")
+                                          [data _] (async/alts! [response-chan timeout-chan] :priority true)
+                                          state (or data {:message "Request timeout"})]
                                       (recur remaining (assoc result key state)))
                                     result))]
           (utils/clj->streaming-json-response {:router-id router-id, :state query-chans-state})))
