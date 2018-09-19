@@ -348,32 +348,32 @@
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 1)
         has-metrics-except-outstanding? #(-> % (dissoc "outstanding") (not-empty))]
-    ;; launch go-block to populate service-id->metrics-chan
-    (async/go-loop [iteration 0
-                    timeout-chan (async/timeout metrics-gc-interval-ms)]
-      (let [[args channel] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
-        (condp = channel
-          exit-chan
-          (when (not= :exit args)
-            (recur (inc iteration) timeout-chan))
+    (cid/with-correlation-id
+      "transient-service-metrics-data-producer"
+      ;; launch go-block to populate service-id->metrics-chan
+      (async/go-loop [iteration 0
+                      timeout-chan (async/timeout metrics-gc-interval-ms)]
+        (let [[args channel] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
+          (condp = channel
+            exit-chan
+            (when (not= :exit args)
+              (recur (inc iteration) timeout-chan))
 
-          timeout-chan
-          (do
-            (cid/with-correlation-id
-              (str "transient-service-metrics-data-producer-" iteration)
+            timeout-chan
+            (do
               (try
                 (let [service-id->metrics (utils/filterm (fn [[_ metrics]] (has-metrics-except-outstanding? metrics))
                                                          (or (service-id->metrics-fn) {}))]
                   (log/info "writing transient metrics for" (count service-id->metrics) "services")
                   (async/>! service-id->metrics-chan service-id->metrics))
                 (catch Exception e
-                  (log/error e "unable to generate transient metrics"))))
-            (recur (inc iteration) (async/timeout metrics-gc-interval-ms)))
+                  (log/error e "unable to generate transient metrics")))
+              (recur (inc iteration) (async/timeout metrics-gc-interval-ms)))
 
-          query-chan
-          (let [{:keys [response-chan]} args]
-            (async/>! response-chan {:iteration iteration})
-            (recur iteration timeout-chan)))))
+            query-chan
+            (let [{:keys [response-chan]} args]
+              (async/>! response-chan {:iteration iteration})
+              (recur iteration timeout-chan))))))
     {:exit-chan exit-chan
      :query-chan query-chan}))
 

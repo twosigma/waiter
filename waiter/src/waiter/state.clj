@@ -449,30 +449,31 @@
   [{:keys [instance-id->request-id->use-reason-map instance-id->state] :as current-state}
    update-status-tag-fn update-state-by-blacklisting-instance-fn lingering-request-threshold-ms
    [{:keys [instance-id blacklist-period-ms cid]} response-chan]]
-  (cid/with-correlation-id cid
-                           (log/info "attempt to blacklist" instance-id "which has"
-                                     (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
-                                     (get instance-id->state instance-id))
-                           ;; cannot blacklist if the instance is not killable
-                           (let [instance-not-allowed? (and (contains? instance-id->state instance-id)
-                                                            (let [request-id->use-reason-map (instance-id->request-id->use-reason-map instance-id)
-                                                                  earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
-                                                                  has-expired-instances (expired-instances? instance-id->state)
-                                                                  has-starting-instances (starting-instances? instance-id->state)
-                                                                  state (instance-id->state instance-id)]
-                                                              (not
-                                                                (killable? request-id->use-reason-map earliest-request-threshold-time
-                                                                           has-expired-instances has-starting-instances state))))
-                                 response-code (if instance-not-allowed? :in-use :blacklisted)]
-                             {:current-state' (if (= :blacklisted response-code)
-                                                (-> current-state
-                                                    ; mark instance as blacklisted and set the expiry time
-                                                    (update-in [:instance-id->state instance-id] sanitize-instance-state)
-                                                    (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
-                                                    (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
-                                                current-state)
-                              :response-chan response-chan
-                              :response response-code})))
+  (cid/with-correlation-id
+    cid
+    (log/info "attempt to blacklist" instance-id "which has"
+              (count (get instance-id->request-id->use-reason-map instance-id)) "uses with state:"
+              (get instance-id->state instance-id))
+    ;; cannot blacklist if the instance is not killable
+    (let [instance-not-allowed? (and (contains? instance-id->state instance-id)
+                                     (let [request-id->use-reason-map (instance-id->request-id->use-reason-map instance-id)
+                                           earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
+                                           has-expired-instances (expired-instances? instance-id->state)
+                                           has-starting-instances (starting-instances? instance-id->state)
+                                           state (instance-id->state instance-id)]
+                                       (not
+                                         (killable? request-id->use-reason-map earliest-request-threshold-time
+                                                    has-expired-instances has-starting-instances state))))
+          response-code (if instance-not-allowed? :in-use :blacklisted)]
+      {:current-state' (if (= :blacklisted response-code)
+                         (-> current-state
+                             ; mark instance as blacklisted and set the expiry time
+                             (update-in [:instance-id->state instance-id] sanitize-instance-state)
+                             (update-in [:instance-id->state instance-id] update-status-tag-fn #(conj % :blacklisted))
+                             (update-state-by-blacklisting-instance-fn cid instance-id blacklist-period-ms))
+                         current-state)
+       :response-chan response-chan
+       :response response-code})))
 
 (defn- unblacklist-instance
   [{:keys [instance-id->state] :as current-state} update-instance-id->blacklist-expiry-time-fn update-status-tag-fn
@@ -1184,41 +1185,41 @@
    Acts as the central access point for modifying this data for the router.
    Exposes the state of the router via a `query-state-fn` no-args function that is returned."
   [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config]
-  (let [killed-instances-to-keep 10
-        state-atom (atom {:all-available-service-ids #{}
-                          :iteration 0
-                          :routers []
-                          :service-id->deployment-error {}
-                          :service-id->expired-instances {}
-                          :service-id->failed-instances {}
-                          :service-id->healthy-instances {}
-                          :service-id->instability-issue {}
-                          :service-id->instance-counts {}
-                          :service-id->killed-instances {}
-                          :service-id->my-instance->slots {} ; updated in update-router-state
-                          :service-id->starting-instances {}
-                          :service-id->unhealthy-instances {}
-                          :time (t/now)})
-        router-state-push-chan (au/latest-chan)
-        query-chan (async/chan)
-        kill-notification-chan (async/chan 16)
-        go-chan
-        (async/go
-          (try
-            (loop [{:keys [iteration routers] :as current-state} @state-atom]
-              (reset! state-atom current-state)
-              (let [next-state
-                    (async/alt!
-                      exit-chan
-                      ([message]
-                        (log/warn "Stopping router-state-maintainer")
-                        (when (not= :exit message)
-                          (throw (ex-info "Stopping router-state maintainer" {:time (t/now), :reason message}))))
+  (cid/with-correlation-id
+    "router-state-maintainer"
+    (let [killed-instances-to-keep 10
+          state-atom (atom {:all-available-service-ids #{}
+                            :iteration 0
+                            :routers []
+                            :service-id->deployment-error {}
+                            :service-id->expired-instances {}
+                            :service-id->failed-instances {}
+                            :service-id->healthy-instances {}
+                            :service-id->instability-issue {}
+                            :service-id->instance-counts {}
+                            :service-id->killed-instances {}
+                            :service-id->my-instance->slots {} ; updated in update-router-state
+                            :service-id->starting-instances {}
+                            :service-id->unhealthy-instances {}
+                            :time (t/now)})
+          router-state-push-chan (au/latest-chan)
+          query-chan (async/chan)
+          kill-notification-chan (async/chan 16)
+          go-chan
+          (async/go
+            (try
+              (loop [{:keys [iteration routers] :as current-state} @state-atom]
+                (reset! state-atom current-state)
+                (let [next-state
+                      (async/alt!
+                        exit-chan
+                        ([message]
+                          (log/warn "Stopping router-state-maintainer")
+                          (when (not= :exit message)
+                            (throw (ex-info "Stopping router-state maintainer" {:time (t/now), :reason message}))))
 
-                      scheduler-state-chan
-                      ([scheduler-messages]
-                        (cid/with-correlation-id
-                          (str "router-state-maintainer-" iteration)
+                        scheduler-state-chan
+                        ([scheduler-messages]
                           (loop [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->my-instance->slots
                                          service-id->expired-instances service-id->starting-instances service-id->failed-instances
                                          service-id->instance-counts service-id->deployment-error service-id->instability-issue
@@ -1322,12 +1323,10 @@
                                     ; propagate along router-state-push-chan only when state changes
                                     (async/put! router-state-push-chan new-state))
                                   new-state)
-                                (recur loop-state' remaining))))))
+                                (recur loop-state' remaining)))))
 
-                      kill-notification-chan
-                      ([message]
-                        (cid/with-correlation-id
-                          (str "router-state-maintainer-" iteration)
+                        kill-notification-chan
+                        ([message]
                           (let [{{:keys [id service-id] :as instance} :instance} message]
                             (log/info "tracking killed instance" id "of service" service-id)
                             (-> current-state
@@ -1338,17 +1337,15 @@
                                                  killed-instances-to-keep
                                                  (conj
                                                    (filterv (fn [i] (not= (:id i) id)) killed-instances)
-                                                   instance)))))))))
+                                                   instance))))))))
 
-                      query-chan
-                      ([response-chan]
-                        (async/put! response-chan current-state)
-                        current-state)
+                        query-chan
+                        ([response-chan]
+                          (async/put! response-chan current-state)
+                          current-state)
 
-                      router-chan
-                      ([data]
-                        (cid/with-correlation-id
-                          (str "router-state-maintainer-" iteration)
+                        router-chan
+                        ([data]
                           (let [router-id->endpoint-url data
                                 new-state
                                 (if (not= routers router-id->endpoint-url)
@@ -1360,21 +1357,21 @@
                                     (update-router-state router-id current-state candidate-state service-id->service-description-fn))
                                   current-state)]
                             (async/put! router-state-push-chan new-state)
-                            new-state))))]
-                (if next-state
-                  (recur next-state)
-                  (log/info "Stopping router-state-maintainer as next state is nil"))))
-            (catch Exception e
-              (log/error e "Fatal error in router-state-maintainer!")
-              (System/exit 1))))]
-    {:go-chan go-chan
-     :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
-                                  (log/info "received notification of killed instance" (:id instance))
-                                  (async/go (async/>! kill-notification-chan {:instance instance})))
-     :query-chan query-chan
-     :query-state-fn (fn router-state-maintainer-query-state-fn []
-                       (assoc @state-atom :router-id router-id))
-     :router-state-push-mult (async/mult router-state-push-chan)}))
+                            new-state)))]
+                  (if next-state
+                    (recur next-state)
+                    (log/info "Stopping router-state-maintainer as next state is nil"))))
+              (catch Exception e
+                (log/error e "Fatal error in router-state-maintainer!")
+                (System/exit 1))))]
+      {:go-chan go-chan
+       :notify-instance-killed-fn (fn notify-router-state-maintainer-of-instance-killed [instance]
+                                    (log/info "received notification of killed instance" (:id instance))
+                                    (async/go (async/>! kill-notification-chan {:instance instance})))
+       :query-chan query-chan
+       :query-state-fn (fn router-state-maintainer-query-state-fn []
+                         (assoc @state-atom :router-id router-id))
+       :router-state-push-mult (async/mult router-state-push-chan)})))
 
 ;; External state queries
 
