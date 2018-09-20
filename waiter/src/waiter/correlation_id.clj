@@ -16,7 +16,8 @@
 (ns waiter.correlation-id
   (:require [clojure.tools.logging :as log]
             [clojure.string :as str])
-  (:import (java.util Collections)
+  (:import (clojure.lang Var)
+           (java.util Collections)
            (org.apache.log4j Appender EnhancedPatternLayout Logger PatternLayout)))
 
 ; Use lower-case to preserve consistency with Ring's representation of headers
@@ -52,16 +53,19 @@
   `(let [correlation-id# ~correlation-id]
      (binding [dynamic-correlation-id correlation-id#]
        (let [start-thread# (Thread/currentThread)
+             start-frame# (Var/getThreadBindingFrame)
              result# (do ~@body)
-             end-thread# (Thread/currentThread)]
-         (when (not= (.getId start-thread#) (.getId end-thread#))
-           (log/warn "with-correlation-id binding executed on different threads"
+             end-thread# (Thread/currentThread)
+             end-frame# (Var/getThreadBindingFrame)]
+         (when-not (identical? start-frame# end-frame#)
+           (log/warn "with-correlation-id binding executed in different contexts, correcting frame"
                      {:end {:correlation-id (get-correlation-id)
                             :thread-id (.getId end-thread#)
                             :thread-name (.getName end-thread#)}
                       :start {:correlation-id correlation-id#
                               :thread-id (.getId start-thread#)
-                              :thread-name (.getName start-thread#)}}))
+                              :thread-name (.getName start-thread#)}})
+           (Var/resetThreadBindingFrame start-frame#))
          result#))))
 
 
