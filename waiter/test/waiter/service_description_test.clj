@@ -1826,6 +1826,9 @@
         (is (nil? (fetch-service-description cache-kv-store)))
         (kv/store kv-store service-key service-description)
         (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (nil? (fetch-service-description cache-kv-store)))
+        (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id) :refresh true)))
         (is (= service-description (fetch-service-description cache-kv-store)))
         (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))))))
 

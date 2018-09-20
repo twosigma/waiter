@@ -836,8 +836,7 @@
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
   [kv-store service-id service-description-defaults metric-group-mappings & {:keys [effective?] :or {effective? true}}]
-  (cond-> (or (fetch-core kv-store service-id :refresh false)
-              (fetch-core kv-store service-id :refresh true))
+  (cond-> (fetch-core kv-store service-id :refresh false)
     effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
 
 (defn can-manage-service?
