@@ -213,92 +213,92 @@
         executor-chan (au/latest-chan)
         query-chan (async/chan 1)
         exit-chan (async/chan 1)]
-    (async/go
-      (try
-        (cid/cinfo base-correlation-id "awaiting scaling details on executor channel")
-        (loop [{:keys [last-scale-down-time] :as executor-state} {}]
-          (let [[data channel] (async/alts! [exit-chan executor-chan query-chan] :priority true)
-                executor-state'
-                (cond
-                  (= channel query-chan)
-                  (let [{:keys [cid response-chan]} data]
-                    (cid/cinfo (str base-correlation-id "|" cid) "received query")
-                    (async/>! response-chan executor-state)
-                    executor-state)
+    (cid/with-correlation-id
+      base-correlation-id
+      (async/go
+        (try
+          (log/info "awaiting scaling details on executor channel")
+          (loop [{:keys [last-scale-down-time] :as executor-state} {}]
+            (let [[data channel] (async/alts! [exit-chan executor-chan query-chan] :priority true)
+                  executor-state'
+                  (cond
+                    (= channel query-chan)
+                    (let [{:keys [cid response-chan]} data]
+                      (cid/cinfo (str base-correlation-id "|" cid) "received query")
+                      (async/>! response-chan executor-state)
+                      executor-state)
 
-                  (= channel exit-chan)
-                  (when (not= :exit data)
-                    executor-state)
+                    (= channel exit-chan)
+                    (when (not= :exit data)
+                      executor-state)
 
-                  (nil? data) ; executor-chan was closed, trigger exit
-                  nil
+                    (nil? data) ; executor-chan was closed, trigger exit
+                    nil
 
-                  :else
-                  (let [{:keys [correlation-id response-chan scale-amount scale-to-instances task-count total-instances]} data
-                        num-instances-to-kill (if (neg? scale-amount) (max 0 (- task-count scale-to-instances)) 0)
-                        iter-correlation-id (str base-correlation-id "." correlation-id)]
-                    (counters/inc! (metrics/service-counter service-id "scaling" "total"))
-                    (cond
-                      (pos? scale-amount)
-                      (cid/with-correlation-id
-                        iter-correlation-id
-                        (counters/inc! (metrics/service-counter service-id "scaling" "scale-up" "total"))
-                        (if (< task-count total-instances)
-                          (do
-                            (log/info "allowing previous scale operation to complete before scaling up again")
-                            (counters/inc! (metrics/service-counter service-id "scaling" "scale-up" "ignore")))
-                          (let [service-description (service-id->service-description-fn service-id)
-                                scale-amount' (compute-scale-amount-restricted-by-quanta
-                                                service-description quanta-constraints scale-amount)
-                                scale-adjustment (- scale-amount' scale-amount)
-                                scale-to-instances' (+ scale-to-instances scale-adjustment)]
-                            (when-not (zero? scale-adjustment)
-                              (log/info service-id "scale amount adjusted"
-                                        {:scale-adjustment scale-adjustment
-                                         :scale-amount scale-amount
-                                         :scale-to-instances' scale-to-instances'}))
-                            (execute-scale-service-request scheduler service-id scale-to-instances' false)))
-                        executor-state)
+                    :else
+                    (let [{:keys [correlation-id response-chan scale-amount scale-to-instances task-count total-instances]} data
+                          num-instances-to-kill (if (neg? scale-amount) (max 0 (- task-count scale-to-instances)) 0)
+                          iter-correlation-id (str base-correlation-id "." correlation-id)]
+                      (counters/inc! (metrics/service-counter service-id "scaling" "total"))
+                      (cond
+                        (pos? scale-amount)
+                        (do
+                          (counters/inc! (metrics/service-counter service-id "scaling" "scale-up" "total"))
+                          (if (< task-count total-instances)
+                            (do
+                              (log/info "allowing previous scale operation to complete before scaling up again")
+                              (counters/inc! (metrics/service-counter service-id "scaling" "scale-up" "ignore")))
+                            (let [service-description (service-id->service-description-fn service-id)
+                                  scale-amount' (compute-scale-amount-restricted-by-quanta
+                                                  service-description quanta-constraints scale-amount)
+                                  scale-adjustment (- scale-amount' scale-amount)
+                                  scale-to-instances' (+ scale-to-instances scale-adjustment)]
+                              (when-not (zero? scale-adjustment)
+                                (log/info service-id "scale amount adjusted"
+                                          {:iter-correlation-id iter-correlation-id
+                                           :scale-adjustment scale-adjustment
+                                           :scale-amount scale-amount
+                                           :scale-to-instances' scale-to-instances'}))
+                              (execute-scale-service-request scheduler service-id scale-to-instances' false)))
+                          executor-state)
 
-                      (pos? num-instances-to-kill)
-                      (do
-                        (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "total"))
-                        (if (or (nil? last-scale-down-time)
-                                (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
-                          (if (or (async/<!
-                                    (execute-scale-down-request
-                                      notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                                      scheduler instance-rpc-chan timeout-config
-                                      service-id iter-correlation-id num-instances-to-kill response-chan))
-                                  (delegate-instance-kill-request-fn service-id))
-                            (assoc executor-state :last-scale-down-time (t/now))
-                            executor-state)
-                          (cid/with-correlation-id
-                            iter-correlation-id
-                            (log/debug "skipping scale-down as" inter-kill-request-wait-time-ms
-                                       "ms has not elapsed since last scale down operation")
-                            (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "ignore"))
-                            executor-state)))
+                        (pos? num-instances-to-kill)
+                        (do
+                          (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "total"))
+                          (if (or (nil? last-scale-down-time)
+                                  (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
+                            (if (or (async/<!
+                                      (execute-scale-down-request
+                                        notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                                        scheduler instance-rpc-chan timeout-config
+                                        service-id iter-correlation-id num-instances-to-kill response-chan))
+                                    (delegate-instance-kill-request-fn service-id))
+                              (assoc executor-state :last-scale-down-time (t/now))
+                              executor-state)
+                            (do
+                              (log/debug iter-correlation-id "skipping scale-down as" inter-kill-request-wait-time-ms
+                                         "ms has not elapsed since last scale down operation")
+                              (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "ignore"))
+                              executor-state)))
 
-                      (and (neg? scale-amount) (< task-count scale-to-instances))
-                      (cid/with-correlation-id
-                        iter-correlation-id
-                        (log/info "potential overshoot detected, triggering scale-force for service"
-                                  {:scale-to-instances scale-to-instances :task-count task-count})
-                        (counters/inc! (metrics/service-counter service-id "scaling" "scale-force" "total"))
-                        (execute-scale-service-request scheduler service-id scale-to-instances true)
-                        executor-state)
+                        (and (neg? scale-amount) (< task-count scale-to-instances))
+                        (do
+                          (log/info iter-correlation-id "potential overshoot detected, triggering scale-force for service"
+                                    {:scale-to-instances scale-to-instances :task-count task-count})
+                          (counters/inc! (metrics/service-counter service-id "scaling" "scale-force" "total"))
+                          (execute-scale-service-request scheduler service-id scale-to-instances true)
+                          executor-state)
 
-                      :else
-                      (do
-                        (counters/inc! (metrics/service-counter service-id "scaling" "noop"))
-                        executor-state))))]
-            (if executor-state'
-              (recur executor-state')
-              (log/info "[scaling-executor] exiting for" service-id))))
-        (catch Exception ex
-          (log/error ex "[scaling-executor] fatal exception while scaling instances for" service-id)
-          (System/exit 1))))
+                        :else
+                        (do
+                          (counters/inc! (metrics/service-counter service-id "scaling" "noop"))
+                          executor-state))))]
+              (if executor-state'
+                (recur executor-state')
+                (log/info "[scaling-executor] exiting for" service-id))))
+          (catch Exception ex
+            (log/error ex "[scaling-executor] fatal exception while scaling instances for" service-id)
+            (System/exit 1)))))
     {:executor-chan executor-chan
      :exit-chan exit-chan
      :query-chan query-chan}))
@@ -480,15 +480,15 @@
         apply-scaling-fn (fn apply-scaling-fn [service-id scaling-data]
                            (apply-scaling! executor-multiplexer-chan service-id scaling-data))]
     (async/tap state-mult state-chan)
-    (let [prefix-cid "SCALING"]
+    (cid/with-correlation-id
+      "SCALING"
       (async/go
         (try
           (loop [{:keys [global-state iter-counter previous-cycle-start-time service-id->router-state
                          service-id->scale-state timeout-chan] :as current-state}
                  @state-atom]
             (reset! state-atom current-state)
-            (let [correlation-id (str prefix-cid "-" iter-counter)
-                  new-state
+            (let [new-state
                   (timers/start-stop-time!
                     (metrics/waiter-timer "autoscaler" "iteration")
                     (let [[args chan] (async/alts! [exit-chan state-chan timeout-chan query-chan] :priority true)]
@@ -507,15 +507,13 @@
                                                             {:healthy-instances (count (service-id->healthy-instances service-id))
                                                              :expired-instances (count (service-id->expired-instances service-id))})
                                                           service-ids-set)]
-                          (cid/with-correlation-id
-                            correlation-id
-                            (when (seq new-service-ids)
-                              (log/info "started tracking following services:" new-service-ids))
-                            (when (seq deleted-service-ids)
-                              (log/info "no longer tracking following services:" deleted-service-ids)
-                              ; trigger closing of the scaling executors for the services
-                              (doseq [service-id deleted-service-ids]
-                                (apply-scaling-fn service-id {}))))
+                          (when (seq new-service-ids)
+                            (log/info "started tracking following services:" {:iteration iter-counter :service-ids new-service-ids}))
+                          (when (seq deleted-service-ids)
+                            (log/info "no longer tracking following services:" {:iteration iter-counter :service-ids deleted-service-ids})
+                            ; trigger closing of the scaling executors for the services
+                            (doseq [service-id deleted-service-ids]
+                              (apply-scaling-fn service-id {})))
                           (assoc current-state :service-id->router-state service-id->router-state'))
                         timeout-chan
                         (if (leader?-fn)
@@ -526,32 +524,30 @@
                               (metrics/waiter-timer "autoscaler" "processing")
                               (let [service->scale-state'
                                     (if (seq service-id->router-state)
-                                      (cid/with-correlation-id
-                                        correlation-id
-                                        (let [router-service-ids (set (keys service-id->router-state))
-                                              scheduler-service-ids (set (keys service-id->scheduler-state'))
-                                              scalable-service-ids (set/intersection router-service-ids scheduler-service-ids)
-                                              excluded-service-ids (-> (set/union router-service-ids scheduler-service-ids)
-                                                                       (set/difference scalable-service-ids))
-                                              scale-ticks (when previous-cycle-start-time
-                                                            (-> (difference-in-millis cycle-start-time previous-cycle-start-time)
-                                                                (/ 1000)
-                                                                int))]
-                                          (when (seq excluded-service-ids)
-                                            (cid/cinfo correlation-id "services excluded this iteration" excluded-service-ids))
-                                          (scale-services scalable-service-ids
-                                                          (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
-                                                          ; default to 0 outstanding requests for services without metrics
-                                                          (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
-                                                          service-id->scale-state
-                                                          apply-scaling-fn
-                                                          scale-ticks
-                                                          scale-service-fn
-                                                          service-id->router-state
-                                                          service-id->scheduler-state')))
+                                      (let [router-service-ids (set (keys service-id->router-state))
+                                            scheduler-service-ids (set (keys service-id->scheduler-state'))
+                                            scalable-service-ids (set/intersection router-service-ids scheduler-service-ids)
+                                            excluded-service-ids (-> (set/union router-service-ids scheduler-service-ids)
+                                                                     (set/difference scalable-service-ids))
+                                            scale-ticks (when previous-cycle-start-time
+                                                          (-> (difference-in-millis cycle-start-time previous-cycle-start-time)
+                                                              (/ 1000)
+                                                              int))]
+                                        (when (seq excluded-service-ids)
+                                          (log/info "services excluded this iteration" excluded-service-ids))
+                                        (scale-services scalable-service-ids
+                                                        (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
+                                                        ; default to 0 outstanding requests for services without metrics
+                                                        (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
+                                                        service-id->scale-state
+                                                        apply-scaling-fn
+                                                        scale-ticks
+                                                        scale-service-fn
+                                                        service-id->router-state
+                                                        service-id->scheduler-state'))
                                       service-id->scale-state)]
-                                (cid/cinfo correlation-id "scaling iteration took" (difference-in-millis (t/now) cycle-start-time)
-                                           "ms for" (count service->scale-state') "services.")
+                                (log/info "scaling iteration took" (difference-in-millis (t/now) cycle-start-time)
+                                          "ms for" (count service->scale-state') "services.")
                                 (assoc current-state
                                   :global-state global-state'
                                   :previous-cycle-start-time cycle-start-time
@@ -568,7 +564,7 @@
                           current-state))))]
               (if (:continue-looping new-state)
                 (recur (update-in new-state [:iter-counter] inc))
-                (cid/cinfo prefix-cid "exiting"))))
+                (log/info "exiting"))))
           (catch Exception e
             (log/error e "fatal error in autoscaler")
             (System/exit 1)))))

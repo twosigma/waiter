@@ -312,18 +312,18 @@
   [router-metrics-agent local-usage-agent metrics-sync-interval-ms encrypt]
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 1)]
-    (async/go-loop [iteration 0
-                    timeout-chan (async/timeout metrics-sync-interval-ms)]
-      (let [[data channel] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
-        (condp = channel
-          exit-chan
-          (when (not= :exit data)
-            (recur (inc iteration) timeout-chan))
+    (cid/with-correlation-id
+      "setup-metrics-syncer"
+      (async/go-loop [iteration 0
+                      timeout-chan (async/timeout metrics-sync-interval-ms)]
+        (let [[data channel] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
+          (condp = channel
+            exit-chan
+            (when (not= :exit data)
+              (recur (inc iteration) timeout-chan))
 
-          timeout-chan
-          (do
-            (cid/with-correlation-id
-              (str "setup-metrics-syncer-" iteration)
+            timeout-chan
+            (do
               (try
                 (let [service-id->codahale-metrics (utils/filterm (fn [[_ metrics]] (some pos? (vals metrics)))
                                                                   (metrics/get-core-codahale-metrics))
@@ -334,13 +334,13 @@
                                                             (keys service-id->codahale-metrics))]
                   (send router-metrics-agent publish-router-metrics encrypt service-id->metrics "core"))
                 (catch Exception e
-                  (log/error e "error in making broadcast router metrics request" {:iteration iteration}))))
-            (recur (inc iteration) (async/timeout metrics-sync-interval-ms)))
+                  (log/error e "error in making broadcast router metrics request" {:iteration iteration})))
+              (recur (inc iteration) (async/timeout metrics-sync-interval-ms)))
 
-          query-chan
-          (let [{:keys [response-chan]} data]
-            (async/>! response-chan {:iteration iteration})
-            (recur iteration timeout-chan)))))
+            query-chan
+            (let [{:keys [response-chan]} data]
+              (async/>! response-chan {:iteration iteration})
+              (recur iteration timeout-chan))))))
     {:exit-chan exit-chan
      :query-chan query-chan}))
 
