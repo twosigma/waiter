@@ -480,95 +480,94 @@
         apply-scaling-fn (fn apply-scaling-fn [service-id scaling-data]
                            (apply-scaling! executor-multiplexer-chan service-id scaling-data))]
     (async/tap state-mult state-chan)
-    (let [correlation-id "SCALING"]
-      (cid/with-correlation-id
-        correlation-id
-        (async/go
-          (try
-            (loop [{:keys [global-state iter-counter previous-cycle-start-time service-id->router-state
-                           service-id->scale-state timeout-chan] :as current-state}
-                   @state-atom]
-              (reset! state-atom current-state)
-              (let [new-state
-                    (timers/start-stop-time!
-                      (metrics/waiter-timer "autoscaler" "iteration")
-                      (let [[args chan] (async/alts! [exit-chan state-chan timeout-chan query-chan] :priority true)]
-                        (condp = chan
-                          exit-chan
-                          (assoc current-state :continue-looping false :timeout-chan nil)
-                          state-chan
-                          (let [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->expired-instances]} args
-                                existing-service-ids-set (-> service-id->router-state keys set)
-                                service-ids-set (into (-> service-id->healthy-instances keys set)
-                                                      (-> service-id->unhealthy-instances keys))
-                                deleted-service-ids (set/difference existing-service-ids-set service-ids-set)
-                                new-service-ids (set/difference service-ids-set existing-service-ids-set)
-                                service-id->router-state' (pc/map-from-keys
-                                                            (fn [service-id]
-                                                              {:healthy-instances (count (service-id->healthy-instances service-id))
-                                                               :expired-instances (count (service-id->expired-instances service-id))})
-                                                            service-ids-set)]
-                            (when (seq new-service-ids)
-                              (log/info "started tracking following services:" {:iteration iter-counter :service-ids new-service-ids}))
-                            (when (seq deleted-service-ids)
-                              (log/info "no longer tracking following services:" {:iteration iter-counter :service-ids deleted-service-ids})
-                              ; trigger closing of the scaling executors for the services
-                              (doseq [service-id deleted-service-ids]
-                                (apply-scaling-fn service-id {})))
-                            (assoc current-state :service-id->router-state service-id->router-state'))
-                          timeout-chan
-                          (if (leader?-fn)
-                            (let [global-state' (or (service-id->metrics-fn) global-state)
-                                  cycle-start-time (t/now)
-                                  service-id->scheduler-state' (get-app-instance-stats scheduler)]
-                              (timers/start-stop-time!
-                                (metrics/waiter-timer "autoscaler" "processing")
-                                (let [service->scale-state'
-                                      (if (seq service-id->router-state)
-                                        (let [router-service-ids (set (keys service-id->router-state))
-                                              scheduler-service-ids (set (keys service-id->scheduler-state'))
-                                              scalable-service-ids (set/intersection router-service-ids scheduler-service-ids)
-                                              excluded-service-ids (-> (set/union router-service-ids scheduler-service-ids)
-                                                                       (set/difference scalable-service-ids))
-                                              scale-ticks (when previous-cycle-start-time
-                                                            (-> (difference-in-millis cycle-start-time previous-cycle-start-time)
-                                                                (/ 1000)
-                                                                int))]
-                                          (when (seq excluded-service-ids)
-                                            (cid/cinfo correlation-id "services excluded this iteration" excluded-service-ids))
-                                          (scale-services scalable-service-ids
-                                                          (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
-                                                          ; default to 0 outstanding requests for services without metrics
-                                                          (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
-                                                          service-id->scale-state
-                                                          apply-scaling-fn
-                                                          scale-ticks
-                                                          scale-service-fn
-                                                          service-id->router-state
-                                                          service-id->scheduler-state'))
-                                        service-id->scale-state)]
-                                  (cid/cinfo correlation-id "scaling iteration took" (difference-in-millis (t/now) cycle-start-time)
-                                             "ms for" (count service->scale-state') "services.")
-                                  (assoc current-state
-                                    :global-state global-state'
-                                    :previous-cycle-start-time cycle-start-time
-                                    :service-id->scale-state service->scale-state'
-                                    :service-id->scheduler-state service-id->scheduler-state'
-                                    :continue-looping true
-                                    :timeout-chan (async/timeout timeout-interval-ms)))))
-                            (assoc current-state :timeout-chan (async/timeout timeout-interval-ms)
-                                                 :previous-cycle-start-time nil))
-                          query-chan
-                          (let [{:keys [service-id response-chan]} args
-                                service-state (query-autoscaler-service-state current-state {:service-id service-id})]
-                            (async/>! response-chan service-state)
-                            current-state))))]
-                (if (:continue-looping new-state)
-                  (recur (update-in new-state [:iter-counter] inc))
-                  (log/info "exiting"))))
-            (catch Exception e
-              (log/error e "fatal error in autoscaler")
-              (System/exit 1))))))
+    (cid/with-correlation-id
+      "SCALING"
+      (async/go
+        (try
+          (loop [{:keys [global-state iter-counter previous-cycle-start-time service-id->router-state
+                         service-id->scale-state timeout-chan] :as current-state}
+                 @state-atom]
+            (reset! state-atom current-state)
+            (let [new-state
+                  (timers/start-stop-time!
+                    (metrics/waiter-timer "autoscaler" "iteration")
+                    (let [[args chan] (async/alts! [exit-chan state-chan timeout-chan query-chan] :priority true)]
+                      (condp = chan
+                        exit-chan
+                        (assoc current-state :continue-looping false :timeout-chan nil)
+                        state-chan
+                        (let [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->expired-instances]} args
+                              existing-service-ids-set (-> service-id->router-state keys set)
+                              service-ids-set (into (-> service-id->healthy-instances keys set)
+                                                    (-> service-id->unhealthy-instances keys))
+                              deleted-service-ids (set/difference existing-service-ids-set service-ids-set)
+                              new-service-ids (set/difference service-ids-set existing-service-ids-set)
+                              service-id->router-state' (pc/map-from-keys
+                                                          (fn [service-id]
+                                                            {:healthy-instances (count (service-id->healthy-instances service-id))
+                                                             :expired-instances (count (service-id->expired-instances service-id))})
+                                                          service-ids-set)]
+                          (when (seq new-service-ids)
+                            (log/info "started tracking following services:" {:iteration iter-counter :service-ids new-service-ids}))
+                          (when (seq deleted-service-ids)
+                            (log/info "no longer tracking following services:" {:iteration iter-counter :service-ids deleted-service-ids})
+                            ; trigger closing of the scaling executors for the services
+                            (doseq [service-id deleted-service-ids]
+                              (apply-scaling-fn service-id {})))
+                          (assoc current-state :service-id->router-state service-id->router-state'))
+                        timeout-chan
+                        (if (leader?-fn)
+                          (let [global-state' (or (service-id->metrics-fn) global-state)
+                                cycle-start-time (t/now)
+                                service-id->scheduler-state' (get-app-instance-stats scheduler)]
+                            (timers/start-stop-time!
+                              (metrics/waiter-timer "autoscaler" "processing")
+                              (let [service->scale-state'
+                                    (if (seq service-id->router-state)
+                                      (let [router-service-ids (set (keys service-id->router-state))
+                                            scheduler-service-ids (set (keys service-id->scheduler-state'))
+                                            scalable-service-ids (set/intersection router-service-ids scheduler-service-ids)
+                                            excluded-service-ids (-> (set/union router-service-ids scheduler-service-ids)
+                                                                     (set/difference scalable-service-ids))
+                                            scale-ticks (when previous-cycle-start-time
+                                                          (-> (difference-in-millis cycle-start-time previous-cycle-start-time)
+                                                              (/ 1000)
+                                                              int))]
+                                        (when (seq excluded-service-ids)
+                                          (log/info "services excluded this iteration" excluded-service-ids))
+                                        (scale-services scalable-service-ids
+                                                        (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
+                                                        ; default to 0 outstanding requests for services without metrics
+                                                        (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
+                                                        service-id->scale-state
+                                                        apply-scaling-fn
+                                                        scale-ticks
+                                                        scale-service-fn
+                                                        service-id->router-state
+                                                        service-id->scheduler-state'))
+                                      service-id->scale-state)]
+                                (log/info "scaling iteration took" (difference-in-millis (t/now) cycle-start-time)
+                                          "ms for" (count service->scale-state') "services.")
+                                (assoc current-state
+                                  :global-state global-state'
+                                  :previous-cycle-start-time cycle-start-time
+                                  :service-id->scale-state service->scale-state'
+                                  :service-id->scheduler-state service-id->scheduler-state'
+                                  :continue-looping true
+                                  :timeout-chan (async/timeout timeout-interval-ms)))))
+                          (assoc current-state :timeout-chan (async/timeout timeout-interval-ms)
+                                               :previous-cycle-start-time nil))
+                        query-chan
+                        (let [{:keys [service-id response-chan]} args
+                              service-state (query-autoscaler-service-state current-state {:service-id service-id})]
+                          (async/>! response-chan service-state)
+                          current-state))))]
+              (if (:continue-looping new-state)
+                (recur (update-in new-state [:iter-counter] inc))
+                (log/info "exiting"))))
+          (catch Exception e
+            (log/error e "fatal error in autoscaler")
+            (System/exit 1)))))
     {:exit exit-chan
      :query query-chan
      :query-state-fn (fn query-state-fn [] @state-atom)

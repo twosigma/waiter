@@ -313,7 +313,7 @@
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 1)]
     (cid/with-correlation-id
-      (str "setup-metrics-syncer")
+      "setup-metrics-syncer"
       (async/go-loop [iteration 0
                       timeout-chan (async/timeout metrics-sync-interval-ms)]
         (let [[data channel] (async/alts! [exit-chan timeout-chan query-chan] :priority true)]
