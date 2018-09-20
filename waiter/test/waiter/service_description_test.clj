@@ -1797,6 +1797,36 @@
         (is (= service-description (fetch-core cache-kv-store service-id :refresh true)))
         (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))))))
 
+(deftest test-refresh-service-descriptions
+  (let [raw-kv-store (kv/->LocalKeyValueStore (atom {}))
+        cache (atom (cache/fifo-cache-factory {} :threshold 10))
+        cache-kv-store (kv/->CachedKeyValueStore raw-kv-store cache)
+        service-id->key (fn [service-id] (str "^SERVICE-ID#" service-id))
+        service-id->service-description (fn [service-id] {"cmd" "tc" "cpus" 1 "mem" 200 "version" service-id})
+        service-id-1 "service-id-1"
+        service-id-2 "service-id-2"
+        service-id-3 "service-id-3"
+        service-id-4 "service-id-4"]
+    (is (nil? (kv/fetch cache-kv-store (service-id->key service-id-1))))
+    (is (nil? (kv/fetch cache-kv-store (service-id->key service-id-3))))
+
+    (kv/store raw-kv-store (service-id->key service-id-1) (service-id->service-description service-id-1))
+    (kv/store raw-kv-store (service-id->key service-id-2) (service-id->service-description service-id-2))
+    (kv/store raw-kv-store (service-id->key service-id-3) (service-id->service-description service-id-3))
+    (kv/store raw-kv-store (service-id->key service-id-4) (service-id->service-description service-id-4))
+
+    (is (nil? (kv/fetch cache-kv-store (service-id->key service-id-1))))
+    (is (= (service-id->service-description service-id-2) (kv/fetch cache-kv-store (service-id->key service-id-2))))
+    (is (nil? (kv/fetch cache-kv-store (service-id->key service-id-3))))
+    (is (= (service-id->service-description service-id-4) (kv/fetch cache-kv-store (service-id->key service-id-4))))
+
+    (refresh-service-descriptions cache-kv-store #{service-id-1 service-id-2 service-id-3 service-id-4})
+
+    (is (= (service-id->service-description service-id-1) (kv/fetch cache-kv-store (service-id->key service-id-1))))
+    (is (= (service-id->service-description service-id-2) (kv/fetch cache-kv-store (service-id->key service-id-2))))
+    (is (= (service-id->service-description service-id-3) (kv/fetch cache-kv-store (service-id->key service-id-3))))
+    (is (= (service-id->service-description service-id-4) (kv/fetch cache-kv-store (service-id->key service-id-4))))))
+
 (deftest test-service-id->service-description
   (let [service-id "test-service-1"
         service-key (str "^SERVICE-ID#" service-id)

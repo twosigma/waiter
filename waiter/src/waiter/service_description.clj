@@ -653,6 +653,14 @@
         (when-not nil-on-missing?
           (throw (ex-info "No description found!" {:service-id service-id})))))))
 
+(defn refresh-service-descriptions
+  "Refreshes missing service descriptions for the specified service ids."
+  [kv-store service-ids]
+  (doseq [service-id service-ids]
+    (when-not (fetch-core kv-store service-id :refresh false)
+      (log/info "refreshing the service description for" service-id)
+      (fetch-core kv-store service-id :nil-on-missing? false :refresh true))))
+
 (let [service-id->key #(str "^STATUS#" %)]
   (defn suspend-service
     "Stores an entry in the key-value store marking the service as suspended."
