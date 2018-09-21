@@ -34,13 +34,13 @@
         (testing "service state with valid service-id"
           (let [settings (service-state router-endpoint service-id :cookies cookies)]
             (is (= router-id (get settings :router-id)) (str settings))
-            (is (get-in settings [:state :app-maintainer-state :maintainer-chan-available]) (str settings))
+            (is (get-in settings [:state :service-maintainer-state :maintainer-chan-available]) (str settings))
             (is (= 1 (get-in settings [:state :autoscaler-state :healthy-instances])) (str settings))))
 
         (testing "service state with invalid service-id"
           (let [settings (utils/deep-sort-map (service-state router-endpoint (str "invalid-" service-id) :cookies cookies))]
             (is (= router-id (get settings :router-id)) (str settings))
-            (is (not (get-in settings [:state :app-maintainer-state :maintainer-chan-available])) (str settings))
+            (is (not (get-in settings [:state :service-maintainer-state :maintainer-chan-available])) (str settings))
             (is (empty? (get-in settings [:state :autoscaler-state])) (str settings)))))
 
       (delete-service waiter-url service-id))))

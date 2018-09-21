@@ -83,11 +83,11 @@
      {:instance-id instance-id, :killed? <boolean>, :message <string>,  :service-id service-id, :status status-code}")
 
   (service-exists? [this ^String service-id]
-    "Returns truth-y value if the app exists and nil otherwise.")
+    "Returns truth-y value if the service exists and nil otherwise.")
 
   (create-service-if-new [this descriptor]
-    "Sends a call to Scheduler to start an app with the descriptor if the app does not already exist.
-     Returns truth-y value if the app creation was successful and nil otherwise.")
+    "Sends a call to Scheduler to start a service with the descriptor if the service does not already exist.
+     Returns truth-y value if the service creation was successful and nil otherwise.")
 
   (delete-service [this ^String service-id]
     "Instructs the scheduler to delete the specified service.
@@ -346,23 +346,23 @@
       gc-service?-fn
       perform-gc-fn)))
 
-(defn- request-available-waiter-apps
-  "Queries the scheduler and builds a list of available Waiter apps."
+(defn- request-available-waiter-services
+  "Queries the scheduler and builds a list of available Waiter services."
   [scheduler-name get-service->instances-fn]
   (when-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "scheduler" scheduler-name "get-services")
                                           (retry-on-transient-server-exceptions
-                                            "request-available-waiter-apps"
+                                            "request-available-waiter-services"
                                             (get-service->instances-fn)))]
-    (log/trace "request-available-waiter-apps:apps" (keys service->service-instances))
+    (log/trace "request-available-waiter-services:services" (keys service->service-instances))
     service->service-instances))
 
-(defn- retrieve-instances-for-app
+(defn- retrieve-instances-for-service
   "Queries the scheduler and builds a list of healthy and unhealthy instances for the specified service-id."
   [service-id service-instances]
   (when service-instances
     (let [{healthy-instances true, unhealthy-instances false} (group-by (comp boolean :healthy?) service-instances)]
-      (log/trace "request-instances-for-app" service-id "has" (count healthy-instances) "healthy instance(s)"
+      (log/trace "retrieve-instances-for-service" service-id "has" (count healthy-instances) "healthy instance(s)"
                  "and" (count unhealthy-instances) " unhealthy instance(s).")
       {:healthy-instances (vec healthy-instances)
        :unhealthy-instances (vec unhealthy-instances)})))
@@ -418,15 +418,15 @@
                         (assoc instances :active-instances active-instances))))))))
 
 (defn- update-scheduler-state
-  "Queries marathon, sends data on app and instance statuses to router state maintainer, and returns scheduler state"
+  "Queries marathon, sends data on service and instance statuses to router state maintainer, and returns scheduler state"
   [scheduler-name get-service->instances-fn service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
-  (let [^DateTime request-apps-time (t/now)
+  (let [^DateTime request-services-time (t/now)
         timing-message-fn (fn [] (let [^DateTime now (t/now)]
-                                   (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-apps-time)) " ms")))]
+                                   (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-services-time)) " ms")))]
     (log/trace "scheduler-syncer: querying" scheduler-name "scheduler")
     (if-let [service->service-instances (timers/start-stop-time!
-                                          (metrics/waiter-timer "scheduler" scheduler-name "app->available-tasks")
-                                          (do-health-checks (request-available-waiter-apps scheduler-name get-service->instances-fn)
+                                          (metrics/waiter-timer "scheduler" scheduler-name "service->available-tasks")
+                                          (do-health-checks (request-available-waiter-services scheduler-name get-service->instances-fn)
                                                             available?
                                                             service-id->service-description-fn))]
       (let [available-services (keys service->service-instances)
@@ -450,7 +450,7 @@
                   {:keys [instance-id->unhealthy-instance instance-id->tracked-failed-instance instance-id->failed-health-check-count]}
                   (get service-id->health-check-context service-id)
                   {:keys [healthy-instances unhealthy-instances] :as service-instance-info}
-                  (retrieve-instances-for-app service-id active-instances)
+                  (retrieve-instances-for-service service-id active-instances)
                   instance-id->tracked-failed-instance'
                   ((fnil into {}) instance-id->tracked-failed-instance
                     (keep (fn [[instance-id unhealthy-instance]]
@@ -499,7 +499,7 @@
             (let [summary-message [:update-available-services
                                    {:available-service-ids available-service-ids
                                     :healthy-service-ids healthy-service-ids
-                                    :scheduler-sync-time request-apps-time}]]
+                                    :scheduler-sync-time request-services-time}]]
               (log/info (timing-message-fn) "for" (count service->service-instances) "services.")
               {:scheduler-messages (concat [summary-message] scheduler-messages)
                :service-id->health-check-context service-id->health-check-context'}))))
@@ -515,7 +515,7 @@
       (assoc health-check-context :last-update-time last-update-time))))
 
 (defn start-scheduler-syncer
-  "Starts loop to query marathon for the app and instance statuses,
+  "Starts loop to query marathon for the service and instance statuses,
   maintains a state consisting of one map with elements of shape:
 
     service-id {:instance-id->unhealthy-instance        {...}

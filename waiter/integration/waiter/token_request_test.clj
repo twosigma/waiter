@@ -1202,7 +1202,7 @@
                                                           (every? (fn [[_ router-url]]
                                                                     (-> (service-state router-url service-id :cookies cookies)
                                                                         :state
-                                                                        :app-maintainer-state
+                                                                        :service-maintainer-state
                                                                         :maintainer-chan-available
                                                                         false?))
                                                                   waiter-routers))
