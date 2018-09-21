@@ -392,7 +392,7 @@
   (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (if-not (scheduler/service-exists? this service-id)
       (timers/start-stop-time!
-        (metrics/waiter-timer "scheduler" scheduler-name "create-app")
+        (metrics/waiter-timer "scheduler" scheduler-name "create-service")
         (let [success (try
                         (let [{:keys [service-description]} descriptor
                               {:strs [min-instances run-as-user]} service-description]

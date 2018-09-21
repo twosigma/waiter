@@ -40,7 +40,7 @@
         task-id "test-app-id.test-task-id"
         marathon-api (api-factory http-client {} marathon-url)]
 
-    (testing "create-app"
+    (testing "create-service"
       (with-redefs [http-utils/http-request (assert-endpoint-request-method :post "/v2/apps")]
         (create-app marathon-api {})))
 

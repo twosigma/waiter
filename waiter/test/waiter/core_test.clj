@@ -290,7 +290,7 @@
   (let [scheduler (marathon/map->MarathonScheduler
                     {:force-kill-after-ms 1000
                      :home-path-prefix "/home/path/"
-                     :is-waiter-app?-fn (constantly true)
+                     :is-waiter-service?-fn (constantly true)
                      :marathon-api (Object.)
                      :mesos-api {:slave-port 5051}
                      :retrieve-framework-id-fn (constantly nil)

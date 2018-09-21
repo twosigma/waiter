@@ -510,12 +510,12 @@
                       _ (password-store/check-empty-passwords passwords)
                       processed-passwords (mapv #(vector :cached %) passwords)]
                   processed-passwords))
-   :query-app-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
+   :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
                 (cond->> (utils/unique-identifier)
-                         (not (str/blank? router-id-prefix))
-                         (str (str/replace router-id-prefix #"[@.]" "-") "-")))
+                  (not (str/blank? router-id-prefix))
+                  (str (str/replace router-id-prefix #"[@.]" "-") "-")))
    :scaling-timeout-config (pc/fnk [[:settings
                                      [:blacklist-config blacklist-backoff-base-time-ms max-blacklist-time-ms]
                                      [:scaling inter-kill-request-wait-time-ms]]]
@@ -535,11 +535,11 @@
                                   (utils/create-component
                                     service-description-builder-config :context {:constraints service-description-constraints}))
    :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
-   :start-app-cache-atom (pc/fnk []
-                           (-> {}
-                               (cache/fifo-cache-factory :threshold 100)
-                               (cache/ttl-cache-factory :ttl (-> 1 t/minutes t/in-millis))
-                               atom))
+   :start-service-cache-atom (pc/fnk []
+                               (-> {}
+                                   (cache/fifo-cache-factory :threshold 100)
+                                   (cache/ttl-cache-factory :ttl (-> 1 t/minutes t/in-millis))
+                                   atom))
    :task-threadpool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :waiter-hostnames (pc/fnk [[:settings hostname]]
@@ -618,9 +618,9 @@
                        service-id->password-fn*
                        service-id->service-description-fn*
                        start-scheduler-syncer-fn]
-                (let [is-waiter-app?-fn (fn is-waiter-app? [^String service-id]
-                                          (str/starts-with? service-id service-id-prefix))
-                      scheduler-context {:is-waiter-app?-fn is-waiter-app?-fn
+                (let [is-waiter-service?-fn (fn is-waiter-service? [^String service-id]
+                                              (str/starts-with? service-id service-id-prefix))
+                      scheduler-context {:is-waiter-service?-fn is-waiter-service?-fn
                                          :leader?-fn leader?-fn
                                          :scheduler-name (-> scheduler-config :kind utils/keyword->str)
                                          :scheduler-state-chan scheduler-state-chan
@@ -813,13 +813,13 @@
    :service-id->source-tokens-entries-fn (pc/fnk [[:curator kv-store]]
                                            (partial sd/service-id->source-tokens-entries kv-store))
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
-                                  [:state authenticator start-app-cache-atom task-threadpool]
+                                  [:state authenticator start-service-cache-atom task-threadpool]
                                   store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
                              (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
                                (auth/check-user authenticator run-as-user service-id))
                              (service/start-new-service
-                               scheduler descriptor start-app-cache-atom task-threadpool
+                               scheduler descriptor start-service-cache-atom task-threadpool
                                :pre-start-fn #(store-service-description-fn descriptor))))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]
@@ -989,7 +989,7 @@
                                 service-id->idle-timeout)))
    :service-chan-maintainer (pc/fnk [[:routines start-work-stealing-balancer-fn stop-work-stealing-balancer-fn]
                                      [:settings blacklist-config instance-request-properties]
-                                     [:state instance-rpc-chan query-app-maintainer-chan]
+                                     [:state instance-rpc-chan query-service-maintainer-chan]
                                      router-state-maintainer]
                               (let [start-service
                                     (fn start-service [service-id]
@@ -1018,19 +1018,19 @@
                                     state-chan (au/latest-chan)]
                                 (async/tap router-state-push-mult state-chan)
                                 (state/start-service-chan-maintainer
-                                  {} instance-rpc-chan state-chan query-app-maintainer-chan start-service remove-service retrieve-channel)))
+                                  {} instance-rpc-chan state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
    :state-sources (pc/fnk [[:scheduler scheduler]
-                           [:state query-app-maintainer-chan]
+                           [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
                            scheduler-broken-services-gc scheduler-services-gc]
-                    {:app-maintainer-state query-app-maintainer-chan
-                     :autoscaler-state (:query-service-state-fn autoscaler)
+                    {:autoscaler-state (:query-service-state-fn autoscaler)
                      :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
                      :interstitial-maintainer-state (:query-chan interstitial-maintainer)
                      :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
                      :scheduler-services-gc-state (:query scheduler-services-gc)
                      :scheduler-state (fn scheduler-state-fn [service-id]
                                         (scheduler/service-id->state scheduler service-id))
+                     :service-maintainer-state query-service-maintainer-chan
                      :transient-metrics-gc-state (:query gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]

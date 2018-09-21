@@ -32,20 +32,6 @@
 
 (def ^:const status-check-path "/status")
 
-(defn extract-health-check-url
-  "Extract the health-check-url from App Info"
-  [app-info default-url]
-  (let [health-check-data-list (get-in app-info [:app :healthChecks])
-        health-check-data (first health-check-data-list)]
-    (:path health-check-data default-url)))
-
-(defn annotate-tasks-with-health-url
-  "Introduce the health-check-url into the task metadata"
-  [app-info]
-  (let [health-check-url (extract-health-check-url app-info status-check-path)
-        map-assoc-health-check-func (fn [x] (map #(assoc % :health-check-url health-check-url) x))]
-    (update-in app-info [:app :tasks] map-assoc-health-check-func)))
-
 ;;; Service instance blacklisting, work-stealing, access and creation
 
 ;; Attempt to blacklist instances
@@ -227,7 +213,7 @@
   "Starts a `clojure.core.async/go` block to query the router state to get an
    available instance to send a request. It will continue to query the state until
    an instance is available."
-  [instance-rpc-chan service-id {:keys [cid] :as reason-map} app-not-found-fn queue-timeout-ms metric-group]
+  [instance-rpc-chan service-id {:keys [cid] :as reason-map} service-not-found-fn queue-timeout-ms metric-group]
   (async/go
     (try
       (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))
@@ -272,7 +258,7 @@
                                 :work-stealing-offers-sent (counters/value (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
                                 :status 503})))
                   (do
-                    (cid/with-correlation-id cid (app-not-found-fn))
+                    (cid/with-correlation-id cid (service-not-found-fn))
                     (async/<! (async/timeout 1500))
                     (recur (inc iterations)))))))))
       (catch Exception e
@@ -285,9 +271,9 @@
 ;; Create service helpers
 
 (defn start-new-service
-  "Sends a call to the scheduler to start an app with the descriptor.
+  "Sends a call to the scheduler to start a service with the descriptor.
    Cached to prevent too many duplicate requests going to the scheduler."
-  [scheduler descriptor cache-atom ^ExecutorService start-app-threadpool
+  [scheduler descriptor cache-atom ^ExecutorService start-service-threadpool
    & {:keys [pre-start-fn start-fn] :or {pre-start-fn nil, start-fn nil}}]
   (let [cache-key (:service-id descriptor)]
     (when-not (cache/has? @cache-atom cache-key)
@@ -307,6 +293,6 @@
                                    (pre-start-fn))
                                  (scheduler/create-service-if-new scheduler descriptor)
                                  (catch Exception e
-                                   (log/warn e "Error starting new app")))))]
-            (.submit start-app-threadpool
+                                   (log/warn e "Error starting new service")))))]
+            (.submit start-service-threadpool
                      ^Runnable (fn [] (cid/with-correlation-id correlation-id (start-fn))))))))))

@@ -30,12 +30,12 @@
             [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
 
-(defn get-app-instance-stats
+(defn get-service-instance-stats
   "Queries scheduler to find the number of instances and running tasks for all apps"
   [scheduler]
   (when-let [apps (try
                     (scheduler/retry-on-transient-server-exceptions
-                      "get-app-instance-stats"
+                      "get-service-instance-stats"
                       (scheduler/get-services scheduler))
                     (catch Exception ex
                       (log/warn ex "fetch failed for instance counts from scheduler")))]
@@ -519,7 +519,7 @@
                         (if (leader?-fn)
                           (let [global-state' (or (service-id->metrics-fn) global-state)
                                 cycle-start-time (t/now)
-                                service-id->scheduler-state' (get-app-instance-stats scheduler)]
+                                service-id->scheduler-state' (get-service-instance-stats scheduler)]
                             (timers/start-stop-time!
                               (metrics/waiter-timer "autoscaler" "processing")
                               (let [service->scale-state'

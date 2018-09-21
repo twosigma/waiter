@@ -189,9 +189,9 @@
 
 (defn- make-http-request
   "Makes an asynchronous request to the endpoint using Basic authentication."
-  [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body app-password
+  [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body service-password
    {:keys [username principal]} idle-timeout output-buffer-size]
-  (let [auth (make-basic-auth-fn endpoint "waiter" app-password)
+  (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)]
     (http/request
       http-client

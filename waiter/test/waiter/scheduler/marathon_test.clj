@@ -580,7 +580,7 @@
   [& {:as marathon-config}]
   (-> {:force-kill-after-ms 1000
        :home-path-prefix "/home/path/"
-       :is-waiter-app?-fn (constantly true)
+       :is-waiter-service?-fn (constantly true)
        :marathon-api {}
        :mesos-api {}
        :retrieve-framework-id-fn (constantly nil)
@@ -688,7 +688,7 @@
 
 (deftest test-marathon-scheduler
   (testing "Creating a MarathonScheduler"
-    (let [context {:is-waiter-app?-fn (constantly nil)
+    (let [context {:is-waiter-service?-fn (constantly nil)
                    :leader?-fn (constantly nil)
                    :scheduler-name "marathon"
                    :scheduler-state-chan (async/chan 4)
@@ -949,7 +949,7 @@
 (let [marathon-api {:identifier (str "marathon-api-" (rand-int 10000))}
       make-marathon-scheduler (fn [service-id->out-of-sync-state-store]
                                 {:identifier (str "marathon-scheduler-" (rand-int 10000))
-                                 :is-waiter-app?-fn (fn [id] (str/starts-with? id "ws-"))
+                                 :is-waiter-service?-fn (fn [id] (str/starts-with? id "ws-"))
                                  :marathon-api marathon-api
                                  :service-id->out-of-sync-state-store service-id->out-of-sync-state-store})
       interval-ms 2000

@@ -661,7 +661,7 @@
   refresh-value)
 
 (deftest test-kubernetes-scheduler
-  (let [context {:is-waiter-app?-fn (constantly nil)
+  (let [context {:is-waiter-service?-fn (constantly nil)
                  :leader?-fn (constantly nil)
                  :scheduler-name "kubernetes"
                  :scheduler-state-chan (async/chan 4)

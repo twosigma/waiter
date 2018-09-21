@@ -186,7 +186,7 @@
             latest-descriptor)))))
 
 (defn request-authorized?
-  "Takes the request w/ kerberos auth info & the app headers, and returns true if the user is allowed to use "
+  "Returns true if the user is allowed to use "
   [user permitted-user]
   (log/debug "validating:" (str "permitted=" permitted-user) (str "actual=" user))
   (or (= token/ANY-USER permitted-user)

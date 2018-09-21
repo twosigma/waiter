@@ -363,7 +363,7 @@
     :query-params query-params))
 
 (defn make-kitchen-request
-  "Makes an on-the-fly request to the Kitchen test app."
+  "Makes an on-the-fly request to the Kitchen test service."
   [waiter-url custom-headers &
    {:keys [body cookies debug method path query-params]
     :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
@@ -526,7 +526,7 @@
          (try
            (scale-service-to waiter-url service-id 0)
            (catch Exception e
-             (log/error "Error in deleting app" service-id ":" (.getMessage e)))))))))
+             (log/error "Error in deleting service" service-id ":" (.getMessage e)))))))))
 
 (defn await-futures
   [futures & {:keys [verbose] :or {verbose false}}]
@@ -856,7 +856,7 @@
   (setting waiter-url [:scheduler-config :kind] :verbose verbose))
 
 (defn service-id->grace-period
-  "Fetches from Marathon and returns the grace period in seconds for the given app"
+  "Fetches from Marathon and returns the grace period in seconds for the given service"
   [waiter-url service-id]
   (let [marathon-url (marathon-url waiter-url)
         app-info-path (str "/v2/apps/" service-id)
