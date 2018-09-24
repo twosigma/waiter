@@ -1184,7 +1184,8 @@
    Maintains the state of the router as well as the state of marathon and the existence of other routers.
    Acts as the central access point for modifying this data for the router.
    Exposes the state of the router via a `query-state-fn` no-args function that is returned."
-  [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config]
+  [scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
+   refresh-service-descriptions-fn deployment-error-config]
   (cid/with-correlation-id
     "router-state-maintainer"
     (let [killed-instances-to-keep 10
@@ -1208,7 +1209,7 @@
           go-chan
           (async/go
             (try
-              (loop [{:keys [iteration routers] :as current-state} @state-atom]
+              (loop [{:keys [routers] :as current-state} @state-atom]
                 (reset! state-atom current-state)
                 (let [next-state
                       (async/alt!
@@ -1248,6 +1249,7 @@
                                                   (count service-id->healthy-instances') "services with healthy instances and"
                                                   (count services-without-instances) "services without instances:"
                                                   (vec services-without-instances)))
+                                      (refresh-service-descriptions-fn all-available-service-ids')
                                       (assoc loop-state
                                         :all-available-service-ids all-available-service-ids'
                                         :service-id->healthy-instances service-id->healthy-instances'

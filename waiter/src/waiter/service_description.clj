@@ -645,11 +645,21 @@
   (defn fetch-core
     "Loads the service description for the specified service-id from the key-value store."
     [kv-store ^String service-id & {:keys [refresh nil-on-missing?] :or {refresh false nil-on-missing? true}}]
+    (when refresh
+      (log/info "force fetching core service description for" service-id))
     (let [service-description (kv/fetch kv-store (service-id->key service-id) :refresh refresh)]
       (if (map? service-description)
         service-description
         (when-not nil-on-missing?
           (throw (ex-info "No description found!" {:service-id service-id})))))))
+
+(defn refresh-service-descriptions
+  "Refreshes missing service descriptions for the specified service ids."
+  [kv-store service-ids]
+  (doseq [service-id service-ids]
+    (when-not (fetch-core kv-store service-id :refresh false)
+      (log/info "refreshing the service description for" service-id)
+      (fetch-core kv-store service-id :nil-on-missing? false :refresh true))))
 
 (let [service-id->key #(str "^STATUS#" %)]
   (defn suspend-service
@@ -833,10 +843,9 @@
 
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
-  [kv-store service-id service-description-defaults metric-group-mappings &
-   {:keys [effective? nil-on-missing? refresh] :or {effective? true nil-on-missing? true refresh false}}]
-  (cond-> (fetch-core kv-store service-id :nil-on-missing? nil-on-missing? :refresh refresh)
-          effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
+  [kv-store service-id service-description-defaults metric-group-mappings & {:keys [effective?] :or {effective? true}}]
+  (cond-> (fetch-core kv-store service-id :refresh false)
+    effective? (default-and-override metric-group-mappings kv-store service-description-defaults service-id)))
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."

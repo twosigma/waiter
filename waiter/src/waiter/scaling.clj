@@ -191,7 +191,9 @@
   "Computes the new scale amount subject to quanta restrictions.
    The returned value is guaranteed to be at least 1."
   [service-description quanta-constraints scale-amount]
-  {:pre [(pos? scale-amount) (integer? scale-amount)]
+  {:pre [(seq service-description)
+         (pos? scale-amount)
+         (integer? scale-amount)]
    :post [(pos? %) (<= % scale-amount)]}
   (-> scale-amount
       (min (quot (:cpus quanta-constraints) (get service-description "cpus"))

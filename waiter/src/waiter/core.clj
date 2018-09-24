@@ -775,6 +775,9 @@
                              (if (str/blank? endpoint-url)
                                endpoint-url
                                (str "http://" hostname ":" port endpoint-url)))))
+   :refresh-service-descriptions-fn (pc/fnk [[:curator kv-store]]
+                                      (fn refresh-service-descriptions-fn [service-ids]
+                                        (sd/refresh-service-descriptions kv-store service-ids)))
    :request->descriptor-fn (pc/fnk [[:curator kv-store]
                                     [:settings [:token-config history-length token-defaults] metric-group-mappings service-description-defaults]
                                     [:state fallback-state-atom service-description-builder service-id-prefix waiter-hostnames]
@@ -957,14 +960,15 @@
                                :router-syncer (metrics-sync/setup-router-syncer router-chan router-metrics-agent router-update-interval-ms
                                                                                 inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms
                                                                                 websocket-client bytes-encryptor websocket-request-auth-cookie-attacher)}))
-   :router-state-maintainer (pc/fnk [[:routines service-id->service-description-fn]
+   :router-state-maintainer (pc/fnk [[:routines refresh-service-descriptions-fn service-id->service-description-fn]
                                      [:settings deployment-error-config]
                                      [:state router-id scheduler-state-chan]
                                      router-list-maintainer]
                               (let [exit-chan (async/chan)
                                     router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))
                                     maintainer (state/start-router-state-maintainer
-                                                 scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn deployment-error-config)]
+                                                 scheduler-state-chan router-chan router-id exit-chan service-id->service-description-fn
+                                                 refresh-service-descriptions-fn deployment-error-config)]
                                 {:exit-chan exit-chan
                                  :maintainer maintainer}))
    :scheduler-broken-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn leader?-fn]
