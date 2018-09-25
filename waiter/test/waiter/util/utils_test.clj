@@ -26,6 +26,7 @@
             [full.async :refer (<?? <? go-try)]
             [waiter.password-store]
             [waiter.test-helpers :refer :all]
+            [waiter.util.cache-utils :refer :all]
             [waiter.util.date-utils :refer :all]
             [waiter.util.utils :refer :all])
   (:import clojure.lang.ExceptionInfo

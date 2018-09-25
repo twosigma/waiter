@@ -20,8 +20,8 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [taoensso.nippy :as nippy]
-            [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils])
+            [waiter.util.cache-utils :as cu]
+            [waiter.util.ring-utils :as ru])
   (:import clojure.lang.ExceptionInfo
            org.eclipse.jetty.util.UrlEncoded))
 
@@ -96,6 +96,6 @@
   (defn decode-cookie-cached
     "Decode Waiter encoded cookie."
     [^String waiter-cookie password]
-    (utils/atom-cache-get-or-load
+    (cu/atom-cache-get-or-load
       cookie-cache waiter-cookie
       (fn [] (decode-cookie waiter-cookie password)))))

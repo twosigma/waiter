@@ -23,6 +23,7 @@
             [taoensso.nippy.compression :as compression]
             [waiter.curator :as curator]
             [waiter.metrics :as metrics]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.utils :as utils])
   (:import java.util.Arrays
            org.apache.curator.framework.CuratorFramework))
@@ -197,15 +198,15 @@
       (if (cache/has? @cache key)
         (do
           (log/info "evicting entry for" key "from cache")
-          (utils/atom-cache-evict cache key))
+          (cu/atom-cache-evict cache key))
         (log/info "refresh is a no-op as cache does not contain" key)))
-    (utils/atom-cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
+    (cu/atom-cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
   (store [_ key value]
-    (utils/atom-cache-evict cache key)
+    (cu/atom-cache-evict cache key)
     (store inner-kv-store key value))
   (delete [_ key]
     (log/info "evicting deleted entry" key "from cache")
-    (utils/atom-cache-evict cache key)
+    (cu/atom-cache-evict cache key)
     (delete inner-kv-store key))
   (state [_]
     (let [cache-data (into (hash-map) @cache)]
