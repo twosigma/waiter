@@ -94,7 +94,7 @@
     "Performs health check if an entry does not exist in the healthy-instance-cache."
     [task-id health-check-url]
     ;; TODO Move health check out of critical path, e.g. by storing a future in the cache
-    (let [health-result (cu/atom-cache-get-or-load
+    (let [health-result (cu/cache-get-or-load
                           healthy-instance-cache
                           task-id
                           (fn perform-instance-health-check []
@@ -108,7 +108,7 @@
                                 false))))]
       ;; Do not track unhealthy instances in the cache
       (when-not health-result
-        (cu/atom-cache-evict healthy-instance-cache task-id))
+        (cu/cache-evict healthy-instance-cache task-id))
       health-result)))
 
 (defn- job->port

@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.cache-utils
-  (:require [clojure.core.cache :as cache]))
+  (:import [com.google.common.cache Cache CacheBuilder]
+           [java.util.concurrent TimeUnit]))
 
 (defn cache-factory
   "Creates a cache wrapped in an atom.
@@ -22,27 +23,37 @@
    The threshold argument defines the maximum number of elements in the cache.
    The ttl argument that defines the time (in millis) that entries are allowed to reside in the cache."
   [{:keys [threshold ttl]}]
-  (cond-> {}
-    threshold (cache/fifo-cache-factory :threshold threshold)
-    ttl (cache/ttl-cache-factory :ttl ttl)
-    true atom))
+  (cond-> (CacheBuilder/newBuilder)
+    threshold (.maximumSize threshold)
+    ttl (.expireAfterAccess ttl TimeUnit/MILLISECONDS)
+    true (.build)))
 
 (defn cache-contains?
   "Checks if the cache contains a value associated with cache-key."
-  [cache-atom cache-key]
-  (cache/has? @cache-atom cache-key))
+  [^Cache cache cache-key]
+  (-> (.getIfPresent cache cache-key)
+      nil?
+      not))
 
-(defn atom-cache-get-or-load
+(defn cache-size
+  "Returns the approximate number of entries in this cache."
+  [^Cache cache]
+  (.size cache))
+
+(defn cache-get-or-load
   "Gets a value from a cache based upon the key.
    On cache miss, call get-fn with the key and place result into the cache in {:data value} form.
    This allows us to handle nil values as results of the get-fn."
-  [cache-atom key get-fn]
-  (let [d (delay (get-fn))
-        _ (swap! cache-atom #(cache/through (fn [_] {:data @d}) % key))
-        out (cache/lookup @cache-atom key)]
-    (if-not (nil? out) (:data out) @d)))
+  [^Cache cache cache-key get-fn]
+  (-> cache
+      (.get cache-key (fn cache-loader [] {:data (get-fn)}))
+      :data))
 
-(defn atom-cache-evict
+(defn cache-evict
   "Evicts a key from an atom-based cache."
-  [cache-atom key]
-  (swap! cache-atom #(cache/evict % key)))
+  [^Cache cache key]
+  (.invalidate cache key))
+
+(defn cache->map
+  [^Cache cache]
+  (into {} (.asMap cache)))

@@ -197,21 +197,21 @@
       (if (cu/cache-contains? cache key)
         (do
           (log/info "evicting entry for" key "from cache")
-          (cu/atom-cache-evict cache key))
+          (cu/cache-evict cache key))
         (log/info "refresh is a no-op as cache does not contain" key)))
-    (cu/atom-cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
+    (cu/cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
   (store [_ key value]
-    (cu/atom-cache-evict cache key)
+    (cu/cache-evict cache key)
     (store inner-kv-store key value))
   (delete [_ key]
     (log/info "evicting deleted entry" key "from cache")
-    (cu/atom-cache-evict cache key)
+    (cu/cache-evict cache key)
     (delete inner-kv-store key))
   (state [_]
-    (let [cache-data (into (hash-map) @cache)]
-      {:cache {:count (count cache-data), :data cache-data}
-       :inner-state (state inner-kv-store)
-       :variant "cache"})))
+    {:cache {:count (cu/cache-size cache)
+             :data (cu/cache->map cache)}
+     :inner-state (state inner-kv-store)
+     :variant "cache"}))
 
 (defn new-cached-kv-store [{:keys [threshold ttl]} kv-store]
   (->> {:threshold threshold

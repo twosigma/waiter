@@ -93,6 +93,6 @@
   (defn decode-cookie-cached
     "Decode Waiter encoded cookie."
     [^String waiter-cookie password]
-    (cu/atom-cache-get-or-load
+    (cu/cache-get-or-load
       cookie-cache waiter-cookie
       (fn [] (decode-cookie waiter-cookie password)))))
