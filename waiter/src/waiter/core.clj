@@ -17,7 +17,6 @@
   (:require [bidi.bidi :as bidi]
             [clj-time.core :as t]
             [clojure.core.async :as async]
-            [clojure.core.cache :as cache]
             [clojure.java.io :as io]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -58,6 +57,7 @@
             [waiter.statsd :as statsd]
             [waiter.token :as token]
             [waiter.util.async-utils :as au]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]
@@ -536,10 +536,8 @@
                                     service-description-builder-config :context {:constraints service-description-constraints}))
    :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
    :start-service-cache-atom (pc/fnk []
-                               (-> {}
-                                   (cache/fifo-cache-factory :threshold 100)
-                                   (cache/ttl-cache-factory :ttl (-> 1 t/minutes t/in-millis))
-                                   atom))
+                               (cu/cache-factory {:threshold 100
+                                                  :ttl (-> 1 t/minutes t/in-millis)}))
    :task-threadpool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :waiter-hostnames (pc/fnk [[:settings hostname]]

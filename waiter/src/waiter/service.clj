@@ -15,7 +15,6 @@
 ;;
 (ns waiter.service
   (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
             [clojure.core.async :as async]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
@@ -27,6 +26,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.utils :as utils])
   (:import java.util.concurrent.ExecutorService))
 
@@ -275,24 +275,18 @@
    Cached to prevent too many duplicate requests going to the scheduler."
   [scheduler descriptor cache-atom ^ExecutorService start-service-threadpool
    & {:keys [pre-start-fn start-fn] :or {pre-start-fn nil, start-fn nil}}]
-  (let [cache-key (:service-id descriptor)]
-    (when-not (cache/has? @cache-atom cache-key)
-      (let [my-value (Object.)
-            cache (swap! cache-atom
-                         (fn [c]
-                           (if (cache/has? c cache-key)
-                             (cache/hit c cache-key)
-                             (cache/miss c cache-key my-value))))
-            cache-value (cache/lookup cache cache-key)]
-        (when (identical? my-value cache-value)
-          (let [correlation-id (cid/get-correlation-id)
-                start-fn (or start-fn
-                             (fn []
-                               (try
-                                 (when pre-start-fn
-                                   (pre-start-fn))
-                                 (scheduler/create-service-if-new scheduler descriptor)
-                                 (catch Exception e
-                                   (log/warn e "Error starting new service")))))]
-            (.submit start-service-threadpool
-                     ^Runnable (fn [] (cid/with-correlation-id correlation-id (start-fn))))))))))
+  (let [cache-key (:service-id descriptor)
+        my-value (Object.)
+        cache-value (cu/atom-cache-get-or-load cache-atom cache-key (constantly my-value))]
+    (when (identical? my-value cache-value)
+      (let [correlation-id (cid/get-correlation-id)
+            start-fn (or start-fn
+                         (fn []
+                           (try
+                             (when pre-start-fn
+                               (pre-start-fn))
+                             (scheduler/create-service-if-new scheduler descriptor)
+                             (catch Exception e
+                               (log/warn e "Error starting new service")))))]
+        (.submit start-service-threadpool
+                 ^Runnable (fn [] (cid/with-correlation-id correlation-id (start-fn))))))))

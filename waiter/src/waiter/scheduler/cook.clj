@@ -16,7 +16,6 @@
 (ns waiter.scheduler.cook
   (:require [clj-time.coerce :as tc]
             [clj-time.core :as t]
-            [clojure.core.cache :as cache]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
@@ -89,10 +88,8 @@
                                                    :socket-timeout 10000
                                                    :spnego-auth false})
       ;; TODO make this cache configurable
-      healthy-instance-cache (-> {}
-                                 (cache/fifo-cache-factory :threshold 5000)
-                                 (cache/ttl-cache-factory :ttl (-> 10 t/seconds t/in-millis))
-                                 atom)]
+      healthy-instance-cache (cu/cache-factory {:threshold 5000
+                                                :ttl (-> 10 t/seconds t/in-millis)})]
   (defn- instance-healthy?
     "Performs health check if an entry does not exist in the healthy-instance-cache."
     [task-id health-check-url]

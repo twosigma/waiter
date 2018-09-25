@@ -15,7 +15,6 @@
 ;;
 (ns waiter.kv
   (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
             [clojure.tools.logging :as log]
             [digest]
             [metrics.meters :as meters]
@@ -195,7 +194,7 @@
   KeyValueStore
   (retrieve [_ key refresh]
     (when refresh
-      (if (cache/has? @cache key)
+      (if (cu/cache-contains? cache key)
         (do
           (log/info "evicting entry for" key "from cache")
           (cu/atom-cache-evict cache key))
@@ -215,11 +214,10 @@
        :variant "cache"})))
 
 (defn new-cached-kv-store [{:keys [threshold ttl]} kv-store]
-  (CachedKeyValueStore. kv-store
-                        (-> {}
-                            (cache/fifo-cache-factory :threshold threshold)
-                            (cache/ttl-cache-factory :ttl (-> ttl t/seconds t/in-millis))
-                            atom)))
+  (->> {:threshold threshold
+        :ttl (-> ttl t/seconds t/in-millis)}
+       cu/cache-factory
+       (CachedKeyValueStore. kv-store)))
 
 (defn- conditional-kv-wrapper
   "Decorator pattern around the given kv-impl"

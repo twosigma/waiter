@@ -15,7 +15,6 @@
 ;;
 (ns waiter.cookie-support
   (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
             [clojure.data.codec.base64 :as b64]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -90,9 +89,7 @@
                       (-> (ex-data e)
                           (update-in [:opts :password] (fn [password] (when password "***")))))))))
 
-(let [cookie-cache (-> {}
-                       (cache/ttl-cache-factory :ttl (-> 300 t/seconds t/in-millis))
-                       atom)]
+(let [cookie-cache (cu/cache-factory {:ttl (-> 300 t/seconds t/in-millis)})]
   (defn decode-cookie-cached
     "Decode Waiter encoded cookie."
     [^String waiter-cookie password]
