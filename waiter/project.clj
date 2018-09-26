@@ -70,8 +70,8 @@
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/core.async "0.3.442"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
-                 [org.clojure/core.cache "0.6.5"]
-                 [org.clojure/core.memoize "0.5.9"
+                 [org.clojure/core.cache "0.7.1"]
+                 [org.clojure/core.memoize "0.7.1"
                   :exclusions [org.clojure/clojure]]
                  [org.clojure/data.codec "0.1.0"]
                  [org.clojure/data.json "0.2.6"]
