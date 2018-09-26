@@ -15,7 +15,6 @@
 ;;
 (ns waiter.kv
   (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
             [clojure.tools.logging :as log]
             [digest]
             [metrics.meters :as meters]
@@ -23,6 +22,7 @@
             [taoensso.nippy.compression :as compression]
             [waiter.curator :as curator]
             [waiter.metrics :as metrics]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.utils :as utils])
   (:import java.util.Arrays
            org.apache.curator.framework.CuratorFramework))
@@ -194,31 +194,30 @@
   KeyValueStore
   (retrieve [_ key refresh]
     (when refresh
-      (if (cache/has? @cache key)
+      (if (cu/cache-contains? cache key)
         (do
           (log/info "evicting entry for" key "from cache")
-          (utils/atom-cache-evict cache key))
+          (cu/cache-evict cache key))
         (log/info "refresh is a no-op as cache does not contain" key)))
-    (utils/atom-cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
+    (cu/cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
   (store [_ key value]
-    (utils/atom-cache-evict cache key)
+    (cu/cache-evict cache key)
     (store inner-kv-store key value))
   (delete [_ key]
     (log/info "evicting deleted entry" key "from cache")
-    (utils/atom-cache-evict cache key)
+    (cu/cache-evict cache key)
     (delete inner-kv-store key))
   (state [_]
-    (let [cache-data (into (hash-map) @cache)]
-      {:cache {:count (count cache-data), :data cache-data}
-       :inner-state (state inner-kv-store)
-       :variant "cache"})))
+    {:cache {:count (cu/cache-size cache)
+             :data (cu/cache->map cache)}
+     :inner-state (state inner-kv-store)
+     :variant "cache"}))
 
 (defn new-cached-kv-store [{:keys [threshold ttl]} kv-store]
-  (CachedKeyValueStore. kv-store
-                        (-> {}
-                            (cache/fifo-cache-factory :threshold threshold)
-                            (cache/ttl-cache-factory :ttl (-> ttl t/seconds t/in-millis))
-                            atom)))
+  (->> {:threshold threshold
+        :ttl (-> ttl t/seconds t/in-millis)}
+       cu/cache-factory
+       (CachedKeyValueStore. kv-store)))
 
 (defn- conditional-kv-wrapper
   "Decorator pattern around the given kv-impl"

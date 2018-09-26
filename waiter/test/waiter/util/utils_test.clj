@@ -18,7 +18,6 @@
             [clj-time.format :as f]
             [clj-time.periodic :as periodic]
             [clojure.core.async :as async]
-            [clojure.core.cache :as cache]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -26,6 +25,7 @@
             [full.async :refer (<?? <? go-try)]
             [waiter.password-store]
             [waiter.test-helpers :refer :all]
+            [waiter.util.cache-utils :refer :all]
             [waiter.util.date-utils :refer :all]
             [waiter.util.utils :refer :all])
   (:import clojure.lang.ExceptionInfo
@@ -205,41 +205,60 @@
     (is (= 2 (log-and-suppress-when-exception-thrown "Error message" (get-when-positive-fn))))))
 
 (deftest test-atom-cache-get-or-load
-  (let [cache (atom (cache/fifo-cache-factory {} :threshold 2))
-        counter-atom (atom 0)
-        get-fn #(even? (swap! counter-atom inc))]
+  (let [cache (cache-factory {:threshold 2})]
     (testing "first-new-key"
-      (is (false? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 1 @counter-atom)))
+      (is (= 1 (cache-get-or-load cache "one" (constantly 1))))
+      (is (cache-contains? cache "one"))
+      (is (= 1 (cache-size cache))))
+
     (testing "cached-key"
-      (is (false? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 1 @counter-atom)))
+      (is (= 1 (cache-get-or-load cache "one" (constantly 10))))
+      (is (cache-contains? cache "one"))
+      (is (= 1 (cache-size cache))))
+
     (testing "second-new-key"
-      (is (true? (atom-cache-get-or-load cache "two" get-fn)))
-      (is (= 2 @counter-atom))
-      (is (false? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 2 @counter-atom)))
+      (is (= 2 (cache-get-or-load cache "two" (constantly 2))))
+      (is (= 1 (cache-get-or-load cache "one" (constantly 10))))
+      (is (cache-contains? cache "two"))
+      (is (cache-contains? cache "one"))
+      (is (= 2 (cache-size cache))))
+
     (testing "key-eviction"
-      (is (false? (atom-cache-get-or-load cache "three" get-fn)))
-      (is (= 3 @counter-atom))
-      (is (true? (atom-cache-get-or-load cache "two" get-fn)))
-      (is (= 3 @counter-atom))
-      (is (true? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 4 @counter-atom))
-      (is (false? (atom-cache-get-or-load cache "three" get-fn)))
-      (is (= 4 @counter-atom))))
+      (is (= 3 (cache-get-or-load cache "three" (constantly 3))))
+      (is (not (cache-contains? cache "two")))
+      (is (cache-contains? cache "one"))
+      (is (cache-contains? cache "three"))
+      (is (= 2 (cache-size cache)))
+
+      (is (= 20 (cache-get-or-load cache "two" (constantly 20))))
+      (is (not (cache-contains? cache "one")))
+      (is (cache-contains? cache "three"))
+      (is (cache-contains? cache "two"))
+      (is (= 2 (cache-size cache)))
+
+      (is (= 10 (cache-get-or-load cache "one" (constantly 10))))
+      (is (= 30 (cache-get-or-load cache "three" (constantly 30))))
+      (is (not (cache-contains? cache "two")))
+      (is (cache-contains? cache "one"))
+      (is (cache-contains? cache "three"))
+      (is (= 2 (cache-size cache)))))
+
+  (testing "cache ttl eviction"
+    (let [cache (cache-factory {:threshold 2 :ttl 100})]
+      (is (= 10 (cache-get-or-load cache "one" (constantly 10))))
+      (is (= 10 (cache-get-or-load cache "one" (constantly 11))))
+      (is (= 1 (cache-size cache)))
+      (Thread/sleep 110)
+      (is (= 12 (cache-get-or-load cache "one" (constantly 12))))
+      (is (= 1 (cache-size cache)))))
+
   (testing "get-fn-returns-nil"
-    (let [cache (atom (cache/fifo-cache-factory {} :threshold 2))
-          counter-atom (atom 0)
-          get-fn #(do (swap! counter-atom inc) nil)]
-      (is (nil? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 1 @counter-atom))
-      (is (nil? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 1 @counter-atom))
-      (is (nil? (atom-cache-get-or-load cache "two" get-fn)))
-      (is (= 2 @counter-atom))
-      (is (nil? (atom-cache-get-or-load cache "one" get-fn)))
-      (is (= 2 @counter-atom)))))
+    (let [cache (cache-factory {:threshold 2})]
+      (is (nil? (cache-get-or-load cache "one" (constantly nil))))
+      (is (nil? (cache-get-or-load cache "two" (constantly nil))))
+      (is (cache-contains? cache "one"))
+      (is (cache-contains? cache "two"))
+      (is (= 2 (cache-size cache))))))
 
 (deftest test-retry-strategy
   (let [make-call-atom-and-function (fn [num-failures return-value]

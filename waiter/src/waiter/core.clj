@@ -17,7 +17,6 @@
   (:require [bidi.bidi :as bidi]
             [clj-time.core :as t]
             [clojure.core.async :as async]
-            [clojure.core.cache :as cache]
             [clojure.java.io :as io]
             [clojure.set :as set]
             [clojure.string :as str]
@@ -58,6 +57,7 @@
             [waiter.statsd :as statsd]
             [waiter.token :as token]
             [waiter.util.async-utils :as au]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]
@@ -535,12 +535,10 @@
                                   (utils/create-component
                                     service-description-builder-config :context {:constraints service-description-constraints}))
    :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
-   :start-service-cache-atom (pc/fnk []
-                               (-> {}
-                                   (cache/fifo-cache-factory :threshold 100)
-                                   (cache/ttl-cache-factory :ttl (-> 1 t/minutes t/in-millis))
-                                   atom))
-   :task-threadpool (pc/fnk [] (Executors/newFixedThreadPool 20))
+   :start-service-cache (pc/fnk []
+                          (cu/cache-factory {:threshold 100
+                                             :ttl (-> 1 t/minutes t/in-millis)}))
+   :task-thread-pool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :waiter-hostnames (pc/fnk [[:settings hostname]]
                        (set (if (sequential? hostname)
@@ -816,13 +814,13 @@
    :service-id->source-tokens-entries-fn (pc/fnk [[:curator kv-store]]
                                            (partial sd/service-id->source-tokens-entries kv-store))
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
-                                  [:state authenticator start-service-cache-atom task-threadpool]
+                                  [:state authenticator start-service-cache task-thread-pool]
                                   store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
                              (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
                                (auth/check-user authenticator run-as-user service-id))
                              (service/start-new-service
-                               scheduler descriptor start-service-cache-atom task-threadpool
+                               scheduler descriptor start-service-cache task-thread-pool
                                :pre-start-fn #(store-service-description-fn descriptor))))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]

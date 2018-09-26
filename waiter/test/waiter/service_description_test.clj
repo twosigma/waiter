@@ -15,7 +15,6 @@
 ;;
 (ns waiter.service-description-test
   (:require [clj-time.core :as t]
-            [clojure.core.cache :as cache]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -23,7 +22,8 @@
             [schema.core :as s]
             [waiter.authorization :as authz]
             [waiter.kv :as kv]
-            [waiter.service-description :refer :all])
+            [waiter.service-description :refer :all]
+            [waiter.util.cache-utils :as cu])
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
 
@@ -1784,7 +1784,7 @@
 
     (testing "cached empty data"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-            cache (atom (cache/fifo-cache-factory {} :threshold 10))
+            cache (cu/cache-factory {:threshold 10})
             cache-kv-store (kv/->CachedKeyValueStore kv-store cache)
             service-id "test-service-1"
             service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
@@ -1799,7 +1799,7 @@
 
 (deftest test-refresh-service-descriptions
   (let [raw-kv-store (kv/->LocalKeyValueStore (atom {}))
-        cache (atom (cache/fifo-cache-factory {} :threshold 10))
+        cache (cu/cache-factory {:threshold 10})
         cache-kv-store (kv/->CachedKeyValueStore raw-kv-store cache)
         service-id->key (fn [service-id] (str "^SERVICE-ID#" service-id))
         service-id->service-description (fn [service-id] {"cmd" "tc" "cpus" 1 "mem" 200 "version" service-id})
@@ -1849,7 +1849,7 @@
 
     (testing "cached empty data"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-            cache (atom (cache/fifo-cache-factory {} :threshold 10))
+            cache (cu/cache-factory {:threshold 10})
             cache-kv-store (kv/->CachedKeyValueStore kv-store cache)
             service-id "test-service-1"
             service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]

@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.utils
-  (:require [clojure.core.cache :as cache]
-            [clojure.data.json :as json]
+  (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
@@ -80,22 +79,6 @@
       (UUID/fromString s)
       (catch Exception _
         nil))))
-
-
-(defn atom-cache-get-or-load
-  "Gets a value from a cache based upon the key.
-   On cache miss, call get-fn with the key and place result into the cache in {:data value} form.
-   This allows us to handle nil values as results of the get-fn."
-  [cache key get-fn]
-  (let [d (delay (get-fn))
-        _ (swap! cache #(cache/through (fn [_] {:data @d}) % key))
-        out (cache/lookup @cache key)]
-    (if-not (nil? out) (:data out) @d)))
-
-(defn atom-cache-evict
-  "Evicts a key from an atom-based cache."
-  [cache key]
-  (swap! cache #(cache/evict % key)))
 
 (defn truncate [in-str max-len]
   (let [ellipsis "..."

@@ -36,8 +36,8 @@
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.12.0"
-                  :exclusions
-                  [joda-time]]
+                  :exclusions [joda-time]]
+                 [com.google.guava/guava "20.0"]
                  [com.taoensso/nippy "2.12.2"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [comb "0.1.0"
@@ -64,13 +64,13 @@
                  [org.apache.curator/curator-recipes "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.apache.curator/curator-test "2.11.0"
-                  :exclusions [io.netty/netty]]
+                  :exclusions [com.google.guava/guava
+                               io.netty/netty]]
                  [org.apache.curator/curator-x-discovery "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/core.async "0.3.442"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
-                 [org.clojure/core.cache "0.7.1"]
                  [org.clojure/core.memoize "0.7.1"
                   :exclusions [org.clojure/clojure]]
                  [org.clojure/data.codec "0.1.0"]
