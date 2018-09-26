@@ -177,42 +177,42 @@
         descriptor {:service-id "test-service-id"}]
 
     (testing "start-new-service"
-      (let [cache-atom (make-cache-fn 100 20)
+      (let [cache (make-cache-fn 100 20)
             start-called-atom (atom false)
             start-fn (fn [] (reset! start-called-atom (not @start-called-atom)))
-            start-service-result (start-new-service scheduler descriptor cache-atom start-service-thread-pool :start-fn start-fn)]
+            start-service-result (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
         (is (not (nil? start-service-result)))
         (.get ^Future start-service-result)
         (is @start-called-atom)))
 
     (testing "service-already-starting"
-      (let [cache-atom (make-cache-fn 100 1000)
+      (let [cache (make-cache-fn 100 1000)
             start-called-atom (atom false)
             start-fn (fn [] (reset! start-called-atom (not @start-called-atom)))]
-        (let [start-service-result-1 (start-new-service scheduler descriptor cache-atom start-service-thread-pool :start-fn start-fn)]
+        (let [start-service-result-1 (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
           (is (not (nil? start-service-result-1)))
           (.get ^Future start-service-result-1)
           (is @start-called-atom))
-        (let [start-service-result-2 (start-new-service scheduler descriptor cache-atom start-service-thread-pool :start-fn start-fn)]
+        (let [start-service-result-2 (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
           (is (nil? start-service-result-2)))))
 
     (testing "service-starting-after-cache-eviction"
-      (let [cache-atom (make-cache-fn 100 20)
+      (let [cache (make-cache-fn 100 20)
             start-called-atom (atom 0)]
         (let [start-fn (fn [] (reset! start-called-atom 1))
-              start-service-result-1 (start-new-service scheduler descriptor cache-atom start-service-thread-pool :start-fn start-fn)]
+              start-service-result-1 (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
           (is (not (nil? start-service-result-1)))
           (.get ^Future start-service-result-1)
           (is (= 1 @start-called-atom)))
         (Thread/sleep 30)
         (let [start-fn (fn [] (reset! start-called-atom 2))
-              start-service-result-2 (start-new-service scheduler descriptor cache-atom start-service-thread-pool :start-fn start-fn)]
+              start-service-result-2 (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
           (is (not (nil? start-service-result-2)))
           (.get ^Future start-service-result-2))
         (is (= 2 @start-called-atom))))
 
     (testing "tens-of-services-starting-simultaneously"
-      (let [cache-atom (make-cache-fn 100 15000)
+      (let [cache (make-cache-fn 100 15000)
             start-called-atom (atom {})
             individual-call-result-atom (atom {})]
         (doall
@@ -222,7 +222,7 @@
                     service-id (str "test-service-id-" service-num)
                     descriptor {:service-id service-id}
                     start-fn (fn [] (swap! start-called-atom assoc service-id (not (get @start-called-atom service-id))))
-                    start-service-result (start-new-service scheduler descriptor cache-atom start-service-thread-pool :start-fn start-fn)]
+                    start-service-result (start-new-service scheduler descriptor cache start-service-thread-pool :start-fn start-fn)]
                 (if-not (nil? start-service-result)
                   (do
                     (.get ^Future start-service-result)

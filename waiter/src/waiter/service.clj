@@ -273,19 +273,23 @@
 (defn start-new-service
   "Sends a call to the scheduler to start a service with the descriptor.
    Cached to prevent too many duplicate requests going to the scheduler."
-  [scheduler {:keys [service-id] :as descriptor} cache-atom ^ExecutorService start-service-thread-pool
+  [scheduler {:keys [service-id] :as descriptor} start-service-cache ^ExecutorService start-service-thread-pool
    & {:keys [pre-start-fn start-fn] :or {pre-start-fn nil, start-fn nil}}]
   (let [my-value (Object.)
-        cache-value (cu/cache-get-or-load cache-atom service-id (constantly my-value))]
-    (when (identical? my-value cache-value)
+        cache-value (cu/cache-get-or-load start-service-cache service-id
+                                          (fn []
+                                            (log/info "setting" service-id "to" my-value "in start service cache")
+                                            my-value))]
+    (if (identical? my-value cache-value)
       (let [correlation-id (cid/get-correlation-id)
             start-fn (or start-fn
-                         (fn []
+                         (fn new-service-start-fn []
                            (try
                              (when pre-start-fn
                                (pre-start-fn))
                              (scheduler/create-service-if-new scheduler descriptor)
                              (catch Exception e
-                               (log/warn e "Error starting new service")))))]
+                               (log/warn e "error starting new service")))))]
         (.submit start-service-thread-pool
-                 ^Runnable (fn [] (cid/with-correlation-id correlation-id (start-fn))))))))
+                 ^Runnable (fn [] (cid/with-correlation-id correlation-id (start-fn)))))
+      (log/info service-id "has been started on another thread" cache-value))))

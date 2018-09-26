@@ -208,39 +208,57 @@
   (let [cache (cache-factory {:threshold 2})]
     (testing "first-new-key"
       (is (= 1 (cache-get-or-load cache "one" (constantly 1))))
-      (is (cache-contains? cache "one")))
+      (is (cache-contains? cache "one"))
+      (is (= 1 (cache-size cache))))
 
     (testing "cached-key"
       (is (= 1 (cache-get-or-load cache "one" (constantly 10))))
-      (is (cache-contains? cache "one")))
+      (is (cache-contains? cache "one"))
+      (is (= 1 (cache-size cache))))
 
     (testing "second-new-key"
       (is (= 2 (cache-get-or-load cache "two" (constantly 2))))
       (is (= 1 (cache-get-or-load cache "one" (constantly 10))))
       (is (cache-contains? cache "two"))
-      (is (cache-contains? cache "one")))
+      (is (cache-contains? cache "one"))
+      (is (= 2 (cache-size cache))))
 
     (testing "key-eviction"
       (is (= 3 (cache-get-or-load cache "three" (constantly 3))))
       (is (not (cache-contains? cache "two")))
       (is (cache-contains? cache "one"))
       (is (cache-contains? cache "three"))
+      (is (= 2 (cache-size cache)))
+
       (is (= 20 (cache-get-or-load cache "two" (constantly 20))))
       (is (not (cache-contains? cache "one")))
       (is (cache-contains? cache "three"))
       (is (cache-contains? cache "two"))
+      (is (= 2 (cache-size cache)))
+
       (is (= 10 (cache-get-or-load cache "one" (constantly 10))))
       (is (= 30 (cache-get-or-load cache "three" (constantly 30))))
       (is (not (cache-contains? cache "two")))
       (is (cache-contains? cache "one"))
-      (is (cache-contains? cache "three"))))
+      (is (cache-contains? cache "three"))
+      (is (= 2 (cache-size cache)))))
+
+  (testing "cache ttl eviction"
+    (let [cache (cache-factory {:threshold 2 :ttl 100})]
+      (is (= 10 (cache-get-or-load cache "one" (constantly 10))))
+      (is (= 10 (cache-get-or-load cache "one" (constantly 11))))
+      (is (= 1 (cache-size cache)))
+      (Thread/sleep 110)
+      (is (= 12 (cache-get-or-load cache "one" (constantly 12))))
+      (is (= 1 (cache-size cache)))))
 
   (testing "get-fn-returns-nil"
     (let [cache (cache-factory {:threshold 2})]
       (is (nil? (cache-get-or-load cache "one" (constantly nil))))
       (is (nil? (cache-get-or-load cache "two" (constantly nil))))
       (is (cache-contains? cache "one"))
-      (is (cache-contains? cache "two")))))
+      (is (cache-contains? cache "two"))
+      (is (= 2 (cache-size cache))))))
 
 (deftest test-retry-strategy
   (let [make-call-atom-and-function (fn [num-failures return-value]

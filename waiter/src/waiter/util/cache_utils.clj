@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.cache-utils
-  (:import [com.google.common.cache Cache CacheBuilder]
+  (:require [clojure.tools.logging :as log])
+  (:import [com.google.common.cache Cache CacheBuilder RemovalListener RemovalNotification]
            [java.util.concurrent TimeUnit]))
 
 (defn cache-factory
@@ -23,10 +24,15 @@
    The threshold argument defines the maximum number of elements in the cache.
    The ttl argument that defines the time (in millis) that entries are allowed to reside in the cache."
   [{:keys [threshold ttl]}]
-  (cond-> (CacheBuilder/newBuilder)
-    threshold (.maximumSize threshold)
-    ttl (.expireAfterAccess ttl TimeUnit/MILLISECONDS)
-    true (.build)))
+  (-> (cond-> (CacheBuilder/newBuilder)
+        threshold (.maximumSize threshold)
+        ttl (.expireAfterWrite ttl TimeUnit/MILLISECONDS))
+      (.removalListener (proxy [RemovalListener] []
+                          (onRemoval [^RemovalNotification n]
+                            (log/info "cache entry removal notification"
+                                      {:evicted (.wasEvicted n)
+                                       :key (.getKey n)}))))
+      (.build)))
 
 (defn cache-contains?
   "Checks if the cache contains a value associated with cache-key."
@@ -44,9 +50,9 @@
   "Gets a value from a cache based upon the key.
    On cache miss, call get-fn with the key and place result into the cache in {:data value} form.
    This allows us to handle nil values as results of the get-fn."
-  [^Cache cache cache-key get-fn]
+  [^Cache cache key get-fn]
   (-> cache
-      (.get cache-key (fn cache-loader [] {:data (get-fn)}))
+      (.get key (fn cache-loader [] {:data (get-fn)}))
       :data))
 
 (defn cache-evict
@@ -55,5 +61,6 @@
   (.invalidate cache key))
 
 (defn cache->map
+  "Returns the entries stored in the cache as a map."
   [^Cache cache]
   (into {} (.asMap cache)))
