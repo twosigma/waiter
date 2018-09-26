@@ -64,7 +64,8 @@
                  [org.apache.curator/curator-recipes "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.apache.curator/curator-test "2.11.0"
-                  :exclusions [io.netty/netty]]
+                  :exclusions [com.google.guava/guava
+                               io.netty/netty]]
                  [org.apache.curator/curator-x-discovery "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.8.0"]
