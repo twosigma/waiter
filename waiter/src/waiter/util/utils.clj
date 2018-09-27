@@ -116,17 +116,15 @@
 (defn stringify-elements
   [k v]
   (cond
-    (vector? v) (mapv (partial stringify-elements k) v)
+    (sequential? v) (mapv (partial stringify-elements k) v)
     (keyword? v) (keyword->str v)
     (instance? DateTime v) (du/date-to-str v)
     (instance? UUID v) (str v)
     (instance? Pattern v) (str v)
-    (instance? PersistentQueue v) (vec v)
     (instance? ManyToManyChannel v) (str v)
     (instance? Process v) (str v)
     (instance? ValidationError v) (str v)
-    (= k :time) (str v)
-    (symbol? v) (str/join "/" ((juxt namespace name) v))
+    (symbol? v) (str v)
     :else v))
 
 (defn clj->json
