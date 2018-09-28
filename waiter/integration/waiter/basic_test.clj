@@ -597,7 +597,7 @@
       (is (= (-> num-threads range reverse) @response-priorities-atom))
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-fast ^:flaky-617 test-multiple-ports
+(deftest ^:parallel ^:integration-fast test-multiple-ports
   (testing-using-waiter-url
     (let [num-ports 8
           waiter-headers {:x-waiter-name (rand-name)
@@ -609,8 +609,14 @@
           (str body-json))
       (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
             router-url (get (routers waiter-url) router-id)
-            {:keys [extra-ports port] :as active-instance} (-> (service-settings router-url service-id :cookies cookies)
-                                                               (get-in [:instances :active-instances 0]))]
+            {:keys [extra-ports port] :as active-instance}
+            (wait-for
+              #(let [{:keys [healthy? port] :as instance}
+                     (-> (service-settings router-url service-id :cookies cookies)
+                         (get-in [:instances :active-instances 0]))]
+                 (when (and healthy? port (pos? port))
+                   instance))
+              :interval 5 :timeout 30)]
         (log/info service-id "active-instance:" active-instance)
         (is (seq active-instance) (str active-instance))
         (is (pos? port) (str active-instance))
