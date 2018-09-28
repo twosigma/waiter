@@ -132,7 +132,7 @@
                (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
              (dissoc token-description# :last-update-time :previous))))))
 
-(deftest ^:parallel ^:integration-fast test-token-create-delete
+(deftest ^:parallel ^:integration-fast ^:flaky-285 test-token-create-delete
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
           token-prefix (create-token-name waiter-url service-id-prefix)
@@ -769,7 +769,7 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest ^:parallel ^:integration-fast test-on-the-fly-to-token
+(deftest ^:parallel ^:integration-fast ^:flaky-789 test-on-the-fly-to-token
   (testing-using-waiter-url
     (let [name-string (rand-name)
           canary-response (make-kitchen-request waiter-url {:x-waiter-name name-string})
