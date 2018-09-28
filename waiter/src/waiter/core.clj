@@ -1189,7 +1189,8 @@
                                      (log/info service-id "refresh triggered by router" src-router-id)
                                      (sd/fetch-core kv-store service-id :refresh true)
                                      (sd/service-id->suspended-state kv-store service-id :refresh true)
-                                     (sd/service-id->overrides kv-store service-id :refresh true))))
+                                     (sd/service-id->overrides kv-store service-id :refresh true)
+                                     (sd/service-id->source-tokens-entries kv-store service-id :refresh true))))
    :service-resume-handler-fn (pc/fnk [[:curator kv-store]
                                        [:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
                                        wrap-secure-request-fn]

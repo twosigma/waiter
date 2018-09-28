@@ -769,7 +769,7 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest ^:parallel ^:integration-fast ^:flaky-789 test-on-the-fly-to-token
+(deftest ^:parallel ^:integration-fast test-on-the-fly-to-token
   (testing-using-waiter-url
     (let [name-string (rand-name)
           canary-response (make-kitchen-request waiter-url {:x-waiter-name name-string})
@@ -779,13 +779,16 @@
         (is (str/includes? service-id-1 name-string) (str "ERROR: App-name is missing " name-string))
         (is (nil? (service-id->source-tokens-entries waiter-url service-id-1)))
         (let [token (str "^SERVICE-ID#" service-id-1)
-              response (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "" :headers %))
+              {:keys [cookies] :as response}
+              (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "" :headers %))
               service-id-2 (:service-id response)]
           (with-service-cleanup
             service-id-2
             (assert-response-status response 200)
             (is service-id-2)
             (is (= service-id-1 service-id-2) "The on-the-fly and token-based service ids do not match")
+            (doseq [[_ router-url] (routers waiter-url)]
+              (refresh-service router-url service-id-2 :cookies cookies))
             (is (= #{(make-source-tokens-entries waiter-url token)}
                    (service-id->source-tokens-entries waiter-url service-id-2)))))))))
 

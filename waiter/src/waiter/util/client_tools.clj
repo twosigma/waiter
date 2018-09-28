@@ -502,6 +502,10 @@
                            (fn [_] target-instances))]
       (marathon/update-app marathon-api service-id new-descriptor))))
 
+(defn refresh-service
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (make-request waiter-url (str "/apps/" service-id "/refresh") :cookies cookies))
+
 (defn delete-service
   ([waiter-url service-id-or-waiter-headers]
    (let [service-id (if (string? service-id-or-waiter-headers)
