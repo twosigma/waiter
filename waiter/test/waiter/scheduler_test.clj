@@ -626,9 +626,9 @@
             (check-trackers trackers-7a {"service-1" {:known-instance-ids #{"inst-1.1"}}
                                          "service-4" {:known-instance-ids #{"inst-4.1"}}
                                          "service-5" {:scheduling-instance-count 1}}))
-        _ (testing "update-launch-trackers: older start-times are dropped first (to avoid negative schedule times)"
+        _ (testing "update-launch-trackers: newer start-times are dropped first"
             (is (= (get-in trackers-7a ["service-5" :instance-scheduling-start-times])
-                   [:timestamp-newer])))
+                   [:timestamp-older])))
 
         service-id->instance-counts-7b {"service-1" req1 "service-4" req1 "service-5" req1}
         trackers-7b (update-launch-trackers

@@ -646,12 +646,12 @@
         [matched-start-times unmatched-start-times]
         (split-at (count new-instance-ids) all-start-times)
         ;; 3) Drop timestamps for cancelled instance requests (due to scaling).
-        ;; NOTE: This is done *after* matching to avoid negative schedule times.
-        ;; We choose to drop the oldest timestamps, resulting in more optimistic metrics.
+        ;; We choose to drop the newest timestamps since the older requests
+        ;; are more likely already in the process of scheduling.
         instance-scheduling-start-times'
         (cond->> unmatched-start-times
           (neg? instances-requested-delta)
-          (drop (Math/abs instances-requested-delta)))
+          (drop-last (- instances-requested-delta)))
         ;; Check for new instances without a corresponding scheduling-start-time
         unmatched-instance-count (- (count new-instance-ids)
                                     (count all-start-times))]
