@@ -1,5 +1,4 @@
 dist: trusty
-group: deprecated-2017Q4
 language: java
 jdk: oraclejdk8
 
