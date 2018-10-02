@@ -628,90 +628,162 @@
     :service-startup-timer (metrics/service-timer service-id "launch-overhead" "startup-time")
     :starting-instance-id->start-timestamp {}}))
 
+(defn- track-scheduling-instances
+  "Compute updated state for not-yet-scheduled instances of this service.
+   This is a private helper for update-launch-trackers, doing three things:
+   1) Record timestamps for newly-requested instances that are being scheduled.
+   2) Match (and remove) timestamps with now-scheduled (new) instances.
+   3) Drop timestamps for cancelled instance requests (due to scaling)."
+  [current-time instance-counts instance-counts' instance-scheduling-start-times
+   new-instance-ids removed-instance-ids service-id]
+  (let [;; 1) Record timestamps for newly-requested instances that are being scheduled.
+        instances-requested-delta (+ (count removed-instance-ids)
+                                     (- (:requested instance-counts')
+                                        (:requested instance-counts)))
+        all-start-times (into instance-scheduling-start-times 
+                              (repeat instances-requested-delta current-time))
+        ;; 2) Match (and remove) timestamps with now-scheduled (new) instances.
+        [matched-start-times unmatched-start-times]
+        (split-at (count new-instance-ids) all-start-times)
+        ;; 3) Drop timestamps for cancelled instance requests (due to scaling).
+        ;; We choose to drop the newest timestamps since the older requests
+        ;; are more likely already in the process of scheduling.
+        instance-scheduling-start-times'
+        (cond->> unmatched-start-times
+          (neg? instances-requested-delta)
+          (drop-last (- instances-requested-delta)))
+        ;; Check for new instances without a corresponding scheduling-start-time
+        unmatched-instance-count (- (count new-instance-ids)
+                                    (count all-start-times))]
+    ;; Warn if too few timestamps were dropped for downward-scaling
+    (when (neg? (+ (count unmatched-start-times)
+                   instances-requested-delta))
+      (log/warn "Tracker data out of sync during downward-scaling of" service-id
+                "Removing" instances-requested-delta
+                "scheduling instances, but only found"
+                (count unmatched-start-times)))
+    ;; Warn about any new instances for which we couldn't track the scheduling time
+    (when (pos? unmatched-instance-count)
+      (log/warn unmatched-instance-count
+                "untracked scheduled instances discovered in instance launch metric loop for service"
+                service-id))
+    {:new-instance-start-times matched-start-times
+     :outstanding-instance-start-times instance-scheduling-start-times'}))
+
+(defn- track-starting-instances
+  "Compute updated state for not-yet-started instances of this service.
+   This is a private helper for update-launch-trackers, doing three things:
+   1) Drop timestamps for killed instances.
+   2) Record timestamps for newly-started instances that are not yet healthy.
+   3) Match (and remove) timestamps with now-running (healthy) instances."
+  [current-time healthy-instances new-instance-ids
+   removed-instance-ids starting-instance-id->start-timestamp]
+  (let [healthy-instance-id? (->> healthy-instances (map :id) set)
+        ;; 1) Drop timestamps for killed instances.
+        ;; 2) Record timestamps for newly-started instances that are not yet healthy.
+        instance-id->start-timestamp
+        (merge (reduce dissoc starting-instance-id->start-timestamp removed-instance-ids)
+               (pc/map-from-keys (constantly current-time) new-instance-ids))
+        ;; 3) Match (and remove) timestamps with now-running (healthy) instances.
+        ;; i.e., partition starting (not yet healthy) and started (now healthy) instances
+        {started-instance-ids :started starting-instances-ids :starting}
+        (group-by #(if (healthy-instance-id? %) :started :starting)
+                  (keys instance-id->start-timestamp))]
+    {:outstanding-instance-id->start-timestamp
+     (select-keys instance-id->start-timestamp starting-instances-ids)
+     :started-instance-times
+     (mapv instance-id->start-timestamp started-instance-ids)}))
+
 (defn update-launch-trackers
   "Track metrics on launching service instances, specifically:
-   1) the time from requesting a new instance until it is scheduled (the \"schedule\" time), and
-   2) the time from scheduling a new instance until it becomes healthy (the \"startup\" time)."
+
+     1) the time from requesting a new instance until it is scheduled (the \"schedule\" time), and
+     2) the time from scheduling a new instance until it becomes healthy (the \"startup\" time).
+
+   Reports the updated metrics to the configured metrics and statsd services,
+   and returns the updated service-id->launch-tracker mapping."
   [service-id->launch-tracker new-service-ids removed-service-ids service-id->healthy-instances
    service-id->unhealthy-instances service-id->instance-counts
    service-id->service-description-fn leader? waiter-schedule-timer]
-  (let [current-time (t/now)
-        ;; Remove deleted services and add newly-discovered services
-        service-id->launch-tracker'
+  (let [;; Use a consistent timestamp for all trackers updated in this function call
+        current-time (t/now)
+        ;; Remove deleted services, and add newly-discovered services
+        live-service-id->launch-tracker
         (merge (reduce dissoc service-id->launch-tracker removed-service-ids)
                (pc/map-from-keys #(make-launch-tracker % service-id->service-description-fn)
                                  new-service-ids))]
-    ;; Update all trackers...
+    ;; Update all trackers for live services...
+    ;;
+    ;; See the definition of make-launch-tracker above for the full list of tracker-map fields.
+    ;; The tracker-map fields that change during this update are the following:
+    ;;
+    ;;   :instance-counts
+    ;;   Cached value of service-id->instance-counts from the last time this tracker was updated.
+    ;;   We currently only use the :requested field (the total number of requested/desired instances).
+    ;;
+    ;;   :instance-scheduling-start-times
+    ;;   Vector of DateTime objects, sorted oldest to newest.
+    ;;   These are the times when we assume a new instance request was sent to the scheduler.
+    ;;
+    ;;   :known-instance-ids
+    ;;   Vector of all Waiter instance-ids of this service that were live during the last tracker update.
+    ;;   We use this value to determine when a new "unknown" instance-id appears.
+    ;;
+    ;;   :starting-instance-id->start-timestamp
+    ;;   Mapping of known instance-ids onto the DateTime when we first observed that instance-id
+    ;;   (i.e., the approximate time that the instance was successfully scheduled).
+    ;;   Once an instance is observed healthy, it is removed from this mapping,
+    ;;   leaving only the instances that are still in the "starting" phase.
+    ;;
     (pc/for-map [[service-id
                   {:keys [instance-counts instance-scheduling-start-times known-instance-ids
                           metric-group service-schedule-timer service-startup-timer
                           starting-instance-id->start-timestamp] :as tracker-state}]
-                 service-id->launch-tracker']
+                 live-service-id->launch-tracker]
       service-id
       (let [healthy-instances (get service-id->healthy-instances service-id)
-            healthy-instance-id? (->> healthy-instances (map :id) set)
+            instance-counts' (get service-id->instance-counts service-id instance-counts-zero)
             known-instances' (->> service-id
                                   (get service-id->unhealthy-instances)
                                   (concat healthy-instances))
+            known-instance-ids' (->> known-instances' (map :id) set)
             previously-known-instance? (comp known-instance-ids :id)
             new-instance-ids (->> known-instances'
                                   (remove previously-known-instance?)
                                   (sort instance-comparator)
                                   (mapv :id))
-            known-instance-ids' (->> known-instances' (map :id) set)
             removed-instance-ids (set/difference known-instance-ids known-instance-ids')
-            ;; React to upward-scaling
-            instance-counts' (get service-id->instance-counts service-id instance-counts-zero)
-            instances-requested-delta (- (:requested instance-counts')
-                                         (:requested instance-counts))
-            instance-scheduling-start-times'
-            (->> current-time
-                 (repeat instances-requested-delta)
-                 (into instance-scheduling-start-times))
-            ;; Track scheduling instances
-            unmatched-instance-count (- (count new-instance-ids)
-                                        (count instance-scheduling-start-times'))
-            [matched-start-times instance-scheduling-start-times'']
-            (split-at (count new-instance-ids) instance-scheduling-start-times')
-            ;; Track starting instances
-            new-instance-id->start-timestamp
-            (pc/map-from-keys (constantly current-time) new-instance-ids)
-            starting-instance-id->start-timestamp'
-            (->> removed-instance-ids
-                 (reduce dissoc starting-instance-id->start-timestamp)
-                 (merge new-instance-id->start-timestamp))
-            {started-instance-ids :started starting-instances-ids :starting}
-            (group-by #(if (healthy-instance-id? %) :started :starting)
-                      (keys starting-instance-id->start-timestamp'))
-            starting-instance-id->start-timestamp''
-            (select-keys starting-instance-id->start-timestamp' starting-instances-ids)]
-        ;; Warn about any new instances for which we didn't track the scheduling time
-        (when (pos? unmatched-instance-count)
-          (log/warn unmatched-instance-count
-                    "untracked scheduled instances discovered in instance launch metric loop for service"
-                    service-id))
+            ;; Compute updated state for not-yet-scheduled instances of this service
+            {:keys [new-instance-start-times outstanding-instance-start-times]}
+            (track-scheduling-instances
+              current-time instance-counts instance-counts'
+              instance-scheduling-start-times new-instance-ids removed-instance-ids service-id)
+            ;; Compute updated state for not-yet-started instances of this service
+            {:keys [outstanding-instance-id->start-timestamp started-instance-times]}
+            (track-starting-instances
+              current-time healthy-instances new-instance-ids
+              removed-instance-ids starting-instance-id->start-timestamp)]
         ;; Report schedule time for now-known instances
-        (doseq [start-time matched-start-times]
-          (let [duration (metrics/duration-between start-time current-time)]
+        (doseq [start-scheduling-time new-instance-start-times]
+          (let [duration (metrics/duration-between start-scheduling-time current-time)]
             (metrics/report-duration waiter-schedule-timer duration)
             (metrics/report-duration service-schedule-timer duration)
             (when leader?
               (statsd/histo! metric-group "schedule_time"
                              (du/interval->nanoseconds duration)))))
-        ;; Report startup time for instances that are now healthy
-        (doseq [instance-id started-instance-ids]
-          (let [start-time (starting-instance-id->start-timestamp' instance-id)
-                duration (metrics/duration-between start-time current-time)]
+        ;; Report startup time for now-healthy instances
+        (doseq [start-running-time started-instance-times]
+          (let [duration (metrics/duration-between start-running-time current-time)]
             (metrics/report-duration service-startup-timer duration)
             (when leader?
               (statsd/histo! metric-group "startup_time"
                              (du/interval->nanoseconds duration)))))
-        ;; tracker-state'
+        ;; tracker-state' for this service
         (assoc tracker-state
                :instance-counts instance-counts'
-               :instance-scheduling-start-times (vec instance-scheduling-start-times'')
+               :instance-scheduling-start-times outstanding-instance-start-times
                :known-instance-ids known-instance-ids'
-               :starting-instance-id->start-timestamp starting-instance-id->start-timestamp'')))))
+               :starting-instance-id->start-timestamp outstanding-instance-id->start-timestamp)))))
 
 (defn build-initial-service-launch-trackers
   "Build the initially-observed state for the launch-metrics-maintainer's state loop
