@@ -283,7 +283,7 @@
             (is (every? (fn [token-entry] (contains? token-entry "deleted")) token-entries))
             (is (every? (fn [token-entry] (contains? token-entry "etag")) token-entries))
             (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) token-entries)
-                (str token "entry found in list of deleted tokens!"
+                (str token " entry found in list of deleted tokens!"
                      (->> token-entries (filter (fn [token-entry] (= token (get token-entry "token")))) vec))))))
 
       (log/info "ensuring tokens can no longer be retrieved on each router with include=deleted parameter after hard-delete")
@@ -412,9 +412,9 @@
           (log/info "basic hostname as token test")
           (let [current-user (retrieve-username)
                 service-description (assoc (kitchen-request-headers)
-                                           :x-waiter-metric-group token-prefix
-                                           :x-waiter-permitted-user "*"
-                                           :x-waiter-run-as-user current-user)]
+                                      :x-waiter-metric-group token-prefix
+                                      :x-waiter-permitted-user "*"
+                                      :x-waiter-run-as-user current-user)]
             (testing "hostname-token-creation"
               (log/info "creating configuration using token" token)
               (let [{:keys [body status]}
