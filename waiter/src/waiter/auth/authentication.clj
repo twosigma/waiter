@@ -23,9 +23,6 @@
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
 (defprotocol Authenticator
-  (auth-type [this]
-    "Returns a keyword identifying the type of authenticator.")
-
   (check-user [this user service-id]
     "Checks if the user is setup correctly to successfully launch a service using the authentication scheme.
      Throws an exception if not.")
@@ -103,9 +100,6 @@
 (defrecord SingleUserAuthenticator [run-as-user password]
 
   Authenticator
-
-  (auth-type [_]
-    :one-user)
 
   (check-user [_ _ _]
     (comment "do nothing"))

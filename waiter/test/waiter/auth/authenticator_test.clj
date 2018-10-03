@@ -23,7 +23,7 @@
 (deftest test-one-user-authenticator
   (let [username (System/getProperty "user.name")
         authenticator (one-user-authenticator {:run-as-user username})]
-    (is (= :one-user (auth-type authenticator)))
+    (is (instance? SingleUserAuthenticator authenticator))
     (let [request-handler (wrap-auth-handler authenticator identity)
           request {}
           expected-request (assoc request

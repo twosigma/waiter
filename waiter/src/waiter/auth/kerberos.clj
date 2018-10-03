@@ -106,9 +106,6 @@
 
   auth/Authenticator
 
-  (auth-type [_]
-    :kerberos)
-
   (check-user [_ user service-id]
     (check-has-prestashed-tickets query-chan user service-id))
 

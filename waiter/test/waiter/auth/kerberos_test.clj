@@ -119,4 +119,4 @@
                   :prestash-cache-min-refresh-ms 10
                   :prestash-query-host "example.com"}
           authenticator (kerberos-authenticator config)]
-      (is (= :kerberos (auth/auth-type authenticator))))))
+      (is (instance? KerberosAuthenticator authenticator)))))
