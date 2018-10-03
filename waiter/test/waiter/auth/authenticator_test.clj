@@ -22,17 +22,16 @@
 
 (deftest test-one-user-authenticator
   (let [username (System/getProperty "user.name")
-        authenticator (one-user-authenticator {:run-as-user username})]
-    (is (instance? SingleUserAuthenticator authenticator))
-    (let [request-handler (wrap-auth-handler authenticator identity)
+        authenticator-fn (one-user-authenticator {:run-as-user username})]
+    (is (fn? authenticator-fn))
+    (let [request-handler (authenticator-fn identity)
           request {}
           expected-request (assoc request
                              :authorization/principal username
                              :authorization/user username)
           actual-result (request-handler request)]
       (is (= expected-request (dissoc actual-result :headers)))
-      (is (str/includes? (get-in actual-result [:headers "set-cookie"]) "x-waiter-auth="))
-      (is (nil? (check-user authenticator "user" "service-id"))))))
+      (is (str/includes? (get-in actual-result [:headers "set-cookie"]) "x-waiter-auth=")))))
 
 (deftest test-get-auth-cookie-value
   (is (= "abc123" (get-auth-cookie-value "x-waiter-auth=abc123")))

@@ -102,23 +102,20 @@
                          :status 403
                          :user run-as-user}))))))
 
-(defrecord KerberosAuthenticator [password query-chan]
-
-  auth/Authenticator
-
-  (check-user [_ user service-id]
-    (check-has-prestashed-tickets query-chan user service-id))
-
-  (wrap-auth-handler [_ request-handler]
-    (spnego/require-gss request-handler password)))
-
-(defn kerberos-authenticator
-  "Factory function for creating KerberosAuthenticator"
-  [{:keys [password prestash-cache-min-refresh-ms prestash-cache-refresh-ms prestash-query-host]}]
-  {:pre [(not-empty password)
-         (utils/pos-int? prestash-cache-min-refresh-ms)
+(defn kerberos-prestash-authorizer
+  "Factory function for creating Kerberos authorizer function"
+  [{:keys [prestash-cache-min-refresh-ms prestash-cache-refresh-ms prestash-query-host]}]
+  {:pre [(utils/pos-int? prestash-cache-min-refresh-ms)
          (utils/pos-int? prestash-cache-refresh-ms)
          (not (str/blank? prestash-query-host))]}
   (let [query-chan (async/chan 1024)]
     (start-prestash-cache-maintainer prestash-cache-refresh-ms prestash-cache-min-refresh-ms prestash-query-host query-chan)
-    (->KerberosAuthenticator password query-chan)))
+    (fn kerberos-prestash-authorizer-impl [user service-id]
+      (check-has-prestashed-tickets query-chan user service-id))))
+
+(defn kerberos-authenticator
+  "Factory function for creating Kerberos authenticator middleware"
+  [{:keys [password prestash-cache-min-refresh-ms prestash-cache-refresh-ms prestash-query-host]}]
+  {:pre [(not-empty password)]}
+  (fn kerberos-authenticator-middleware [request-handler]
+    (spnego/require-gss request-handler password)))
