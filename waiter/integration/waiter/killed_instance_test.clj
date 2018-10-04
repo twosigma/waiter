@@ -67,7 +67,7 @@
     (when (some #(= "blacklisted" %) (:status-tags instance-state))
       (get-in responder-state [:instance-id->blacklist-expiry-time instance-keyword]))))
 
-(deftest ^:parallel ^:integration-slow ^:flaky-59-126 test-blacklisted-instance-not-reserved
+(deftest ^:parallel ^:integration-slow test-blacklisted-instance-not-reserved
   ;; Verifies that a blacklisted instance is not used to process a request.
   ;; The test first blacklists an instance on all routers.
   ;; It then makes a few requests and verifies if they responded inside the blacklist
@@ -76,7 +76,8 @@
     (log/info "Testing blacklisted instance is not reserved")
     (let [router-id->router-url (routers waiter-url)
           num-routers (count router-id->router-url)
-          extra-headers {:x-waiter-blacklist-on-503 true
+          extra-headers {:x-kitchen-delay-ms 1000 ;; allow for clock skew
+                         :x-waiter-blacklist-on-503 true
                          :x-waiter-concurrency-level (* 2 num-routers)
                          :x-waiter-name (rand-name)
                          :x-waiter-scale-up-factor 0.99}
@@ -115,9 +116,9 @@
               (max 10 (* 4 num-routers))
               1
               (fn []
-                (let [request-start-time (t/now)
-                      {:keys [instance-id router-id]} (make-request-fn)]
-                  (if (t/before? request-start-time (router-id->blacklist-expiry-time router-id))
+                (let [{:keys [instance-id router-id]} (make-request-fn)
+                      request-end-time (t/now)]
+                  (if (t/before? request-end-time (router-id->blacklist-expiry-time router-id))
                     (swap! instance-id->request-count update instance-id (fnil inc 0))
                     (log/warn "request responded after blacklist period, not including instance" instance-id)))))
             (log/info "instance-id->request-count:" @instance-id->request-count)
