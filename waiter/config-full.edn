@@ -262,6 +262,11 @@
                            ;; that returns an instance of waiter.scheduler.ServiceScheduler:
                            :factory-fn waiter.scheduler.cook/cook-scheduler
 
+                           ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
+                           ;; to create services on the underlying scheduler platform.
+                           ;; We specify no authorizer with "nil" here. See the :marathon :authorizer settings for a full example.
+                           :authorizer nil
+
                            ;; The interval (milliseconds) at which instance failed jobs will be checked:
                            :failed-tracker-interval-ms 10000
 

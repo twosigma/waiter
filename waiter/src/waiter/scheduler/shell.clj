@@ -589,7 +589,7 @@
 ;   :shell-scheduler/pid
 ;
 (defrecord ShellScheduler [scheduler-name work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
-                           retrieve-syncer-state-fn service-id->password-fn]
+                           retrieve-syncer-state-fn service-id->password-fn authorizer-fn]
 
   scheduler/ServiceScheduler
 
@@ -678,13 +678,16 @@
   (state [_]
     {:id->service @id->service-agent
      :port->reservation @port->reservation-atom
-     :syncer (retrieve-syncer-state-fn)}))
+     :syncer (retrieve-syncer-state-fn)})
+
+  (validate-user [{:keys [authorizer-fn]} user service-id]
+    (authorizer-fn user service-id)))
 
 (s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the
   configuration against shell-scheduler-schema and throws if it's not valid."
-  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms
-           port-grace-period-ms port-range work-directory
+  [{:keys [authorizer failed-instance-retry-interval-ms health-check-interval-ms
+           health-check-timeout-ms port-grace-period-ms port-range work-directory
            ;; functions provided in the context
            id->service-agent
            retrieve-syncer-state-fn
@@ -701,7 +704,8 @@
          (fn? retrieve-syncer-state-fn)
          (not (str/blank? scheduler-name))
          (fn? service-id->password-fn)]}
-  (let [port->reservation-atom (atom {})]
+  (let [authorizer-fn (scheduler/make-authorizer-fn authorizer)
+        port->reservation-atom (atom {})]
     (->ShellScheduler scheduler-name
                       (-> work-directory
                           io/file
@@ -711,7 +715,8 @@
                       port-grace-period-ms
                       port-range
                       retrieve-syncer-state-fn
-                      service-id->password-fn)))
+                      service-id->password-fn
+                      authorizer-fn)))
 
 (defn get-running-pids
   "Finds all processes that are running the command 'run-service.sh'.
@@ -826,8 +831,9 @@
 
 (defn shell-scheduler
   "Creates and starts shell scheduler with loops"
-  [{:keys [backup-file-name failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
-           scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
+  [{:keys [backup-file-name failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms
+           port-grace-period-ms port-range scheduler-name scheduler-state-chan
+           scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)

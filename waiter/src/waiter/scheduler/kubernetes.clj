@@ -413,6 +413,7 @@
 
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
+                                authorizer-fn
                                 fileserver
                                 http-client
                                 max-patch-retries
@@ -459,7 +460,7 @@
       (catch [:status 404] _
         (comment "App does not exist."))))
 
-  (create-service-if-new [this {:keys [service-id] :as descriptor}]
+  (create-service-if-new [this {:keys [run-as-user service-id] :as descriptor}]
     (when-not (scheduler/service-exists? this service-id)
       (ss/try+
         (create-service descriptor this)
@@ -548,7 +549,10 @@
 
   (state [_]
     {:service-id->failed-instances @service-id->failed-instances-transient-store
-     :syncer (retrieve-syncer-state-fn)}))
+     :syncer (retrieve-syncer-state-fn)})
+
+  (validate-user [{:keys [authorizer-fn]} user service-id]
+    (authorizer-fn user service-id)))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -666,7 +670,7 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication http-options max-patch-retries max-name-length orchestrator-name
+  [{:keys [authentication authorizer http-options max-patch-retries max-name-length orchestrator-name
            pod-base-port pod-suffix-length replicaset-api-version replicaset-spec-builder
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn url start-scheduler-syncer-fn]
@@ -692,7 +696,8 @@
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)]}
-  (let [http-client (http-utils/http-client-factory http-options)
+  (let [authorizer-fn (scheduler/make-authorizer-fn authorizer)
+        http-client (http-utils/http-client-factory http-options)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
@@ -712,6 +717,7 @@
     (when authentication
       (start-auth-renewer authentication))
     (->KubernetesScheduler url
+                           authorizer-fn
                            fileserver
                            http-client
                            max-patch-retries

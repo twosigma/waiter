@@ -817,6 +817,8 @@
                                   [:state start-service-cache task-thread-pool]
                                   store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
+                             (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
+                               (scheduler/validate-user scheduler run-as-user service-id))
                              (service/start-new-service
                                scheduler descriptor start-service-cache task-thread-pool
                                :pre-start-fn #(store-service-description-fn descriptor))))
