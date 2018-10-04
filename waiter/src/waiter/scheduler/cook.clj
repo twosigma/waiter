@@ -485,10 +485,10 @@
 
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."
-  [{:keys [allowed-users backend-port home-path-prefix instance-priorities search-interval-days
+  [{:keys [allowed-users authorizer backend-port home-path-prefix instance-priorities search-interval-days
            ;; entries from the context
            scheduler-name service-id->password-fn service-id->service-description-fn]}
-   cook-api authorizer-fn service-id->failed-instances-transient-store retrieve-syncer-state-fn]
+   cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn]
   {:pre [(seq allowed-users)
          (or (nil? backend-port) (pos? backend-port))
          (not (str/blank? home-path-prefix))
@@ -501,6 +501,7 @@
   (let [allowed-priorities (range (:max instance-priorities)
                                   (:min instance-priorities)
                                   (unchecked-negate-int (:delta instance-priorities)))
+        authorizer-fn (scheduler/make-authorizer-fn authorizer)
         search-interval (t/days search-interval-days)]
     (->CookScheduler scheduler-name service-id->password-fn service-id->service-description-fn
                      cook-api allowed-priorities allowed-users backend-port home-path-prefix
@@ -509,8 +510,7 @@
 
 (defn cook-scheduler
   "Creates and starts cook scheduler with associated daemons."
-  [{:keys [allowed-users authorizer failed-tracker-interval-ms http-options
-           impersonate mesos-slave-port search-interval-days url
+  [{:keys [allowed-users failed-tracker-interval-ms http-options impersonate mesos-slave-port search-interval-days url
            ;; entries from the context
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(seq allowed-users)
@@ -519,8 +519,7 @@
          (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
          (fn? start-scheduler-syncer-fn)]}
-  (let [authorizer-fn (scheduler/make-authorizer-fn authorizer)
-        http-client (http-utils/http-client-factory http-options)
+  (let [http-client (http-utils/http-client-factory http-options)
         cook-api {:http-client http-client
                   :impersonate impersonate
                   :slave-port mesos-slave-port
@@ -532,11 +531,6 @@
         #(get-service->instances cook-api allowed-users search-interval service-id->failed-instances-transient-store)
         {:keys [retrieve-syncer-state-fn]}
         (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
-        scheduler (create-cook-scheduler
-                    config
-                    cook-api
-                    authorizer-fn
-                    service-id->failed-instances-transient-store
-                    retrieve-syncer-state-fn)]
+        scheduler (create-cook-scheduler config cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn)]
     (start-track-failed-instances service-id->failed-instances-transient-store scheduler failed-tracker-interval-ms)
     scheduler))
