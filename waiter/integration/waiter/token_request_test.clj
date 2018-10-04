@@ -132,7 +132,7 @@
                (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
              (dissoc token-description# :last-update-time :previous))))))
 
-(deftest ^:parallel ^:integration-fast ^:flaky-285 test-token-create-delete
+(deftest ^:parallel ^:integration-fast test-token-create-delete
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
           token-prefix (create-token-name waiter-url service-id-prefix)
@@ -271,11 +271,8 @@
 
       (log/info "hard-deleting the tokens")
       (doseq [token tokens-to-create]
-        (delete-token-and-assert waiter-url token)
-        (doseq [[_ router-url] (routers waiter-url)]
-          (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
-            (assert-response-status response 404)
-            (is (str/includes? (str body) "Couldn't find token") (str {:body body :token token})))
+        (let [router-url (-> (routers waiter-url) vals rand-nth)]
+          (delete-token-and-assert router-url token :cookies cookies)
           (let [{:keys [body] :as tokens-response}
                 (list-tokens router-url current-user cookies {"include" ["deleted" "metadata"]})
                 token-entries (json/read-str body)]
@@ -284,7 +281,11 @@
             (is (every? (fn [token-entry] (contains? token-entry "etag")) token-entries))
             (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) token-entries)
                 (str token " entry found in list of deleted tokens!"
-                     (->> token-entries (filter (fn [token-entry] (= token (get token-entry "token")))) vec))))))
+                     (->> token-entries (filter (fn [token-entry] (= token (get token-entry "token")))) vec)))))
+        (doseq [[_ router-url] (routers waiter-url)]
+          (let [{:keys [body] :as response} (get-token router-url token :cookies cookies)]
+            (assert-response-status response 404)
+            (is (str/includes? (str body) "Couldn't find token") (str {:body body :token token})))))
 
       (log/info "ensuring tokens can no longer be retrieved on each router with include=deleted parameter after hard-delete")
       (doseq [token tokens-to-create]

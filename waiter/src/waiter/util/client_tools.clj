@@ -637,11 +637,12 @@
 
 (defn delete-token-and-assert
   "Deletes and token and asserts that the delete was successful."
-  [waiter-url token & {:keys [hard-delete headers] :or {hard-delete true}}]
+  [waiter-url token & {:keys [cookies hard-delete headers] :or {cookies [] hard-delete true}}]
   (log/info "deleting token" token {:hard-delete hard-delete})
   (let [headers (cond->> headers
                          (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
         response (make-request waiter-url "/token"
+                               :cookies cookies
                                :headers (assoc headers "host" token)
                                :method :delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
