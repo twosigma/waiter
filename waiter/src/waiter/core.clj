@@ -488,9 +488,9 @@
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
-   :authenticator-fn (pc/fnk [[:settings authenticator-config]
-                              passwords]
-                       (utils/create-component authenticator-config :context {:password (first passwords)}))
+   :authenticator (pc/fnk [[:settings authenticator-config]
+                           passwords]
+                    (utils/create-component authenticator-config :context {:password (first passwords)}))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
@@ -688,9 +688,9 @@
                                  (fn async-trigger-terminate-fn [target-router-id service-id request-id]
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
-   :authentication-method-wrapper-fn (pc/fnk [[:state authenticator-fn]]
+   :authentication-method-wrapper-fn (pc/fnk [[:state authenticator]]
                                        (fn authentication-method-wrapper [request-handler]
-                                         (let [auth-handler (authenticator-fn request-handler)]
+                                         (let [auth-handler (auth/wrap-auth-handler authenticator request-handler)]
                                            (fn authenticate-request [request]
                                              (if (:skip-authentication request)
                                                (do
@@ -817,8 +817,7 @@
                                   [:state start-service-cache task-thread-pool]
                                   store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
-                             (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
-                               (scheduler/validate-user scheduler run-as-user service-id))
+                             (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
                                scheduler descriptor start-service-cache task-thread-pool
                                :pre-start-fn #(store-service-description-fn descriptor))))

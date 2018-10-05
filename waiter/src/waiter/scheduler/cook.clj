@@ -21,6 +21,7 @@
             [metrics.timers :as timers]
             [schema.core :as s]
             [slingshot.slingshot :as ss]
+            [waiter.authorization :as authz]
             [waiter.mesos.mesos :as mesos]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
@@ -341,7 +342,7 @@
 (defrecord CookScheduler [scheduler-name service-id->password-fn service-id->service-description-fn
                           cook-api allowed-priorities allowed-users backend-port home-path-prefix
                           search-interval service-id->failed-instances-transient-store
-                          retrieve-syncer-state-fn authorizer-fn]
+                          retrieve-syncer-state-fn authorizer]
 
   scheduler/ServiceScheduler
 
@@ -480,8 +481,9 @@
     {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
      :syncer (retrieve-syncer-state-fn)})
 
-  (validate-user [{:keys [authorizer-fn]} user service-id]
-    (authorizer-fn user service-id)))
+  (validate-service [_ service-id]
+    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
+      (authz/check-user authorizer run-as-user service-id))))
 
 (s/defn ^:always-validate create-cook-scheduler
   "Returns a new CookScheduler with the provided configuration."
@@ -501,12 +503,12 @@
   (let [allowed-priorities (range (:max instance-priorities)
                                   (:min instance-priorities)
                                   (unchecked-negate-int (:delta instance-priorities)))
-        authorizer-fn (scheduler/make-authorizer-fn authorizer)
+        authorizer (utils/create-component authorizer)
         search-interval (t/days search-interval-days)]
     (->CookScheduler scheduler-name service-id->password-fn service-id->service-description-fn
                      cook-api allowed-priorities allowed-users backend-port home-path-prefix
                      search-interval service-id->failed-instances-transient-store
-                     retrieve-syncer-state-fn authorizer-fn)))
+                     retrieve-syncer-state-fn authorizer)))
 
 (defn cook-scheduler
   "Creates and starts cook scheduler with associated daemons."

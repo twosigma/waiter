@@ -441,13 +441,15 @@
   "Creates a component based on the specified :kind"
   [{:keys [kind] :as component-config} & {:keys [context]}]
   (log/info "component:" kind "with config" component-config (if context (str "and context " context) ""))
-  (let [kind-config (get component-config kind)
-        factory-fn (:factory-fn kind-config)]
+  (let [config (if kind
+                 (get component-config kind)
+                 component-config)
+        factory-fn (:factory-fn config)]
     (if factory-fn
       (if-let [resolved-fn (resolve-symbol factory-fn)]
-        (resolved-fn (merge context kind-config))
+        (resolved-fn (merge context config))
         (throw (ex-info "Unable to resolve factory function" (assoc component-config :ns (namespace factory-fn)))))
-      (throw (ex-info "No :factory-fn specified" component-config)))))
+      (throw (ex-info "No :factory-fn specified" {:cfg component-config})))))
 
 (defn pos-int?
   "Returns true if x is a positive integer"

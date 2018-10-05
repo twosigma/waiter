@@ -39,7 +39,8 @@
   ([service-ids] (make-dummy-scheduler service-ids {}))
   ([service-ids args]
    (->
-     {:fileserver {:port 9090
+     {:authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
+      :fileserver {:port 9090
                    :scheme "http"}
       :max-patch-retries 5
       :max-name-length 63
@@ -670,6 +671,7 @@
                  :service-id->service-description-fn (constantly nil)
                  :start-scheduler-syncer-fn (constantly nil)}
         k8s-config {:authentication nil
+                    :authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
                     :fileserver {:port 9090
                                  :scheme "http"}
                     :http-options {:conn-timeout 10000

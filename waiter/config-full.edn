@@ -265,7 +265,7 @@
                            ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
                            ;; to create services on the underlying scheduler platform.
                            ;; We specify no authorizer with "nil" here. See the :marathon :authorizer settings for a full example.
-                           :authorizer nil
+                           :authorizer {:factory-fn waiter.authorization/noop-authorizer}
 
                            ;; The interval (milliseconds) at which instance failed jobs will be checked:
                            :failed-tracker-interval-ms 10000
@@ -337,7 +337,7 @@
                                  ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
                                  ;; to create services on the underlying scheduler platform.
                                  ;; We specify no authorizer with "nil" here. See the :marathon :authorizer settings for a full example.
-                                 :authorizer nil
+                                 :authorizer {:factory-fn waiter.authorization/noop-authorizer}
 
                                  ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
                                  ;; running a server for directory listings (in JSON) and serving file contents.
@@ -395,7 +395,7 @@
                                ;; to create services on the underlying scheduler platform.
                                :authorizer {
                                             ;; kerberos-prestash determines user authorization via the presence of prestashed tickets
-                                            :factory-fn waiter.auth.kerberos/kerberos-prestash-authorizer
+                                            :factory-fn waiter.auth.kerberos/kerberos-authorizer
                                             ;; the minimum interval after which prestash kerberos tickets needs to refreshed
                                             :prestash-cache-min-refresh-ms 100
                                             ;; the maximum interval after which prestash kerberos tickets are forcibly refreshed
@@ -447,6 +447,11 @@
                     ;:kind :shell
                     :shell {
                             :factory-fn waiter.scheduler.shell/shell-scheduler
+
+                            ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
+                            ;; to create services on the underlying scheduler platform.
+                            ;; We specify no authorizer with "nil" here. See the :marathon :authorizer settings for a full example.
+                            :authorizer {:factory-fn waiter.authorization/noop-authorizer}
 
                             ;; The shell scheduler can persist its state and use this state when it restarts.
                             ;; This is an optional config, when not provided no backup state will be persisted.

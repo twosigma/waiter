@@ -18,13 +18,14 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.auth.authentication :refer :all]
-            [waiter.cookie-support :as cs]))
+            [waiter.cookie-support :as cs])
+  (:import (waiter.auth.authentication SingleUserAuthenticator)))
 
 (deftest test-one-user-authenticator
   (let [username (System/getProperty "user.name")
-        authenticator-fn (one-user-authenticator {:run-as-user username})]
-    (is (fn? authenticator-fn))
-    (let [request-handler (authenticator-fn identity)
+        authenticator (one-user-authenticator {:run-as-user username})]
+    (is (instance? SingleUserAuthenticator authenticator))
+    (let [request-handler (wrap-auth-handler authenticator identity)
           request {}
           expected-request (assoc request
                              :authorization/principal username

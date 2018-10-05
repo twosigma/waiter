@@ -22,6 +22,13 @@
 
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
+(defprotocol Authenticator
+  (wrap-auth-handler [this request-handler]
+    "Attaches middleware that enables the application to perform authentication.
+     The middleware should
+     - either issue a 401 challenge asking the client to authenticate itself,
+     - or upon successful authentication populate the request with :authorization/user and :authorization/principal"))
+
 (defn- add-cached-auth
   [response password principal]
   (cookie-support/add-encoded-cookie response password AUTH-COOKIE-NAME [principal (System/currentTimeMillis)] 1))
@@ -89,11 +96,15 @@
 ;; Real middleware implementations should:
 ;;   - either issue a 401 challenge asking the client to authenticate itself,
 ;;   - or upon successful authentication populate the request with :authorization/user and :authorization/principal"
+(defrecord SingleUserAuthenticator [run-as-user password]
+  Authenticator
+  (wrap-auth-handler [_ request-handler]
+    (fn anonymous-handler [request] 
+      (handle-request-auth request-handler request run-as-user run-as-user password))))
+
 (defn one-user-authenticator
   "Factory function for creating single-user authenticator"
   [{:keys [password run-as-user]}]
   (log/warn "use of single-user authenticator is strongly discouraged for production use:"
             "requests will use principal" run-as-user)
-  (fn one-user-authenticator-impl [request-handler]
-    (fn anonymous-handler [request]
-      (handle-request-auth request-handler request run-as-user run-as-user password))))
+  (->SingleUserAuthenticator run-as-user password))

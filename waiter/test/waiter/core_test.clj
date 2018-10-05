@@ -1140,11 +1140,12 @@
 
 (deftest test-authentication-method-wrapper-fn
   (let [standard-handler (fn [_] {:source :standard-handler})]
-    (let [authenticator-fn (fn wrap-auth-handler [request-handler]
-                             (is (= standard-handler request-handler))
-                             (fn [_]
-                               {:source :spnego-handler}))
-          authenticate-request-handler ((:authentication-method-wrapper-fn routines) {:state {:authenticator-fn authenticator-fn}})
+    (let [authenticator (reify auth/Authenticator
+                          (wrap-auth-handler [_ request-handler]
+                            (is (= standard-handler request-handler))
+                            (fn [_]
+                              {:source :spnego-handler})))
+          authenticate-request-handler ((:authentication-method-wrapper-fn routines) {:state {:authenticator authenticator}})
           request-handler (authenticate-request-handler standard-handler)]
 
       (testing "skip-authentication"

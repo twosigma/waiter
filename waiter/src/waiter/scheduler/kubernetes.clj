@@ -15,6 +15,7 @@
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
             [slingshot.slingshot :as ss]
+            [waiter.authorization :as authz]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
@@ -413,7 +414,7 @@
 
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
-                                authorizer-fn
+                                authorizer
                                 fileserver
                                 http-client
                                 max-patch-retries
@@ -551,8 +552,9 @@
     {:service-id->failed-instances @service-id->failed-instances-transient-store
      :syncer (retrieve-syncer-state-fn)})
 
-  (validate-user [{:keys [authorizer-fn]} user service-id]
-    (authorizer-fn user service-id)))
+  (validate-service [_ service-id]
+    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
+      (authz/check-user authorizer run-as-user service-id))))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -696,7 +698,7 @@
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)]}
-  (let [authorizer-fn (scheduler/make-authorizer-fn authorizer)
+  (let [authorizer (utils/create-component authorizer)
         http-client (http-utils/http-client-factory http-options)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
@@ -717,7 +719,7 @@
     (when authentication
       (start-auth-renewer authentication))
     (->KubernetesScheduler url
-                           authorizer-fn
+                           authorizer
                            fileserver
                            http-client
                            max-patch-retries

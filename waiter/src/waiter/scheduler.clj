@@ -110,15 +110,9 @@
   (state [this]
     "Returns the global (i.e. non-service-specific) state the scheduler is maintaining")
 
-  (validate-user [this ^String user ^String service-id]
-    "Verify that a user has the proper permissions to create services on the underlying scheduler platform."))
-
-(defn make-authorizer-fn
-  "Create an authorizer-fn via create-component, providing a default if the passed-in authorizer is nil."
-  [authorizer]
-  (if authorizer
-    (utils/create-component authorizer)
-    (constantly :OK)))
+  (validate-service [this ^String service-id]
+    "Verify that a user has the proper permissions to create services on the underlying scheduler platform.
+     An exception is thrown on failure. Returns nil on success."))
 
 (defn retry-on-transient-server-exceptions-fn
   "Helper function for `retry-on-transient-server-exceptions`.

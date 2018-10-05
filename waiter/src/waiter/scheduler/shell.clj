@@ -27,6 +27,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [schema.core :as s]
+            [waiter.authorization :as authz]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.util.async-utils :as au]
@@ -589,7 +590,7 @@
 ;   :shell-scheduler/pid
 ;
 (defrecord ShellScheduler [scheduler-name work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
-                           retrieve-syncer-state-fn service-id->password-fn authorizer-fn]
+                           retrieve-syncer-state-fn service-id->password-fn service-id->service-description-fn authorizer]
 
   scheduler/ServiceScheduler
 
@@ -680,8 +681,9 @@
      :port->reservation @port->reservation-atom
      :syncer (retrieve-syncer-state-fn)})
 
-  (validate-user [{:keys [authorizer-fn]} user service-id]
-    (authorizer-fn user service-id)))
+  (validate-service [_ service-id]
+    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
+      (authz/check-user authorizer run-as-user service-id))))
 
 (s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the
@@ -692,7 +694,8 @@
            id->service-agent
            retrieve-syncer-state-fn
            scheduler-name
-           service-id->password-fn]}]
+           service-id->password-fn
+           service-id->service-description-fn]}]
   {:pre [(utils/pos-int? failed-instance-retry-interval-ms)
          (utils/pos-int? health-check-interval-ms)
          (utils/pos-int? health-check-timeout-ms)
@@ -704,7 +707,7 @@
          (fn? retrieve-syncer-state-fn)
          (not (str/blank? scheduler-name))
          (fn? service-id->password-fn)]}
-  (let [authorizer-fn (scheduler/make-authorizer-fn authorizer)
+  (let [authorizer (utils/create-component authorizer)
         port->reservation-atom (atom {})]
     (->ShellScheduler scheduler-name
                       (-> work-directory
@@ -716,7 +719,8 @@
                       port-range
                       retrieve-syncer-state-fn
                       service-id->password-fn
-                      authorizer-fn)))
+                      service-id->service-description-fn
+                      authorizer)))
 
 (defn get-running-pids
   "Finds all processes that are running the command 'run-service.sh'.

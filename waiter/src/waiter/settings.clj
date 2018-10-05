@@ -277,6 +277,7 @@
                                   :mem (* 512 1024)}}
    :scheduler-config {:kind :marathon
                       :cook {:factory-fn 'waiter.scheduler.cook/cook-scheduler
+                             :authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
                              :failed-tracker-interval-ms 10000
                              :home-path-prefix "/home/"
                              :http-options {:conn-timeout 10000
@@ -291,6 +292,7 @@
                       :kubernetes {; Default values are not provided below for the following keys:
                                    ; :authentication [:fileserver :port] :url
                                    :factory-fn 'waiter.scheduler.kubernetes/kubernetes-scheduler
+                                   :authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
                                    :fileserver {:cmd ["/bin/fileserver-start"]
                                                 :image "twosigma/waiter-fileserver:latest"
                                                 :resources {:cpu 0.1 :mem 128}
@@ -306,6 +308,7 @@
                                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
                                                              :default-container-image "twosigma/kitchen:latest"}}
                       :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
+                                 :authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
                                  :home-path-prefix "/home/"
                                  :http-options {:conn-timeout 10000
                                                 :socket-timeout 10000
@@ -315,6 +318,7 @@
                                  :sync-deployment {:interval-ms (-> 15 t/seconds t/in-millis)
                                                    :timeout-cycles 4}}
                       :shell {:factory-fn 'waiter.scheduler.shell/shell-scheduler
+                              :authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
                               :failed-instance-retry-interval-ms 5000
                               :health-check-interval-ms 5000
                               :health-check-timeout-ms 200

@@ -21,7 +21,8 @@
             [waiter.auth.authentication :as auth]
             [waiter.auth.kerberos :refer :all]
             [waiter.util.utils :as utils])
-  (:import (clojure.lang ExceptionInfo)))
+  (:import (clojure.lang ExceptionInfo)
+           (waiter.auth.kerberos KerberosAuthenticator)))
 
 (deftest test-get-opt-in-accounts
   (testing "success"
@@ -119,4 +120,4 @@
                   :prestash-cache-min-refresh-ms 10
                   :prestash-query-host "example.com"}
           authenticator-fn (kerberos-authenticator config)]
-      (is (fn? authenticator-fn)))))
+      (is (instance? KerberosAuthenticator authenticator-fn)))))

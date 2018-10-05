@@ -61,3 +61,19 @@
   [entitlement-manager auth-user run-as-user]
   (and auth-user run-as-user
        (authorized? entitlement-manager auth-user :run-as {:resource-type :credential, :user run-as-user})))
+
+(defprotocol Authorizer
+  (check-user [this ^String user ^String service-id]
+    "Checks if the user is set up correctly to successfully launch
+     a service using the authentication scheme. Throws an exception if not."))
+
+;; Default Authorizer implementation that never throws an exception
+;; (i.e., all checks are authorized).
+(defrecord NoOpAuthorizer []
+  Authorizer
+  (check-user [_ _ _]
+    (comment "do nothing")))
+
+(defn noop-authorizer [context]
+  "Factory function for the default (no-op) authorizer."
+  (->NoOpAuthorizer))
