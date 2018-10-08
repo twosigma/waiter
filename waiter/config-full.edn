@@ -160,8 +160,7 @@
                         ;; :kind :one-user allows anonymous access to services (for testing purposes only):
                         :kind :one-user
                         :one-user {;; Custom implementations should specify a :factory-fn
-                                   ;; that returns an authentication middleware function.
-                                   ;; See the one-user-authenticator reference below for an example.
+                                   ;; that returns an instance of waiter.auth.authentication.Authenticator:
                                    :factory-fn waiter.auth.authentication/one-user-authenticator
                                    ;; the user account used to launch services
                                    :run-as-user "launch-username"}
