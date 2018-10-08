@@ -578,7 +578,8 @@
 
 (defn- create-marathon-scheduler
   [& {:as marathon-config}]
-  (-> {:force-kill-after-ms 1000
+  (-> {:authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
+       :force-kill-after-ms 1000
        :home-path-prefix "/home/path/"
        :is-waiter-service?-fn (constantly true)
        :marathon-api {}
@@ -696,7 +697,8 @@
                    :service-id->password-fn (constantly nil)
                    :service-id->service-description-fn (constantly nil)
                    :start-scheduler-syncer-fn (constantly nil)}
-          scheduler-config {:force-kill-after-ms 60000
+          scheduler-config {:authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
+                            :force-kill-after-ms 60000
                             :framework-id-ttl 900000
                             :home-path-prefix "/home/"
                             :http-options {:conn-timeout 10000 :socket-timeout 10000}

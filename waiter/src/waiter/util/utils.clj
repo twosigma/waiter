@@ -443,9 +443,8 @@
   (log/info "component:" kind "with config" component-config (if context (str "and context " context) ""))
   (let [config (if kind
                  (get component-config kind)
-                 component-config)
-        factory-fn (:factory-fn config)]
-    (if factory-fn
+                 component-config)]
+    (if-let [factory-fn (:factory-fn config)]
       (if-let [resolved-fn (resolve-symbol factory-fn)]
         (resolved-fn (merge context config))
         (throw (ex-info "Unable to resolve factory function" (assoc component-config :ns (namespace factory-fn)))))

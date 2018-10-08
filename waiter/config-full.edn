@@ -264,7 +264,8 @@
 
                            ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
                            ;; to create services on the underlying scheduler platform.
-                           ;; We specify no authorizer with "nil" here. See the :marathon :authorizer settings for a full example.
+                           ;; We specify the default no-op authorizer here.
+                           ;; See the :marathon :authorizer settings for a full example.
                            :authorizer {:factory-fn waiter.authorization/noop-authorizer}
 
                            ;; The interval (milliseconds) at which instance failed jobs will be checked:
@@ -336,7 +337,8 @@
 
                                  ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
                                  ;; to create services on the underlying scheduler platform.
-                                 ;; We specify no authorizer with "nil" here. See the :marathon :authorizer settings for a full example.
+                                 ;; We specify the default no-op authorizer here.
+                                 ;; See the :marathon :authorizer settings for a full example.
                                  :authorizer {:factory-fn waiter.authorization/noop-authorizer}
 
                                  ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
@@ -450,7 +452,8 @@
 
                             ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
                             ;; to create services on the underlying scheduler platform.
-                            ;; We specify no authorizer with "nil" here. See the :marathon :authorizer settings for a full example.
+                            ;; We specify the default no-op authorizer here.
+                            ;; See the :marathon :authorizer settings for a full example.
                             :authorizer {:factory-fn waiter.authorization/noop-authorizer}
 
                             ;; The shell scheduler can persist its state and use this state when it restarts.

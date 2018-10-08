@@ -170,7 +170,8 @@
 
 (defn common-scheduler-config
   []
-  {:failed-instance-retry-interval-ms 500
+  {:authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
+   :failed-instance-retry-interval-ms 500
    :health-check-interval-ms 500
    :health-check-timeout-ms 1
    :id->service-agent (agent {})
