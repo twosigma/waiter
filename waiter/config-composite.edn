@@ -28,8 +28,6 @@
                     :composite {:factory-fn waiter.scheduler.composite/create-composite-scheduler
                                 ;; two shell schedulers that have reserved comparatively high and low ports
                                 :components {:shell-high {:factory-fn waiter.scheduler.shell/shell-scheduler
-                                                          :authorizer {:kind :default
-                                                                       :default {:factory-fn waiter.authorization/noop-authorizer}}
                                                           :failed-instance-retry-interval-ms 5000
                                                           :health-check-interval-ms 10000
                                                           :health-check-timeout-ms 200
@@ -37,8 +35,6 @@
                                                           :port-range [10500 10999]
                                                           :work-directory "scheduler/shell-high"}
                                              :shell-low {:factory-fn waiter.scheduler.shell/shell-scheduler
-                                                         :authorizer {:kind :default
-                                                                      :default {:factory-fn waiter.authorization/noop-authorizer}}
                                                          :failed-instance-retry-interval-ms 5000
                                                          :health-check-interval-ms 5000
                                                          :health-check-timeout-ms 200

@@ -590,7 +590,7 @@
 ;   :shell-scheduler/pid
 ;
 (defrecord ShellScheduler [scheduler-name work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
-                           retrieve-syncer-state-fn service-id->password-fn service-id->service-description-fn authorizer]
+                           retrieve-syncer-state-fn service-id->password-fn service-id->service-description-fn]
 
   scheduler/ServiceScheduler
 
@@ -681,14 +681,12 @@
      :port->reservation @port->reservation-atom
      :syncer (retrieve-syncer-state-fn)})
 
-  (validate-service [_ service-id]
-    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
-      (authz/check-user authorizer run-as-user service-id))))
+  (validate-service [_ _] nil))
 
 (s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the
   configuration against shell-scheduler-schema and throws if it's not valid."
-  [{:keys [authorizer failed-instance-retry-interval-ms health-check-interval-ms
+  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms
            health-check-timeout-ms port-grace-period-ms port-range work-directory
            ;; functions provided in the context
            id->service-agent
@@ -707,8 +705,7 @@
          (fn? retrieve-syncer-state-fn)
          (not (str/blank? scheduler-name))
          (fn? service-id->password-fn)]}
-  (let [authorizer (utils/create-component authorizer)
-        port->reservation-atom (atom {})]
+  (let [port->reservation-atom (atom {})]
     (->ShellScheduler scheduler-name
                       (-> work-directory
                           io/file
@@ -719,8 +716,7 @@
                       port-range
                       retrieve-syncer-state-fn
                       service-id->password-fn
-                      service-id->service-description-fn
-                      authorizer)))
+                      service-id->service-description-fn)))
 
 (defn get-running-pids
   "Finds all processes that are running the command 'run-service.sh'.

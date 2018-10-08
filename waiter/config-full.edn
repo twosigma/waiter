@@ -451,13 +451,6 @@
                     :shell {
                             :factory-fn waiter.scheduler.shell/shell-scheduler
 
-                            ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
-                            ;; to create services on the underlying scheduler platform.
-                            ;; We specify the default no-op authorizer here.
-                            ;; See the :marathon :authorizer settings for a full example.
-                            :authorizer {:kind :default
-                                         :default {:factory-fn waiter.authorization/noop-authorizer}}
-
                             ;; The shell scheduler can persist its state and use this state when it restarts.
                             ;; This is an optional config, when not provided no backup state will be persisted.
                             ;; The file in the work directory which contains the scheduler state:
