@@ -39,8 +39,8 @@
   ([service-ids] (make-dummy-scheduler service-ids {}))
   ([service-ids args]
    (->
-     :authorizer {:kind :default
-                  :default {:factory-fn 'waiter.authorization/noop-authorizer}}
+     {:authorizer {:kind :default
+                   :default {:factory-fn 'waiter.authorization/noop-authorizer}}
       :fileserver {:port 9090
                    :scheme "http"}
       :max-patch-retries 5
