@@ -170,7 +170,8 @@
 
 (defn common-scheduler-config
   []
-  {:authorizer {:factory-fn 'waiter.authorization/noop-authorizer}
+  {:authorizer {:kind :default
+                :default {:factory-fn 'waiter.authorization/noop-authorizer}}
    :failed-instance-retry-interval-ms 500
    :health-check-interval-ms 500
    :health-check-timeout-ms 1
