@@ -831,9 +831,8 @@
 
 (defn shell-scheduler
   "Creates and starts shell scheduler with loops"
-  [{:keys [backup-file-name failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms
-           port-grace-period-ms port-range scheduler-name scheduler-state-chan
-           scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
+  [{:keys [backup-file-name failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms port-grace-period-ms port-range
+           scheduler-name scheduler-state-chan scheduler-syncer-interval-secs start-scheduler-syncer-fn] :as config}]
   {:pre [(not (str/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)

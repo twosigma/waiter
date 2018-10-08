@@ -17,6 +17,7 @@
             [slingshot.slingshot :as ss]
             [waiter.authorization :as authz]
             [waiter.scheduler :as scheduler]
+            [waiter.schema :as schema]
             [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -461,7 +462,7 @@
       (catch [:status 404] _
         (comment "App does not exist."))))
 
-  (create-service-if-new [this {:keys [run-as-user service-id] :as descriptor}]
+  (create-service-if-new [this {:keys [service-id] :as descriptor}]
     (when-not (scheduler/service-exists? this service-id)
       (ss/try+
         (create-service descriptor this)
@@ -677,7 +678,8 @@
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn url start-scheduler-syncer-fn]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver}]
-  {:pre [(or (nil? fileserver-port)
+  {:pre [(schema/contains-kind-sub-map? authorizer)
+         (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
          (re-matches #"https?" fileserver-scheme)

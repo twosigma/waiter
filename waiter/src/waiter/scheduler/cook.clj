@@ -25,6 +25,7 @@
             [waiter.mesos.mesos :as mesos]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.schema :as schema]
             [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
@@ -492,6 +493,7 @@
            scheduler-name service-id->password-fn service-id->service-description-fn]}
    cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn]
   {:pre [(seq allowed-users)
+         (schema/contains-kind-sub-map? authorizer)
          (or (nil? backend-port) (pos? backend-port))
          (not (str/blank? home-path-prefix))
          (> (:max instance-priorities) (:min instance-priorities))

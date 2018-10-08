@@ -111,8 +111,8 @@
     "Returns the global (i.e. non-service-specific) state the scheduler is maintaining")
 
   (validate-service [this ^String service-id]
-    "Verify that a user has the proper permissions to create services on the underlying scheduler platform.
-     An exception is thrown on failure. Returns nil on success."))
+    "Verify creating a services on the underlying scheduler platform;
+     e.g., by checking that the run-as-user has the proper permissions."))
 
 (defn retry-on-transient-server-exceptions-fn
   "Helper function for `retry-on-transient-server-exceptions`.

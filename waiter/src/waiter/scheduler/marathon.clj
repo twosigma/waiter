@@ -32,6 +32,7 @@
             [waiter.util.http-utils :as http-utils]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.schema :as schema]
             [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -570,7 +571,8 @@
            ;; functions provided in the context
            is-waiter-service?-fn leader?-fn scheduler-name scheduler-state-chan scheduler-syncer-interval-secs
            service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn]}]
-  {:pre [(not (str/blank? url))
+  {:pre [(schema/contains-kind-sub-map? authorizer)
+         (not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
          (or (nil? mesos-slave-port) (utils/pos-int? mesos-slave-port))
          (utils/pos-int? framework-id-ttl)
