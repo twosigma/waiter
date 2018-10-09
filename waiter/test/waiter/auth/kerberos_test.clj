@@ -35,63 +35,59 @@
     (with-redefs [shell/sh (constantly {:exit 1 :err ""})]
       (is (nil? (get-opt-in-accounts "host"))))))
 
-(defn- reset-prestash-cache
-  "Resets the prestash cache to its original state"
-  []
-  (with-redefs [get-opt-in-accounts (constantly #{})]
-    (refresh-prestash-cache "host")))
-
 (deftest test-is-prestashed
-  (testing "returns true for uninitialized cache"
-    (is (empty? (reset-prestash-cache)))
-    (is (is-prestashed? "fakeuser")))
+  (let [cache (atom nil)]
+    (testing "returns true for uninitialized cache"
+      (is (is-prestashed? cache "fakeuser")))
 
-  (testing "returns true for error loading cache"
-    (with-redefs [get-opt-in-accounts (constantly nil)]
-      (is (nil? (refresh-prestash-cache "host")))
-      (is (is-prestashed? "fakeuser")))
-    (reset-prestash-cache))
+    (testing "returns true for error loading cache"
+      (with-redefs [get-opt-in-accounts (constantly nil)]
+        (is (nil? (refresh-prestash-cache cache "host")))
+        (is (is-prestashed? cache "fakeuser")))
+      (reset! cache nil))
 
-  (testing "checks populated cache"
-    (with-redefs [get-opt-in-accounts (constantly #{"test1"})]
-      (is #{"test1"} (refresh-prestash-cache "host"))
-      (is (is-prestashed? "test1"))
-      (is (not (is-prestashed? "fakeuser"))))
-    (reset-prestash-cache)))
+    (testing "checks populated cache"
+      (with-redefs [get-opt-in-accounts (constantly #{"test1"})]
+        (is #{"test1"} (refresh-prestash-cache cache "host"))
+        (is (is-prestashed? cache "test1"))
+        (is (not (is-prestashed? cache "fakeuser"))))
+      (reset! cache nil))))
 
 (deftest test-prestash-cache-maintainer
-  (testing "exit chan"
-    (with-redefs [refresh-prestash-cache (fn [_] #{"user"})]
-      (let [{:keys [exit-chan query-chan]} (start-prestash-cache-maintainer 10 2 "foo.example.com" (async/chan 10))
-            response-chan (async/promise-chan)]
-        (async/>!! exit-chan :exit)
-        (async/>!! query-chan {:response-chan response-chan})
-        (let [timeout (async/timeout 1000)
-              [_ chan] (async/alts!! [response-chan timeout])]
-                                        ; Query should timeout since loop stopped
-          (is (= timeout chan))))))
-
-  (testing "query chan updates cache"
-    (let [users #{"test1" "test2"}
-          response-chan (async/promise-chan)]
-      (with-redefs [get-opt-in-accounts (fn [_] users)]
-        (let [{:keys [query-chan exit-chan]} (start-prestash-cache-maintainer 30000 1 "foo.example.com" (async/chan 10))]
-          (Thread/sleep 5)
+  (let [cache (atom nil)]
+    (testing "exit chan"
+      (with-redefs [refresh-prestash-cache (constantly #{"user"})]
+        (let [{:keys [exit-chan query-chan]} (start-prestash-cache-maintainer cache 10 2 "foo.example.com" (async/chan 10))
+              response-chan (async/promise-chan)]
+          (async/>!! exit-chan :exit)
           (async/>!! query-chan {:response-chan response-chan})
-          (let [response (async/<!! response-chan)]
-            (is (= response users)))
-          (async/>!! exit-chan :exit))))))
+          (let [timeout (async/timeout 1000)
+                [_ chan] (async/alts!! [response-chan timeout])]
+            ; Query should timeout since loop stopped
+            (is (= timeout chan))))))
+
+    (testing "query chan updates cache"
+      (let [users #{"test1" "test2"}
+            response-chan (async/promise-chan)]
+        (with-redefs [get-opt-in-accounts (fn [_] users)]
+          (let [{:keys [query-chan exit-chan]} (start-prestash-cache-maintainer cache 30000 1 "foo.example.com" (async/chan 10))]
+            (Thread/sleep 5)
+            (async/>!! query-chan {:response-chan response-chan})
+            (let [response (async/<!! response-chan)]
+              (is (= response users)))
+            (async/>!! exit-chan :exit)))))))
 
 (deftest test-check-has-prestashed-tickets
-  (let [query-chan (async/chan 1)]
+  (let [cache (atom nil)
+        query-chan (async/chan 1)]
     (testing "returns error for user without tickets"
-      (with-redefs [is-prestashed? (fn [_] false)]
+      (with-redefs [is-prestashed? (constantly false)]
         (async/go
           (let [{:keys [response-chan]} (async/<! query-chan)]
             (async/>! response-chan #{})))
         (try
           (utils/load-messages {:prestashed-tickets-not-available "Prestashed tickets"})
-          (check-has-prestashed-tickets query-chan "kuser" "service-id")
+          (check-has-prestashed-tickets cache query-chan "kuser" "service-id")
           (is false "Expected exception to be thrown")
           (catch ExceptionInfo e
             (let [{:keys [status message]} (ex-data e)]
@@ -99,19 +95,19 @@
               (is (str/includes? message "Prestashed tickets")))))))
 
     (testing "queries on cache miss"
-      (with-redefs [is-prestashed? (fn [_] false)]
+      (with-redefs [is-prestashed? (constantly false)]
         (async/go
           (let [{:keys [response-chan]} (async/<! query-chan)]
             (async/>! response-chan #{"kuser"})))
-        (is (nil? (check-has-prestashed-tickets query-chan "kuser" "service-id")))))
+        (is (nil? (check-has-prestashed-tickets cache query-chan "kuser" "service-id")))))
 
     (testing "returns nil on query timeout"
-      (with-redefs [is-prestashed? (fn [_] false)]
-        (is (nil? (check-has-prestashed-tickets (async/chan 1) "kuser" "service-id")))))
+      (with-redefs [is-prestashed? (constantly false)]
+        (is (nil? (check-has-prestashed-tickets cache (async/chan 1) "kuser" "service-id")))))
 
     (testing "returns nil for a user with tickets"
-      (with-redefs [is-prestashed? (fn [_] true)]
-        (is (nil? (check-has-prestashed-tickets query-chan nil "service-id")))))))
+      (with-redefs [is-prestashed? (constantly true)]
+        (is (nil? (check-has-prestashed-tickets cache query-chan nil "service-id")))))))
 
 (deftest test-kerberos-authenticator
   (with-redefs [start-prestash-cache-maintainer (constantly nil)]

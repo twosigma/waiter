@@ -38,61 +38,59 @@
       (log/error e "Failed to update prestash cache")
       nil)))
 
-; use nil to initialize cache so that if it fails to populate, we can return true for all users
-(let [prestash-cache (atom nil)]
-  (defn refresh-prestash-cache
-    "Update the cache of users with prestashed kerberos tickets"
-    [host]
-    (when-let [users (get-opt-in-accounts host)]
-      (reset! prestash-cache users)
-      (log/debug "refreshed the prestash cache with" (count users) "users")
-      users))
+(defn refresh-prestash-cache
+  "Update the cache of users with prestashed kerberos tickets"
+  [prestash-cache host]
+  (when-let [users (get-opt-in-accounts host)]
+    (reset! prestash-cache users)
+    (log/debug "refreshed the prestash cache with" (count users) "users")
+    users))
 
-  (defn start-prestash-cache-maintainer
-    "Starts an async/go-loop to maintain the prestash-cache."
-    [max-update-interval min-update-interval host query-chan]
-    (let [exit-chan (async/chan 1)]
-      (refresh-prestash-cache host)
-      (async/go-loop [{:keys [timeout-chan last-updated] :as current-state}
-                      {:timeout-chan (async/timeout max-update-interval)
-                       :last-updated (t/now)
-                       :continue-looping true}]
-        (let [[args chan] (async/alts! [exit-chan timeout-chan query-chan] :priority true)
-              new-state
-              (condp = chan
-                exit-chan (assoc current-state :continue-looping false)
-                timeout-chan
-                (do
-                  (refresh-prestash-cache host)
-                  (assoc current-state :timeout-chan (async/timeout max-update-interval)
-                                       :last-updated (t/now)))
-                query-chan
-                (let [{:keys [response-chan]} args]
-                  (if (t/before? (t/now) (t/plus last-updated (t/millis min-update-interval)))
-                    (do
-                      (async/>! response-chan @prestash-cache)
-                      current-state)
-                    (let [users (refresh-prestash-cache host)]
-                      (async/>! response-chan users)
-                      (assoc current-state :timeout-chan (async/timeout max-update-interval)
-                             :last-updated (t/now))))))]
-          (when (:continue-looping new-state)
-            (recur new-state))))
-      {:exit-chan exit-chan
-       :query-chan query-chan}))
+(defn start-prestash-cache-maintainer
+  "Starts an async/go-loop to maintain the prestash-cache."
+  [prestash-cache max-update-interval min-update-interval host query-chan]
+  (let [exit-chan (async/chan 1)]
+    (refresh-prestash-cache prestash-cache host)
+    (async/go-loop [{:keys [timeout-chan last-updated] :as current-state}
+                    {:timeout-chan (async/timeout max-update-interval)
+                     :last-updated (t/now)
+                     :continue-looping true}]
+                   (let [[args chan] (async/alts! [exit-chan timeout-chan query-chan] :priority true)
+                         new-state
+                         (condp = chan
+                           exit-chan (assoc current-state :continue-looping false)
+                           timeout-chan
+                           (do
+                             (refresh-prestash-cache prestash-cache host)
+                             (assoc current-state :timeout-chan (async/timeout max-update-interval)
+                                    :last-updated (t/now)))
+                           query-chan
+                           (let [{:keys [response-chan]} args]
+                             (if (t/before? (t/now) (t/plus last-updated (t/millis min-update-interval)))
+                               (do
+                                 (async/>! response-chan @prestash-cache)
+                                 current-state)
+                               (let [users (refresh-prestash-cache prestash-cache host)]
+                                 (async/>! response-chan users)
+                                 (assoc current-state :timeout-chan (async/timeout max-update-interval)
+                                        :last-updated (t/now))))))]
+                     (when (:continue-looping new-state)
+                       (recur new-state))))
+    {:exit-chan exit-chan
+     :query-chan query-chan}))
 
-  (defn is-prestashed?
-    "Returns true if the user has prestashed
-    tickets and false otherwise. If the cache has
-    not been populated, returns true for all users."
-    [user]
-    (let [users @prestash-cache]
-      (or (empty? users) (contains? users user)))))
+(defn is-prestashed?
+  "Returns true if the user has prestashed
+   tickets and false otherwise. If the cache has
+   not been populated, returns true for all users."
+  [prestash-cache user]
+  (let [users @prestash-cache]
+    (or (empty? users) (contains? users user))))
 
 (defn check-has-prestashed-tickets
   "Checks if the run-as-user has prestashed tickets available. Throws an exception if not."
-  [query-chan run-as-user service-id]
-  (when (not (is-prestashed? run-as-user))
+  [prestash-cache query-chan run-as-user service-id]
+  (when (not (is-prestashed? prestash-cache run-as-user))
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan})
           [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)]
@@ -115,13 +113,10 @@
   (->KerberosAuthenticator password))
 
 (defrecord KerberosAuthorizer
-  [prestash-cache-min-refresh-ms
-   prestash-cache-refresh-ms
-   prestash-query-host
-   query-chan]
+  [prestash-cache query-chan]
   authz/Authorizer
   (check-user [_ user service-id]
-    (check-has-prestashed-tickets query-chan user service-id)))
+    (check-has-prestashed-tickets prestash-cache query-chan user service-id)))
 
 (defn kerberos-authorizer
   "Factory function for creating KerberosAuthorizer"
@@ -129,14 +124,13 @@
   {:pre [(utils/pos-int? prestash-cache-min-refresh-ms)
          (utils/pos-int? prestash-cache-refresh-ms)
          (not (str/blank? prestash-query-host))]}
-  (let [query-chan (async/chan 1024)]
+  (let [; use nil to initialize cache so that if it fails to populate, we can return true for all users
+        prestash-cache (atom nil)
+        query-chan (async/chan 1024)]
     (start-prestash-cache-maintainer
+      prestash-cache
       prestash-cache-refresh-ms
       prestash-cache-min-refresh-ms
       prestash-query-host
       query-chan)
-    (->KerberosAuthorizer
-      prestash-cache-min-refresh-ms
-      prestash-cache-refresh-ms
-      prestash-query-host
-      query-chan)))
+    (->KerberosAuthorizer prestash-cache query-chan)))
