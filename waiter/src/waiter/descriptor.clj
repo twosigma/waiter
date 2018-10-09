@@ -91,6 +91,14 @@
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
             (utils/exception->response e request)))))))
 
+(defn- log-service-changes
+  "Logs changes to the tracker service ids."
+  [new-service-ids old-service-ids qualifier]
+  (when-let [old-ids-delta (seq (set/difference old-service-ids new-service-ids))]
+    (log/info "no longer" qualifier "services:" old-ids-delta))
+  (when-let [new-ids-delta (seq (set/difference new-service-ids old-service-ids))]
+    (log/info "newly" qualifier "services:" new-ids-delta)))
+
 (defn fallback-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
    fallback state. It also responds to queries for the fallback state."
@@ -126,10 +134,13 @@
 
                     router-state-chan
                     (let [{:keys [all-available-service-ids service-id->healthy-instances]} message
+                          healthy-service-ids' (-> service-id->healthy-instances keys set)
                           current-state' (assoc current-state
                                            :available-service-ids all-available-service-ids
-                                           :healthy-service-ids (-> service-id->healthy-instances keys set))]
+                                           :healthy-service-ids healthy-service-ids')]
                       (reset! fallback-state-atom current-state')
+                      (log-service-changes all-available-service-ids available-service-ids "available")
+                      (log-service-changes healthy-service-ids' healthy-service-ids "healthy")
                       current-state')))
                 (catch Exception e
                   (log/error e "error in fallback-maintainer")
@@ -155,7 +166,7 @@
     (let [{{:keys [token->token-data]} :sources} descriptor
           current-service-id (:service-id descriptor)
           fallback-period-secs (descriptor->fallback-period-secs descriptor)]
-      (if (pos? fallback-period-secs)
+      (when (pos? fallback-period-secs)
         (let [most-recently-modified-token (sd/retrieve-most-recently-modified-token token->token-data)
               token-last-update-time (get-in token->token-data [most-recently-modified-token "last-update-time"] 0)]
           (if (->> (t/seconds fallback-period-secs)
@@ -182,8 +193,7 @@
                            :fallback-state (retrieve-fallback-state-for fallback-state attempted-service-ids)})))
             (log/info "fallback period expired for" current-service-id
                       {:most-recently-modified-token most-recently-modified-token
-                       :token-last-update-time token-last-update-time})))
-        (log/info "fallback disabled for" current-service-id {:fallback-period-secs fallback-period-secs})))))
+                       :token-last-update-time token-last-update-time})))))))
 
 (defn resolve-descriptor
   "Resolves the descriptor that should be used based on available healthy services.
