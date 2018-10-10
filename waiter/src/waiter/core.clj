@@ -817,10 +817,10 @@
                                   [:state start-service-cache task-thread-pool]
                                   store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
+                             (store-service-description-fn descriptor)
                              (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
-                               scheduler descriptor start-service-cache task-thread-pool
-                               :pre-start-fn #(store-service-description-fn descriptor))))
+                               scheduler descriptor start-service-cache task-thread-pool)))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]
