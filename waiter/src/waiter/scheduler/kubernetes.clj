@@ -15,7 +15,9 @@
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
             [slingshot.slingshot :as ss]
+            [waiter.authorization :as authz]
             [waiter.scheduler :as scheduler]
+            [waiter.schema :as schema]
             [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -413,6 +415,7 @@
 
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
+                                authorizer
                                 fileserver
                                 http-client
                                 max-patch-retries
@@ -548,7 +551,11 @@
 
   (state [_]
     {:service-id->failed-instances @service-id->failed-instances-transient-store
-     :syncer (retrieve-syncer-state-fn)}))
+     :syncer (retrieve-syncer-state-fn)})
+
+  (validate-service [_ service-id]
+    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
+      (authz/check-user authorizer run-as-user service-id))))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -666,12 +673,13 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication http-options max-patch-retries max-name-length orchestrator-name
+  [{:keys [authentication authorizer http-options max-patch-retries max-name-length orchestrator-name
            pod-base-port pod-suffix-length replicaset-api-version replicaset-spec-builder
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn url start-scheduler-syncer-fn]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver}]
-  {:pre [(or (nil? fileserver-port)
+  {:pre [(schema/contains-kind-sub-map? authorizer)
+         (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
          (re-matches #"https?" fileserver-scheme)
@@ -692,7 +700,8 @@
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)]}
-  (let [http-client (http-utils/http-client-factory http-options)
+  (let [authorizer (utils/create-component authorizer)
+        http-client (http-utils/http-client-factory http-options)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
@@ -712,6 +721,7 @@
     (when authentication
       (start-auth-renewer authentication))
     (->KubernetesScheduler url
+                           authorizer
                            fileserver
                            http-client
                            max-patch-retries

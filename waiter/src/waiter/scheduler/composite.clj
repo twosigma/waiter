@@ -96,7 +96,12 @@
 
   (state [_]
     {:aggregator (query-aggregator-state-fn)
-     :components (pc/map-vals scheduler/state scheduler-id->scheduler)}))
+     :components (pc/map-vals scheduler/state scheduler-id->scheduler)})
+
+  (validate-service [_ service-id]
+    (-> service-id
+        service-id->scheduler
+        (scheduler/validate-service service-id))))
 
 (defn service-id->scheduler
   "Resolves the scheduler for a given service-id using the scheduler defined in the description."

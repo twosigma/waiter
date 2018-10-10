@@ -27,6 +27,7 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [schema.core :as s]
+            [waiter.authorization :as authz]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.util.async-utils :as au]
@@ -589,7 +590,7 @@
 ;   :shell-scheduler/pid
 ;
 (defrecord ShellScheduler [scheduler-name work-directory id->service-agent port->reservation-atom port-grace-period-ms port-range
-                           retrieve-syncer-state-fn service-id->password-fn]
+                           retrieve-syncer-state-fn service-id->password-fn service-id->service-description-fn]
 
   scheduler/ServiceScheduler
 
@@ -678,18 +679,21 @@
   (state [_]
     {:id->service @id->service-agent
      :port->reservation @port->reservation-atom
-     :syncer (retrieve-syncer-state-fn)}))
+     :syncer (retrieve-syncer-state-fn)})
+
+  (validate-service [_ _] nil))
 
 (s/defn ^:always-validate create-shell-scheduler
   "Returns a new ShellScheduler with the provided configuration. Validates the
   configuration against shell-scheduler-schema and throws if it's not valid."
-  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms health-check-timeout-ms
-           port-grace-period-ms port-range work-directory
+  [{:keys [failed-instance-retry-interval-ms health-check-interval-ms
+           health-check-timeout-ms port-grace-period-ms port-range work-directory
            ;; functions provided in the context
            id->service-agent
            retrieve-syncer-state-fn
            scheduler-name
-           service-id->password-fn]}]
+           service-id->password-fn
+           service-id->service-description-fn]}]
   {:pre [(utils/pos-int? failed-instance-retry-interval-ms)
          (utils/pos-int? health-check-interval-ms)
          (utils/pos-int? health-check-timeout-ms)
@@ -711,7 +715,8 @@
                       port-grace-period-ms
                       port-range
                       retrieve-syncer-state-fn
-                      service-id->password-fn)))
+                      service-id->password-fn
+                      service-id->service-description-fn)))
 
 (defn get-running-pids
   "Finds all processes that are running the command 'run-service.sh'.

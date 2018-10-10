@@ -814,14 +814,13 @@
    :service-id->source-tokens-entries-fn (pc/fnk [[:curator kv-store]]
                                            (partial sd/service-id->source-tokens-entries kv-store))
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
-                                  [:state authenticator start-service-cache task-thread-pool]
+                                  [:state start-service-cache task-thread-pool]
                                   store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
-                             (let [run-as-user (get-in descriptor [:service-description "run-as-user"])]
-                               (auth/check-user authenticator run-as-user service-id))
+                             (store-service-description-fn descriptor)
+                             (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
-                               scheduler descriptor start-service-cache task-thread-pool
-                               :pre-start-fn #(store-service-description-fn descriptor))))
+                               scheduler descriptor start-service-cache task-thread-pool)))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]

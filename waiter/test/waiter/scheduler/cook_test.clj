@@ -863,6 +863,8 @@
 (deftest test-cook-scheduler
   (testing "Creating a CookScheduler"
     (let [valid-config {:allowed-users #{"test-user"}
+                        :authorizer {:kind :default
+                                     :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                         :backend-port 7890
                         :cook-api {}
                         :home-path-prefix "/home/path/"

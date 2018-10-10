@@ -108,7 +108,11 @@
     "Retrieves the state the scheduler is maintaining for the given service-id.")
 
   (state [this]
-    "Returns the global (i.e. non-service-specific) state the scheduler is maintaining"))
+    "Returns the global (i.e. non-service-specific) state the scheduler is maintaining")
+
+  (validate-service [this ^String service-id]
+    "Verify creating a services on the underlying scheduler platform;
+     e.g., by checking that the run-as-user has the proper permissions."))
 
 (defn retry-on-transient-server-exceptions-fn
   "Helper function for `retry-on-transient-server-exceptions`.

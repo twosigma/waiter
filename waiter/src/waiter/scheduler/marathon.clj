@@ -25,12 +25,14 @@
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [slingshot.slingshot :as ss]
+            [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
             [waiter.mesos.marathon :as marathon]
             [waiter.mesos.mesos :as mesos]
             [waiter.util.http-utils :as http-utils]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
+            [waiter.schema :as schema]
             [waiter.service-description :as sd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -329,9 +331,9 @@
 (defrecord MarathonScheduler [scheduler-name marathon-api mesos-api retrieve-framework-id-fn
                               home-path-prefix service-id->failed-instances-transient-store
                               service-id->kill-info-store service-id->out-of-sync-state-store
-                              service-id->password-fn service-id->service-description
+                              service-id->password-fn service-id->service-description-fn
                               force-kill-after-ms is-waiter-service?-fn sync-deployment-maintainer-atom
-                              retrieve-syncer-state-fn]
+                              retrieve-syncer-state-fn authorizer]
 
   scheduler/ServiceScheduler
 
@@ -437,7 +439,11 @@
     {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
      :service-id->kill-info-store @service-id->kill-info-store
      :service-id->out-of-sync-state-store @service-id->out-of-sync-state-store
-     :syncer (retrieve-syncer-state-fn)}))
+     :syncer (retrieve-syncer-state-fn)})
+
+  (validate-service [_ service-id]
+    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
+      (authz/check-user authorizer run-as-user service-id))))
 
 (defn- get-apps-with-deployments
   "Retrieves the apps with the deployment info embedded."
@@ -560,12 +566,13 @@
 (defn marathon-scheduler
   "Returns a new MarathonScheduler with the provided configuration.
    Validates the configuration against marathon-scheduler-schema and throws if it's not valid."
-  [{:keys [home-path-prefix http-options force-kill-after-ms framework-id-ttl mesos-slave-port
-           slave-directory sync-deployment url
+  [{:keys [authorizer home-path-prefix http-options force-kill-after-ms framework-id-ttl
+           mesos-slave-port slave-directory sync-deployment url
            ;; functions provided in the context
            is-waiter-service?-fn leader?-fn scheduler-name scheduler-state-chan scheduler-syncer-interval-secs
            service-id->password-fn service-id->service-description-fn start-scheduler-syncer-fn]}]
-  {:pre [(not (str/blank? url))
+  {:pre [(schema/contains-kind-sub-map? authorizer)
+         (not (str/blank? url))
          (or (nil? slave-directory) (not (str/blank? slave-directory)))
          (or (nil? mesos-slave-port) (utils/pos-int? mesos-slave-port))
          (utils/pos-int? framework-id-ttl)
@@ -584,7 +591,8 @@
          (fn? start-scheduler-syncer-fn)]}
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
-  (let [http-client (http-utils/http-client-factory http-options)
+  (let [authorizer (utils/create-component authorizer)
+        http-client (http-utils/http-client-factory http-options)
         marathon-api (marathon/api-factory http-client http-options url)
         mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})
@@ -602,7 +610,7 @@
                              service-id->failed-instances-transient-store service-id->last-force-kill-store
                              service-id->out-of-sync-state-store service-id->password-fn
                              service-id->service-description-fn force-kill-after-ms is-waiter-service?-fn
-                             sync-deployment-maintainer-atom retrieve-syncer-state-fn)
+                             sync-deployment-maintainer-atom retrieve-syncer-state-fn authorizer)
         sync-deployment-maintainer (start-sync-deployment-maintainer
                                      leader?-fn service-id->out-of-sync-state-store marathon-scheduler sync-deployment)]
     (reset! sync-deployment-maintainer-atom sync-deployment-maintainer)

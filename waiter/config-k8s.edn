@@ -21,7 +21,9 @@
  ; ---------- Scheduling ----------
 
  :scheduler-config {:kind :kubernetes
-                    :kubernetes {:fileserver {:port 591}
+                    :kubernetes {:authorizer {:kind :sanity-check
+                                              :sanity-check {:factory-fn waiter.authorization/sanity-check-authorizer}}
+                                 :fileserver {:port 591}
                                  :url "http://localhost:8001"}}
 
  ; ---------- Error Handling ----------

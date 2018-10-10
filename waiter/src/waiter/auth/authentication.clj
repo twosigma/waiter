@@ -23,13 +23,6 @@
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
 
 (defprotocol Authenticator
-  (auth-type [this]
-    "Returns a keyword identifying the type of authenticator.")
-
-  (check-user [this user service-id]
-    "Checks if the user is setup correctly to successfully launch a service using the authentication scheme.
-     Throws an exception if not.")
-
   (wrap-auth-handler [this request-handler]
     "Attaches middleware that enables the application to perform authentication.
      The middleware should
@@ -100,23 +93,18 @@
 ;; The anonymous authenticator attaches the principal of run-as-user to the request.
 ;; In particular, this enables requests to launch processes as run-as-user.
 ;; Use of this authentication mechanism is strongly discouraged for production use.
+;; Real middleware implementations should:
+;;   - either issue a 401 challenge asking the client to authenticate itself,
+;;   - or upon successful authentication populate the request with :authorization/user and :authorization/principal"
 (defrecord SingleUserAuthenticator [run-as-user password]
-
   Authenticator
-
-  (auth-type [_]
-    :one-user)
-
-  (check-user [_ _ _]
-    (comment "do nothing"))
-
   (wrap-auth-handler [_ request-handler]
-    (fn anonymous-handler [request]
+    (fn anonymous-handler [request] 
       (handle-request-auth request-handler request run-as-user run-as-user password))))
 
 (defn one-user-authenticator
-  "Factory function for creating SingleUserAuthenticator"
+  "Factory function for creating single-user authenticator"
   [{:keys [password run-as-user]}]
-  (log/warn "use of SingleUserAuthenticator is strongly discouraged for production use:"
+  (log/warn "use of single-user authenticator is strongly discouraged for production use:"
             "requests will use principal" run-as-user)
   (->SingleUserAuthenticator run-as-user password))

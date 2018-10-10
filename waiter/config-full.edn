@@ -167,13 +167,7 @@
 
                         ;; :kind :kerberos enables authentication using the Kerberos protocol
                         ;:kind :kerberos
-                        :kerberos {:factory-fn waiter.auth.kerberos/kerberos-authenticator
-                                   ;; the minimum interval after which prestash kerberos tickets needs to refreshed
-                                   :prestash-cache-min-refresh-ms 100
-                                   ;; the maximum interval after which prestash kerberos tickets are forcibly refreshed
-                                   :prestash-cache-refresh-ms 1000
-                                   ;; The prestash query host
-                                   :prestash-query-host "www.example.com"}}
+                        :kerberos {:factory-fn waiter.auth.kerberos/kerberos-authenticator}}
 
  ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
  ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.
@@ -267,6 +261,13 @@
                            ;; that returns an instance of waiter.scheduler.ServiceScheduler:
                            :factory-fn waiter.scheduler.cook/cook-scheduler
 
+                           ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
+                           ;; to create services on the underlying scheduler platform.
+                           ;; We specify the default no-op authorizer here.
+                           ;; See the :marathon :authorizer settings for a full example.
+                           :authorizer {:kind :default
+                                        :default {:factory-fn waiter.authorization/noop-authorizer}}
+
                            ;; The interval (milliseconds) at which instance failed jobs will be checked:
                            :failed-tracker-interval-ms 10000
 
@@ -334,6 +335,13 @@
                                                            ;; The default factory function accepts an option for the docker container to use in the pod.
                                                            :default-container-image "twosigma/kitchen:latest"}
 
+                                 ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
+                                 ;; to create services on the underlying scheduler platform.
+                                 ;; We specify the default no-op authorizer here.
+                                 ;; See the :marathon :authorizer settings for a full example.
+                                 :authorizer {:kind :default
+                                              :default {:factory-fn waiter.authorization/noop-authorizer}}
+
                                  ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
                                  ;; running a server for directory listings (in JSON) and serving file contents.
                                  ;; Waiter expects the directory listings in the format returned by nginx's autoindex module when configured for JSON.
@@ -385,6 +393,18 @@
                                ;; Custom implementations should specify a :factory-fn
                                ;; that returns an instance of waiter.scheduler.ServiceScheduler:
                                :factory-fn waiter.scheduler.marathon/marathon-scheduler
+
+                               ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
+                               ;; to create services on the underlying scheduler platform.
+                               :authorizer {:kind :kerberos
+                                            :kerberos {;; kerberos-prestash determines user authorization via the presence of prestashed tickets
+                                                       :factory-fn waiter.auth.kerberos/kerberos-authorizer
+                                                       ;; the minimum interval after which prestash kerberos tickets needs to refreshed
+                                                       :prestash-cache-min-refresh-ms 100
+                                                       ;; the maximum interval after which prestash kerberos tickets are forcibly refreshed
+                                                       :prestash-cache-refresh-ms 1000
+                                                       ;; the prestash query host (where to look for the tickets)
+                                                       :prestash-query-host "www.example.com"}}
 
                                ;; The location of home directories on your Mesos agents;
                                ;; the HOME environment variable is set by joining this and the run-as-user:
