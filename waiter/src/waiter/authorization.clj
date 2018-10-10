@@ -13,7 +13,8 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 ;;
-(ns waiter.authorization)
+(ns waiter.authorization
+  (require [clojure.string :as string]))
 
 (defprotocol EntitlementManager
   "Security related methods"
@@ -77,3 +78,16 @@
 (defn noop-authorizer [context]
   "Factory function for the default (no-op) authorizer."
   (->NoOpAuthorizer))
+
+;; Authorizer implementation that only checks for non-blank arguments.
+;; We use this implementation for integration testing.
+(defrecord SanityCheckAuthorizer []
+  Authorizer
+  (check-user [_ user service-id]
+    (assert (not (string/blank? user)))
+    (assert (not (string/blank? service-id)))
+    (comment "ok")))
+
+(defn sanity-check-authorizer [context]
+  "Factory function for the sanity-check authorizer."
+  (->SanityCheckAuthorizer))
