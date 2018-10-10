@@ -17,6 +17,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
             [schema.core :as s]
@@ -98,12 +99,17 @@
     {:aggregator (query-aggregator-state-fn)
      :components (pc/map-vals scheduler/state scheduler-id->scheduler)}))
 
+(defn service-id->scheduler-id
+  "Resolves the scheduler-id for a given service-id using the scheduler defined in the description."
+  [service-id->service-description-fn default-scheduler service-id]
+  (let [service-description (service-id->service-description-fn service-id)
+        default-scheduler-id (when default-scheduler (name default-scheduler))]
+    (get service-description "scheduler" default-scheduler-id)))
+
 (defn service-id->scheduler
   "Resolves the scheduler for a given service-id using the scheduler defined in the description."
   [service-id->service-description-fn scheduler-id->scheduler default-scheduler service-id]
-  (let [service-description (service-id->service-description-fn service-id)
-        default-scheduler-id (when default-scheduler (name default-scheduler))
-        scheduler-id (get service-description "scheduler" default-scheduler-id)]
+  (let [scheduler-id (service-id->scheduler-id service-id->service-description-fn default-scheduler service-id)]
     (if-let [scheduler (scheduler-id->scheduler scheduler-id)]
       scheduler
       (throw (ex-info "No matching scheduler found!"
@@ -207,9 +213,47 @@
                         :scheduler-id->sync-time scheduler-id->sync-time'
                         :scheduler-id->type->messages scheduler-id->type->messages')))))))}))
 
+(defn validate-fallback-support
+  [{:keys [interval-ms min-failed-instances scheduler]} default-scheduler valid-schedulers]
+  {:pre [(integer? interval-ms) (pos? interval-ms)
+         (integer? min-failed-instances) (pos? min-failed-instances)
+         (not (str/blank? scheduler))
+         (not= default-scheduler scheduler)
+         (contains? scheduler valid-schedulers)]}
+  (comment nothing to do))
+
+(defn start-fallback-scheduler-manager
+  [leader?-fn make-inter-router-requests-fn service-id->scheduler-id override-parameter-when-not-set! query-state-fn
+   valid-scheduler-ids {:keys [interval-ms min-failed-instances scheduler-id]}]
+  (if scheduler-id
+    (do
+      (log/info "starting fallback scheduler manager at intervals of" interval-ms "ms")
+      (du/start-timer-task
+        (t/millis interval-ms)
+        (fn fallback-scheduler-manager-task []
+          (if (leader?-fn)
+            (do
+              (log/info "running iteration of fallback scheduler manager")
+              (let [scheduler-state (query-state-fn)
+                    service-ids (comment extract-unhealthy-service-ids scheduler-state min-failed-instances)]
+                (when (seq service-ids)
+                  (log/info "found" (count service-ids) "that potentially need a fallback scheduler"
+                            {:service-ids (vec service-ids)}))
+                (doseq [service-id service-ids]
+                  (try
+                    ;; only override scheduler for services which do not specify one explicitly
+                    (when-not (service-id->scheduler-id nil service-id)
+                      (when (override-parameter-when-not-set! service-id "waiter.composite-scheduler" "scheduler" scheduler-id)
+                        (make-inter-router-requests-fn (str "apps/" service-id "/refresh") :method :get)))
+                    (catch Exception ex
+                      (log/error ex "unable to override scheduler for" service-id))))))
+            (log/info "skipping fallback scheduler manager iteration")))))
+    (log/info "dynamic fallback scheduler support has been disabled")))
+
 (defn create-composite-scheduler
   "Creates and starts composite scheduler with components using their respective factory functions."
-  [{:keys [default-scheduler scheduler-state-chan service-id->service-description-fn] :as config}]
+  [{:keys [default-scheduler fallback-support scheduler-state-chan service-id->service-description-fn] :as config}]
+  (comment validate-fallback-support fallback-support)
   (let [scheduler-id->component (initialize-component-schedulers config)
         scheduler-id->scheduler (pc/map-vals :scheduler scheduler-id->component)
         scheduler-id->state-chan (pc/map-vals :scheduler-state-chan scheduler-id->component)
@@ -217,4 +261,5 @@
                                    (service-id->scheduler
                                      service-id->service-description-fn scheduler-id->scheduler default-scheduler service-id))
         {:keys [query-state-fn]} (start-scheduler-state-aggregator scheduler-state-chan scheduler-id->state-chan)]
+    (comment start-fallback-scheduler-manager {}) ;; TODO shams
     (->CompositeScheduler service-id->scheduler-fn scheduler-id->scheduler query-state-fn)))

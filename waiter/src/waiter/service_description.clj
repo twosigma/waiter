@@ -112,11 +112,11 @@
   #{"authentication" "blacklist-on-503" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate"
     "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures"
     "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold" "max-queue-length" "min-instances"
-    "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
+    "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor" "scheduler"})
 
 (def ^:const service-non-override-keys
   #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env" "health-check-url" "mem" "metadata"
-    "metric-group" "name" "permitted-user" "ports" "run-as-user" "scheduler" "version"})
+    "metric-group" "name" "permitted-user" "ports" "run-as-user" "version"})
 
 ; keys used as parameters in the service description
 (def ^:const service-parameter-keys
@@ -309,6 +309,16 @@
     "Retrieves the overridden service description for a service from the key-value store."
     [kv-store service-id & {:keys [refresh] :or {refresh false}}]
     (kv/fetch kv-store (service-id->key service-id) :refresh refresh)))
+
+(defn override-parameter-when-not-set!
+  "Overrides the specified service parameter to the provided value if it is not already overridden."
+  [kv-store service-id username parameter-key parameter-value]
+  (let [overrides (service-id->overrides kv-store service-id)]
+    (when-not (contains? overrides parameter-key)
+      (log/info "overriding" parameter-key "for" service-id "to" parameter-value)
+      (->> (assoc overrides parameter-key parameter-value)
+           (store-service-description-overrides kv-store service-id username))
+      true)))
 
 (defn default-and-override
   "Adds defaults and overrides to the provided service-description"
