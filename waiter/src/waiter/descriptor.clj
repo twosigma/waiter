@@ -43,6 +43,12 @@
   [fallback-state service-id]
   (-> fallback-state :healthy-service-ids (contains? service-id)))
 
+(defn retrieve-fallback-state-for
+  "Returns the fallback state for the provided service-ids."
+  [{:keys [available-service-ids healthy-service-ids]} service-ids]
+  {:available-service-ids (set/intersection available-service-ids service-ids)
+   :healthy-service-ids (set/intersection healthy-service-ids service-ids)})
+
 (defn missing-run-as-user?
   "Returns true if the exception is due to a missing run-as-user validation on the service description."
   [exception]
@@ -85,6 +91,14 @@
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
             (utils/exception->response e request)))))))
 
+(defn- log-service-changes
+  "Logs changes to the tracker service ids."
+  [new-service-ids old-service-ids qualifier]
+  (when-let [old-ids-delta (seq (set/difference old-service-ids new-service-ids))]
+    (log/info "no longer" qualifier "services:" old-ids-delta))
+  (when-let [new-ids-delta (seq (set/difference new-service-ids old-service-ids))]
+    (log/info "newly" qualifier "services:" new-ids-delta)))
+
 (defn fallback-maintainer
   "Long running daemon process that listens for scheduler state updates and triggers changes in the
    fallback state. It also responds to queries for the fallback state."
@@ -120,10 +134,13 @@
 
                     router-state-chan
                     (let [{:keys [all-available-service-ids service-id->healthy-instances]} message
+                          healthy-service-ids' (-> service-id->healthy-instances keys set)
                           current-state' (assoc current-state
                                            :available-service-ids all-available-service-ids
-                                           :healthy-service-ids (-> service-id->healthy-instances keys set))]
+                                           :healthy-service-ids healthy-service-ids')]
                       (reset! fallback-state-atom current-state')
+                      (log-service-changes all-available-service-ids available-service-ids "available")
+                      (log-service-changes healthy-service-ids' healthy-service-ids "healthy")
                       current-state')))
                 (catch Exception e
                   (log/error e "error in fallback-maintainer")
@@ -147,27 +164,36 @@
   [descriptor->previous-descriptor search-history-length fallback-state request-time descriptor]
   (when (-> descriptor :sources :token-sequence seq)
     (let [{{:keys [token->token-data]} :sources} descriptor
+          current-service-id (:service-id descriptor)
           fallback-period-secs (descriptor->fallback-period-secs descriptor)]
-      (when (and (pos? fallback-period-secs)
-                 (let [most-recently-modified-token (sd/retrieve-most-recently-modified-token token->token-data)
-                       token-last-update-time (get-in token->token-data [most-recently-modified-token "last-update-time"] 0)]
-                   (->> (t/seconds fallback-period-secs)
-                        (t/plus (tc/from-long token-last-update-time))
-                        (t/before? request-time))))
-        (loop [iteration 1
-               loop-descriptor descriptor]
-          (when (<= iteration search-history-length)
-            (when-let [previous-descriptor (descriptor->previous-descriptor loop-descriptor)]
-              (let [{:keys [service-id]} previous-descriptor]
-                (if (service-healthy? fallback-state service-id)
-                  (do
-                    (log/info (str "iteration-" iteration) (:service-id descriptor) "falling back to" service-id)
-                    previous-descriptor)
-                  (do
-                    (log/debug (str "iteration-" iteration) "skipping" service-id "as the fallback service"
-                               {:available (service-exists? fallback-state service-id)
-                                :healthy (service-healthy? fallback-state service-id)})
-                    (recur (inc iteration) previous-descriptor)))))))))))
+      (when (pos? fallback-period-secs)
+        (let [most-recently-modified-token (sd/retrieve-most-recently-modified-token token->token-data)
+              token-last-update-time (get-in token->token-data [most-recently-modified-token "last-update-time"] 0)]
+          (if (->> (t/seconds fallback-period-secs)
+                   (t/plus (tc/from-long token-last-update-time))
+                   (t/before? request-time))
+            (loop [iteration 1
+                   loop-descriptor descriptor
+                   attempted-service-ids #{}]
+              (if (<= iteration search-history-length)
+                (if-let [previous-descriptor (descriptor->previous-descriptor loop-descriptor)]
+                  (let [{:keys [service-id]} previous-descriptor]
+                    (if (service-healthy? fallback-state service-id)
+                      (do
+                        (log/info (str "iteration-" iteration) current-service-id "falling back to" service-id)
+                        previous-descriptor)
+                      (recur (inc iteration)
+                             previous-descriptor
+                             (conj attempted-service-ids service-id))))
+                  (log/info "no fallback service found for" current-service-id "after entire history lookup"
+                            {:attempted-service-ids attempted-service-ids
+                             :fallback-state (retrieve-fallback-state-for fallback-state attempted-service-ids)}))
+                (log/info "no fallback found for" current-service-id "after exhausting search history length"
+                          {:attempted-service-ids attempted-service-ids
+                           :fallback-state (retrieve-fallback-state-for fallback-state attempted-service-ids)})))
+            (log/info "fallback period expired for" current-service-id
+                      {:most-recently-modified-token most-recently-modified-token
+                       :token-last-update-time token-last-update-time})))))))
 
 (defn resolve-descriptor
   "Resolves the descriptor that should be used based on available healthy services.
