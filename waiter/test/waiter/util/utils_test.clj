@@ -534,10 +534,13 @@
                             (create-component {:kind :x
                                                :x {:factory-fn 'bar}}))))
 
-    (testing "should call use on namespace before attempting to resolve"
-      (is (= :bar
-             (create-component {:kind :x
-                                :x {:factory-fn 'waiter.util.utils-test-ns/foo}}))))))
+    (let [test-component {:kind :x
+                          :x {:factory-fn 'waiter.util.utils-test-ns/foo}}]
+      (testing "should call use on namespace before attempting to resolve"
+        (is (= :bar (create-component test-component))))
+
+      (testing "create-component calls should be repeatable"
+        (is (= :bar (create-component test-component)))))))
 
 (deftest test-port-available?
   (let [port (first (filter port-available? (shuffle (range 10000 11000))))]
