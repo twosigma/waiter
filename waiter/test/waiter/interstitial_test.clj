@@ -192,8 +192,10 @@
         available-service-ids #{"service-0" "service-7" "service-8" "service-9"}
         router-message {:all-available-service-ids available-service-ids
                         :service-id->healthy-instances {"service-0" [{:id "service-0.1"}]
+                                                        "service-4" nil
                                                         "service-6" [{:id "service-6.1"}]
-                                                        "service-8" [{:id "service-8.1"}]}}
+                                                        "service-8" [{:id "service-8.1"}]
+                                                        "service-9" []}}
         service-id->service-description (fn [service-id]
                                           {"interstitial-secs" (->> (str/last-index-of service-id "-")
                                                                     inc
