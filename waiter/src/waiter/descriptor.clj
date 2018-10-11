@@ -134,7 +134,10 @@
 
                     router-state-chan
                     (let [{:keys [all-available-service-ids service-id->healthy-instances]} message
-                          healthy-service-ids' (-> service-id->healthy-instances keys set)
+                          healthy-service-ids' (->> service-id->healthy-instances
+                                                    (filter #(-> % second seq))
+                                                    (map first)
+                                                    set)
                           current-state' (assoc current-state
                                            :available-service-ids all-available-service-ids
                                            :healthy-service-ids healthy-service-ids')]

@@ -91,11 +91,13 @@
         new-healthy-service-ids (set/union current-available-service-ids #{"service-2" "service-4"})
         new-available-service-ids (set/union new-healthy-service-ids #{"service-6" "service-8"})
         scheduler-messages {:all-available-service-ids new-available-service-ids
-                            :service-id->healthy-instances (pc/map-from-keys
-                                                             (fn [service-id]
-                                                               {:id (str service-id ".instance-1")
-                                                                :service-id service-id})
-                                                             new-healthy-service-ids)}
+                            :service-id->healthy-instances (-> (pc/map-from-keys
+                                                                 (fn [service-id]
+                                                                   [{:id (str service-id ".instance-1")
+                                                                     :service-id service-id}])
+                                                                 new-healthy-service-ids)
+                                                               (assoc "service-9" []
+                                                                      "service-10" nil))}
         router-state-chan (au/latest-chan)
         {:keys [exit-chan query-chan]} (fallback-maintainer router-state-chan fallback-state-atom)]
 

@@ -99,7 +99,10 @@
    It also removes from the interstitial state any resolved promises for services which are no longer available."
   [interstitial-state-atom service-id->service-description current-available-service-ids
    {:keys [all-available-service-ids service-id->healthy-instances]}]
-  (let [healthy-service-ids (-> service-id->healthy-instances keys set)
+  (let [healthy-service-ids (->> service-id->healthy-instances
+                                 (filter #(-> % second seq))
+                                 (map first)
+                                 set)
         service-ids-to-remove (set/difference current-available-service-ids all-available-service-ids)
         removed-service-ids (remove-resolved-interstitial-promises! interstitial-state-atom service-ids-to-remove)]
     (doseq [service-id all-available-service-ids]
