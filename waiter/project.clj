@@ -30,30 +30,31 @@
                    :dev :dev
                    :perf (every-pred :perf (complement :explicit))}
 
-  :dependencies [[bidi "2.0.16"
+  :dependencies [[bidi "2.1.4"
                   :exclusions [prismatic/schema ring/ring-core]]
                  [twosigma/jet "0.7.10-20180627_133335-g2a9429e"]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
-                  :exclusions [commons-io org.clojure/tools.reader potemkin slingshot]]
-                 [clj-time "0.12.0"
+                  :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
+                 [clj-time "0.14.5"
                   :exclusions [joda-time]]
                  [com.google.guava/guava "20.0"]
-                 [com.taoensso/nippy "2.12.2"
+                 [com.taoensso/nippy "2.14.0"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
-                 [comb "0.1.0"
+                 [comb "0.1.1"
                   :exclusions [org.clojure/clojure]]
-                 [digest "1.4.5"]
-                 [fullcontact/full.async "0.9.0"
+                 [digest "1.4.8"
+                  :exclusions [org.clojure/clojure]]
+                 [fullcontact/full.async "1.0.0"
                   :exclusions [org.clojure/clojure org.clojure/core.async]]
-                 [jarohen/chime "0.1.9"
+                 [jarohen/chime "0.2.2"
                   :exclusions
                   [org.clojure/clojure
                    clj-time/clj-time
                    org.clojure/core.async]]
-                 [joda-time "2.9.4"]
+                 [joda-time "2.10"]
                  [twosigma/metrics-clojure "2.6.0-20180124_201441-g72cee16"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
-                 [metrics-clojure-jvm "2.6.0"
+                 [metrics-clojure-jvm "2.10.0"
                   :exclusions [io.dropwizard.metrics/metrics-core
                                io.netty/netty
                                metrics-clojure
@@ -69,27 +70,28 @@
                  [org.apache.curator/curator-x-discovery "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.8.0"]
-                 [org.clojure/core.async "0.3.442"
+                 [org.clojure/core.async "0.4.474"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [org.clojure/core.memoize "0.7.1"
                   :exclusions [org.clojure/clojure]]
-                 [org.clojure/data.codec "0.1.0"]
+                 [org.clojure/data.codec "0.1.1"]
                  [org.clojure/data.json "0.2.6"]
-                 [org.clojure/data.priority-map "0.0.7"]
-                 [org.clojure/tools.cli "0.3.5"]
-                 [org.clojure/tools.logging "0.3.1"]
+                 [org.clojure/data.priority-map "0.0.10"]
+                 [org.clojure/tools.cli "0.4.1"]
+                 [org.clojure/tools.logging "0.4.1"]
                  [org.clojure/tools.namespace "0.2.11"]
-                 [org.clojure/tools.reader "0.10.0"]
-                 [org.slf4j/slf4j-log4j12 "1.7.21"
+                 [org.clojure/tools.reader "1.3.0"]
+                 [org.slf4j/slf4j-log4j12 "1.7.25"
                   :exclusions [log4j]]
-                 [potemkin "0.4.1"]
-                 [prismatic/plumbing "0.5.3"]
-                 [prismatic/schema "1.1.3"]
-                 [ring/ring-core "1.5.0"
+                 [potemkin "0.4.5"]
+                 [prismatic/plumbing "0.5.5"]
+                 [prismatic/schema "1.1.9"]
+                 [ring/ring-core "1.7.0"
                   :exclusions [org.clojure/tools.reader]]
                  [ring-basic-authentication "1.0.5"]
                  [slingshot "0.12.2"]
-                 [try-let "1.1.0"]]
+                 [try-let "1.2.0"
+                  :exclusions [org.clojure/clojure]]]
 
   :resource-paths ["resources"]
   :main waiter.main
