@@ -435,7 +435,11 @@
 (defn resolve-symbol
   "Resolve the given symbol to the corresponding Var."
   [sym]
-  (resolve (some-> sym namespace symbol use) sym))
+  {:pre [(symbol? sym)]}
+  (if-let [target-ns (namespace sym)]
+    (-> target-ns symbol require)
+    (log/warn "Unable to load namespace for symbol" sym))
+  (resolve sym))
 
 (defn create-component
   "Creates a component based on the specified :kind"
