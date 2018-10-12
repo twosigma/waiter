@@ -10,6 +10,7 @@
 ;;
 (ns waiter.scheduler.kubernetes
   (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.java.io :as io]
             [clojure.string :as string]
             [clojure.tools.logging :as log]
