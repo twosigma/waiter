@@ -86,7 +86,7 @@
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
        replicaset-json
        requested (get spec :replicas 0)
-       staged (- (+ availableReplicas unavailableReplicas) replicas)]
+       staged (- replicas (+ availableReplicas unavailableReplicas))]
         (scheduler/make-Service
           {:id service-id
            :instances requested
@@ -94,7 +94,7 @@
            :k8s/namespace namespace
            :task-count replicas
            :task-stats {:healthy readyReplicas
-                        :running replicas
+                        :running (- replicas staged)
                         :staged staged
                         :unhealthy (- replicas readyReplicas staged)}}))
     (catch Throwable t
