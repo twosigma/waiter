@@ -330,7 +330,7 @@
     (when (some #(= token %) waiter-hostnames)
       (throw (ex-info "Token name is reserved" {:status 403 :token token})))
     (when-not (re-matches valid-token-re token)
-      (throw (ex-info "Token must match pattern"
+      (throw (ex-info "Token must be two or more characters, contain alphanumeric, '-', '_', '$', or '.' characters and must start with a letter"
                       {:status 400 :token token :pattern (str valid-token-re)})))
     (validate-service-description-fn new-service-parameter-template)
     (when-let [user-metadata-check (s/check sd/user-metadata-schema new-user-metadata)]

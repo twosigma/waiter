@@ -496,7 +496,15 @@
 (defn- token->token-data
   "Retrieves the data stored against the token in the kv-store."
   [kv-store ^String token allowed-keys error-on-missing include-deleted]
-  (let [{:strs [deleted run-as-user] :as token-data} (when token (kv/fetch kv-store token))
+  (let [{:strs [deleted run-as-user] :as token-data}
+        (when token (try
+                      (kv/fetch kv-store token)
+                      (catch Exception e
+                        (let [{:keys [ex-type] :as exception-data} (ex-data e)]
+                          (if (= ex-type ::kv/invalid-zk-key)
+                            (throw (ex-info "Token cannot contain '/' and cannot start with '.'"
+                                            {:status 400 :token token} e))
+                            (throw e))))))
         token-data (when (seq token-data) ; populate token owner for backwards compatibility
                      (-> token-data
                          (utils/assoc-if-absent "owner" run-as-user)

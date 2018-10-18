@@ -797,6 +797,11 @@
         (is (str/includes? (:body response) "Token not found: bad#token"))
         (assert-response-status response 400)))
 
+    (testing "can't use bad zookeeper token"
+      (let [response (make-request waiter-url "/pathabc" :headers {"X-Waiter-Token" "bad/token"})]
+        (is (str/includes? (:body response) "Token cannot contain '/' and cannot start with '.'"))
+        (assert-response-status response 400)))
+
     (testing "can't create bad token"
       (let [service-desc {:name (rand-name "notused")
                           :cpus 1
@@ -809,7 +814,7 @@
                           :run-as-user (retrieve-username)
                           :health-check-url "/not-used"}
             response (post-token waiter-url service-desc)]
-        (is (str/includes? (:body response) "Token must match pattern"))
+        (is (str/includes? (:body response) "Token must be two or more characters"))
         (assert-response-status response 400)))))
 
 (deftest ^:parallel ^:integration-fast test-token-metadata
