@@ -215,6 +215,25 @@
          {:api-server-response
           {:kind "ReplicaSetList"
            :apiVersion "extensions/v1beta1"
+           :items [{:metadata {:name "test-app-4321"
+                               :namespace "myself"
+                               :labels {:app "test-app-4321"
+                                        :managed-by "waiter"}
+                               :annotations {:waiter/service-id "test-app-4321"}}
+                    :spec {:replicas 3
+                           :selector {:matchLabels {:app "test-app-4321"
+                                                    :managed-by "waiter"}}}
+                    :status {:replicas 3
+                             :readyReplicas 1
+                             :availableReplicas 1
+                             :unavailableReplicas 1}}]}
+          :expected-result
+          [(scheduler/make-Service {:id "test-app-4321" :instances 3 :task-count 3
+                                    :task-stats {:running 2 :healthy 1 :unhealthy 1 :staged 1}})]}
+
+         {:api-server-response
+          {:kind "ReplicaSetList"
+           :apiVersion "extensions/v1beta1"
            :items [{:metadata {:name "test-app-9999"
                                :namespace "myself"
                                :labels {:app "test-app-9999"
