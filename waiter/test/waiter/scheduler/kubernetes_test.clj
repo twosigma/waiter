@@ -41,6 +41,7 @@
    (->
      {:authorizer {:kind :default
                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
+      :daemon-state (atom nil)
       :fileserver {:port 9090
                    :scheme "http"}
       :max-patch-retries 5
@@ -713,7 +714,8 @@
                                               :default-container-image "twosigma/kitchen:latest"}
                     :url "http://127.0.0.1:8001"}
         base-config (merge context k8s-config)]
-    (with-redefs [start-k8s-watch! (constantly nil)]
+    (with-redefs [api-request (constantly nil)
+                  streaming-api-request (constantly (repeat nil))]
       (testing "Creating a KubernetesScheduler"
 
         (testing "should throw on invalid configuration"
