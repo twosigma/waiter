@@ -34,5 +34,3 @@
                     (< initial-rs-snapshot-version initial-rs-watch-version)))
             (is (<= initial-rs-snapshot-version rs-snapshot-version'))
             (is (< rs-snapshot-version' rs-watch-version'))))))))
-
-
