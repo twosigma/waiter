@@ -606,7 +606,7 @@
   (let [instances' 4
         service-id "test-service-id"
         service (scheduler/make-Service {:id service-id :instances 1 :k8s/app-name service-id :k8s/namespace "myself"})
-        service-state (atom {:services {service-id service}})
+        service-state (atom {:service-id->service {service-id service}})
         dummy-scheduler (-> (make-dummy-scheduler [service-id])
                             (assoc :watch-state service-state))]
     (with-redefs [service-id->service (constantly service)]

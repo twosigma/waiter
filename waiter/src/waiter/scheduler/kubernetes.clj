@@ -112,9 +112,9 @@
   "Get the resource version from a Kubernetes API response object.
    Valid on ReplicaSets, Pods, and watch-update objects."
   [k8s-obj]
-  (-> k8s-obj
-      (get-in [:metadata :resourceVersion])
-      (Long/parseLong)))
+  (some-> k8s-obj
+          (get-in [:metadata :resourceVersion])
+          (Long/parseLong)))
 
 (defn k8s-object->service-id
   "Get the Waiter service-id from a ReplicaSet or Pod's annotations"
@@ -233,12 +233,12 @@
 (defn- get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
   [{:keys [watch-state] :as scheduler}]
-  (-> watch-state deref :services vals))
+  (-> watch-state deref :service-id->service vals))
 
 (defn- get-replicaset-pods
   "Get all Kubernetes pods associated with the given Waiter Service's corresponding ReplicaSet."
   [{:keys [watch-state] :as scheduler} {service-id :id}]
-  (-> watch-state deref :service-id->pods (get service-id) vals))
+  (-> watch-state deref :service-id->pod-id->pods (get service-id) vals))
 
 (defn- live-pod?
   "Returns true if the pod has started, but has not yet been deleted."
@@ -281,7 +281,7 @@
 (defn- get-replica-count
   "Query the current requested replica count for the given Kubernetes object."
   [{:keys [watch-state] :as scheduler} service-id]
-  (-> watch-state deref :services (get service-id) :instances))
+  (-> watch-state deref :service-id->service (get service-id) :instances))
 
 (defmacro k8s-patch-with-retries
   "Query the current replica count for the given Kubernetes object,
@@ -413,7 +413,7 @@
 (defn service-id->service
   "Look up a Waiter Service record via its service-id."
   [{:keys [watch-state] :as scheduler} service-id]
-  (-> watch-state deref :services (get service-id)))
+  (-> watch-state deref :service-id->service (get service-id)))
 
 (defn get-service->instances
   "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records."
@@ -710,7 +710,8 @@
                 (when json-object
                   (update-fn json-object))))
             (catch Exception e
-              (log/error e "error in" resource-key "state watch thread"))))))
+              (log/error e "error in" resource-key "state watch thread"))))
+        (log/info "exiting Kubernetes watcher thread" resource-key)))
     (.start)))
 
 (defn- global-state-query
@@ -724,10 +725,10 @@
   "Query K8s for all Waiter-managed Pods"
   [scheduler pods-url]
   (let [{:keys [items version]} (global-state-query scheduler pods-url)
-        grouped-pods (->> items
-                          (group-by k8s-object->service-id)
-                          (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
-    {:service-id->pods grouped-pods
+        service-id->pod-id->pods (->> items
+                                      (group-by k8s-object->service-id)
+                                      (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
+    {:service-id->pod-id->pods service-id->pod-id->pods
      :version version}))
 
 (defn start-pods-watch!
@@ -736,7 +737,7 @@
   (start-k8s-watch!
     scheduler
     {:query-fn global-pods-state-query
-     :resource-key :service-id->pods
+     :resource-key :service-id->pod-id->pods
      :resource-url (str api-server-url "/api/v1/pods?labelSelector=managed-by=" orchestrator-name)
      :metadata-key :pods-metadata
      :update-fn (fn pods-watch-update [{pod :object update-type :type}]
@@ -748,9 +749,9 @@
                     (swap! watch-state
                            #(as-> % state
                               (case update-type
-                                "ADDED" (assoc-in state [:service-id->pods service-id pod-id] pod)
-                                "MODIFIED" (assoc-in state [:service-id->pods service-id pod-id] pod)
-                                "DELETED" (utils/dissoc-in state [:service-id->pods service-id pod-id]))
+                                "ADDED" (assoc-in state [:service-id->pod-id->pods service-id pod-id] pod)
+                                "MODIFIED" (assoc-in state [:service-id->pod-id->pods service-id pod-id] pod)
+                                "DELETED" (utils/dissoc-in state [:service-id->pod-id->pods service-id pod-id]))
                               (assoc-in state [:pods-metadata :timestamp :watch] now)
                               (assoc-in state [:pods-metadata :version :watch] version)))))}))
 
@@ -758,11 +759,11 @@
   "Query K8s for all Waiter-managed ReplicaSets"
   [scheduler rs-url]
   (let [{:keys [items version]} (global-state-query scheduler rs-url)
-        services (->> items
-                      (map replicaset->Service)
-                      (filter some?)
-                      (pc/map-from-vals :id))]
-    {:services services
+        service-id->service (->> items
+                                 (map replicaset->Service)
+                                 (filter some?)
+                                 (pc/map-from-vals :id))]
+    {:service-id->service service-id->service
      :version version}))
 
 (defn start-replicasets-watch!
@@ -771,7 +772,7 @@
   (start-k8s-watch!
     scheduler
     {:query-fn global-rs-state-query
-     :resource-key :services
+     :resource-key :service-id->service
      :resource-url (str api-server-url "/apis/" replicaset-api-version
                         "/replicasets?labelSelector=managed-by="
                         orchestrator-name)
@@ -785,9 +786,9 @@
                       (swap! watch-state
                              #(as-> % state
                                 (case update-type
-                                  "ADDED" (assoc-in state [:services service-id] service)
-                                  "MODIFIED" (assoc-in state [:services service-id] service)
-                                  "DELETED" (utils/dissoc-in state [:services service-id]))
+                                  "ADDED" (assoc-in state [:service-id->service service-id] service)
+                                  "MODIFIED" (assoc-in state [:service-id->service service-id] service)
+                                  "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
                                 (assoc-in state [:rs-metadata :timestamp :watch] now)
                                 (assoc-in state [:rs-metadata :version :watch] version))))))}))
 
@@ -833,11 +834,11 @@
                                        (f scheduler service-id service-description replicaset-spec-builder)))
         watch-state (atom nil)
         scheduler-config {:api-server-url url
-                          :watch-state watch-state
                           :http-client http-client
                           :orchestrator-name orchestrator-name
                           :replicaset-api-version replicaset-api-version
-                          :service-id->failed-instances-transient-store service-id->failed-instances-transient-store}
+                          :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
+                          :watch-state watch-state}
         get-service->instances-fn #(get-service->instances scheduler-config)
         {:keys [retrieve-syncer-state-fn]} (start-scheduler-syncer-fn
                                              scheduler-name
@@ -863,7 +864,9 @@
                                            service-id->failed-instances-transient-store
                                            service-id->password-fn
                                            service-id->service-description-fn
-                                           watch-state)]
-      (reset! daemon-state {:pod-watch-thread (start-pods-watch! scheduler)
-                            :rs-watch-thread (start-replicasets-watch! scheduler)})
+                                           watch-state)
+          pod-watch-thread (start-pods-watch! scheduler)
+          rs-watch-thread (start-replicasets-watch! scheduler)]
+      (reset! daemon-state {:pod-watch-cancel #(.stop pod-watch-thread)
+                            :rs-watch-cancel #(.stop rs-watch-thread)})
       scheduler)))
