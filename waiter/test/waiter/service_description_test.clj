@@ -1741,6 +1741,14 @@
         (is (thrown? ExceptionInfo (token->service-parameter-template kv-store "invalid-token")))
         (is (nil? (kv/fetch kv-store service-id))))
 
+      (testing "error-on-token-invalid-format"
+        (with-redefs [kv/fetch (fn [in-kv-store in-token]
+                                 (is (= kv-store in-kv-store))
+                                 (is (= "invalid-format/token" in-token))
+                                 (kv/validate-zk-key in-token))]
+          (is (empty? (token->service-parameter-template kv-store "invalid-format/token" :error-on-missing false)))
+          (is (thrown-with-msg? ExceptionInfo #"Token must match pattern" (token->service-parameter-template kv-store "invalid-format/token")))))
+
       (testing "test:token->service-description-2"
         (let [{:keys [service-parameter-template token-metadata]} (token->token-description kv-store token)
               service-description-template-2 (token->service-parameter-template kv-store token)]
