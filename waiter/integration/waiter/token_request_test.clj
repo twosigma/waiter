@@ -792,52 +792,52 @@
 (deftest ^:parallel ^:integration-fast test-bad-token
   (testing-using-waiter-url
 
-    (testing "can't use bad token server"
+    (testing "ignore missing token when have service description"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token" "X-Waiter-CPUS" "1"})]
         (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
         (assert-response-status response 400)))
 
-    (testing "can't use bad token server"
+    (testing "ignore invalid token when have service description"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "bad/token" "X-Waiter-CPUS" "1"})]
         (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
         (assert-response-status response 400)))
 
-    (testing "can't use bad token server"
+    (testing "ignore invalid token when have invalid service description"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "bad/token" "X-Waiter-CPUS" "one"})]
         (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
         (assert-response-status response 400)))
 
-    (testing "can't use bad token server"
+    (testing "can't use missing token server"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token"})]
         (is (str/includes? (:body response) "Unable to identify service using waiter headers/token"))
         (assert-response-status response 400)))
 
-    (testing "can't use bad token server"
+    (testing "can't use invalid token server"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "bad/token"})]
         (is (str/includes? (:body response) "Unable to identify service using waiter headers/token"))
         (assert-response-status response 400)))
 
-    (testing "can't use bad token"
+    (testing "can't use invalid token that's valid for zookeeper"
       (let [response (make-request waiter-url "/pathabc" :headers {"X-Waiter-Token" "bad#token"})]
         (is (str/includes? (:body response) "Token not found: bad#token"))
         (assert-response-status response 400)))
 
-    (testing "can't use bad token"
+    (testing "can't use invalid token"
       (let [response (make-request waiter-url "/pathabc" :headers {"X-Waiter-Token" "bad/token"})]
         (is (str/includes? (:body response) "Token must match pattern"))
         (assert-response-status response 400)))
 
-    (testing "can't use bad token"
+    (testing "can't use invalid token with host set"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token" "X-Waiter-Token" "bad/token"})]
         (is (str/includes? (:body response) "Token must match pattern"))
         (assert-response-status response 400)))
 
-    (testing "can't use bad token"
+    (testing "can't use missing token with host set"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token" "X-Waiter-Token" "missing_token"})]
         (is (str/includes? (:body response) "Token not found: missing_token"))
         (assert-response-status response 400)))
 
-    (testing "can't use bad token"
+    (testing "can't use missing token"
       (let [response (make-request waiter-url "/pathabc" :headers {"X-Waiter-Token" "missing_token"})]
         (is (str/includes? (:body response) "Token not found: missing_token"))
         (assert-response-status response 400)))
