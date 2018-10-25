@@ -24,8 +24,7 @@
             [waiter.metrics :as metrics]
             [waiter.util.cache-utils :as cu]
             [waiter.util.utils :as utils])
-  (:import (com.google.common.util.concurrent UncheckedExecutionException)
-           java.util.Arrays
+  (:import java.util.Arrays
            org.apache.curator.framework.CuratorFramework))
 
 (defprotocol KeyValueStore
@@ -95,9 +94,9 @@
   given the underlying ZooKeeper implementation."
   [key]
   (when (re-matches #".*/.*" key)
-    (throw (ex-info "Key may not contain '/'" {:key key :ex-type ::invalid-zk-key})))
+    (throw (ex-info "Key may not contain '/'" {:key key})))
   (when (re-matches #"^\..*" key)
-    (throw (ex-info "Key may not begin with '.'" {:key key :ex-type ::invalid-zk-key}))))
+    (throw (ex-info "Key may not begin with '.'" {:key key}))))
 
 (defn zk-keys
   "Create a lazy sequence of keys."
@@ -200,11 +199,7 @@
           (log/info "evicting entry for" key "from cache")
           (cu/cache-evict cache key))
         (log/info "refresh is a no-op as cache does not contain" key)))
-    (try
-      (cu/cache-get-or-load cache key #(retrieve inner-kv-store key refresh))
-      (catch UncheckedExecutionException ex
-        (log/info "unwrapping UncheckedExecutionException from guava cache")
-        (throw (.getCause ex)))))
+    (cu/cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
   (store [_ key value]
     (cu/cache-evict cache key)
     (store inner-kv-store key value))

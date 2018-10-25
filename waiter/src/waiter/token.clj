@@ -27,7 +27,6 @@
   (:import (org.joda.time DateTime)))
 
 (def ^:const ANY-USER "*")
-(def ^:const valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+")
 
 (defn sanitize-history
   "Limits the history length stored in the token-data."
@@ -329,9 +328,7 @@
       (throw (ex-info "Must provide the token" {:status 400})))
     (when (some #(= token %) waiter-hostnames)
       (throw (ex-info "Token name is reserved" {:status 403 :token token})))
-    (when-not (re-matches valid-token-re token)
-      (throw (ex-info "Token must be two or more characters, contain alphanumeric, '-', '_', '$', or '.' characters and must start with a letter"
-                      {:status 400 :token token :pattern (str valid-token-re)})))
+    (sd/validate-token token)
     (validate-service-description-fn new-service-parameter-template)
     (when-let [user-metadata-check (s/check sd/user-metadata-schema new-user-metadata)]
       (throw (ex-info "User metadata validation failed"

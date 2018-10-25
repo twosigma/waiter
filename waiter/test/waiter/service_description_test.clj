@@ -1746,8 +1746,8 @@
                                  (is (= kv-store in-kv-store))
                                  (is (= "invalid-format/token" in-token))
                                  (kv/validate-zk-key in-token))]
-          (is (thrown-with-msg? ExceptionInfo #"Token cannot contain '/' and cannot start with" (token->service-parameter-template kv-store "invalid-format/token" :error-on-missing false)))
-          (is (thrown-with-msg? ExceptionInfo #"Token cannot contain '/' and cannot start with" (token->service-parameter-template kv-store "invalid-format/token")))))
+          (is (empty? (token->service-parameter-template kv-store "invalid-format/token" :error-on-missing false)))
+          (is (thrown-with-msg? ExceptionInfo #"Token must match pattern" (token->service-parameter-template kv-store "invalid-format/token")))))
 
       (testing "test:token->service-description-2"
         (let [{:keys [service-parameter-template token-metadata]} (token->token-description kv-store token)

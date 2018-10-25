@@ -1114,7 +1114,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
           (is (= 400 status))
-          (is (str/includes? body "Token must be two or more characters"))))
+          (is (str/includes? body "Token must match pattern"))))
 
       (testing "post:new-service-description:invalid-token"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
