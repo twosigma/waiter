@@ -14,7 +14,9 @@
 ;; limitations under the License.
 ;;
 (ns waiter.scheduler.kubernetes
-  (:require [clj-time.core :as t]
+  (:require [cheshire.core :as cheshire]
+            [clj-http.client :as clj-http]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.java.io :as io]
             [clojure.string :as string]
@@ -29,7 +31,8 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
-  (:import (org.joda.time.format DateTimeFormat)))
+  (:import (java.io InputStreamReader)
+           (org.joda.time.format DateTimeFormat)))
 
 (defn authorization-from-environment []
   "Sample implementation of the authentication string refresh function.
@@ -105,14 +108,32 @@
     (catch Throwable t
       (log/error t "error converting ReplicaSet to Waiter Service"))))
 
+(defn k8s-object->id
+  "Get the id (name) from a ReplicaSet or Pod's metadata"
+  [k8s-obj]
+  (get-in k8s-obj [:metadata :name]))
+
+(defn k8s-object->resource-version
+  "Get the resource version from a Kubernetes API response object.
+   Valid on ReplicaSets, Pods, and watch-update objects."
+  [k8s-obj]
+  (some-> k8s-obj
+          (get-in [:metadata :resourceVersion])
+          (Long/parseLong)))
+
+(defn k8s-object->service-id
+  "Get the Waiter service-id from a ReplicaSet or Pod's annotations"
+  [k8s-obj]
+  (get-in k8s-obj [:metadata :annotations :waiter/service-id]))
+
 (defn- pod->instance-id
   "Construct the Waiter instance-id for the given Kubernetes pod incarnation.
    Note that a new Waiter Service Instance is created each time a pod restarts,
    and that we generate a unique instance-id by including the pod's restartCount value."
   ([scheduler pod] (pod->instance-id scheduler pod (get-in pod [:status :containerStatuses 0 :restartCount])))
   ([{:keys [pod-suffix-length] :as scheduler} pod restart-count]
-   (let [pod-name (get-in pod [:metadata :name])
-         service-id (get-in pod [:metadata :annotations :waiter/service-id])]
+   (let [pod-name (k8s-object->id pod)
+         service-id (k8s-object->service-id pod)]
      (str service-id \. pod-name \- restart-count))))
 
 (defn- killed-by-k8s?
@@ -148,7 +169,7 @@
           (swap! service-id->failed-instances-transient-store
                  update-in [service-id] assoc newest-failure-id newest-failure-instance))))))
 
-(defn- pod->ServiceInstance
+(defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
   [scheduler pod]
   (try
@@ -161,18 +182,33 @@
          :id (pod->instance-id scheduler pod)
          :k8s/app-name (get-in pod [:metadata :labels :app])
          :k8s/namespace (get-in pod [:metadata :namespace])
-         :k8s/pod-name (get-in pod [:metadata :name])
+         :k8s/pod-name (k8s-object->id pod)
          :k8s/restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
          :log-directory (str "/home/" (get-in pod [:metadata :namespace]))
          :port port0
          :protocol (get-in pod [:metadata :annotations :waiter/protocol])
-         :service-id (get-in pod [:metadata :annotations :waiter/service-id])
+         :service-id (k8s-object->service-id pod)
          :started-at (-> pod
                          (get-in [:status :startTime])
                          (timestamp-str->datetime))}))
     (catch Throwable e
       (log/error e "error converting pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
+
+(defn streaming-api-request
+  "Make a long-lived HTTP request to the Kubernetes API server using the configured authentication.
+   If data is provided via :body, the application/json content type is added automatically.
+   The response payload (if any) is returned as a lazy seq of parsed JSON objects."
+  ([url] (streaming-api-request url {}))
+  ([url {:keys [keyword-keys?] :or {keyword-keys? true}}]
+   (let [auth-str @k8s-api-auth-str
+         request-options (cond-> {:as :stream}
+                           auth-str (assoc :headers {"Authorization" auth-str}))]
+     (-> url
+         (clj-http/get request-options)
+         :body
+         InputStreamReader.
+         (cheshire/parsed-seq keyword-keys?)))))
 
 (defn api-request
   "Make an HTTP request to the Kubernetes API server using the configured authentication.
@@ -201,26 +237,13 @@
 
 (defn- get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
-  [{:keys [api-server-url http-client orchestrator-name replicaset-api-version] :as scheduler}]
-  (->> (str api-server-url "/apis/" replicaset-api-version
-            "/replicasets?labelSelector=managed-by="
-            orchestrator-name)
-       (api-request http-client)
-       :items
-       (map replicaset->Service)
-       (filterv some?)))
+  [{:keys [watch-state] :as scheduler}]
+  (-> watch-state deref :service-id->service vals))
 
 (defn- get-replicaset-pods
   "Get all Kubernetes pods associated with the given Waiter Service's corresponding ReplicaSet."
-  [{:keys [api-server-url http-client service-id->service-description-fn] :as scheduler}
-   {:keys [k8s/app-name k8s/namespace]}]
-  (->> (str api-server-url
-            "/api/v1/namespaces/"
-            namespace
-            "/pods?labelSelector=app="
-            app-name)
-       (api-request http-client)
-       :items))
+  [{:keys [watch-state] :as scheduler} {service-id :id}]
+  (-> watch-state deref :service-id->pod-id->pod (get service-id) vals))
 
 (defn- live-pod?
   "Returns true if the pod has started, but has not yet been deleted."
@@ -247,7 +270,7 @@
 
 (defn- patch-object-json
   "Make a JSON-patch request on a given Kubernetes object."
-  [k8s-object-uri http-client ops]
+  [http-client k8s-object-uri ops]
   (api-request http-client k8s-object-uri
                :body (utils/clj->json ops)
                :content-type "application/json-patch+json"
@@ -255,16 +278,15 @@
 
 (defn- patch-object-replicas
   "Update the replica count in the given Kubernetes object's spec."
-  [k8s-object-uri http-client replicas replicas']
+  [http-client k8s-object-uri replicas replicas']
   (patch-object-json http-client k8s-object-uri
                      [{:op :test :path "/spec/replicas" :value replicas}
                       {:op :replace :path "/spec/replicas" :value replicas'}]))
 
 (defn- get-replica-count
-  "Query the current replica count for the given Kubernetes object."
-  [{:keys [http-client] :as scheduler} replicaset-url]
-  (-> (api-request http-client replicaset-url)
-      (get-in [:spec :replicas])))
+  "Query the current requested replica count for the given Kubernetes object."
+  [{:keys [watch-state] :as scheduler} service-id]
+  (-> watch-state deref :service-id->service (get service-id) :instances))
 
 (defmacro k8s-patch-with-retries
   "Query the current replica count for the given Kubernetes object,
@@ -291,22 +313,22 @@
 (defn- scale-service-up-to
   "Scale the number of instances for a given service to a specific number.
    Only used for upward scaling. No-op if it would result in downward scaling."
-  [{:keys [http-client max-patch-retries] :as scheduler} service instances']
+  [{:keys [http-client max-patch-retries] :as scheduler} {service-id :id :as service} instances']
   (let [replicaset-url (build-replicaset-url scheduler service)]
     (loop [attempt 1
            instances (:instances service)]
       (if (<= instances' instances)
-        (log/warn "skipping non-upward scale-up request on" (:id service)
+        (log/warn "skipping non-upward scale-up request on" service-id
                   "from" instances "to" instances')
         (k8s-patch-with-retries
           (patch-object-replicas http-client replicaset-url instances instances')
           (<= attempt max-patch-retries)
-          (recur (inc attempt) (get-replica-count scheduler replicaset-url)))))))
+          (recur (inc attempt) (get-replica-count scheduler service-id)))))))
 
 (defn- scale-service-by-delta
   "Scale the number of instances for a given service by a given delta.
    Can scale either upward (positive delta) or downward (negative delta)."
-  [{:keys [http-client max-patch-retries] :as scheduler} service instances-delta]
+  [{:keys [http-client max-patch-retries] :as scheduler} {service-id :id :as service} instances-delta]
   (let [replicaset-url (build-replicaset-url scheduler service)]
     (loop [attempt 1
            instances (:instances service)]
@@ -314,7 +336,7 @@
         (k8s-patch-with-retries
           (patch-object-replicas http-client replicaset-url instances instances')
           (<= attempt max-patch-retries)
-          (recur (inc attempt) (get-replica-count scheduler replicaset-url)))))))
+          (recur (inc attempt) (get-replica-count scheduler service-id)))))))
 
 (defn- kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
@@ -394,24 +416,9 @@
      :result :deleted}))
 
 (defn service-id->service
-  "Look up the Kubernetes ReplicaSet associated with a given Waiter service-id,
-   and return a corresponding Waiter Service record."
-  [{:keys [api-server-url http-client orchestrator-name replicaset-api-version
-           service-id->service-description-fn] :as scheduler}
-   service-id]
-  (when-let [service-ns (-> service-id service-id->service-description-fn service-description->namespace)]
-    (some->> (str api-server-url "/apis/" replicaset-api-version
-                  "/namespaces/" service-ns
-                  "/replicasets?labelSelector=managed-by=" orchestrator-name
-                  ",app=" (service-id->k8s-app-name scheduler service-id))
-             (api-request http-client)
-             :items
-             ;; It's possible that multiple Waiter services in different namespaces
-             ;; have service-ids mapping to the same Kubernetes object name,
-             ;; so we filter to match the full service-id as well.
-             (filter #(= service-id (get-in % [:metadata :annotations :waiter/service-id])))
-             first
-             replicaset->Service)))
+  "Look up a Waiter Service record via its service-id."
+  [{:keys [watch-state] :as scheduler} service-id]
+  (-> watch-state deref :service-id->service (get service-id)))
 
 (defn get-service->instances
   "Returns a map of scheduler/Service records -> map of scheduler/ServiceInstance records."
@@ -422,6 +429,7 @@
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
                                 authorizer
+                                daemon-state
                                 fileserver
                                 http-client
                                 max-patch-retries
@@ -434,7 +442,8 @@
                                 retrieve-syncer-state-fn
                                 service-id->failed-instances-transient-store
                                 service-id->password-fn
-                                service-id->service-description-fn]
+                                service-id->service-description-fn
+                                watch-state]
   scheduler/ServiceScheduler
 
   (get-services [this]
@@ -555,8 +564,9 @@
     {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))
      :syncer (retrieve-syncer-state-fn service-id)})
 
-  (state [_]
-    {:service-id->failed-instances @service-id->failed-instances-transient-store
+  (state [{:keys [watch-state]}]
+    {:watch-state @watch-state
+     :service-id->failed-instances @service-id->failed-instances-transient-store
      :syncer (retrieve-syncer-state-fn)})
 
   (validate-service [_ service-id]
@@ -676,6 +686,138 @@
         auth-update-task
         :delay-ms (* 60000 refresh-delay-mins)))))
 
+
+(defn- reset-watch-state!
+  "Reset the global state that is used as the basis for applying incremental watch updates."
+  [{:keys [watch-state] :as scheduler}
+   {:keys [query-fn resource-key resource-url metadata-key] :as options}]
+  (let [{:keys [version] :as initial-state} (query-fn scheduler options resource-url)]
+    (swap! watch-state assoc
+           resource-key (get initial-state resource-key)
+           metadata-key {:timestamp {:snapshot (t/now)}
+                         :version {:snapshot version}})
+    version))
+
+(def default-watch-options
+  "Default options for start-k8s-watch! daemon threads."
+  {:api-request-fn api-request
+   :exit-on-error? true
+   :streaming-api-request-fn streaming-api-request})
+
+(defn- start-k8s-watch!
+  "Start a thread to continuously update the watch-state atom based on watched K8s events."
+  [{:keys [api-server-url watch-state] :as scheduler}
+   {:keys [exit-on-error? resource-key resource-name resource-url streaming-api-request-fn update-fn] :as options}]
+  (doto
+    (Thread.
+      (fn k8s-watch []
+        (try
+          ;; retry getting state updates forever
+          (while true
+            (try
+              (let [version (reset-watch-state! scheduler options)
+                    watch-url (str resource-url "&watch=true&resourceVersion=" version)]
+                ;; process updates forever (unless there's an exception)
+                (doseq [json-object (streaming-api-request-fn watch-url)]
+                  (when json-object
+                    (update-fn json-object))))
+              (catch Exception e
+                (log/error e "error in" resource-key "state watch thread"))))
+          (catch Throwable t
+            (when exit-on-error?
+              (log/error t "unrecoverable error in" resource-name "state watch thread, terminating waiter.")))
+          (finally
+            (when exit-on-error?
+              (System/exit 1))))))
+    (.setDaemon true)
+    (.start)))
+
+(defn- global-state-query
+  [{:keys [api-request-fn http-client] :as scheduler} {:keys [api-request-fn]} objects-url]
+  (let [{:keys [items] :as response} (api-request-fn http-client objects-url)
+        resource-version (k8s-object->resource-version response)]
+    {:items items
+     :version resource-version}))
+
+(defn global-pods-state-query
+  "Query K8s for all Waiter-managed Pods"
+  [scheduler options pods-url]
+  (let [{:keys [items version]} (global-state-query scheduler options pods-url)
+        service-id->pod-id->pod (->> items
+                                      (group-by k8s-object->service-id)
+                                      (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
+    {:service-id->pod-id->pod service-id->pod-id->pod
+     :version version}))
+
+(defn start-pods-watch!
+  "Start a thread to continuously update the watch-state atom based on watched Pod events."
+  ([scheduler] (start-pods-watch! scheduler default-watch-options))
+  ([{:keys [api-server-url watch-state orchestrator-name] :as scheduler} options]
+   (start-k8s-watch!
+     scheduler
+     (->
+       {:query-fn global-pods-state-query
+        :resource-key :service-id->pod-id->pod
+        :resource-name "Pods"
+        :resource-url (str api-server-url "/api/v1/pods?labelSelector=managed-by=" orchestrator-name)
+        :metadata-key :pods-metadata
+        :update-fn (fn pods-watch-update [{pod :object update-type :type}]
+                     (let [now (t/now)
+                           pod-id (k8s-object->id pod)
+                           service-id (k8s-object->service-id pod)
+                           version (k8s-object->resource-version pod)]
+                       (scheduler/log "pod state update:" update-type version pod)
+                       (swap! watch-state
+                              #(as-> % state
+                                 (case update-type
+                                   "ADDED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                   "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                   "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
+                                 (assoc-in state [:pods-metadata :timestamp :watch] now)
+                                 (assoc-in state [:pods-metadata :version :watch] version)))))}
+       (merge options)))))
+
+(defn global-rs-state-query
+  "Query K8s for all Waiter-managed ReplicaSets"
+  [scheduler options rs-url]
+  (let [{:keys [items version]} (global-state-query scheduler options rs-url)
+        service-id->service (->> items
+                                 (map replicaset->Service)
+                                 (filter some?)
+                                 (pc/map-from-vals :id))]
+    {:service-id->service service-id->service
+     :version version}))
+
+(defn start-replicasets-watch!
+  "Start a thread to continuously update the watch-state atom based on watched ReplicaSet events."
+  ([scheduler] (start-replicasets-watch! scheduler default-watch-options))
+  ([{:keys [api-server-url watch-state orchestrator-name replicaset-api-version] :as scheduler} options]
+   (start-k8s-watch!
+     scheduler
+     (->
+       {:query-fn global-rs-state-query
+        :resource-key :service-id->service
+        :resource-name "ReplicaSets"
+        :resource-url (str api-server-url "/apis/" replicaset-api-version
+                           "/replicasets?labelSelector=managed-by="
+                           orchestrator-name)
+        :metadata-key :rs-metadata
+        :update-fn (fn rs-watch-update [{rs :object update-type :type}]
+                     (let [now (t/now)
+                           {service-id :id :as service} (replicaset->Service rs)
+                           version (k8s-object->resource-version rs)]
+                       (when service
+                         (scheduler/log "rs state update:" update-type version service)
+                         (swap! watch-state
+                                #(as-> % state
+                                   (case update-type
+                                     "ADDED" (assoc-in state [:service-id->service service-id] service)
+                                     "MODIFIED" (assoc-in state [:service-id->service service-id] service)
+                                     "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
+                                   (assoc-in state [:rs-metadata :timestamp :watch] now)
+                                   (assoc-in state [:rs-metadata :version :watch] version))))))}
+       (merge options)))))
+
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
@@ -716,28 +858,41 @@
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description]
                                        (f scheduler service-id service-description replicaset-spec-builder)))
+        watch-state (atom nil)
         scheduler-config {:api-server-url url
                           :http-client http-client
                           :orchestrator-name orchestrator-name
                           :replicaset-api-version replicaset-api-version
-                          :service-id->failed-instances-transient-store service-id->failed-instances-transient-store}
+                          :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
+                          :watch-state watch-state}
         get-service->instances-fn #(get-service->instances scheduler-config)
-        {:keys [retrieve-syncer-state-fn]}
-        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)]
+        {:keys [retrieve-syncer-state-fn]} (start-scheduler-syncer-fn
+                                             scheduler-name
+                                             get-service->instances-fn
+                                             scheduler-state-chan
+                                             scheduler-syncer-interval-secs)]
     (when authentication
       (start-auth-renewer authentication))
-    (->KubernetesScheduler url
-                           authorizer
-                           fileserver
-                           http-client
-                           max-patch-retries
-                           max-name-length
-                           orchestrator-name
-                           pod-base-port
-                           pod-suffix-length
-                           replicaset-api-version
-                           replicaset-spec-builder-fn
-                           retrieve-syncer-state-fn
-                           service-id->failed-instances-transient-store
-                           service-id->password-fn
-                           service-id->service-description-fn)))
+    (let [daemon-state (atom nil)
+          scheduler (->KubernetesScheduler url
+                                           authorizer
+                                           daemon-state
+                                           fileserver
+                                           http-client
+                                           max-patch-retries
+                                           max-name-length
+                                           orchestrator-name
+                                           pod-base-port
+                                           pod-suffix-length
+                                           replicaset-api-version
+                                           replicaset-spec-builder-fn
+                                           retrieve-syncer-state-fn
+                                           service-id->failed-instances-transient-store
+                                           service-id->password-fn
+                                           service-id->service-description-fn
+                                           watch-state)
+          pod-watch-thread (start-pods-watch! scheduler)
+          rs-watch-thread (start-replicasets-watch! scheduler)]
+      (reset! daemon-state {:pod-watch-daemon pod-watch-thread
+                            :rs-watch-daemon rs-watch-thread})
+      scheduler)))
