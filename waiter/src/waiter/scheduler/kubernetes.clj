@@ -712,6 +712,7 @@
                   (update-fn json-object))))
             (catch Exception e
               (log/error e "error in" resource-key "state watch thread"))))))
+    (.setDaemon true)
     (.start)))
 
 (defn- global-state-query
