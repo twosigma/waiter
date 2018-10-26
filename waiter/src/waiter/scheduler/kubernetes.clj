@@ -711,8 +711,7 @@
                 (when json-object
                   (update-fn json-object))))
             (catch Exception e
-              (log/error e "error in" resource-key "state watch thread"))))
-        (log/info "exiting Kubernetes watcher thread" resource-name)))
+              (log/error e "error in" resource-key "state watch thread"))))))
     (.start)))
 
 (defn- global-state-query
