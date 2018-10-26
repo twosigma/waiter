@@ -685,38 +685,50 @@
 (defn- reset-watch-state!
   "Reset the global state that is used as the basis for applying incremental watch updates."
   [{:keys [watch-state] :as scheduler}
-   {:keys [query-fn resource-key resource-url metadata-key]}]
-  (let [{:keys [version] :as initial-state} (query-fn scheduler resource-url)]
+   {:keys [query-fn resource-key resource-url metadata-key] :as options}]
+  (let [{:keys [version] :as initial-state} (query-fn scheduler options resource-url)]
     (swap! watch-state assoc
            resource-key (get initial-state resource-key)
            metadata-key {:timestamp {:snapshot (t/now)}
                          :version {:snapshot version}})
     version))
 
+(def default-watch-options
+  "Default options for start-k8s-watch! daemon threads."
+  {:api-request-fn api-request
+   :exit-on-error? true
+   :streaming-api-request-fn streaming-api-request})
+
 (defn- start-k8s-watch!
   "Start a thread to continuously update the watch-state atom based on watched K8s events."
-  [{:keys [api-server-url streaming-api-request-fn watch-state]
-    :or {streaming-api-request-fn streaming-api-request} :as scheduler}
-   {:keys [resource-key resource-name resource-url update-fn] :as options}]
+  [{:keys [api-server-url watch-state] :as scheduler}
+   {:keys [exit-on-error? resource-key resource-name resource-url streaming-api-request-fn update-fn] :as options}]
   (doto
     (Thread.
       (fn k8s-watch []
-        ;; retry getting state updates forever
-        (while true
-          (try
-            (let [version (reset-watch-state! scheduler options)
-                  watch-url (str resource-url "&watch=true&resourceVersion=" version)]
-              ;; process updates forever (unless there's an exception)
-              (doseq [json-object (streaming-api-request-fn watch-url)]
-                (when json-object
-                  (update-fn json-object))))
-            (catch Exception e
-              (log/error e "error in" resource-key "state watch thread"))))))
+        (try
+          ;; retry getting state updates forever
+          (while true
+            (try
+              (let [version (reset-watch-state! scheduler options)
+                    watch-url (str resource-url "&watch=true&resourceVersion=" version)]
+                ;; process updates forever (unless there's an exception)
+                (doseq [json-object (streaming-api-request-fn watch-url)]
+                  (when json-object
+                    (update-fn json-object))))
+              (catch Exception e
+                (log/error e "error in" resource-key "state watch thread"))))
+          (catch Throwable t
+            (when exit-on-error?
+              (log/error t "unrecoverable error in" resource-name "state watch thread, terminating waiter.")))
+          (finally
+            (when exit-on-error?
+              (System/exit 1))))))
     (.setDaemon true)
     (.start)))
 
 (defn- global-state-query
-  [{:keys [api-request-fn http-client] :or {api-request-fn api-request} :as scheduler} objects-url]
+  [{:keys [api-request-fn http-client] :as scheduler} {:keys [api-request-fn]} objects-url]
   (let [{:keys [items] :as response} (api-request-fn http-client objects-url)
         resource-version (k8s-object->resource-version response)]
     {:items items
@@ -724,8 +736,8 @@
 
 (defn global-pods-state-query
   "Query K8s for all Waiter-managed Pods"
-  [scheduler pods-url]
-  (let [{:keys [items version]} (global-state-query scheduler pods-url)
+  [scheduler options pods-url]
+  (let [{:keys [items version]} (global-state-query scheduler options pods-url)
         service-id->pod-id->pod (->> items
                                       (group-by k8s-object->service-id)
                                       (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
@@ -734,33 +746,36 @@
 
 (defn start-pods-watch!
   "Start a thread to continuously update the watch-state atom based on watched Pod events."
-  [{:keys [api-server-url watch-state orchestrator-name] :as scheduler}]
-  (start-k8s-watch!
-    scheduler
-    {:query-fn global-pods-state-query
-     :resource-key :service-id->pod-id->pod
-     :resource-name "Pods"
-     :resource-url (str api-server-url "/api/v1/pods?labelSelector=managed-by=" orchestrator-name)
-     :metadata-key :pods-metadata
-     :update-fn (fn pods-watch-update [{pod :object update-type :type}]
-                  (let [now (t/now)
-                        pod-id (k8s-object->id pod)
-                        service-id (k8s-object->service-id pod)
-                        version (k8s-object->resource-version pod)]
-                    (scheduler/log "pod state update:" update-type version pod)
-                    (swap! watch-state
-                           #(as-> % state
-                              (case update-type
-                                "ADDED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
-                                "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
-                                "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
-                              (assoc-in state [:pods-metadata :timestamp :watch] now)
-                              (assoc-in state [:pods-metadata :version :watch] version)))))}))
+  ([scheduler] (start-pods-watch! scheduler default-watch-options))
+  ([{:keys [api-server-url watch-state orchestrator-name] :as scheduler} options]
+   (start-k8s-watch!
+     scheduler
+     (->
+       {:query-fn global-pods-state-query
+        :resource-key :service-id->pod-id->pod
+        :resource-name "Pods"
+        :resource-url (str api-server-url "/api/v1/pods?labelSelector=managed-by=" orchestrator-name)
+        :metadata-key :pods-metadata
+        :update-fn (fn pods-watch-update [{pod :object update-type :type}]
+                     (let [now (t/now)
+                           pod-id (k8s-object->id pod)
+                           service-id (k8s-object->service-id pod)
+                           version (k8s-object->resource-version pod)]
+                       (scheduler/log "pod state update:" update-type version pod)
+                       (swap! watch-state
+                              #(as-> % state
+                                 (case update-type
+                                   "ADDED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                   "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                   "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
+                                 (assoc-in state [:pods-metadata :timestamp :watch] now)
+                                 (assoc-in state [:pods-metadata :version :watch] version)))))}
+       (merge options)))))
 
 (defn global-rs-state-query
   "Query K8s for all Waiter-managed ReplicaSets"
-  [scheduler rs-url]
-  (let [{:keys [items version]} (global-state-query scheduler rs-url)
+  [scheduler options rs-url]
+  (let [{:keys [items version]} (global-state-query scheduler options rs-url)
         service-id->service (->> items
                                  (map replicaset->Service)
                                  (filter some?)
@@ -770,30 +785,33 @@
 
 (defn start-replicasets-watch!
   "Start a thread to continuously update the watch-state atom based on watched ReplicaSet events."
-  [{:keys [api-server-url watch-state orchestrator-name replicaset-api-version] :as scheduler}]
-  (start-k8s-watch!
-    scheduler
-    {:query-fn global-rs-state-query
-     :resource-key :service-id->service
-     :resource-name "ReplicaSets"
-     :resource-url (str api-server-url "/apis/" replicaset-api-version
-                        "/replicasets?labelSelector=managed-by="
-                        orchestrator-name)
-     :metadata-key :rs-metadata
-     :update-fn (fn rs-watch-update [{rs :object update-type :type}]
-                  (let [now (t/now)
-                        {service-id :id :as service} (replicaset->Service rs)
-                        version (k8s-object->resource-version rs)]
-                    (when service
-                      (scheduler/log "rs state update:" update-type version service)
-                      (swap! watch-state
-                             #(as-> % state
-                                (case update-type
-                                  "ADDED" (assoc-in state [:service-id->service service-id] service)
-                                  "MODIFIED" (assoc-in state [:service-id->service service-id] service)
-                                  "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
-                                (assoc-in state [:rs-metadata :timestamp :watch] now)
-                                (assoc-in state [:rs-metadata :version :watch] version))))))}))
+  ([scheduler] (start-replicasets-watch! scheduler default-watch-options))
+  ([{:keys [api-server-url watch-state orchestrator-name replicaset-api-version] :as scheduler} options]
+   (start-k8s-watch!
+     scheduler
+     (->
+       {:query-fn global-rs-state-query
+        :resource-key :service-id->service
+        :resource-name "ReplicaSets"
+        :resource-url (str api-server-url "/apis/" replicaset-api-version
+                           "/replicasets?labelSelector=managed-by="
+                           orchestrator-name)
+        :metadata-key :rs-metadata
+        :update-fn (fn rs-watch-update [{rs :object update-type :type}]
+                     (let [now (t/now)
+                           {service-id :id :as service} (replicaset->Service rs)
+                           version (k8s-object->resource-version rs)]
+                       (when service
+                         (scheduler/log "rs state update:" update-type version service)
+                         (swap! watch-state
+                                #(as-> % state
+                                   (case update-type
+                                     "ADDED" (assoc-in state [:service-id->service service-id] service)
+                                     "MODIFIED" (assoc-in state [:service-id->service service-id] service)
+                                     "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
+                                   (assoc-in state [:rs-metadata :timestamp :watch] now)
+                                   (assoc-in state [:rs-metadata :version :watch] version))))))}
+       (merge options)))))
 
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the

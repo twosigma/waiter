@@ -144,10 +144,10 @@
    (reset-scheduler-watch-state! scheduler rs-response nil))
   ([{:keys [watch-state] :as scheduler} rs-response pods-response]
    (let [dummy-resource-uri "http://ignored-uri"
-         rs-state (with-redefs [api-request (constantly rs-response)]
-                    (global-rs-state-query scheduler dummy-resource-uri))
-         pods-state (with-redefs [api-request (constantly pods-response)]
-                      (global-pods-state-query scheduler dummy-resource-uri))
+         rs-state (global-rs-state-query
+                    scheduler {:api-request-fn (constantly rs-response)} dummy-resource-uri)
+         pods-state (global-pods-state-query
+                      scheduler {:api-request-fn (constantly pods-response)} dummy-resource-uri)
          global-state (merge rs-state pods-state)]
      (reset! watch-state global-state))))
 
@@ -910,15 +910,17 @@
 
         {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
 
-        rs-watch-thread (-> dummy-scheduler
-                            (assoc :api-request-fn (constantly rs-response)
-                                   :streaming-api-request-fn (constantly rs-watch-stream))
-                            (start-replicasets-watch!))
+        rs-watch-thread (start-replicasets-watch!
+                          dummy-scheduler
+                          {:api-request-fn (constantly rs-response)
+                           :exit-on-error? false
+                           :streaming-api-request-fn (constantly rs-watch-stream)})
 
-        pods-watch-thread (-> dummy-scheduler
-                             (assoc :api-request-fn (constantly pods-response)
-                                    :streaming-api-request-fn (constantly pods-watch-stream))
-                            (start-pods-watch!))
+        pods-watch-thread (start-pods-watch!
+                            dummy-scheduler
+                            {:api-request-fn (constantly pods-response)
+                             :exit-on-error? false
+                             :streaming-api-request-fn (constantly pods-watch-stream)})
 
         get-instance (fn [{:keys [watch-state] :as scheduler} index]
                        (let [pod-id (str "test-app-1234-abcd" index)
