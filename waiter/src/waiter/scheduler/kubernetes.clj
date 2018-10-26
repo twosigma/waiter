@@ -870,6 +870,6 @@
                                            watch-state)
           pod-watch-thread (start-pods-watch! scheduler)
           rs-watch-thread (start-replicasets-watch! scheduler)]
-      (reset! daemon-state {:pod-watch-cancel #(.stop pod-watch-thread)
-                            :rs-watch-cancel #(.stop rs-watch-thread)})
+      (reset! daemon-state {:pod-watch-daemon pod-watch-thread
+                            :rs-watch-daemon rs-watch-thread})
       scheduler)))
