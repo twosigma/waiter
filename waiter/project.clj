@@ -35,7 +35,7 @@
                  [twosigma/jet "0.7.10-20180627_133335-g2a9429e"]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
-                 [clj-time "0.14.5"
+                 [clj-time "0.15.1"
                   :exclusions [joda-time]]
                  [com.google.guava/guava "20.0"]
                  [com.taoensso/nippy "2.14.0"
@@ -70,7 +70,7 @@
                  [org.apache.curator/curator-x-discovery "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.8.0"]
-                 [org.clojure/core.async "0.4.474"
+                 [org.clojure/core.async "0.3.465"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [org.clojure/core.memoize "0.7.1"
                   :exclusions [org.clojure/clojure]]
@@ -80,7 +80,7 @@
                  [org.clojure/tools.cli "0.4.1"]
                  [org.clojure/tools.logging "0.4.1"]
                  [org.clojure/tools.namespace "0.2.11"]
-                 [org.clojure/tools.reader "1.3.0"]
+                 [org.clojure/tools.reader "1.3.1"]
                  [org.slf4j/slf4j-log4j12 "1.7.25"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]
