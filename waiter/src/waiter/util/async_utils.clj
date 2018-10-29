@@ -186,4 +186,6 @@
 (defn chan?
   "Determines if v is a channel."
   [v]
-  (instance? ManyToManyChannel v))
+  (or (instance? ManyToManyChannel v)
+      (= (.getName ManyToManyChannel)
+         (some-> v .getClass .getName))))
