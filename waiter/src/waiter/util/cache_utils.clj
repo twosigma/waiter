@@ -29,9 +29,9 @@
         ttl (.expireAfterWrite ttl TimeUnit/MILLISECONDS))
       (.removalListener (proxy [RemovalListener] []
                           (onRemoval [^RemovalNotification n]
-                            (log/info "cache entry removal notification"
-                                      {:evicted (.wasEvicted n)
-                                       :key (.getKey n)}))))
+                            (log/debug "cache entry removal notification"
+                                       {:evicted (.wasEvicted n)
+                                        :key (.getKey n)}))))
       (.build)))
 
 (defn cache-contains?
