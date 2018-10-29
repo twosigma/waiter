@@ -913,8 +913,9 @@
     (if (and (seq source-tokens-set)
              (some (fn [source-tokens]
                      (and (seq source-tokens)
-                          (some (fn [{:strs [token version]}]
-                                  (not= (token->token-hash token) version))
+                          ;; safe assumption mark a service stale when every token used to access it is stale
+                          (every? (fn [{:strs [token version]}]
+                                    (not= (token->token-hash token) version))
                                 source-tokens)))
                    source-tokens-set))
       (do
