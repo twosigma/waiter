@@ -794,20 +794,22 @@
 (deftest ^:parallel ^:integration-fast test-bad-token
   (testing-using-waiter-url
 
-    (testing "ignore missing token when have service description"
-      (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token" "X-Waiter-CPUS" "1"})]
-        (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
-        (assert-response-status response 400)))
+    (let [common-headers {"x-waiter-cmd" "foo-bar"
+                          "x-waiter-cmd-type" "shell"}]
+      (testing "ignore missing token when have service description"
+        (let [response (make-request waiter-url "/pathabc" :headers (assoc common-headers "host" "missing_token"))]
+          (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
+          (assert-response-status response 400)))
 
-    (testing "ignore invalid token when have service description"
-      (let [response (make-request waiter-url "/pathabc" :headers {"host" "bad/token" "X-Waiter-CPUS" "1"})]
-        (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
-        (assert-response-status response 400)))
+      (testing "ignore invalid token when have service description"
+        (let [response (make-request waiter-url "/pathabc" :headers (assoc common-headers "host" "bad/token"))]
+          (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
+          (assert-response-status response 400)))
 
-    (testing "ignore invalid token when have invalid service description"
-      (let [response (make-request waiter-url "/pathabc" :headers {"host" "bad/token" "X-Waiter-CPUS" "one"})]
-        (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
-        (assert-response-status response 400)))
+      (testing "ignore invalid token when have invalid service description"
+        (let [response (make-request waiter-url "/pathabc" :headers (assoc common-headers "host" "bad/token"))]
+          (is (str/includes? (:body response) "Service description using waiter headers/token improperly configured"))
+          (assert-response-status response 400))))
 
     (testing "can't use missing token server"
       (let [response (make-request waiter-url "/pathabc" :headers {"host" "missing_token"})]
