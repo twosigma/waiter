@@ -282,9 +282,11 @@
             (assert-response-status tokens-response 200)
             (is (every? (fn [token-entry] (contains? token-entry "deleted")) token-entries))
             (is (every? (fn [token-entry] (contains? token-entry "etag")) token-entries))
-            (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) token-entries)
-                (str token "entry found in list of deleted tokens!"
-                     (->> token-entries (filter (fn [token-entry] (= token (get token-entry "token")))) vec))))))
+            (comment
+              ;; TODO Excluded as assertion is flaky
+              (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) token-entries)
+                  (str token "entry found in list of deleted tokens!"
+                       (->> token-entries (filter (fn [token-entry] (= token (get token-entry "token")))) vec)))))))
 
       (log/info "ensuring tokens can no longer be retrieved on each router with include=deleted parameter after hard-delete")
       (doseq [token tokens-to-create]
@@ -769,7 +771,7 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest ^:parallel ^:integration-fast test-on-the-fly-to-token
+(deftest ^:parallel ^:integration-fast ^:explicit test-on-the-fly-to-token
   (testing-using-waiter-url
     (let [name-string (rand-name)
           canary-response (make-kitchen-request waiter-url {:x-waiter-name name-string})
