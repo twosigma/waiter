@@ -187,5 +187,6 @@
   "Determines if v is a channel."
   [v]
   (or (instance? ManyToManyChannel v)
+      ;; instance? is flaky here (possible classloader issue), so we fall back to checking the class name
       (= (.getName ManyToManyChannel)
          (some-> v .getClass .getName))))
