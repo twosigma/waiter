@@ -168,9 +168,7 @@
 (defn request->endpoint
   "Retrieves the relative url Waiter should use to forward requests to service instances."
   [{:keys [uri]} waiter-headers]
-  (if (= "/secrun" uri)
-    (headers/get-waiter-header waiter-headers "endpoint-path" "/req")
-    uri))
+  uri)
 
 (defn- handle-response-error
   "Handles error responses from the backend."

@@ -35,40 +35,25 @@
   {:request-method request-method :uri resource :params (first params)})
 
 (deftest test-request->endpoint-without-headers
-  (let [legacy-endpoints #{"/secrun"}
-        passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
+  (let [passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
         waiter-headers {}
-        test-endpoints (clojure.set/union legacy-endpoints passthrough-endpoints)]
+        test-endpoints (clojure.set/union passthrough-endpoints)]
     (doseq [item test-endpoints]
       (testing (str "Test retrieve endpoint without headers: " item)
         (let [dummy-request (request item :post {:a 1 :b 2})
-              expected-endpoint (if (contains? legacy-endpoints item) "/req" item)]
+              expected-endpoint item]
           (is (= expected-endpoint
                  (request->endpoint dummy-request waiter-headers))))))))
 
-(deftest test-request->endpoint-with-headers
-  (let [legacy-endpoints #{"/secrun"}
-        passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
-        custom-legacy-endpoint "/custom/endpoint"
-        waiter-headers {(str headers/waiter-header-prefix "endpoint-path") custom-legacy-endpoint}
-        test-endpoints (clojure.set/union legacy-endpoints passthrough-endpoints)]
-    (doseq [item test-endpoints]
-      (testing (str "Test retrieve endpoint with headers: " item)
-        (let [dummy-request (request item :post {:a 1 :b 2})
-              expected-endpoint (if (contains? legacy-endpoints item) custom-legacy-endpoint item)]
-          (is (= expected-endpoint
-                 (request->endpoint dummy-request waiter-headers))))))))
 
 (deftest test-request->endpoint-with-headers-and-query-string
-  (let [legacy-endpoints #{"/secrun"}
-        passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
-        custom-legacy-endpoint "/custom/endpoint"
-        waiter-headers {(str headers/waiter-header-prefix "endpoint-path") custom-legacy-endpoint}
-        test-endpoints (clojure.set/union legacy-endpoints passthrough-endpoints)]
+  (let [passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
+        waiter-headers {}
+        test-endpoints (clojure.set/union passthrough-endpoints)]
     (doseq [item test-endpoints]
       (testing (str "Test retrieve endpoint with headers and query string: " item)
         (let [dummy-request (assoc (request item :post {:a 1 :b 2}) :query-string "foo=bar&baz=1234")
-              expected-endpoint (if (contains? legacy-endpoints item) custom-legacy-endpoint item)]
+              expected-endpoint item]
           (is (= expected-endpoint
                  (request->endpoint dummy-request waiter-headers))))))))
 

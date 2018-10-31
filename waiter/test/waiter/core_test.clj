@@ -877,6 +877,8 @@
            (exec-routes-mapper "/metrics")))
     (is (= {:handler :not-found-handler-fn}
            (exec-routes-mapper "/not-found"))) ; any path that isn't mapped
+    (is (= {:handler :not-found-handler-fn}
+           (exec-routes-mapper "/secrun")))
     (is (= {:handler :service-id-handler-fn}
            (exec-routes-mapper "/service-id")))
     (is (= {:handler :display-settings-handler-fn}
