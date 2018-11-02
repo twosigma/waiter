@@ -30,33 +30,6 @@
   (:import (java.io ByteArrayOutputStream)
            (org.eclipse.jetty.client HttpClient)))
 
-(defn request
-  [resource request-method & params]
-  {:request-method request-method :uri resource :params (first params)})
-
-(deftest test-request->endpoint-without-headers
-  (let [passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
-        waiter-headers {}
-        test-endpoints (clojure.set/union passthrough-endpoints)]
-    (doseq [item test-endpoints]
-      (testing (str "Test retrieve endpoint without headers: " item)
-        (let [dummy-request (request item :post {:a 1 :b 2})
-              expected-endpoint item]
-          (is (= expected-endpoint
-                 (request->endpoint dummy-request waiter-headers))))))))
-
-
-(deftest test-request->endpoint-with-headers-and-query-string
-  (let [passthrough-endpoints #{"/foo" "/baz/bar" "/load/balancer" "/auto/scale/1/2/3"}
-        waiter-headers {}
-        test-endpoints (clojure.set/union passthrough-endpoints)]
-    (doseq [item test-endpoints]
-      (testing (str "Test retrieve endpoint with headers and query string: " item)
-        (let [dummy-request (assoc (request item :post {:a 1 :b 2}) :query-string "foo=bar&baz=1234")
-              expected-endpoint item]
-          (is (= expected-endpoint
-                 (request->endpoint dummy-request waiter-headers))))))))
-
 (deftest test-prepare-request-properties
   (let [test-cases (list
                      {:name "test-prepare-request-properties:nil-inputs"

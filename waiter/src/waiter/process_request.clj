@@ -165,11 +165,6 @@
                         (fn [e] (log/error e "error releasing instance!")))
       instance)))
 
-(defn request->endpoint
-  "Retrieves the relative url Waiter should use to forward requests to service instances."
-  [{:keys [uri]} waiter-headers]
-  uri)
-
 (defn- handle-response-error
   "Handles error responses from the backend."
   [error reservation-status-promise service-id request]
@@ -364,12 +359,11 @@
   "Processes a response resulting from a http request.
    It includes book-keeping for async requests and asycnhronously streaming the content."
   [post-process-async-request-response-fn _ instance-request-properties descriptor instance
-   request reason-map reservation-status-promise confirm-live-connection-with-abort
+   {:keys [uri] :as request} reason-map reservation-status-promise confirm-live-connection-with-abort
    request-state-chan {:keys [status] :as response}]
   (let [{:keys [service-description service-id waiter-headers]} descriptor
         {:strs [metric-group]} service-description
         waiter-debug-enabled? (utils/request->debug-enabled? request)
-        endpoint (request->endpoint request waiter-headers)
         resp-chan (async/chan 5)]
     (when (and (= 503 status) (get service-description "blacklist-on-503"))
       (log/info "Instance returned 503: " {:instance instance})
@@ -377,7 +371,7 @@
     (meters/mark! (metrics/service-meter service-id "response-status-rate" (str status)))
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
-    (let [{:keys [location query-string]} (extract-async-request-response-data response endpoint)
+    (let [{:keys [location query-string]} (extract-async-request-response-data response uri)
           request-abort-callback (abort-http-request-callback-factory response)]
       (when location
         ;; backend is processing as an asynchronous request, eagerly trigger the write to the promise
@@ -419,7 +413,7 @@
      {:keys [ctrl descriptor request-id request-time] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
-          request (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
+          {:keys [uri] :as request} (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
           confirm-live-connection-factory #(confirm-live-connection-factory control-mult reservation-status-promise %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
           waiter-debug-enabled? (utils/request->debug-enabled? request)
@@ -429,8 +423,8 @@
                                  response))]
       (async/go
         (if waiter-debug-enabled?
-          (log/info "process request to" (get-in request [:headers "host"]) "at path" (:uri request))
-          (log/debug "process request to" (get-in request [:headers "host"]) "at path" (:uri request)))
+          (log/info "process request to" (get-in request [:headers "host"]) "at path" uri)
+          (log/debug "process request to" (get-in request [:headers "host"]) "at path" uri))
         (timers/start-stop-time!
           process-timer
           (let [{:keys [service-id service-description]} descriptor
@@ -472,12 +466,11 @@
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
                           (confirm-live-connection-without-abort)
-                          (let [endpoint (request->endpoint request waiter-headers)
-                                timed-response (metrics/with-timer
+                          (let [timed-response (metrics/with-timer
                                                  (metrics/service-timer service-id "backend-response")
                                                  (async/<!
                                                    (make-request-fn instance request instance-request-properties
-                                                                    passthrough-headers endpoint metric-group)))
+                                                                    passthrough-headers uri metric-group)))
                                 response-elapsed (:elapsed timed-response)
                                 {:keys [error] :as response} (:out timed-response)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)
