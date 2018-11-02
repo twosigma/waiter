@@ -222,7 +222,7 @@
         waiter-debug-enabled? (utils/request->debug-enabled? request)]
     (try
       (let [content-length-str (get passthrough-headers "content-length")
-            content-length (if content-length-str (Integer/parseInt content-length-str) 0)]
+            content-length (if content-length-str (Long/parseLong content-length-str) 0)]
         (when (and (integer? content-length) (pos? content-length))
           ; computing the actual bytes will currently require synchronously reading all data in the request body
           (histograms/update! (metrics/service-histogram service-id "request-size") content-length)

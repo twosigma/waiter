@@ -346,34 +346,49 @@
                              "x-http-method-override" "DELETE"}
         end-route "/end-route"
         app-password "test-password"]
-    (testing "make-request:headers"
-      (let [expected-endpoint "proto://example.com:8080/end-route"
-            make-basic-auth-fn (fn make-basic-auth-fn [endpoint username password]
-                                 (is (= expected-endpoint endpoint))
-                                 (is (= username "waiter"))
-                                 (is (= app-password password))
-                                 (Object.))
-            service-id->password-fn (fn service-id->password-fn [service-id]
-                                      (is (= "test-service-id" service-id))
-                                      app-password)
-            http-client (http/client)
-            request-method-fn-call-counter (atom 0)]
-        (with-redefs [http/request
-                      (fn [^HttpClient _ request-config]
-                        (swap! request-method-fn-call-counter inc)
-                        (is (= expected-endpoint (:url request-config)))
-                        (is (= :bytes (:as request-config)))
-                        (is (:auth request-config))
-                        (is (= "body" (:body request-config)))
-                        (is (= 654321 (:idle-timeout request-config)))
-                        (is (= (-> (dissoc passthrough-headers "expect" "authorization"
-                                           "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                                           "te" "trailers" "transfer-encoding" "upgrade")
-                                   (merge {"x-waiter-auth-principal" "test-user"
-                                           "x-waiter-authenticated-principal" "test-user@test.com"}))
-                               (:headers request-config))))]
-          (make-request http-client make-basic-auth-fn service-id->password-fn instance request request-properties passthrough-headers end-route nil)
-          (is (= 1 @request-method-fn-call-counter)))))))
+    (let [expected-endpoint "proto://example.com:8080/end-route"
+          make-basic-auth-fn (fn make-basic-auth-fn [endpoint username password]
+                               (is (= expected-endpoint endpoint))
+                               (is (= username "waiter"))
+                               (is (= app-password password))
+                               (Object.))
+          service-id->password-fn (fn service-id->password-fn [service-id]
+                                    (is (= "test-service-id" service-id))
+                                    app-password)
+          http-client (http/client)
+          http-request-mock-factory (fn [passthrough-headers request-method-fn-call-counter]
+                                      (fn [^HttpClient _ request-config]
+                                        (swap! request-method-fn-call-counter inc)
+                                        (is (= expected-endpoint (:url request-config)))
+                                        (is (= :bytes (:as request-config)))
+                                        (is (:auth request-config))
+                                        (is (= "body" (:body request-config)))
+                                        (is (= 654321 (:idle-timeout request-config)))
+                                        (is (= (-> (dissoc passthrough-headers "expect" "authorization"
+                                                           "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
+                                                           "te" "trailers" "transfer-encoding" "upgrade")
+                                                   (merge {"x-waiter-auth-principal"          "test-user"
+                                                           "x-waiter-authenticated-principal" "test-user@test.com"}))
+                                               (:headers request-config)))))]
+      (testing "make-request:headers"
+        (let [request-method-fn-call-counter (atom 0)]
+          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter)]
+            (make-request http-client make-basic-auth-fn service-id->password-fn instance request request-properties passthrough-headers end-route nil)
+            (is (= 1 @request-method-fn-call-counter)))))
+
+      (testing "make-request:headers-long-content-length"
+        (let [request-method-fn-call-counter (atom 0)
+              passthrough-headers (assoc passthrough-headers "content-length" "1234123412341234")
+              statsd-inc-call-value (promise)]
+          (with-redefs [http/request (http-request-mock-factory passthrough-headers request-method-fn-call-counter)
+                        statsd/inc!
+                        (fn [metric-group metric value]
+                          (is (nil? metric-group))
+                          (is (= "request_bytes" metric))
+                          (deliver statsd-inc-call-value value))]
+            (make-request http-client make-basic-auth-fn service-id->password-fn instance request request-properties passthrough-headers end-route nil)
+            (is (= 1 @request-method-fn-call-counter))
+            (is (= 1234123412341234 (deref statsd-inc-call-value 0 :statsd-inc-not-called)))))))))
 
 (deftest test-wrap-suspended-service
   (testing "returns error for suspended app"
