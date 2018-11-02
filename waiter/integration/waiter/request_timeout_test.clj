@@ -39,7 +39,7 @@
 (defn- make-request-verbose
   "Makes a request with the provided headers and cookies, and with verbose logging"
   [waiter-url request-headers cookies]
-  (let [response (make-request waiter-url "/secrun"
+  (let [response (make-request waiter-url "/req"
                                :cookies cookies
                                :headers request-headers
                                :method :post
@@ -55,7 +55,7 @@
     (assert-failed-request service-name body start-time-ms timeout-period-sec faulty-app?)))
 
 (defn- make-successful-request
-  [waiter-url request-headers & {:keys [cookies endpoint] :or {cookies {}, endpoint "/secrun"}}]
+  [waiter-url request-headers & {:keys [cookies endpoint] :or {cookies {}, endpoint "/req"}}]
   (let [response (make-request-with-debug-info
                    request-headers
                    #(make-request waiter-url endpoint
@@ -200,7 +200,7 @@
         (log/info "Making request for" token)
         (let [{:keys [status service-id] :as response} (make-request-with-debug-info
                                                          {:x-waiter-token token}
-                                                         #(make-request waiter-url "/secrun" :headers %))]
+                                                         #(make-request waiter-url "/req" :headers %))]
           (assert-response-status response 200)
           (when (= 200 status)
             (log/info "Verifying app grace period for" token)

@@ -92,7 +92,6 @@
                                   ["/" :service-id] :blacklisted-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
                      "metrics" :metrics-request-handler-fn
-                     "secrun" :process-request-fn
                      "service-id" :service-id-handler-fn
                      "settings" :display-settings-handler-fn
                      "sim" :sim-request-handler

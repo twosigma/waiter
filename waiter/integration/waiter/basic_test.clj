@@ -51,13 +51,6 @@
                   (is (not= service-id new-service-id)
                       (str {:new-parameter [k v] :request-headers request-headers}))))))))
 
-      (testing "secrun"
-        (log/info (str "Basic test using endpoint: /secrun"))
-        (let [{:keys [body] :as response}
-              (make-kitchen-request waiter-url request-headers :path "/secrun")]
-          (assert-response-status response 200)
-          (is (= "Hello World" body))))
-
       (testing "empty-body"
         (log/info "Basic test for empty body in request")
         (let [request-headers (assoc request-headers :accept "text/plain")
@@ -215,7 +208,7 @@
       (log/warn "test-basic-logs cannot run because the target Waiter is not using Marathon"))))
 
 (deftest ^:parallel ^:integration-fast test-basic-backoff-config
-  (let [path "/secrun"]
+  (let [path "/req"]
     (testing-using-waiter-url
       (log/info (str "Basic backoff config test using endpoint: " path))
       (let [{:keys [service-id] :as response}
