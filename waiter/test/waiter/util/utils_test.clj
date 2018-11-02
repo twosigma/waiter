@@ -345,6 +345,20 @@
             (is (= 5 @call-counter-atom))
             (let [actual-elapsed-time @actual-elapsed-time-atom
                   expected-elapsed-time (* (reduce + [1 5 25 125]) 10)]
+              (is (= expected-elapsed-time actual-elapsed-time)))))))
+    (testing "retry-strategy:max-delay-ms"
+      (let [actual-elapsed-time-atom (atom 0)]
+        (with-redefs [sleep (fn [time] (swap! actual-elapsed-time-atom + time))]
+          (let [[call-counter-atom function] (make-call-atom-and-function 5 return-value)
+                retry-config {:delay-multiplier 5
+                              :inital-delay-ms 10
+                              :max-delay-ms 100
+                              :max-retries 10}
+                actual-result ((retry-strategy retry-config) function)]
+            (is (= return-value actual-result))
+            (is (= 6 @call-counter-atom))
+            (let [actual-elapsed-time @actual-elapsed-time-atom
+                  expected-elapsed-time (reduce + [10 50 100 100 100])]
               (is (= expected-elapsed-time actual-elapsed-time)))))))))
 
 (deftest test-unique-identifier
