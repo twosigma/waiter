@@ -734,17 +734,17 @@
               (fn k8s-watch-retried-thunk []
                 (try
                   (loop [version (reset-watch-state! scheduler options)
-                         watch-url (str resource-url "&watch=true&resourceVersion=" version)
                          iter 0]
-                    ;; process updates forever (unless there's an exception)
-                    (doseq [json-object (streaming-api-request-fn watch-url)]
-                      (when json-object
-                        (update-fn json-object)))
+                    (let [watch-url (str resource-url "&watch=true&resourceVersion=" version)]
+                      ;; process updates forever (unless there's an exception)
+                      (doseq [json-object (streaming-api-request-fn watch-url)]
+                        (when json-object
+                          (update-fn json-object))))
                     ;; when the watch connection closed normally (i.e., no HTTP error code response),
                     ;; retry the watch (before falling back to the global query again) `watch-retries` times.
                     (when (< iter watch-retries)
                       (when-let [version' (latest-watch-state-version scheduler options)]
-                        (recur version' watch-url (inc iter)))))
+                        (recur version' (inc iter)))))
                   (catch Exception e
                     (log/error e "error in" resource-key "state watch thread")
                     (throw e))))))
