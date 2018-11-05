@@ -311,27 +311,29 @@
 
    `delay-multiplier` each previous delay is multiplied by delay-multiplier to generate the next delay.
    `inital-delay-ms` the initial delay for the first retry.
+   `max-delay-ms` the delay cap for exponential backoff delay.
    `max-retries`  limit the number of retries.
    "
-  [{:keys [delay-multiplier inital-delay-ms max-retries]
+  [{:keys [delay-multiplier inital-delay-ms max-delay-ms max-retries]
     :or {delay-multiplier 1.0
          inital-delay-ms 100
+         max-delay-ms 300000  ; 300k millis = 5 minutes
          max-retries 10}}]
-  (fn [body-function]
-    (loop [num-tries 1]
-      (let [{:keys [success result]}
-            (try
-              {:success true, :result (body-function)}
-              (catch Exception ex
-                {:success false, :result ex}))]
-        (cond
-          success result
-          (>= num-tries max-retries) (throw result)
-          :else (let [delay-ms (long (* inital-delay-ms
-                                        (Math/pow delay-multiplier (dec num-tries))))]
-                  (log/info "sleeping" delay-ms "ms before retry" (str "#" num-tries))
-                  (sleep delay-ms)
-                  (recur (inc num-tries))))))))
+    (fn [body-function]
+      (loop [num-tries 1
+             current-delay-ms inital-delay-ms]
+        (let [{:keys [success result]}
+              (try
+                {:success true, :result (body-function)}
+                (catch Exception ex
+                  {:success false, :result ex}))]
+          (cond
+            success result
+            (>= num-tries max-retries) (throw result)
+            :else (let [delay-ms (long (min max-delay-ms current-delay-ms))]
+                    (log/info "sleeping" delay-ms "ms before retry" (str "#" num-tries))
+                    (sleep delay-ms)
+                    (recur (inc num-tries) (* delay-ms delay-multiplier))))))))
 
 (defn unique-identifier
   "Generates a new unique id using the time and a random value."
