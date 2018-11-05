@@ -709,19 +709,21 @@
   "Default options for start-k8s-watch! daemon threads."
   {:api-request-fn api-request
    :exit-on-error? true
-   :streaming-api-request-fn streaming-api-request})
+   :streaming-api-request-fn streaming-api-request
+   :watch-retries 0})
 
 (def retry-watch-runner
-  ""
+  "Configured run-with-retries helper for use in our watch threads."
   (utils/retry-strategy {:delay-multiplier 1.5
-                   :initial-delay-ms 100
-                   :max-delay-ms 60000
-                   :max-retries Long/MAX_VALUE}))
+                         :initial-delay-ms 100
+                         :max-delay-ms 60000
+                         :max-retries Long/MAX_VALUE}))
 
 (defn- start-k8s-watch!
   "Start a thread to continuously update the watch-state atom based on watched K8s events."
   [{:keys [api-server-url watch-state] :as scheduler}
-   {:keys [exit-on-error? resource-key resource-name resource-url streaming-api-request-fn update-fn] :as options}]
+   {:keys [exit-on-error? resource-key resource-name resource-url
+           streaming-api-request-fn update-fn watch-retries] :as options}]
   (doto
     (Thread.
       (fn k8s-watch []
@@ -738,7 +740,9 @@
                     (doseq [json-object (streaming-api-request-fn watch-url)]
                       (when json-object
                         (update-fn json-object)))
-                    (when (< iter 10)
+                    ;; when the watch connection closed normally (i.e., no HTTP error code response),
+                    ;; retry the watch (before falling back to the global query again) `watch-retries` times.
+                    (when (< iter watch-retries)
                       (when-let [version' (latest-watch-state-version scheduler options)]
                         (recur version' watch-url (inc iter)))))
                   (catch Exception e
@@ -772,31 +776,30 @@
 
 (defn start-pods-watch!
   "Start a thread to continuously update the watch-state atom based on watched Pod events."
-  ([scheduler] (start-pods-watch! scheduler default-watch-options))
-  ([{:keys [api-server-url watch-state orchestrator-name] :as scheduler} options]
-   (start-k8s-watch!
-     scheduler
-     (->
-       {:query-fn global-pods-state-query
-        :resource-key :service-id->pod-id->pod
-        :resource-name "Pods"
-        :resource-url (str api-server-url "/api/v1/pods?labelSelector=managed-by=" orchestrator-name)
-        :metadata-key :pods-metadata
-        :update-fn (fn pods-watch-update [{pod :object update-type :type}]
-                     (let [now (t/now)
-                           pod-id (k8s-object->id pod)
-                           service-id (k8s-object->service-id pod)
-                           version (k8s-object->resource-version pod)]
-                       (scheduler/log "pod state update:" update-type version pod)
-                       (swap! watch-state
-                              #(as-> % state
-                                 (case update-type
-                                   "ADDED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
-                                   "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
-                                   "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
-                                 (assoc-in state [:pods-metadata :timestamp :watch] now)
-                                 (assoc-in state [:pods-metadata :version :watch] version)))))}
-       (merge options)))))
+  [{:keys [api-server-url watch-state orchestrator-name] :as scheduler} options]
+  (start-k8s-watch!
+    scheduler
+    (->
+      {:query-fn global-pods-state-query
+       :resource-key :service-id->pod-id->pod
+       :resource-name "Pods"
+       :resource-url (str api-server-url "/api/v1/pods?labelSelector=managed-by=" orchestrator-name)
+       :metadata-key :pods-metadata
+       :update-fn (fn pods-watch-update [{pod :object update-type :type}]
+                    (let [now (t/now)
+                          pod-id (k8s-object->id pod)
+                          service-id (k8s-object->service-id pod)
+                          version (k8s-object->resource-version pod)]
+                      (scheduler/log "pod state update:" update-type version pod)
+                      (swap! watch-state
+                             #(as-> % state
+                                (case update-type
+                                  "ADDED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                  "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                  "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
+                                (assoc-in state [:pods-metadata :timestamp :watch] now)
+                                (assoc-in state [:pods-metadata :version :watch] version)))))}
+      (merge options))))
 
 (defn global-rs-state-query
   "Query K8s for all Waiter-managed ReplicaSets"
@@ -845,7 +848,7 @@
   [{:keys [authentication authorizer http-options max-patch-retries max-name-length orchestrator-name
            pod-base-port pod-suffix-length replicaset-api-version replicaset-spec-builder
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
-           service-id->password-fn url start-scheduler-syncer-fn]
+           service-id->password-fn url start-scheduler-syncer-fn watch-retries]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (nil? fileserver-port)
@@ -868,7 +871,8 @@
          (utils/pos-int? scheduler-syncer-interval-secs)
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
-         (fn? start-scheduler-syncer-fn)]}
+         (fn? start-scheduler-syncer-fn)
+         (or (nil? watch-retries) (integer? watch-retries))]}
   (let [authorizer (utils/create-component authorizer)
         http-client (http-utils/http-client-factory http-options)
         service-id->failed-instances-transient-store (atom {})
@@ -879,6 +883,9 @@
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description]
                                        (f scheduler service-id service-description replicaset-spec-builder)))
+        watch-options (cond-> default-watch-options
+                        (some? watch-retries)
+                        (assoc :watch-retries watch-retries))
         watch-state (atom nil)
         scheduler-config {:api-server-url url
                           :http-client http-client
@@ -912,8 +919,8 @@
                                            service-id->password-fn
                                            service-id->service-description-fn
                                            watch-state)
-          pod-watch-thread (start-pods-watch! scheduler)
-          rs-watch-thread (start-replicasets-watch! scheduler)]
+          pod-watch-thread (start-pods-watch! scheduler watch-options)
+          rs-watch-thread (start-replicasets-watch! scheduler watch-options)]
       (reset! daemon-state {:pod-watch-daemon pod-watch-thread
                             :rs-watch-daemon rs-watch-thread})
       scheduler)))
