@@ -385,7 +385,12 @@
 
                                  ;; Base URL for accessing the Kubernetes API server.
                                  ;; The URL used below is the default proxy URL bound to by the `kubectl proxy` command:
-                                 :url "http://localhost:8001"}
+                                 :url "http://localhost:8001"
+
+                                 ;; Number of times to retry a watch before falling back to a global state query.
+                                 ;; These retries only apply to a closed watch connection, not to connections returning an HTTP error code.
+                                 ;; Defaults to 0 (one attempt, no retries) if not provided.
+                                 :watch-retries 10}
 
                     ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     ;:kind :marathon
