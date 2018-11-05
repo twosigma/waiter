@@ -698,11 +698,25 @@
                          :version {:snapshot version}})
     version))
 
+(defn- latest-watch-state-version
+  "Get the last resourceVersion seen and stored in our watch-state."
+  [{:keys [watch-state]} {:keys [metadata-key]}]
+  (let [version-metadata (get-in @watch-state [metadata-key :version])]
+    (or (:watch version-metadata)
+        (:snapshot version-metadata))))
+
 (def default-watch-options
   "Default options for start-k8s-watch! daemon threads."
   {:api-request-fn api-request
    :exit-on-error? true
    :streaming-api-request-fn streaming-api-request})
+
+(def retry-watch-runner
+  ""
+  (utils/retry-strategy {:delay-multiplier 1.5
+                   :initial-delay-ms 100
+                   :max-delay-ms 60000
+                   :max-retries Long/MAX_VALUE}))
 
 (defn- start-k8s-watch!
   "Start a thread to continuously update the watch-state atom based on watched K8s events."
@@ -714,15 +728,22 @@
         (try
           ;; retry getting state updates forever
           (while true
-            (try
-              (let [version (reset-watch-state! scheduler options)
-                    watch-url (str resource-url "&watch=true&resourceVersion=" version)]
-                ;; process updates forever (unless there's an exception)
-                (doseq [json-object (streaming-api-request-fn watch-url)]
-                  (when json-object
-                    (update-fn json-object))))
-              (catch Exception e
-                (log/error e "error in" resource-key "state watch thread"))))
+            (retry-watch-runner
+              (fn k8s-watch-retried-thunk []
+                (try
+                  (loop [version (reset-watch-state! scheduler options)
+                         watch-url (str resource-url "&watch=true&resourceVersion=" version)
+                         iter 0]
+                    ;; process updates forever (unless there's an exception)
+                    (doseq [json-object (streaming-api-request-fn watch-url)]
+                      (when json-object
+                        (update-fn json-object)))
+                    (when (< iter 10)
+                      (when-let [version' (latest-watch-state-version scheduler options)]
+                        (recur version' watch-url (inc iter)))))
+                  (catch Exception e
+                    (log/error e "error in" resource-key "state watch thread")
+                    (throw e))))))
           (catch Throwable t
             (when exit-on-error?
               (log/error t "unrecoverable error in" resource-name "state watch thread, terminating waiter.")))
