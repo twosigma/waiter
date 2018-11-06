@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.token-test
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -319,10 +320,12 @@
                 entitlement-manager
                 {:authorization/user auth-user
                  :query-string "include=metadata"
-                 :request-method :get})]
+                 :request-method :get})
+              {:strs [last-update-time] :as token-data} (kv/fetch kv-store token)]
           (is (= 200 status))
           (is (= [{"deleted" false
-                   "etag" (sd/token-data->token-hash (kv/fetch kv-store token))
+                   "etag" (sd/token-data->token-hash token-data)
+                   "last-update-time" (-> last-update-time tc/from-long du/date-to-str)
                    "owner" "tu1"
                    "token" token}]
                  (json/read-str body)))))
@@ -1563,10 +1566,16 @@
     (doseq [[token token-data] tokens]
       (kv/store kv-store token token-data))
     (reindex-tokens synchronize-fn kv-store (keys tokens))
-    (is (= {"token1" {:deleted false :etag (-> (get tokens "token1") sd/token-data->token-hash)}
-            "token2" {:deleted false :etag (-> (get tokens "token2") sd/token-data->token-hash)}}
+    (is (= {"token1" {:deleted false
+                      :etag (-> (get tokens "token1") sd/token-data->token-hash)
+                      :last-update-time 1000}
+            "token2" {:deleted false
+                      :etag (-> (get tokens "token2") sd/token-data->token-hash)
+                      :last-update-time nil}}
            (list-index-entries-for-owner kv-store "owner1")))
-    (is (= {"token3" {:deleted false :etag (-> (get tokens "token3") sd/token-data->token-hash)}}
+    (is (= {"token3" {:deleted false
+                      :etag (-> (get tokens "token3") sd/token-data->token-hash)
+                      :last-update-time 3000}}
            (list-index-entries-for-owner kv-store "owner2")))))
 
 (deftest test-handle-reindex-tokens-request
@@ -1626,17 +1635,45 @@
     (let [request {:query-string "include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->token-hash "token1") "owner" "owner1" "token" "token1"}
-               {"deleted" false "etag" (token->token-hash "token2") "owner" "owner1" "token" "token2"}
-               {"deleted" false "etag" (token->token-hash "token3") "owner" "owner2" "token" "token3"}}
+      (is (= #{{"deleted" false
+                "etag" (token->token-hash "token1")
+                "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
+                "owner" "owner1"
+                "token" "token1"}
+               {"deleted" false
+                "etag" (token->token-hash "token2")
+                "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
+                "owner" "owner1"
+                "token" "token2"}
+               {"deleted" false
+                "etag" (token->token-hash "token3")
+                "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "owner" "owner2"
+                "token" "token3"}}
              (set (json/read-str body)))))
     (let [request {:query-string "include=metadata&include=deleted" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->token-hash "token1") "owner" "owner1" "token" "token1"}
-               {"deleted" false "etag" (token->token-hash "token2") "owner" "owner1" "token" "token2"}
-               {"deleted" false "etag" (token->token-hash "token3") "owner" "owner2" "token" "token3"}
-               {"deleted" true "etag" (token->token-hash "token4") "owner" "owner2" "token" "token4"}}
+      (is (= #{{"deleted" false
+                "etag" (token->token-hash "token1")
+                "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
+                "owner" "owner1"
+                "token" "token1"}
+               {"deleted" false
+                "etag" (token->token-hash "token2")
+                "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
+                "owner" "owner1"
+                "token" "token2"}
+               {"deleted" false
+                "etag" (token->token-hash "token3")
+                "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "owner" "owner2"
+                "token" "token3"}
+               {"deleted" true
+                "etag" (token->token-hash "token4")
+                "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "owner" "owner2"
+                "token" "token4"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
@@ -1680,8 +1717,16 @@
     (let [request {:query-string "owner=owner1&include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->token-hash "token1") "owner" "owner1" "token" "token1"}
-               {"deleted" false "etag" (token->token-hash "token2") "owner" "owner1" "token" "token2"}}
+      (is (= #{{"deleted" false
+                "etag" (token->token-hash "token1")
+                "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
+                "owner" "owner1"
+                "token" "token1"}
+               {"deleted" false
+                "etag" (token->token-hash "token2")
+                "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
+                "owner" "owner1"
+                "token" "token2"}}
              (set (json/read-str body)))))
     (let [request {:headers {"accept" "application/json"}
                  :request-method :post}
@@ -1694,13 +1739,25 @@
     (let [request {:request-method :get :query-string "owner=owner2&include=metadata"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->token-hash "token3") "owner" "owner2" "token" "token3"}}
+      (is (= #{{"deleted" false
+                "etag" (token->token-hash "token3")
+                "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "owner" "owner2"
+                "token" "token3"}}
              (set (json/read-str body)))))
     (let [request {:request-method :get :query-string "owner=owner2&include=metadata&include=deleted"}
           {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager request)]
       (is (= 200 status))
-      (is (= #{{"deleted" false "etag" (token->token-hash "token3") "owner" "owner2" "token" "token3"}
-               {"deleted" true "etag" (token->token-hash "token4") "owner" "owner2" "token" "token4"}}
+      (is (= #{{"deleted" false
+                "etag" (token->token-hash "token3")
+                "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "owner" "owner2"
+                "token" "token3"}
+               {"deleted" true
+                "etag" (token->token-hash "token4")
+                "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
+                "owner" "owner2"
+                "token" "token4"}}
              (set (json/read-str body)))))
     (let [request {:headers {"accept" "application/json"}
                    :request-method :get}
