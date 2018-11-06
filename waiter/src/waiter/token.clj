@@ -84,11 +84,7 @@
                              (let [new-owner-key (new-owner-key)]
                                (log/info "storing" new-owner-key "for" owner "in the token-owners-key")
                                (kv/store kv-store token-owners-key (assoc owner->owner-key owner new-owner-key))
-                               new-owner-key)))
-      delete-token-from-index (fn delete-token-from-index [index-entries token-to-remove]
-                                (dissoc index-entries token-to-remove))
-      insert-token-into-index (fn insert-token-into-index [index-entries token-to-insert index-entry]
-                                (assoc index-entries token-to-insert index-entry))]
+                               new-owner-key)))]
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
@@ -117,7 +113,7 @@
           (when (and existing-owner (not= owner existing-owner))
             (let [previous-owner-key (ensure-owner-key kv-store owner->owner-key existing-owner)]
               (log/info "removing" token "from index of" existing-owner)
-              (update-kv! kv-store previous-owner-key (fn [index] (delete-token-from-index index token)))))
+              (update-kv! kv-store previous-owner-key (fn [index] (dissoc index token)))))
           ; Add token to new owner
           (when owner
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)
@@ -125,7 +121,7 @@
               (log/info "inserting" token "into index of" owner)
               (update-kv! kv-store owner-key (fn [index]
                                                (->> (make-index-entry token-hash' deleted last-update-time)
-                                                    (insert-token-into-index index token))))))
+                                                    (assoc index token))))))
           (log/info "stored service description template for" token)))))
 
   (defn delete-service-description-for-token
@@ -154,13 +150,13 @@
         (when owner
           (let [owner->owner-key (kv/fetch kv-store token-owners-key)
                 owner-key (ensure-owner-key kv-store owner->owner-key owner)]
-            (update-kv! kv-store owner-key (fn [index] (delete-token-from-index index token)))
+            (update-kv! kv-store owner-key (fn [index] (dissoc index token)))
             (when (not hard-delete)
               (let [{:keys [last-update-time] :as token-data} (kv/fetch kv-store token)
                     token-hash (sd/token-data->token-hash token-data)]
                 (update-kv! kv-store owner-key (fn [index]
                                                  (->> (make-index-entry token-hash true last-update-time)
-                                                      (insert-token-into-index index token))))))))
+                                                      (assoc index token))))))))
         ; Don't bother removing owner from token-owners, even if they have no tokens now
         (log/info "deleted token for" token))))
 
@@ -229,7 +225,7 @@
                                          (fn [token]
                                            (let [{:strs [deleted last-update-time] :as token-data} (kv/fetch kv-store token)
                                                  token-hash (sd/token-data->token-hash token-data)]
-                                             (make-index-entry token-hash (true? deleted) last-update-time)))
+                                             (make-index-entry token-hash deleted last-update-time)))
                                          tokens))
                                      owner->tokens)
               owner->owner-key (pc/map-from-keys (fn [_] (new-owner-key)) (keys owner->index-entries))]
@@ -510,11 +506,10 @@
                                         (authz/manage-token? entitlement-manager can-manage-as-user token)))))
                            (map
                              (fn [[token entry]]
-                               (cond-> (assoc entry :owner owner :token token)
-                                 (not show-metadata)
-                                 (dissoc :deleted :etag :last-update-time)
-                                 show-metadata
-                                 (update :last-update-time tc/from-long)))))))
+                               (-> (if show-metadata
+                                     (update entry :last-update-time tc/from-long)
+                                     (dissoc entry :deleted :etag :last-update-time))
+                                   (assoc :owner owner :token token)))))))
                   flatten
                   utils/clj->streaming-json-response))
       (throw (ex-info "Only GET supported" {:request-method request-method
