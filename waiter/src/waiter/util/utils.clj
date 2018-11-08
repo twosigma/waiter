@@ -443,6 +443,7 @@
       (locking ns-loader-lock
         (require target-ns))
       (log/warn "Unable to load namespace for symbol" sym))
+    (log/info "Dynamically loading Clojure var:" sym)
     (resolve sym)))
 
 (defn create-component
