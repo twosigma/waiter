@@ -297,10 +297,10 @@
                      :x-waiter-env-end_date "null"
                      :x-waiter-env-timestamp "20160713201333949"
                      :x-waiter-env-time2 "201607132013"}
-            {:keys [body status service-id] :as response}
+            {:keys [body service-id] :as response}
             (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/environment"))
             body-json (json/read-str (str body))]
-        (is (= 200 status))
+        (assert-response-status response 200)
         (testing "waiter configured environment variables"
           (is (every? #(contains? body-json %)
                       ["HOME" "LOGNAME" "USER" "WAITER_CPUS" "WAITER_MEM_MB" "WAITER_SERVICE_ID" "WAITER_USERNAME"])
@@ -321,12 +321,31 @@
                      :x-waiter-env-end-date "null"
                      :x-waiter-env-foo "bar"
                      :x-waiter-env-fee_fie "fum"}
-            {:keys [body status]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
+            {:keys [body] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
             env-error-message (get-in (json/read-str body) ["waiter-error" "message" "env"])]
-        (is (= 400 status))
+        (assert-response-status response 400)
         (is (every? #(str/includes? env-error-message %)
                     ["The following environment variable keys are invalid:" "1_INVALID" "123456" "BEGIN-DATE" "END-DATE"]))
-        (is (not-any? #(str/includes? (str/lower-case env-error-message) %) ["foo" "fee_fie"]))))))
+        (is (not-any? #(str/includes? (str/lower-case env-error-message) %) ["foo" "fee_fie"]))))
+
+    (testing "old ssl environment variables"
+      (doseq [ssl-env-var ["SSL_CA_DIR" "SSL_CERT_FILE" "SSL_ENABLED" "SSL_KEY_FILE" "SSL_REQUIRE_CERT" "SSL_VERIFY_CERT"]]
+        (testing (str ssl-env-var)
+          (let [headers {:x-waiter-name (rand-name)
+                         (->> ssl-env-var (str "x-waiter-env-") keyword) "true"}
+                {:keys [body service-id] :as response}
+                (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/environment"))
+                body-json (json/read-str (str body))]
+            (assert-response-status response 200)
+            (testing "waiter configured environment variables"
+              (is (every? #(contains? body-json %)
+                          ["HOME" "LOGNAME" "USER" "WAITER_CPUS" "WAITER_MEM_MB" "WAITER_SERVICE_ID" "WAITER_USERNAME"])
+                  (str body-json)))
+            (testing "on-the-fly environment variables"
+              (is (contains? body-json ssl-env-var) (str body-json)))
+            (is (= {(keyword ssl-env-var) "true"}
+                   (:env (response->service-description waiter-url response))))
+            (delete-service waiter-url service-id)))))))
 
 (deftest ^:parallel ^:integration-fast test-last-request-time
   (testing-using-waiter-url
