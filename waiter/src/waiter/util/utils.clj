@@ -434,14 +434,17 @@
     (when (and host origin scheme)
       (= origin (str (name scheme) "://" host)))))
 
-(defn resolve-symbol
-  "Resolve the given symbol to the corresponding Var."
-  [sym]
-  {:pre [(symbol? sym)]}
-  (if-let [target-ns (namespace sym)]
-    (-> target-ns symbol require)
-    (log/warn "Unable to load namespace for symbol" sym))
-  (resolve sym))
+(let [ns-loader-lock (Object.)]
+  (defn resolve-symbol
+    "Resolve the given symbol to the corresponding Var."
+    [sym]
+    {:pre [(symbol? sym)]}
+    (if-let [target-ns (some-> sym namespace symbol)]
+      (locking ns-loader-lock
+        (require target-ns))
+      (log/warn "Unable to load namespace for symbol" sym))
+    (log/info "Dynamically loading Clojure var:" sym)
+    (resolve sym)))
 
 (defn create-component
   "Creates a component based on the specified :kind"
