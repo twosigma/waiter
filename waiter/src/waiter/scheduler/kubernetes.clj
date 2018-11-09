@@ -203,10 +203,13 @@
   ([url {:keys [keyword-keys?] :or {keyword-keys? true}}]
    (let [auth-str @k8s-api-auth-str
          request-options (cond-> {:as :stream}
-                           auth-str (assoc :headers {"Authorization" auth-str}))]
-     (-> url
-         (clj-http/get request-options)
-         :body
+                           auth-str (assoc :headers {"Authorization" auth-str}))
+         {:keys [body error status] :as response} (clj-http/get url request-options)]
+     (when error
+       (throw error))
+     (when-not (<= 200 status 299)
+       (ss/throw+ response))
+     (-> body
          InputStreamReader.
          (cheshire/parsed-seq keyword-keys?)))))
 
@@ -746,7 +749,7 @@
                       (when-let [version' (latest-watch-state-version scheduler options)]
                         (recur version' (inc iter)))))
                   (catch Exception e
-                    (log/error e "error in" resource-key "state watch thread")
+                    (log/error e "error in" resource-name "state watch thread")
                     (throw e))))))
           (catch Throwable t
             (when exit-on-error?
