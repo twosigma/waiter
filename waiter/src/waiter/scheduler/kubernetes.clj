@@ -814,33 +814,32 @@
 
 (defn start-replicasets-watch!
   "Start a thread to continuously update the watch-state atom based on watched ReplicaSet events."
-  ([scheduler] (start-replicasets-watch! scheduler default-watch-options))
-  ([{:keys [api-server-url watch-state orchestrator-name replicaset-api-version] :as scheduler} options]
-   (start-k8s-watch!
-     scheduler
-     (->
-       {:query-fn global-rs-state-query
-        :resource-key :service-id->service
-        :resource-name "ReplicaSets"
-        :resource-url (str api-server-url "/apis/" replicaset-api-version
-                           "/replicasets?labelSelector=managed-by="
-                           orchestrator-name)
-        :metadata-key :rs-metadata
-        :update-fn (fn rs-watch-update [{rs :object update-type :type}]
-                     (let [now (t/now)
-                           {service-id :id :as service} (replicaset->Service rs)
-                           version (k8s-object->resource-version rs)]
-                       (when service
-                         (scheduler/log "rs state update:" update-type version service)
-                         (swap! watch-state
-                                #(as-> % state
-                                   (case update-type
-                                     "ADDED" (assoc-in state [:service-id->service service-id] service)
-                                     "MODIFIED" (assoc-in state [:service-id->service service-id] service)
-                                     "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
-                                   (assoc-in state [:rs-metadata :timestamp :watch] now)
-                                   (assoc-in state [:rs-metadata :version :watch] version))))))}
-       (merge options)))))
+  [{:keys [api-server-url watch-state orchestrator-name replicaset-api-version] :as scheduler} options]
+  (start-k8s-watch!
+    scheduler
+    (->
+      {:query-fn global-rs-state-query
+       :resource-key :service-id->service
+       :resource-name "ReplicaSets"
+       :resource-url (str api-server-url "/apis/" replicaset-api-version
+                          "/replicasets?labelSelector=managed-by="
+                          orchestrator-name)
+       :metadata-key :rs-metadata
+       :update-fn (fn rs-watch-update [{rs :object update-type :type}]
+                    (let [now (t/now)
+                          {service-id :id :as service} (replicaset->Service rs)
+                          version (k8s-object->resource-version rs)]
+                      (when service
+                        (scheduler/log "rs state update:" update-type version service)
+                        (swap! watch-state
+                               #(as-> % state
+                                  (case update-type
+                                    "ADDED" (assoc-in state [:service-id->service service-id] service)
+                                    "MODIFIED" (assoc-in state [:service-id->service service-id] service)
+                                    "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
+                                  (assoc-in state [:rs-metadata :timestamp :watch] now)
+                                  (assoc-in state [:rs-metadata :version :watch] version))))))}
+      (merge options))))
 
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
