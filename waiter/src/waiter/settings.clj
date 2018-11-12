@@ -295,6 +295,7 @@
                                    :factory-fn 'waiter.scheduler.kubernetes/kubernetes-scheduler
                                    :authorizer {:kind :default
                                                 :default {:factory-fn 'waiter.authorization/noop-authorizer}}
+                                   :cluster-name "waiter"
                                    :fileserver {:cmd ["/bin/fileserver-start"]
                                                 :image "twosigma/waiter-fileserver:latest"
                                                 :resources {:cpu 0.1 :mem 128}
@@ -303,7 +304,6 @@
                                                   :socket-timeout 10000}
                                    :max-patch-retries 5
                                    :max-name-length 63
-                                   :orchestrator-name "waiter"
                                    :pod-base-port 31000
                                    :pod-suffix-length 5
                                    :replicaset-api-version "extensions/v1beta1"
