@@ -92,7 +92,7 @@
 
 (defn- execute-scale-service-request
   "Helper function to scale instances of a service.
-   The force? flag can be used to detmerine whether we will make a best effort or a forced scale operation."
+   The force? flag can be used to determine whether we will make a best effort or a forced scale operation."
   [scheduler service-id scale-to-instances force?]
   (let [mode (if force? "scale-force" "scale-up")]
     (try
