@@ -432,12 +432,12 @@
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
                                 authorizer
+                                cluster-name
                                 daemon-state
                                 fileserver
                                 http-client
                                 max-patch-retries
                                 max-name-length
-                                orchestrator-name
                                 pod-base-port
                                 pod-suffix-length
                                 replicaset-api-version
@@ -578,7 +578,7 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [fileserver orchestrator-name pod-base-port replicaset-api-version
+  [{:keys [cluster-name fileserver pod-base-port replicaset-api-version
            service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
@@ -611,16 +611,16 @@
        :apiVersion replicaset-api-version
        :metadata {:annotations {:waiter/service-id service-id}
                   :labels {:app k8s-name
-                           :managed-by orchestrator-name}
+                           :waiter-cluster cluster-name}
                   :name k8s-name}
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
-                                       :managed-by orchestrator-name}}
+                                       :waiter-cluster cluster-name}}
               :template {:metadata {:annotations {:waiter/port-count (str ports)
                                                   :waiter/protocol backend-protocol-lower
                                                   :waiter/service-id service-id}
                                     :labels {:app k8s-name
-                                             :managed-by orchestrator-name}}
+                                             :waiter-cluster cluster-name}}
                          :spec {:containers [{:command ["/usr/bin/waiter-init" cmd]
                                               :env env
                                               :image default-container-image
@@ -779,14 +779,14 @@
 
 (defn start-pods-watch!
   "Start a thread to continuously update the watch-state atom based on watched Pod events."
-  [{:keys [api-server-url watch-state orchestrator-name] :as scheduler} options]
+  [{:keys [api-server-url cluster-name watch-state] :as scheduler} options]
   (start-k8s-watch!
     scheduler
     (->
       {:query-fn global-pods-state-query
        :resource-key :service-id->pod-id->pod
        :resource-name "Pods"
-       :resource-url (str api-server-url "/api/v1/pods?labelSelector=managed-by=" orchestrator-name)
+       :resource-url (str api-server-url "/api/v1/pods?labelSelector=waiter-cluster=" cluster-name)
        :metadata-key :pods-metadata
        :update-fn (fn pods-watch-update [{pod :object update-type :type}]
                     (let [now (t/now)
@@ -817,7 +817,7 @@
 
 (defn start-replicasets-watch!
   "Start a thread to continuously update the watch-state atom based on watched ReplicaSet events."
-  [{:keys [api-server-url watch-state orchestrator-name replicaset-api-version] :as scheduler} options]
+  [{:keys [api-server-url cluster-name replicaset-api-version watch-state] :as scheduler} options]
   (start-k8s-watch!
     scheduler
     (->
@@ -825,8 +825,8 @@
        :resource-key :service-id->service
        :resource-name "ReplicaSets"
        :resource-url (str api-server-url "/apis/" replicaset-api-version
-                          "/replicasets?labelSelector=managed-by="
-                          orchestrator-name)
+                          "/replicasets?labelSelector=waiter-cluster="
+                          cluster-name)
        :metadata-key :rs-metadata
        :update-fn (fn rs-watch-update [{rs :object update-type :type}]
                     (let [now (t/now)
@@ -847,7 +847,7 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication authorizer http-options max-patch-retries max-name-length orchestrator-name
+  [{:keys [authentication authorizer cluster-name http-options max-patch-retries max-name-length
            pod-base-port pod-suffix-length replicaset-api-version replicaset-spec-builder
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn url start-scheduler-syncer-fn watch-retries]
@@ -861,7 +861,7 @@
          (utils/pos-int? (:conn-timeout http-options))
          (utils/non-neg-int? max-patch-retries)
          (utils/pos-int? max-name-length)
-         (not (string/blank? orchestrator-name))
+         (not (string/blank? cluster-name))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
          (utils/pos-int? pod-suffix-length)
@@ -891,7 +891,7 @@
         watch-state (atom nil)
         scheduler-config {:api-server-url url
                           :http-client http-client
-                          :orchestrator-name orchestrator-name
+                          :cluster-name cluster-name
                           :replicaset-api-version replicaset-api-version
                           :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
                           :watch-state watch-state}
@@ -906,12 +906,12 @@
     (let [daemon-state (atom nil)
           scheduler (->KubernetesScheduler url
                                            authorizer
+                                           cluster-name
                                            daemon-state
                                            fileserver
                                            http-client
                                            max-patch-retries
                                            max-name-length
-                                           orchestrator-name
                                            pod-base-port
                                            pod-suffix-length
                                            replicaset-api-version

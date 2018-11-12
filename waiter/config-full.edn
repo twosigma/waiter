@@ -342,6 +342,9 @@
                                  :authorizer {:kind :default
                                               :default {:factory-fn waiter.authorization/noop-authorizer}}
 
+                                 ;; String value used to annotate Kubernetes objects that are orchestrated by this Waiter instantiation:
+                                 :cluster-name "waiter"
+
                                  ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
                                  ;; running a server for directory listings (in JSON) and serving file contents.
                                  ;; Waiter expects the directory listings in the format returned by nginx's autoindex module when configured for JSON.
@@ -364,9 +367,6 @@
 
                                  ;; Maximum number of characters allowed for a Kubernetes object name:
                                  :max-name-length 63
-
-                                 ;; String value used to annotate Kubernetes objects that are orchestrated by this Waiter instantiation:
-                                 :orchestrator-name "waiter"
 
                                  ;; Port number used to set the $PORT0 (service port) for Waiter service instances.
                                  ;; Waiter generates a random offset in the range [0, 990] each time it creates a service,
