@@ -515,13 +515,13 @@
                 (cond->> (utils/unique-identifier)
                   (not (str/blank? router-id-prefix))
                   (str (str/replace router-id-prefix #"[@.]" "-") "-")))
-   :scale-service-thread-pool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :scaling-timeout-config (pc/fnk [[:settings
                                      [:blacklist-config blacklist-backoff-base-time-ms max-blacklist-time-ms]
                                      [:scaling inter-kill-request-wait-time-ms]]]
                              {:blacklist-backoff-base-time-ms blacklist-backoff-base-time-ms
                               :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
                               :max-blacklist-time-ms max-blacklist-time-ms})
+   :scheduler-interactions-thread-pool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :scheduler-state-chan (pc/fnk [] (au/latest-chan))
    :service-description-builder (pc/fnk [[:settings service-description-builder-config service-description-constraints]]
                                   (when-let [unknown-keys (-> service-description-constraints
@@ -538,7 +538,6 @@
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100
                                              :ttl (-> 1 t/minutes t/in-millis)}))
-   :start-service-thread-pool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :waiter-hostnames (pc/fnk [[:settings hostname]]
                        (set (if (sequential? hostname)
@@ -814,13 +813,13 @@
    :service-id->source-tokens-entries-fn (pc/fnk [[:curator kv-store]]
                                            (partial sd/service-id->source-tokens-entries kv-store))
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
-                                  [:state start-service-cache start-service-thread-pool]
+                                  [:state start-service-cache scheduler-interactions-thread-pool]
                                   store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
                              (store-service-description-fn descriptor)
                              (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
-                               scheduler descriptor start-service-cache start-service-thread-pool)))
+                               scheduler descriptor start-service-cache scheduler-interactions-thread-pool)))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]
@@ -889,7 +888,7 @@
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]
                                      [:settings [:scaling quanta-constraints]]
-                                     [:state instance-rpc-chan scale-service-thread-pool scaling-timeout-config]
+                                     [:state instance-rpc-chan scheduler-interactions-thread-pool scaling-timeout-config]
                                      router-state-maintainer]
                               (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
                                 (scaling/service-scaling-multiplexer
@@ -898,7 +897,7 @@
                                       notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
                                       delegate-instance-kill-request-fn service-id->service-description-fn
                                       scheduler instance-rpc-chan quanta-constraints scaling-timeout-config
-                                      scale-service-thread-pool service-id))
+                                      scheduler-interactions-thread-pool service-id))
                                   {})))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  router-state-maintainer]
