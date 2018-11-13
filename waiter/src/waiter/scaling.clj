@@ -207,7 +207,8 @@
    Killing of an instance may be delegated to peer routers via delegate-instance-kill-request-fn if no instance is available locally.
    The executor also respects inter-kill-request-wait-time-ms between successive scale-down operations."
   [notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn delegate-instance-kill-request-fn service-id->service-description-fn
-   scheduler instance-rpc-chan quanta-constraints {:keys [inter-kill-request-wait-time-ms] :as timeout-config} service-id]
+   scheduler instance-rpc-chan quanta-constraints {:keys [inter-kill-request-wait-time-ms] :as timeout-config}
+   scale-service-thread-pool service-id]
   {:pre [(>= inter-kill-request-wait-time-ms 0)]}
   (log/info "[scaling-executor] starting scaling executor for" service-id)
   (let [base-correlation-id (str "scaling-executor-" service-id)
@@ -261,7 +262,9 @@
                                            :scale-adjustment scale-adjustment
                                            :scale-amount scale-amount
                                            :scale-to-instances' scale-to-instances'}))
-                              (execute-scale-service-request scheduler service-id scale-to-instances' false)))
+                              (-> #(execute-scale-service-request scheduler service-id scale-to-instances' false)
+                                  (au/execute scale-service-thread-pool)
+                                  async/<!)))
                           executor-state)
 
                         (pos? num-instances-to-kill)
@@ -288,7 +291,9 @@
                           (log/info iter-correlation-id "potential overshoot detected, triggering scale-force for service"
                                     {:scale-to-instances scale-to-instances :task-count task-count})
                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-force" "total"))
-                          (execute-scale-service-request scheduler service-id scale-to-instances true)
+                          (-> #(execute-scale-service-request scheduler service-id scale-to-instances true)
+                              (au/execute scale-service-thread-pool)
+                              async/<!)
                           executor-state)
 
                         :else

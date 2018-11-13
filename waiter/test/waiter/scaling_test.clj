@@ -24,7 +24,7 @@
             [waiter.mocks :refer :all]
             [waiter.scaling :refer :all]
             [waiter.scheduler :as scheduler])
-  (:import (java.util.concurrent CountDownLatch)))
+  (:import (java.util.concurrent CountDownLatch Executors)))
 
 (defn- retrieve-state-fn
   "Helper function to query for state on the query-chan"
@@ -285,7 +285,7 @@
                                    {:correlation-id (first *testing-contexts*)
                                     :service-id service-id, :scale-amount scale-amount, :scale-to-instances scale-to-instances,
                                     :task-count task-count, :total-instances total-instances, :response-chan response-chan})
-            run-service-scaling-executor (fn [scheduler instance-rpc-chan &
+            run-service-scaling-executor (fn [scheduler instance-rpc-chan scale-service-thread-pool &
                                               {:keys [delegate-instance-kill-request-fn
                                                       notify-instance-killed-fn
                                                       peers-acknowledged-blacklist-requests-fn]
@@ -294,86 +294,97 @@
                                                     peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn}}]
                                            (service-scaling-executor
                                              notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn delegate-instance-kill-request-fn
-                                             service-id->service-description-fn scheduler instance-rpc-chan quanta-constraints timeout-config
-                                             test-service-id))]
+                                             service-id->service-description-fn scheduler instance-rpc-chan quanta-constraints
+                                             timeout-config scale-service-thread-pool test-service-id))]
         (testing "basic-equilibrium-with-no-scaling"
           (let [instance-rpc-chan (async/chan 1)
                 peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan {:correlation-id (first *testing-contexts*) :service-id test-service-id, :scale-amount 0})
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
-            (async/>!! exit-chan :exit)))
+            (async/>!! exit-chan :exit)
+            (.shutdown scale-service-thread-pool)))
 
         (testing "scale-up:pending"
           (let [instance-rpc-chan (async/chan 1)
                 peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 30 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
             (is (empty? @scheduler-operation-tracker-atom))
-            (async/>!! exit-chan :exit)))
+            (async/>!! exit-chan :exit)
+            (.shutdown scale-service-thread-pool)))
 
         (testing "scale-up:trigger:above-quanta"
           (let [instance-rpc-chan (async/chan 1)
                 peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
             (is (= [[:scale-service "test-service-id" 26 false]] @scheduler-operation-tracker-atom))
-            (async/>!! exit-chan :exit)))
+            (async/>!! exit-chan :exit)
+            (.shutdown scale-service-thread-pool)))
 
         (testing "scale-up:trigger:below-quanta"
           (let [instance-rpc-chan (async/chan 1)
                 peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 4 24 22 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
             (is (= [[:scale-service "test-service-id" 24 false]] @scheduler-operation-tracker-atom))
-            (async/>!! exit-chan :exit)))
+            (async/>!! exit-chan :exit)
+            (.shutdown scale-service-thread-pool)))
 
         (testing "scale-force:trigger"
           (let [instance-rpc-chan (async/chan 1)
                 peers-acknowledged-blacklist-requests-fn (fn [_ _ _ _] (throw (Exception. "unexpected call")))
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id -5 25 20 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
             (is (= [[:scale-service "test-service-id" 25 true]] @scheduler-operation-tracker-atom))
-            (async/>!! exit-chan :exit)))
+            (async/>!! exit-chan :exit)
+            (.shutdown scale-service-thread-pool)))
 
         (testing "scale-down:no-instance-globally"
           (let [instance-rpc-chan (async/chan 1)
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 response-chan (async/promise-chan)
                 latch (CountDownLatch. 1)
                 delegate-instance-kill-request-fn (fn [service-id]
@@ -382,7 +393,7 @@
                                                     false)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :delegate-instance-kill-request-fn delegate-instance-kill-request-fn)]
             (mock-reservation-system
               instance-rpc-chan
@@ -395,12 +406,14 @@
             (async/>!! response-chan :nothing-killed-locally)
             (is (= :nothing-killed-locally (async/<!! response-chan)))
             (is (empty? @scheduler-operation-tracker-atom))
-            (async/>!! exit-chan :exit)))
+            (async/>!! exit-chan :exit)
+            (.shutdown scale-service-thread-pool)))
 
         (testing "scale-down:delegated-instance-kill"
           (let [instance-rpc-chan (async/chan 1)
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 response-chan (async/promise-chan)
                 latch (CountDownLatch. 1)
                 delegate-instance-kill-request-fn (fn [service-id]
@@ -409,7 +422,7 @@
                                                     true)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :delegate-instance-kill-request-fn delegate-instance-kill-request-fn)]
             (mock-reservation-system
               instance-rpc-chan
@@ -423,19 +436,21 @@
             (async/>!! response-chan :nothing-killed-locally)
             (is (= :nothing-killed-locally (async/<!! response-chan)))
             (is (empty? @scheduler-operation-tracker-atom))
-            (async/>!! exit-chan :exit)))
+            (async/>!! exit-chan :exit)
+            (.shutdown scale-service-thread-pool)))
 
         (testing "scale-down:one-instance"
           (let [instance-rpc-chan (async/chan 1)
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 notify-instance-killed-fn (fn [{:keys [id service-id]}]
                                             (is (= "instance-1" id))
                                             (is (= test-service-id service-id)))
                 response-chan (async/promise-chan)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :notify-instance-killed-fn notify-instance-killed-fn)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
@@ -453,12 +468,14 @@
                      (retrieve-state-fn query-chan)))
               (is (= [[:kill-instance "instance-1" "test-service-id" true]]
                      @scheduler-operation-tracker-atom))
-              (async/>!! exit-chan :exit))))
+              (async/>!! exit-chan :exit)
+              (.shutdown scale-service-thread-pool))))
 
         (testing "scale-down:kill-vetoed-then-no-instance"
           (let [instance-rpc-chan (async/chan 1)
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 response-chan (async/promise-chan)
                 peers-acknowledged-blacklist-requests-fn
                 (fn [{:keys [id]} short-circuit? blacklist-period-ms reason]
@@ -469,7 +486,7 @@
                   false)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
@@ -492,12 +509,14 @@
               (async/>!! response-chan :nothing-killed-locally)
               (is (= :nothing-killed-locally (async/<!! response-chan)))
               (is (empty? @scheduler-operation-tracker-atom))
-              (async/>!! exit-chan :exit))))
+              (async/>!! exit-chan :exit)
+              (.shutdown scale-service-thread-pool))))
 
         (testing "scale-down:kill-vetoed-first-then-kill-next-instance"
           (let [instance-rpc-chan (async/chan 1)
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 response-chan (async/promise-chan)
                 notify-instance-killed-fn (fn [{:keys [id service-id]}]
                                             (is (= "instance-2" id))
@@ -505,7 +524,7 @@
                 peers-acknowledged-blacklist-requests-fn (fn [{:keys [id]} _ _ _] (not= "instance-1" id))
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :notify-instance-killed-fn notify-instance-killed-fn
                   :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)
                 latch (CountDownLatch. 1)]
@@ -534,17 +553,19 @@
                      (async/<!! response-chan)))
               (is (= [[:kill-instance "instance-2" "test-service-id" true]]
                      @scheduler-operation-tracker-atom))
-              (async/>!! exit-chan :exit))))
+              (async/>!! exit-chan :exit)
+              (.shutdown scale-service-thread-pool))))
 
         (testing "scale-down:one-veto-and-one-failure"
           (let [instance-rpc-chan (async/chan 1)
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 response-chan (async/promise-chan)
                 peers-acknowledged-blacklist-requests-fn (fn [{:keys [id]} _ _ _] (not= "instance-1" id))
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :peers-acknowledged-blacklist-requests-fn peers-acknowledged-blacklist-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}
@@ -573,19 +594,21 @@
               (is (= equilibrium-state (retrieve-state-fn query-chan)))
               (is (= [[:kill-instance "instance-2" "test-service-id" false]]
                      @scheduler-operation-tracker-atom))
-              (async/>!! exit-chan :exit))))
+              (async/>!! exit-chan :exit)
+              (.shutdown scale-service-thread-pool))))
 
         (testing "scale-down:two-instances"
           (let [instance-rpc-chan (async/chan 1)
                 scheduler-operation-tracker-atom (atom [])
                 scheduler (make-scheduler scheduler-operation-tracker-atom)
+                scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 response-chan (async/promise-chan)
                 notify-instance-killed-fn (fn [{:keys [id service-id]}]
                                             (is (= "instance-1" id))
                                             (is (= test-service-id service-id)))
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler instance-rpc-chan
+                  scheduler instance-rpc-chan scale-service-thread-pool
                   :notify-instance-killed-fn notify-instance-killed-fn)]
             (let [instance-1 {:id "instance-1", :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
@@ -603,7 +626,8 @@
                      (retrieve-state-fn query-chan)))
               (is (= [[:kill-instance "instance-1" "test-service-id" true]]
                      @scheduler-operation-tracker-atom))
-              (async/>!! exit-chan :exit))))))))
+              (async/>!! exit-chan :exit)
+              (.shutdown scale-service-thread-pool))))))))
 
 (deftest test-apply-scaling
   (let [executor-multiplexer-chan (async/chan 10)]

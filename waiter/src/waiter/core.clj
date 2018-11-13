@@ -515,6 +515,7 @@
                 (cond->> (utils/unique-identifier)
                   (not (str/blank? router-id-prefix))
                   (str (str/replace router-id-prefix #"[@.]" "-") "-")))
+   :scale-service-thread-pool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :scaling-timeout-config (pc/fnk [[:settings
                                      [:blacklist-config blacklist-backoff-base-time-ms max-blacklist-time-ms]
                                      [:scaling inter-kill-request-wait-time-ms]]]
@@ -888,7 +889,7 @@
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]
                                      [:settings [:scaling quanta-constraints]]
-                                     [:state instance-rpc-chan scaling-timeout-config]
+                                     [:state instance-rpc-chan scale-service-thread-pool scaling-timeout-config]
                                      router-state-maintainer]
                               (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
                                 (scaling/service-scaling-multiplexer
@@ -897,7 +898,7 @@
                                       notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
                                       delegate-instance-kill-request-fn service-id->service-description-fn
                                       scheduler instance-rpc-chan quanta-constraints scaling-timeout-config
-                                      service-id))
+                                      scale-service-thread-pool service-id))
                                   {})))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  router-state-maintainer]

@@ -19,7 +19,8 @@
             [clojure.tools.logging :as log]
             [full.async :refer (<?? <? go-try)]
             [metrics.histograms :as histograms]
-            [waiter.util.async-utils :refer :all]))
+            [waiter.util.async-utils :refer :all])
+  (:import (java.util.concurrent Executors)))
 
 (deftest test-sliding-buffer-chan
   (let [buf-size 4
@@ -310,3 +311,17 @@
   (is (chan? (async/chan)))
   (is (not (chan? nil)))
   (is (not (chan? {}))))
+
+(deftest test-execute
+  (let [task-thread-pool (Executors/newFixedThreadPool 5)]
+    (is (= 5 (-> (constantly 5)
+                 (execute task-thread-pool)
+                 (async/<!!))))
+    (is (nil? (-> (constantly nil)
+                  (execute task-thread-pool)
+                  (async/<!!))))
+    (let [ex (Exception. "for test")]
+      (is (= ex (-> #(throw ex)
+                    (execute task-thread-pool)
+                    (async/<!!)))))
+    (.shutdown task-thread-pool)))
