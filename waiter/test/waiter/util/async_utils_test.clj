@@ -314,14 +314,17 @@
 
 (deftest test-execute
   (let [task-thread-pool (Executors/newFixedThreadPool 5)]
-    (is (= 5 (-> (constantly 5)
-                 (execute task-thread-pool)
-                 (async/<!!))))
-    (is (nil? (-> (constantly nil)
-                  (execute task-thread-pool)
-                  (async/<!!))))
+    (is (= {:result 5}
+           (-> (constantly 5)
+               (execute task-thread-pool)
+               (async/<!!))))
+    (is (= {:result nil}
+           (-> (constantly nil)
+               (execute task-thread-pool)
+               (async/<!!))))
     (let [ex (Exception. "for test")]
-      (is (= ex (-> #(throw ex)
-                    (execute task-thread-pool)
-                    (async/<!!)))))
+      (is (= {:error ex}
+             (-> #(throw ex)
+                 (execute task-thread-pool)
+                 (async/<!!)))))
     (.shutdown task-thread-pool)))

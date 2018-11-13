@@ -198,10 +198,10 @@
              ^Runnable
              (fn execute-task []
                (try
-                 (when-let [result (task)]
-                   (async/>!! task-complete-chan result))
+                 (async/>!! task-complete-chan {:result (task)})
                  (catch Throwable th
-                   (async/>!! task-complete-chan th))
+                   (log/error th "error while executing task")
+                   (async/>!! task-complete-chan {:error th}))
                  (finally
                    (async/close! task-complete-chan)))))
     task-complete-chan))

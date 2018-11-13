@@ -277,9 +277,10 @@
                                                 notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
                                                 scheduler instance-rpc-chan timeout-config
                                                 service-id iter-correlation-id num-instances-to-kill response-chan)
-                                              (async/<!!)))
+                                              async/<!!))
                                         (au/execute scale-service-thread-pool)
-                                        async/<!)
+                                        async/<!
+                                        :result)
                                     (delegate-instance-kill-request-fn service-id))
                               (assoc executor-state :last-scale-down-time (t/now))
                               executor-state)
