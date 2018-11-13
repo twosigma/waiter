@@ -537,7 +537,7 @@
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100
                                              :ttl (-> 1 t/minutes t/in-millis)}))
-   :task-thread-pool (pc/fnk [] (Executors/newFixedThreadPool 20))
+   :start-service-thread-pool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :waiter-hostnames (pc/fnk [[:settings hostname]]
                        (set (if (sequential? hostname)
@@ -813,13 +813,13 @@
    :service-id->source-tokens-entries-fn (pc/fnk [[:curator kv-store]]
                                            (partial sd/service-id->source-tokens-entries kv-store))
    :start-new-service-fn (pc/fnk [[:scheduler scheduler]
-                                  [:state start-service-cache task-thread-pool]
+                                  [:state start-service-cache start-service-thread-pool]
                                   store-service-description-fn]
                            (fn start-new-service [{:keys [service-id] :as descriptor}]
                              (store-service-description-fn descriptor)
                              (scheduler/validate-service scheduler service-id)
                              (service/start-new-service
-                               scheduler descriptor start-service-cache task-thread-pool)))
+                               scheduler descriptor start-service-cache start-service-thread-pool)))
    :start-work-stealing-balancer-fn (pc/fnk [[:settings [:work-stealing offer-help-interval-ms reserve-timeout-ms]]
                                              [:state instance-rpc-chan router-id]
                                              make-inter-router-requests-async-fn router-metrics-helpers]
