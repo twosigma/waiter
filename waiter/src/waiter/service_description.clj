@@ -52,7 +52,7 @@
 
 (def service-description-schema
   {;; Required
-   (s/required-key "cmd") (s/both s/Str (s/pred #(<= 1 (count %) 1200) 'at-most-1200-chars))
+   (s/required-key "cmd") schema/non-empty-string
    (s/required-key "cpus") schema/positive-num
    (s/required-key "mem") schema/positive-num
    (s/required-key "run-as-user") schema/non-empty-string
@@ -379,7 +379,7 @@
                                          (contains? parameter->issues "allowed-params")
                                          (assoc :allowed-params (generate-friendly-allowed-params-error-message parameter->issues))
                                          (contains? parameter->issues "cmd")
-                                         (assoc :cmd "The command must be a non-empty string and must be at most 1200 characters.")
+                                         (assoc :cmd "cmd must be a non-empty string.")
                                          (contains? parameter->issues "env")
                                          (assoc :env (generate-friendly-environment-variable-error-message parameter->issues))
                                          (contains? parameter->issues "metadata")
@@ -399,8 +399,11 @@
                                         .pred-name
                                         (str/replace "limit-" "")))
               param->message (fn [param]
-                               (str param " is " (get service-description-to-use param) " but the max allowed is "
-                                    (issue->param->limit issue param)))
+                               (let [value (get service-description-to-use param)
+                                     limit (issue->param->limit issue param)]
+                                 (if (contains? headers/params-with-str-value param)
+                                   (str param " must be at most " limit " characters")
+                                   (str param " is " value " but the max allowed is " limit))))
               friendly-error-message (str "The following fields exceed their allowed limits: "
                                           (str/join ", " (->> issue
                                                               keys
@@ -477,11 +480,14 @@
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
   [{:keys [constraints]}]
-  (let [max-constraints-schema (-> (->> constraints
-                                        extract-max-constraints
-                                        (pc/map-keys s/optional-key)
-                                        (pc/map-vals (fn [v] (s/pred #(<= % v) (symbol (str "limit-" v))))))
-                                   (assoc s/Str s/Any))]
+  (let [max-constraints-schema (->> constraints
+                                    extract-max-constraints
+                                    (map (fn [[k v]]
+                                           (let [string-param? (contains? headers/params-with-str-value k)]
+                                             [(s/optional-key k)
+                                              (s/pred #(<= (if string-param? (count %) %) v)
+                                                      (symbol (str "limit-" v)))])))
+                                    (into {s/Str s/Any}))]
     (->DefaultServiceDescriptionBuilder max-constraints-schema)))
 
 (defn service-description->health-check-url

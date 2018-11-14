@@ -336,7 +336,8 @@
    :scheduler-syncer-interval-secs 5
    :service-description-builder-config {:kind :default
                                         :default {:factory-fn 'waiter.service-description/create-default-service-description-builder}}
-   :service-description-constraints {"cpus" {:max 32}
+   :service-description-constraints {"cmd" {:max 1200}
+                                     "cpus" {:max 32}
                                      "mem" {:max (* 128 1024)}}
    :service-description-defaults {"allowed-params" #{}
                                   "authentication" "standard"

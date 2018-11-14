@@ -1182,8 +1182,7 @@
       (testing "post:new-service-description:bad-token-command"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd (apply str "tc " (repeat 1200 "x"))
-                                     :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                    {:cmd "" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
                                      :token "abcdefgh"})
               {:keys [body status]}
               (run-handle-token-request
@@ -1195,7 +1194,7 @@
               {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
-          (is (str/includes? message "The command must be a non-empty string and must be at most 1200 characters") body)))
+          (is (str/includes? message "cmd must be a non-empty string") body)))
 
       (testing "post:new-service-description:bad-token-metadata"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
