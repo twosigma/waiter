@@ -383,7 +383,13 @@
                                          (contains? parameter->issues "env")
                                          (assoc :env (generate-friendly-environment-variable-error-message parameter->issues))
                                          (contains? parameter->issues "metadata")
-                                         (assoc :metadata (generate-friendly-metadata-error-message parameter->issues)))
+                                         (assoc :metadata (generate-friendly-metadata-error-message parameter->issues))
+                                         (contains? parameter->issues "metric-group")
+                                         (assoc :metric-group
+                                                (str "The metric-group must be be between 2 and 32 characters; "
+                                                     "only contain lowercase letters, numbers, dashes, and underscores; "
+                                                     "start with a lowercase letter; and "
+                                                     "only use dash and/or underscore as separators between alphanumeric portions.")))
               unresolved-parameters (set/difference (-> parameter->issues keys set)
                                                     (->> parameter->error-message keys (map name) set))]
           (throw-error e (select-keys parameter->issues unresolved-parameters) parameter->error-message))))
