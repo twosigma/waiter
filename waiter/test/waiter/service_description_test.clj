@@ -60,6 +60,11 @@
                                                  "ports" 5})))
   (is (not (nil? (s/check service-description-schema {"cpus" 1
                                                       "mem" 1
+                                                      "cmd" ""
+                                                      "version" "v123"
+                                                      "run-as-user" "test-user"}))))
+  (is (not (nil? (s/check service-description-schema {"cpus" 1
+                                                      "mem" 1
                                                       "cmd" "test command"
                                                       "version" "v123"
                                                       "run-as-user" "test-user"
@@ -2015,6 +2020,45 @@
         (is (str/includes? error-msg "PORT0") error-msg)
         (is (str/includes? error-msg "reserved") error-msg)
         (is (not (str/includes? error-msg "upper case")) error-msg)))))
+
+(defmacro run-validate-schema-test
+  [valid-description constraints-schema config param-name param-value error-message]
+  `(let [param-name# ~param-name
+         param-value# ~param-value
+         error-message# ~error-message]
+     (testing (str "testing invalid " param-name#)
+       (try
+         (-> ~valid-description
+             (assoc param-name# param-value#)
+             (validate-schema ~constraints-schema ~config))
+         (is false "Fail as exception was not thrown!")
+         (catch ExceptionInfo ex#
+           (let [exception-data# (ex-data ex#)
+                 actual-error-message# (-> (or (get-in exception-data# [:friendly-error-message (keyword param-name#)])
+                                               (get exception-data# :friendly-error-message))
+                                           str)]
+             (is (str/includes? actual-error-message# error-message#))))))))
+
+(deftest test-validate-schema
+  (let [valid-description {"cpus" 1
+                           "mem" 1
+                           "cmd" "default-cmd"
+                           "version" "default-version"
+                           "run-as-user" "default-run-as-user"}
+        constraints-schema {(s/optional-key "cmd") (s/pred #(<= (count %) 100) (symbol "limit-100"))
+                            s/Str s/Any}
+        config {:allow-missing-required-fields? false}]
+    (is (nil? (validate-schema valid-description constraints-schema config)))
+
+    (run-validate-schema-test
+      valid-description constraints-schema config
+      "cmd" ""
+      "cmd must be a non-empty string")
+
+    (run-validate-schema-test
+      valid-description constraints-schema config
+      "cmd" (str/join "" (repeat 150 "c"))
+      "cmd must be at most 100 characters")))
 
 (deftest test-service-description-schema
   (testing "Service description schema"

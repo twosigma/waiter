@@ -1179,6 +1179,23 @@
           (is (= 400 status))
           (is (str/includes? body "Cannot modify previous token metadata"))))
 
+      (testing "post:new-service-description:bad-token-command"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:cmd "" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")))
+          (is (str/includes? message "cmd must be a non-empty string") body)))
+
       (testing "post:new-service-description:bad-token-metadata"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys

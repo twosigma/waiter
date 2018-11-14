@@ -22,6 +22,7 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [plumbing.core :as pc]
+            [waiter.headers :as headers]
             [waiter.service-description :as sd]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du])
@@ -496,10 +497,7 @@
               (let [request-headers (merge (dissoc service-description :x-waiter-cmd) {"host" token})
                     path "/foo"
                     {:keys [body] :as response} (make-request waiter-url path :headers request-headers)]
-                (is (or (every? #(str/includes? body %)
-                                ["Service description using waiter headers/token improperly configured",
-                                 "{\"cmd\" missing-required-key}"])
-                        (str/includes? body "Invalid command or version"))
+                (is (some #(str/includes? body %) ["cmd must be a non-empty string" "Invalid command or version"])
                     (str "response body was: " response))
                 (assert-response-status response 400))
 
@@ -1017,12 +1015,18 @@
           max-constraints (sd/extract-max-constraints constraints)]
       (is (seq max-constraints))
       (doseq [[parameter max-constraint] max-constraints]
-        (let [{:keys [body status]} (post-token waiter-url {parameter (inc max-constraint) :token (rand-name)})]
+        (let [string-param? (contains? headers/params-with-str-value (name parameter))
+              param-value (if string-param?
+                            (apply str parameter " " (repeat max-constraint "x"))
+                            (inc max-constraint))
+              {:keys [body status]} (post-token waiter-url {parameter param-value :token (rand-name)})]
           (is (= 400 status))
           (is (not (str/includes? body "clojure")) body)
           (is (every? #(str/includes? body %)
                       ["The following fields exceed their allowed limits"
-                       (str (name parameter) " is " (inc max-constraint) " but the max allowed is " max-constraint)])
+                       (if string-param?
+                         (str (name parameter) " must be at most " max-constraint " characters")
+                         (str (name parameter) " is " param-value " but the max allowed is " max-constraint))])
               body))))))
 
 (deftest ^:parallel ^:integration-fast test-auto-run-as-requester-support

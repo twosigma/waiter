@@ -362,24 +362,31 @@
                                              "run-as-user" "default-run-as-user"})
         service-description-to-use (merge default-valid-service-description service-description-template)
         exception-message (utils/message :invalid-service-description)
-        throw-error (fn throw-error [e issue friendly-error-message]
+        throw-error (fn throw-error [e issue parameter->error-message]
                       (sling/throw+ (cond-> {:type :service-description-error
                                              :message exception-message
                                              :service-description service-description-template
                                              :status 400
                                              :issue issue}
-                                            (not-empty friendly-error-message) (assoc :friendly-error-message friendly-error-message))
+                                            (not-empty parameter->error-message)
+                                            (assoc :friendly-error-message parameter->error-message))
                                     e))]
     (try
       (s/validate service-description-schema service-description-to-use)
       (catch Exception e
-        (let [issue (s/check service-description-schema service-description-to-use)
-              friendly-error-message (utils/filterm
-                                       val
-                                       {:allowed-params (generate-friendly-allowed-params-error-message issue)
-                                        :env (generate-friendly-environment-variable-error-message issue)
-                                        :metadata (generate-friendly-metadata-error-message issue)})]
-          (throw-error e (dissoc issue "allowed-params" "env" "metadata") friendly-error-message))))
+        (let [parameter->issues (s/check service-description-schema service-description-to-use)
+              parameter->error-message (cond-> {}
+                                         (contains? parameter->issues "allowed-params")
+                                         (assoc :allowed-params (generate-friendly-allowed-params-error-message parameter->issues))
+                                         (contains? parameter->issues "cmd")
+                                         (assoc :cmd "cmd must be a non-empty string.")
+                                         (contains? parameter->issues "env")
+                                         (assoc :env (generate-friendly-environment-variable-error-message parameter->issues))
+                                         (contains? parameter->issues "metadata")
+                                         (assoc :metadata (generate-friendly-metadata-error-message parameter->issues)))
+              unresolved-parameters (set/difference (-> parameter->issues keys set)
+                                                    (->> parameter->error-message keys (map name) set))]
+          (throw-error e (select-keys parameter->issues unresolved-parameters) parameter->error-message))))
 
     (try
       (s/validate max-constraints-schema service-description-to-use)
@@ -392,8 +399,11 @@
                                         .pred-name
                                         (str/replace "limit-" "")))
               param->message (fn [param]
-                               (str param " is " (get service-description-to-use param) " but the max allowed is "
-                                    (issue->param->limit issue param)))
+                               (let [value (get service-description-to-use param)
+                                     limit (issue->param->limit issue param)]
+                                 (if (contains? headers/params-with-str-value param)
+                                   (str param " must be at most " limit " characters")
+                                   (str param " is " value " but the max allowed is " limit))))
               friendly-error-message (str "The following fields exceed their allowed limits: "
                                           (str/join ", " (->> issue
                                                               keys
@@ -470,11 +480,14 @@
 (defn create-default-service-description-builder
   "Returns a new DefaultServiceDescriptionBuilder which uses the specified resource limits."
   [{:keys [constraints]}]
-  (let [max-constraints-schema (-> (->> constraints
-                                        extract-max-constraints
-                                        (pc/map-keys s/optional-key)
-                                        (pc/map-vals (fn [v] (s/pred #(<= % v) (symbol (str "limit-" v))))))
-                                   (assoc s/Str s/Any))]
+  (let [max-constraints-schema (->> constraints
+                                    extract-max-constraints
+                                    (map (fn [[k v]]
+                                           (let [string-param? (contains? headers/params-with-str-value k)]
+                                             [(s/optional-key k)
+                                              (s/pred #(<= (if string-param? (count %) %) v)
+                                                      (symbol (str "limit-" v)))])))
+                                    (into {s/Str s/Any}))]
     (->DefaultServiceDescriptionBuilder max-constraints-schema)))
 
 (defn service-description->health-check-url
