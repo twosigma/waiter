@@ -253,7 +253,7 @@
                                                         flatten)]
                                   (and (if (str/blank? run-as-user)
                                          (authz/manage-service? entitlement-manager auth-user service-id service-description)
-                                         (= run-as-user (get service-description "run-as-user")))
+                                         ((str->filter-fn run-as-user) (get service-description "run-as-user")))
                                        (or (str/blank? token)
                                            (let [filter-fn (str->filter-fn token)]
                                              (->> source-tokens

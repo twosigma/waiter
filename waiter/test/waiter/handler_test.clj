@@ -480,6 +480,32 @@
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
+      (testing "list-services-handler:success-regular-user-with-run-as-user-star-filter"
+        (let [entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ _ _ _]
+                                      ; use (constantly true) for authorized? to verify that filter still applies
+                                      true))
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=another*")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-regular-user-with-different-run-as-user-star-filter"
+        (let [entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ _ _ _]
+                                      ; use (constantly true) for authorized? to verify that filter still applies
+                                      true))
+              request (assoc request :authorization/user test-user :query-string "run-as-user=another*")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn prepend-waiter-url
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->source-tokens-entries-fn request)]
+            (assert-successful-json-response response)
+            (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
       (testing "list-services-handler:failure"
         (let [query-state-fn (constantly {:all-available-service-ids #{"service1"}
                                           :service-id->healthy-instances {"service1" []}})

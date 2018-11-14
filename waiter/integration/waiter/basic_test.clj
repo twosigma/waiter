@@ -354,59 +354,66 @@
           (is (t/before? canary-request-time-from-header service-last-request-time)))))))
 
 (deftest ^:parallel ^:integration-fast test-list-apps
-  (testing-using-waiter-url
-    (let [service-id (:service-id (make-request-with-debug-info
-                                    {:x-waiter-name (rand-name)}
-                                    #(make-kitchen-request waiter-url %)))]
-      (testing "without parameters"
-        (let [service (service waiter-url service-id {})] ;; see my app as myself
-          (is service)
-          (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
-          (is (pos? (get-in service ["service-description" "cpus"])) service)))
+  (let [current-user (retrieve-username)]
+    (testing-using-waiter-url
+      (let [service-id (:service-id (make-request-with-debug-info
+                                      {:x-waiter-name (rand-name)}
+                                      #(make-kitchen-request waiter-url %)))]
+        (testing "without parameters"
+          (let [service (service waiter-url service-id {})] ;; see my app as myself
+            (is service)
+            (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
-      (testing "waiter user disabled" ;; see my app as myself
-        (let [service (service waiter-url service-id {"force" "false"})]
-          (is service)
-          (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
-          (is (pos? (get-in service ["service-description" "cpus"])) service)))
+        (testing "with star run-as-user parameter"
+          (let [run-as-user-param (->> current-user reverse (drop 2) (cons "*") reverse (str/join ""))
+                service (service waiter-url service-id {"run-as-user" run-as-user-param})] ;; see my app as myself
+            (is service)
+            (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
-      (testing "waiter user disabled and same user" ;; see my app as myself
-        (let [service (service waiter-url service-id {"force" "false", "run-as-user" (retrieve-username)})]
-          (is service)
-          (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
-          (is (pos? (get-in service ["service-description" "cpus"])) service)))
+        (testing "waiter user disabled" ;; see my app as myself
+          (let [service (service waiter-url service-id {"force" "false"})]
+            (is service)
+            (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
-      (testing "different run-as-user" ;; no such app
-        (let [service (service waiter-url service-id {"run-as-user" "test-user"}
-                               :interval 2, :timeout 10)]
-          (is (nil? service))))
+        (testing "waiter user disabled and same user" ;; see my app as myself
+          (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
+            (is service)
+            (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
-      (testing "should not provide effective service description by default"
-        (let [service (service waiter-url service-id {})]
-          (is (nil? (get service "effective-parameters")))))
+        (testing "different run-as-user" ;; no such app
+          (let [service (service waiter-url service-id {"run-as-user" "test-user"}
+                                 :interval 2, :timeout 10)]
+            (is (nil? service))))
 
-      (testing "should not provide effective service description when explicitly not requested"
-        (let [service (service waiter-url service-id {"effective-parameters" "false"})]
-          (is (nil? (get service "effective-parameters")))))
+        (testing "should not provide effective service description by default"
+          (let [service (service waiter-url service-id {})]
+            (is (nil? (get service "effective-parameters")))))
 
-      (testing "should provide effective service description when requested"
-        (let [service (service waiter-url service-id {"effective-parameters" "true"})]
-          (is (= (disj sd/service-parameter-keys "scheduler")
-                 (set (keys (get service "effective-parameters")))))))
+        (testing "should not provide effective service description when explicitly not requested"
+          (let [service (service waiter-url service-id {"effective-parameters" "false"})]
+            (is (nil? (get service "effective-parameters")))))
 
-      (delete-service waiter-url service-id))
+        (testing "should provide effective service description when requested"
+          (let [service (service waiter-url service-id {"effective-parameters" "true"})]
+            (is (= (disj sd/service-parameter-keys "scheduler")
+                   (set (keys (get service "effective-parameters")))))))
 
-    (let [current-user (retrieve-username)
-          service-id (:service-id (make-request-with-debug-info
-                                    {:x-waiter-name (rand-name)
-                                     :x-waiter-run-as-user current-user}
-                                    #(make-kitchen-request waiter-url %)))]
-      (testing "list-apps-with-waiter-user-disabled-and-see-another-app" ;; can see another user's app
-        (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
-          (is service)
-          (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
-          (is (pos? (get-in service ["service-description" "cpus"])) service)))
-      (delete-service waiter-url service-id))))
+        (delete-service waiter-url service-id))
+
+      (let [service-id (:service-id (make-request-with-debug-info
+                                      {:x-waiter-name (rand-name)
+                                       :x-waiter-run-as-user current-user}
+                                      #(make-kitchen-request waiter-url %)))]
+        (testing "list-apps-with-waiter-user-disabled-and-see-another-app" ;; can see another user's app
+          (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
+            (is service)
+            (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
+            (is (pos? (get-in service ["service-description" "cpus"])) service)))
+        (delete-service waiter-url service-id)))))
 
 (deftest ^:parallel ^:integration-fast test-delete-service
   (testing-using-waiter-url
