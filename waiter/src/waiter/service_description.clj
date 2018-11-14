@@ -52,7 +52,7 @@
 
 (def service-description-schema
   {;; Required
-   (s/required-key "cmd") schema/non-empty-string
+   (s/required-key "cmd") (s/both s/Str (s/pred #(<= (count %) 1024)'at-most-1K-chars))
    (s/required-key "cpus") schema/positive-num
    (s/required-key "mem") schema/positive-num
    (s/required-key "run-as-user") schema/non-empty-string
