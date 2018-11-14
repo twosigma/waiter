@@ -530,8 +530,8 @@
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.A&host=10.141.141.11"
                                          "port" 31045,
                                          "started-at" (du/date-to-str started-time du/formatter-iso8601)}]
-                    "failed-instances" nil
-                    "killed-instances" nil}
+                    "failed-instances" []
+                    "killed-instances" []}
                    (get body-json "instances")))
             (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
             (is (= 1 (get body-json "num-active-instances")))

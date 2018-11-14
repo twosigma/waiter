@@ -337,8 +337,7 @@
   (let [service-instance-maps (try
                                 (let [assoc-log-url-to-instances
                                       (fn assoc-log-url-to-instances [instances]
-                                        (when (not-empty instances)
-                                          (map #(assoc-log-url generate-log-url-fn %) instances)))]
+                                        (map #(assoc-log-url generate-log-url-fn %) instances))]
                                   (-> (get-service-instances query-state-fn service-id)
                                       (update :active-instances assoc-log-url-to-instances)
                                       (update :failed-instances assoc-log-url-to-instances)
