@@ -114,20 +114,21 @@
         write-state-fn (fn [name state] (curator/write-path curator (str gc-base-path "/" name) state :serializer :nippy :create-parent-zknodes? true))]
     (with-redefs [curator/read-path (fn [_ path & _] {:data (get @state-store path)})
                   curator/write-path (fn [_ path data & _] (swap! state-store (fn [v] (assoc v path data))))]
-      (let [available-services-atom (atom #{"service1" "service2" "service3" "service4stayalive" "service5"
-                                            "service6faulty" "service7" "service8stayalive" "service9stayalive" "service10broken"
-                                            "service11broken"})
-            initial-global-state {"service1" {"outstanding" 0, "total" 10}
-                                  "service2" {"outstanding" 5, "total" 20}
-                                  "service3" {"outstanding" 0, "total" 30}
-                                  "service4stayalive" {"outstanding" 1000, "total" 40}
-                                  "service5" {"outstanding" 10, "total" 50}
-                                  "service6faulty" {"outstanding" 2000, "total" 60}
-                                  "service7" {"outstanding" 15, "total" 70}
-                                  "service8stayalive" {"outstanding" 3000, "total" 80}
-                                  "service9stayalive" {"outstanding" 70, "total" 80}
-                                  "service10broken" {"outstanding" 70, "total" 80}
-                                  "service11broken" {"outstanding" 95, "total" 80}}
+      (let [available-services-atom (atom #{"service01" "service02" "service03" "service04stayalive" "service05"
+                                            "service06faulty" "service07" "service08stayalive" "service09stayalive"
+                                            "service10broken" "service11broken" "service12missingmetrics"})
+            initial-global-state {"service01" {"outstanding" 0 "total" 10}
+                                  "service02" {"outstanding" 5 "total" 20}
+                                  "service03" {"outstanding" 0 "total" 30}
+                                  "service04stayalive" {"outstanding" 1000 "total" 40}
+                                  "service05" {"outstanding" 10 "total" 50}
+                                  "service06faulty" {"outstanding" 2000 "total" 60}
+                                  "service07" {"outstanding" 15 "total" 70}
+                                  "service08stayalive" {"outstanding" 3000 "total" 80}
+                                  "service09stayalive" {"outstanding" 70 "total" 80}
+                                  "service10broken" {"outstanding" 70 "total" 80}
+                                  "service11broken" {"outstanding" 95 "total" 80}
+                                  "service12missingmetrics" {"outstanding" 24 "total" 30}}
             deleted-services-atom (atom #{})
             scheduler (reify ServiceScheduler
                         (delete-service [_ service-id]
@@ -156,15 +157,27 @@
                               service-gc-go-routine service-id->idle-timeout)
                 service-gc-exit-chan (:exit channel-map)]
             (dotimes [n 100]
-              (let [global-state (pc/map-vals #(update-in % ["outstanding"] (fn [v] (max 0 (- v n))))
-                                              initial-global-state)]
+              (let [global-state (->> (map (fn [[service-id state]]
+                                             [service-id
+                                              (when (or (not (str/includes? service-id "missingmetrics"))
+                                                        (< n 10))
+                                                (update-in state ["outstanding"] (fn [v] (max 0 (- v n)))))])
+                                           initial-global-state)
+                                      (into {}))]
                 (async/>!! scheduler-state-chan {:all-available-service-ids (set @available-services-atom)})
                 (async/>!! metrics-chan global-state)
                 (Thread/sleep 2)
                 (swap! iteration-counter inc)))
             (async/>!! service-gc-exit-chan :exit)
-            (is (= #{"service3" "service2" "service1" "service5" "service7"} @deleted-services-atom))
-            (is (= #{"service4stayalive" "service6faulty" "service8stayalive", "service9stayalive", "service10broken", "service11broken"} @available-services-atom))))))))
+            (is (= #{"service01" "service02" "service03" "service05" "service07"}
+                   @deleted-services-atom))
+            (is (= #{"service04stayalive" "service06faulty" "service08stayalive" "service09stayalive"
+                     "service10broken" "service11broken" "service12missingmetrics"}
+                   @available-services-atom))
+            (is (= {:state {"outstanding" 15 "total" 30}}
+                   (get (->> (read-state-fn "scheduler-services-gc")
+                             (pc/map-vals #(dissoc % :last-modified-time)))
+                        "service12missingmetrics")))))))))
 
 (deftest test-scheduler-broken-services-gc
   (let [leader? (constantly true)
