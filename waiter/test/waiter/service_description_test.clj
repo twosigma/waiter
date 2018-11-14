@@ -60,7 +60,7 @@
                                                  "ports" 5})))
   (is (not (nil? (s/check service-description-schema {"cpus" 1
                                                       "mem" 1
-                                                      "cmd" (str "test command " (str/join "" (repeat 1024 "x")))
+                                                      "cmd" (apply str "test command " (repeat 1200 "x"))
                                                       "version" "v123"
                                                       "run-as-user" "test-user"}))))
   (is (not (nil? (s/check service-description-schema {"cpus" 1

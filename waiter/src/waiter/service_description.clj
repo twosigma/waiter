@@ -52,7 +52,7 @@
 
 (def service-description-schema
   {;; Required
-   (s/required-key "cmd") (s/both s/Str (s/pred #(<= 1 (count %) 1024) 'at-most-1K-chars))
+   (s/required-key "cmd") (s/both s/Str (s/pred #(<= 1 (count %) 1200) 'at-most-1200-chars))
    (s/required-key "cpus") schema/positive-num
    (s/required-key "mem") schema/positive-num
    (s/required-key "run-as-user") schema/non-empty-string
@@ -379,7 +379,7 @@
                                          (contains? parameter->issues "allowed-params")
                                          (assoc :allowed-params (generate-friendly-allowed-params-error-message parameter->issues))
                                          (contains? parameter->issues "cmd")
-                                         (assoc :cmd "The command must be a non-empty string and must be at most 1024 characters.")
+                                         (assoc :cmd "The command must be a non-empty string and must be at most 1200 characters.")
                                          (contains? parameter->issues "env")
                                          (assoc :env (generate-friendly-environment-variable-error-message parameter->issues))
                                          (contains? parameter->issues "metadata")
