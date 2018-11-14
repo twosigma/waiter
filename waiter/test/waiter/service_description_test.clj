@@ -2058,7 +2058,12 @@
     (run-validate-schema-test
       valid-description constraints-schema config
       "cmd" (str/join "" (repeat 150 "c"))
-      "cmd must be at most 100 characters")))
+      "cmd must be at most 100 characters")
+
+    (run-validate-schema-test
+      valid-description constraints-schema config
+      "metric-group" (str/join "" (repeat 100 "m"))
+      "The metric-group must be be between 2 and 32 characters")))
 
 (deftest test-service-description-schema
   (testing "Service description schema"
