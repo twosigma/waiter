@@ -38,6 +38,12 @@
             {:x-waiter-name (rand-name)}
             #(make-kitchen-request waiter-url % :path "/hello"))]
 
+      (testing "instances are non-null"
+        (let [service-settings (service-settings waiter-url service-id)]
+          (is (get-in service-settings [:instances :active-instances]))
+          (is (get-in service-settings [:instances :failed-instances]))
+          (is (get-in service-settings [:instances :killed-instances]))))
+
       (testing "explicitly specifying default parameter resolves to different service"
         (let [{:keys [service-description-defaults]} (waiter-settings waiter-url)
               request-headers (walk/stringify-keys request-headers)]
