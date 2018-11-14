@@ -1182,7 +1182,7 @@
       (testing "post:new-service-description:bad-token-command"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
-                                    {:cmd (str "tc " (str/join "" (repeat 1024 "x")))
+                                    {:cmd (apply str "tc " (repeat 1024 "x"))
                                      :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
                                      :token "abcdefgh"})
               {:keys [body status]}
