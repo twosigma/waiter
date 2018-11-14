@@ -1195,7 +1195,7 @@
               {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
-          (is (str/includes? message "at-most-1K-chars") body)))
+          (is (str/includes? message "The command must be a non-empty string and must be at most 1024 characters") body)))
 
       (testing "post:new-service-description:bad-token-metadata"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))

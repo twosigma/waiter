@@ -52,7 +52,7 @@
 
 (def service-description-schema
   {;; Required
-   (s/required-key "cmd") (s/both s/Str (s/pred #(<= (count %) 1024)'at-most-1K-chars))
+   (s/required-key "cmd") (s/both s/Str (s/pred #(<= 1 (count %) 1024)'at-most-1K-chars))
    (s/required-key "cpus") schema/positive-num
    (s/required-key "mem") schema/positive-num
    (s/required-key "run-as-user") schema/non-empty-string
@@ -362,24 +362,31 @@
                                              "run-as-user" "default-run-as-user"})
         service-description-to-use (merge default-valid-service-description service-description-template)
         exception-message (utils/message :invalid-service-description)
-        throw-error (fn throw-error [e issue friendly-error-message]
+        throw-error (fn throw-error [e issue parameter->error-message]
                       (sling/throw+ (cond-> {:type :service-description-error
                                              :message exception-message
                                              :service-description service-description-template
                                              :status 400
                                              :issue issue}
-                                            (not-empty friendly-error-message) (assoc :friendly-error-message friendly-error-message))
+                                            (not-empty parameter->error-message)
+                                            (assoc :friendly-error-message parameter->error-message))
                                     e))]
     (try
       (s/validate service-description-schema service-description-to-use)
       (catch Exception e
-        (let [issue (s/check service-description-schema service-description-to-use)
-              friendly-error-message (utils/filterm
-                                       val
-                                       {:allowed-params (generate-friendly-allowed-params-error-message issue)
-                                        :env (generate-friendly-environment-variable-error-message issue)
-                                        :metadata (generate-friendly-metadata-error-message issue)})]
-          (throw-error e (dissoc issue "allowed-params" "env" "metadata") friendly-error-message))))
+        (let [parameter->issues (s/check service-description-schema service-description-to-use)
+              parameter->error-message (cond-> {}
+                                         (contains? parameter->issues "allowed-params")
+                                         (assoc :allowed-params (generate-friendly-allowed-params-error-message parameter->issues))
+                                         (contains? parameter->issues "cmd")
+                                         (assoc :cmd "The command must be a non-empty string and must be at most 1024 characters.")
+                                         (contains? parameter->issues "env")
+                                         (assoc :env (generate-friendly-environment-variable-error-message parameter->issues))
+                                         (contains? parameter->issues "metadata")
+                                         (assoc :metadata (generate-friendly-metadata-error-message parameter->issues)))
+              unresolved-parameters (set/difference (-> parameter->issues keys set)
+                                                    (->> parameter->error-message keys (map name) set))]
+          (throw-error e (select-keys parameter->issues unresolved-parameters) parameter->error-message))))
 
     (try
       (s/validate max-constraints-schema service-description-to-use)
