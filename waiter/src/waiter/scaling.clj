@@ -272,13 +272,14 @@
                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "total"))
                           (if (or (nil? last-scale-down-time)
                                   (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
-                            (if (or (-> (fn execute-scale-down-request-task []
-                                          (-> (execute-scale-down-request
-                                                notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                                                scheduler instance-rpc-chan timeout-config
-                                                service-id iter-correlation-id num-instances-to-kill response-chan)
-                                              async/<!!))
-                                        (au/execute scale-service-thread-pool)
+                            (if (or (-> (au/execute
+                                          (fn execute-scale-down-request-task []
+                                            (-> (execute-scale-down-request
+                                                  notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                                                  scheduler instance-rpc-chan timeout-config
+                                                  service-id iter-correlation-id num-instances-to-kill response-chan)
+                                                async/<!!))
+                                          scale-service-thread-pool)
                                         async/<!
                                         :result)
                                     (delegate-instance-kill-request-fn service-id))
