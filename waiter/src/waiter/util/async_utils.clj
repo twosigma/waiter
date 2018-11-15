@@ -19,7 +19,8 @@
             [clojure.tools.logging :as log]
             [metrics.core]
             [metrics.histograms :as histograms]
-            [slingshot.slingshot :refer [throw+ try+]])
+            [slingshot.slingshot :refer [throw+ try+]]
+            [waiter.correlation-id :as cid])
   (:import clojure.core.async.impl.channels.ManyToManyChannel
            java.util.concurrent.ExecutorService))
 
@@ -193,15 +194,18 @@
   "Helper function, like core.async/thread, which asynchronously executes task on a thread in the provided thread pool.
    Returns a channel which will receive the result of the task when completed, then close."
   [task ^ExecutorService task-thread-pool]
-  (let [task-complete-chan (async/promise-chan)]
+  (let [task-complete-chan (async/promise-chan)
+        current-cid (cid/get-correlation-id)]
     (.submit task-thread-pool
              ^Runnable
              (fn execute-task []
-               (try
-                 (async/>!! task-complete-chan {:result (task)})
-                 (catch Throwable th
-                   (log/error th "error while executing task")
-                   (async/>!! task-complete-chan {:error th}))
-                 (finally
-                   (async/close! task-complete-chan)))))
+               (cid/with-correlation-id
+                 current-cid
+                 (try
+                   (async/>!! task-complete-chan {:result (task)})
+                   (catch Throwable th
+                     (log/error th "error while executing task")
+                     (async/>!! task-complete-chan {:error th}))
+                   (finally
+                     (async/close! task-complete-chan))))))
     task-complete-chan))
