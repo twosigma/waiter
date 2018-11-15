@@ -114,6 +114,7 @@
             timeout-config {:blacklist-backoff-base-time-ms 10000
                             :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
                             :max-blacklist-time-ms 60000}
+            scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
             make-scheduler (fn [operation-tracker-atom]
                              (reify scheduler/ServiceScheduler
                                (scale-service [_ service-id scale-to-instances force]
@@ -161,7 +162,7 @@
                       correlation-id
                       (kill-instance-handler
                         notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                        scheduler instance-rpc-chan timeout-config
+                        scheduler instance-rpc-chan timeout-config scheduler-interactions-thread-pool
                         {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                     {:keys [body headers status]} (async/<!! response-chan)]
                 (is (= 200 status))
@@ -189,7 +190,7 @@
                     correlation-id
                     (kill-instance-handler
                       notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                      scheduler instance-rpc-chan timeout-config
+                      scheduler instance-rpc-chan timeout-config scheduler-interactions-thread-pool
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
@@ -221,7 +222,7 @@
                     correlation-id
                     (kill-instance-handler
                       notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                      scheduler instance-rpc-chan timeout-config
+                      scheduler instance-rpc-chan timeout-config scheduler-interactions-thread-pool
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
@@ -231,7 +232,9 @@
                       :service-id test-service-id, :source-router-id src-router-id, :success false}
                      (walk/keywordize-keys (json/read-str body))))
               (is (= [[:kill-instance "instance-1" "test-service-id" false]] @scheduler-operation-tracker-atom))
-              (is (= :not-killed (deref killed-instance-promise 100 :not-killed))))))))))
+              (is (= :not-killed (deref killed-instance-promise 100 :not-killed))))))
+
+        (.shutdown scheduler-interactions-thread-pool)))))
 
 (deftest test-compute-scale-amount-restricted-by-quanta
   (is (= 1 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 1024} {:cpus 32 :mem 4608} 1)))

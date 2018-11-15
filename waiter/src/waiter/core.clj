@@ -1110,14 +1110,15 @@
    :kill-instance-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                       [:routines peers-acknowledged-blacklist-requests-fn]
                                       [:scheduler scheduler]
-                                      [:state instance-rpc-chan scaling-timeout-config]
+                                      [:state instance-rpc-chan scaling-timeout-config scheduler-interactions-thread-pool]
                                       wrap-router-auth-fn]
                                (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
                                  (wrap-router-auth-fn
                                    (fn kill-instance-handler-fn [request]
                                      (scaling/kill-instance-handler
                                        notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                                       scheduler instance-rpc-chan scaling-timeout-config request)))))
+                                       scheduler instance-rpc-chan scaling-timeout-config scheduler-interactions-thread-pool
+                                       request)))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
