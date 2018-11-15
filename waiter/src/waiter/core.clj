@@ -500,8 +500,7 @@
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
    :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
-                  (http-utils/http-client-factory {:conn-timeout connection-timeout-ms
-                                                   :user-agent-prefix "waiter"}))
+                  (http-utils/http-client-factory {:conn-timeout connection-timeout-ms}))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
@@ -651,7 +650,7 @@
                                 (let [http-client (http-utils/http-client-factory
                                                     {:conn-timeout health-check-timeout-ms
                                                      :socket-timeout health-check-timeout-ms
-                                                     :user-agent-prefix "waiter-syncer"})
+                                                     :user-agent "waiter-syncer/1.0"})
                                       available? (fn scheduler-available? [service-instance health-check-path]
                                                    (scheduler/available? http-client service-instance health-check-path))]
                                   (fn start-scheduler-syncer-fn

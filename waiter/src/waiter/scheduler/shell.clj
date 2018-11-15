@@ -848,7 +848,7 @@
         http-client (http-utils/http-client-factory
                       {:conn-timeout health-check-timeout-ms
                        :socket-timeout health-check-timeout-ms
-                       :user-agent-prefix "waiter-shell"})]
+                       :user-agent "waiter-shell/1.0"})]
     (when backup-file-name
       (let [backup-file-path (str work-directory (File/separator) backup-file-name)]
         ;; restore the state of the shell scheduler

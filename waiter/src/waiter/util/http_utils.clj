@@ -23,7 +23,7 @@
             [waiter.auth.spnego :as spnego])
   (:import (java.net URI)
            (org.eclipse.jetty.client HttpClient)
-           (org.eclipse.jetty.http HttpField)
+           (org.eclipse.jetty.http HttpField HttpHeader)
            (org.eclipse.jetty.util HttpCookieStore$Empty)))
 
 (defn http-request
@@ -60,9 +60,8 @@
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
-  [{:keys [conn-timeout follow-redirects? socket-timeout user-agent-prefix]
-    :or {follow-redirects? false
-         user-agent-prefix "waiter"}}]
+  [{:keys [conn-timeout follow-redirects? socket-timeout user-agent]
+    :or {follow-redirects? false}}]
   (let [^HttpClient client
         (http/client (cond-> {}
                        (some? conn-timeout) (assoc :connect-timeout conn-timeout)
@@ -71,9 +70,7 @@
     (.clear (.getContentDecoderFactories client))
     (.setCookieStore client (HttpCookieStore$Empty.))
     (.setDefaultRequestContentType client nil)
-    (when-let [user-agent-field (.getUserAgentField client)]
-      (let [user-agent-http-header (.getHeader user-agent-field)
-            user-agent-value (str user-agent-prefix " " (.getValue user-agent-field))
-            new-user-agent-field (HttpField. user-agent-http-header user-agent-value)]
+    (when user-agent
+      (let [new-user-agent-field (HttpField. HttpHeader/USER_AGENT (str user-agent))]
         (.setUserAgentField client new-user-agent-field)))
     client))
