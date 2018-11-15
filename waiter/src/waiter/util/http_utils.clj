@@ -22,7 +22,8 @@
             [slingshot.slingshot :as ss]
             [waiter.auth.spnego :as spnego])
   (:import java.net.URI
-           org.eclipse.jetty.client.HttpClient))
+           org.eclipse.jetty.client.HttpClient
+           [org.eclipse.jetty.util HttpCookieStore$Empty]))
 
 (defn http-request
   "Wrapper over the qbits.jet.client.http/request function.
@@ -58,5 +59,13 @@
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
-  [{:keys [conn-timeout socket-timeout]}]
-  (http/client {:connect-timeout conn-timeout, :idle-timeout socket-timeout}))
+  [{:keys [conn-timeout follow-redirects? socket-timeout]
+    :or {follow-redirects? false}}]
+  (let [client (http/client (cond-> {}
+                              (some? conn-timeout) (assoc :connect-timeout conn-timeout)
+                              (some? follow-redirects?) (assoc :follow-redirects? follow-redirects?)
+                              (some? socket-timeout) (assoc :idle-timeout socket-timeout)))]
+    (.clear (.getContentDecoderFactories client))
+    (.setCookieStore client (HttpCookieStore$Empty.))
+    (.setDefaultRequestContentType client nil)
+    client))
