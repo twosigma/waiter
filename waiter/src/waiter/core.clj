@@ -888,13 +888,15 @@
                         [:routines router-metrics-helpers service-id->service-description-fn]
                         [:scheduler scheduler]
                         [:settings [:scaling autoscaler-interval-ms]]
+                        [:state scheduler-interactions-thread-pool]
                         autoscaling-multiplexer router-state-maintainer]
                  (let [service-id->metrics-fn (:service-id->metrics-fn router-metrics-helpers)
                        {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
                        {:keys [executor-multiplexer-chan]} autoscaling-multiplexer]
                    (scaling/autoscaler-goroutine
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
-                     scaling/scale-service service-id->service-description-fn router-state-push-mult)))
+                     scaling/scale-service service-id->service-description-fn router-state-push-mult
+                     scheduler-interactions-thread-pool)))
    :autoscaling-multiplexer (pc/fnk [[:routines delegate-instance-kill-request-fn peers-acknowledged-blacklist-requests-fn
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]

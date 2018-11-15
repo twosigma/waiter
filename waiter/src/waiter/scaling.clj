@@ -477,7 +477,7 @@
   "Autoscaler encapsulated in goroutine.
    Acquires state of services and passes to scale-services."
   [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-service-fn
-   service-id->service-description-fn state-mult]
+   service-id->service-description-fn state-mult scheduler-interactions-thread-pool]
   (let [state-atom (atom (merge {:continue-looping true
                                  :global-state {}
                                  :iter-counter 1
@@ -532,7 +532,13 @@
                         (if (leader?-fn)
                           (let [global-state' (or (service-id->metrics-fn) global-state)
                                 cycle-start-time (t/now)
-                                service-id->scheduler-state' (get-service-instance-stats scheduler)]
+                                {:keys [error result]} (async/<!
+                                                         (au/execute
+                                                           (fn get-service-instance-stats-task []
+                                                             (get-service-instance-stats scheduler))
+                                                           scheduler-interactions-thread-pool))
+                                _ (when error (throw error))
+                                service-id->scheduler-state' result]
                             (timers/start-stop-time!
                               (metrics/waiter-timer "autoscaler" "processing")
                               (let [service->scale-state'
