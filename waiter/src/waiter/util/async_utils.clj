@@ -20,7 +20,8 @@
             [metrics.core]
             [metrics.histograms :as histograms]
             [slingshot.slingshot :refer [throw+ try+]])
-  (:import clojure.core.async.impl.channels.ManyToManyChannel))
+  (:import clojure.core.async.impl.channels.ManyToManyChannel
+           java.util.concurrent.ExecutorService))
 
 (defn sliding-buffer-chan [n]
   (async/chan (async/sliding-buffer n)))
@@ -187,3 +188,20 @@
   "Determines if v is a channel."
   [v]
   (instance? ManyToManyChannel v))
+
+(defn execute
+  "Helper function, like core.async/thread, which asynchronously executes task on a thread in the provided thread pool.
+   Returns a channel which will receive the result of the task when completed, then close."
+  [task ^ExecutorService task-thread-pool]
+  (let [task-complete-chan (async/promise-chan)]
+    (.submit task-thread-pool
+             ^Runnable
+             (fn execute-task []
+               (try
+                 (async/>!! task-complete-chan {:result (task)})
+                 (catch Throwable th
+                   (log/error th "error while executing task")
+                   (async/>!! task-complete-chan {:error th}))
+                 (finally
+                   (async/close! task-complete-chan)))))
+    task-complete-chan))
