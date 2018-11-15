@@ -1153,17 +1153,18 @@
    :service-handler-fn (pc/fnk [[:curator kv-store]
                                 [:daemons router-state-maintainer]
                                 [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn
-                                 service-id->service-description-fn service-id->source-tokens-entries-fn]
+                                 router-metrics-helpers service-id->service-description-fn service-id->source-tokens-entries-fn]
                                 [:scheduler scheduler]
                                 [:state router-id]
                                 wrap-secure-request-fn]
-                         (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
+                         (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
+                               {:keys [service-id->metrics-fn]} router-metrics-helpers]
                            (wrap-secure-request-fn
                              (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
                                                         generate-log-url-fn make-inter-router-requests-sync-fn
                                                         service-id->service-description-fn service-id->source-tokens-entries-fn
-                                                        query-state-fn request)))))
+                                                        query-state-fn service-id->metrics-fn request)))))
    :service-id-handler-fn (pc/fnk [[:curator kv-store]
                                    [:routines store-service-description-fn]
                                    wrap-descriptor-fn wrap-secure-request-fn]
