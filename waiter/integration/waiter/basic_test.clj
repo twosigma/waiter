@@ -357,6 +357,10 @@
         (make-kitchen-request waiter-url request-headers :method :get)
         (let [service-last-request-time (service-id->last-request-time waiter-url service-id)]
           (is (pos? (.getMillis service-last-request-time)))
+          (is (t/before? canary-request-time-from-header service-last-request-time)))
+        (let [service-settings (service-settings waiter-url service-id)
+              service-last-request-time (-> service-settings :last-request-time du/str-to-date)]
+          (is (pos? (.getMillis service-last-request-time)))
           (is (t/before? canary-request-time-from-header service-last-request-time)))))))
 
 (deftest ^:parallel ^:integration-fast test-list-apps

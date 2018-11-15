@@ -333,7 +333,8 @@
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id core-service-description kv-store generate-log-url-fn make-inter-router-requests-fn
-   service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn request]
+   service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn
+   request]
   (let [service-instance-maps (try
                                 (let [assoc-log-url-to-instances
                                       (fn assoc-log-url-to-instances [instances]
@@ -373,12 +374,15 @@
         source-tokens-entries (service-id->source-tokens-entries-fn service-id)
         request-params (-> request ru/query-params-request :query-params)
         include-effective-parameters? (utils/request-flag request-params "effective-parameters")
+        last-request-time (get-in (service-id->metrics-fn) [service-id "last-request-time"])
         result-map (cond-> {:router-id router-id, :num-routers (count router->metrics)}
                      (and (not-empty core-service-description) include-effective-parameters?)
                      (assoc :effective-parameters (service-id->service-description-fn service-id :effective? true))
                      (not-empty service-instance-maps)
                      (assoc :instances service-instance-maps
                             :num-active-instances (count (:active-instances service-instance-maps)))
+                     last-request-time
+                     (assoc :last-request-time last-request-time)
                      (not-empty aggregate-metrics-map)
                      (assoc-in [:metrics :aggregate] aggregate-metrics-map)
                      (not-empty router->metrics)
@@ -399,7 +403,7 @@
      :delete deletes the service from the scheduler (after authorization checks).
      :get returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
-   service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn request]
+   service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn request]
   (try
     (when (not service-id)
       (throw (ex-info "Missing service-id" {:status 400})))
@@ -410,7 +414,7 @@
           :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn request)
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
-                                    service-id->source-tokens-entries-fn query-state-fn request))))
+                                    service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn request))))
     (catch Exception ex
       (utils/exception->response ex request))))
 

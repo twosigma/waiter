@@ -411,6 +411,7 @@
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
                                   :make-inter-router-requests-sync-fn nil
+                                  :router-metrics-helpers {:service-id->metrics-fn (constantly {})}
                                   :service-id->service-description-fn (constantly {})
                                   :service-id->source-tokens-entries-fn (constantly #{})}
                        :scheduler {:scheduler (Object.)}
@@ -482,11 +483,14 @@
         service-id "test-service-1"
         waiter-request?-fn (fn [_] true)
         router-state-atom (atom {})
+        last-request-time (str service-id ".last-request-time")
+        service-id->metrics {service-id {"last-request-time" last-request-time}}
         configuration {:curator {:kv-store nil}
                        :daemons {:router-state-maintainer {:maintainer {:query-state-fn (fn [] @router-state-atom)}}}
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
                                   :make-inter-router-requests-sync-fn nil
+                                  :router-metrics-helpers {:service-id->metrics-fn (constantly service-id->metrics)}
                                   :service-id->service-description-fn (constantly {})
                                   :service-id->source-tokens-entries-fn (constantly #{})}
                        :scheduler {:scheduler (Object.)}
@@ -495,6 +499,7 @@
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))
         started-time (t/now)]
+
     (testing "service-handler:get-missing-service-description"
       (with-redefs [sd/fetch-core (constantly nil)]
         (let [request {:headers {"accept" "application/json"}
@@ -507,6 +512,7 @@
                   {:strs [service-id]} "details"} "waiter-error"} (json/read-str (str body))]
             (is (= "Service not found" message))
             (is (= "test-service-1" service-id))))))
+
     (testing "service-handler:valid-response-missing-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (reset! router-state-atom {:service-id->healthy-instances
@@ -534,9 +540,11 @@
                     "killed-instances" []}
                    (get body-json "instances")))
             (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
+            (is (= last-request-time (get body-json "last-request-time")))
             (is (= 1 (get body-json "num-active-instances")))
             (is (= 0 (get body-json "num-routers")))
             (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
+
     (testing "service-handler:valid-response-including-active-killed-and-failed"
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (reset! router-state-atom {:service-id->failed-instances {service-id [{:id (str service-id ".F"), :service-id service-id}]}
@@ -558,6 +566,7 @@
                                          "log-url" "http://www.example.com/apps/test-service-1/logs?instance-id=test-service-1.F&host="}]}
                    (get body-json "instances")))
             (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
+            (is (= last-request-time (get body-json "last-request-time")))
             (is (= 1 (get body-json "num-active-instances")))
             (is (= 0 (get body-json "num-routers")))
             (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))))
