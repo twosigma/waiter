@@ -404,7 +404,18 @@
          method :get}}]
   (let [router-id->endpoint-url (discovery/router-id->endpoint-url discovery "http" endpoint :exclude-set #{my-router-id})
         router-id->endpoint-url' (filter (fn [[router-id _]] (acceptable-router? router-id)) router-id->endpoint-url)
-        config' (update config :headers assoc "accept" "application/json")]
+        request-config (update config :headers
+                               (fn prepare-inter-router-requests-headers [headers]
+                                 (-> headers
+                                     (assoc "accept" "application/json")
+                                     (update "x-cid"
+                                             (fn attach-inter-router-cid [provided-cid]
+                                               (or provided-cid
+                                                   (let [current-cid (cid/get-correlation-id)
+                                                         cid-prefix (if (or (nil? current-cid) (= cid/default-correlation-id current-cid))
+                                                                      "waiter"
+                                                                      current-cid)]
+                                                     (str cid-prefix "." (utils/unique-identifier)))))))))]
     (when (and (empty? router-id->endpoint-url')
                (not-empty router-id->endpoint-url))
       (log/info "no acceptable routers found to make request!"))
@@ -413,7 +424,7 @@
       (if dest-router-id
         (let [secret-word (utils/generate-secret-word my-router-id dest-router-id passwords)
               auth (make-basic-auth-fn endpoint-url my-router-id secret-word)
-              response (make-request-fn method endpoint-url auth body config')]
+              response (make-request-fn method endpoint-url auth body request-config)]
           (recur remaining-items
                  (assoc router-id->response dest-router-id response)))
         router-id->response))))

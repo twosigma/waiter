@@ -576,7 +576,9 @@
         make-request-fn-factory (fn [urls-invoked-atom]
                                   (fn [method endpoint-url auth body config]
                                     (is (str/blank? body))
-                                    (is (= {:headers {"accept" "application/json"}} config))
+                                    (is (= {:headers {"accept" "application/json"
+                                                      "x-cid" "waiter.unique-identifier"}}
+                                           config))
                                     (is (= :get method))
                                     (is (= auth-object auth))
                                     (swap! urls-invoked-atom conj endpoint-url)
@@ -586,7 +588,8 @@
                     (pc/map-from-keys (fn [router-id]
                                         (str protocol "://" router-id "/" endpoint))
                                       (remove #(contains? exclude-set %)
-                                              ["router-0", "router-1", "router-2", "router-3", "router-4"])))]
+                                              ["router-0", "router-1", "router-2", "router-3", "router-4"])))
+                  utils/unique-identifier (constantly "unique-identifier")]
       (testing "make-call-to-all-other-routers"
         (let [urls-invoked-atom (atom [])
               make-request-fn (make-request-fn-factory urls-invoked-atom)]
