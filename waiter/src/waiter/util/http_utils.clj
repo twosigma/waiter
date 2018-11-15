@@ -60,8 +60,9 @@
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
-  [{:keys [conn-timeout follow-redirects? socket-timeout]
-    :or {follow-redirects? false}}]
+  [{:keys [conn-timeout follow-redirects? socket-timeout user-agent-prefix]
+    :or {follow-redirects? false
+         user-agent-prefix "waiter"}}]
   (let [^HttpClient client
         (http/client (cond-> {}
                        (some? conn-timeout) (assoc :connect-timeout conn-timeout)
@@ -72,7 +73,7 @@
     (.setDefaultRequestContentType client nil)
     (when-let [user-agent-field (.getUserAgentField client)]
       (let [user-agent-http-header (.getHeader user-agent-field)
-            user-agent-value (str "waiter." (.getValue user-agent-field))
+            user-agent-value (str user-agent-prefix " " (.getValue user-agent-field))
             new-user-agent-field (HttpField. user-agent-http-header user-agent-value)]
         (.setUserAgentField client new-user-agent-field)))
     client))

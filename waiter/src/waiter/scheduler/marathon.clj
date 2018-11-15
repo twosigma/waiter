@@ -592,7 +592,9 @@
   (when (or (not slave-directory) (not mesos-slave-port))
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
   (let [authorizer (utils/create-component authorizer)
-        http-client (http-utils/http-client-factory http-options)
+        http-client (-> http-options
+                        (utils/assoc-if-absent :user-agent-prefix "waiter-marathon")
+                        http-utils/http-client-factory)
         marathon-api (marathon/api-factory http-client http-options url)
         mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
         service-id->failed-instances-transient-store (atom {})
