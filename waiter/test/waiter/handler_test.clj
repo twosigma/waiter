@@ -36,7 +36,8 @@
             [waiter.util.utils :as utils])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
-           (java.io StringBufferInputStream StringReader)))
+           (java.io StringBufferInputStream StringReader)
+           (java.util.concurrent Executors)))
 
 (deftest test-complete-async-handler
   (testing "missing-request-id"
@@ -631,7 +632,8 @@
   (let [test-user "test-user"
         test-service-id "service-1"
         allowed-to-manage-service?-fn (fn [service-id user] (and (= test-service-id service-id) (= test-user user)))]
-    (let [core-service-description {"run-as-user" test-user}]
+    (let [core-service-description {"run-as-user" test-user}
+          scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)]
 
       (testing "delete-service-handler:success-regular-user"
         (let [scheduler (reify scheduler/ServiceScheduler
@@ -640,7 +642,10 @@
                             {:result :deleted
                              :message "Worked!"}))
               request {:authorization/user test-user}
-              {:keys [body headers status]} (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn request)]
+              {:keys [body headers status]}
+              (async/<!!
+                (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn
+                                        scheduler-interactions-thread-pool request))]
           (is (= 200 status))
           (is (= "application/json" (get headers "content-type")))
           (is (every? #(str/includes? (str body) (str %)) ["Worked!"]))))
@@ -651,8 +656,12 @@
                             (is (= test-service-id service-id))
                             {:deploymentId "good"}))
               request {:authorization/user "another-user"}]
-          (is (thrown-with-msg? ExceptionInfo #"User not allowed to delete service"
-                                (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn request))))))))
+          (is (thrown-with-msg?
+                ExceptionInfo #"User not allowed to delete service"
+                (delete-service-handler test-service-id core-service-description scheduler allowed-to-manage-service?-fn
+                                        scheduler-interactions-thread-pool request)))))
+
+      (.shutdown scheduler-interactions-thread-pool))))
 
 (deftest test-work-stealing-handler
   (let [test-service-id "test-service-id"
