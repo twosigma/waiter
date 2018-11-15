@@ -60,14 +60,15 @@
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
-  [{:keys [conn-timeout follow-redirects? socket-timeout user-agent]
-    :or {follow-redirects? false}}]
+  [{:keys [clear-content-decoders conn-timeout follow-redirects? socket-timeout user-agent]
+    :or {clear-content-decoders true}}]
   (let [^HttpClient client
         (http/client (cond-> {}
                        (some? conn-timeout) (assoc :connect-timeout conn-timeout)
                        (some? follow-redirects?) (assoc :follow-redirects? follow-redirects?)
                        (some? socket-timeout) (assoc :idle-timeout socket-timeout)))]
-    (.clear (.getContentDecoderFactories client))
+    (when clear-content-decoders
+      (.clear (.getContentDecoderFactories client)))
     (.setCookieStore client (HttpCookieStore$Empty.))
     (.setDefaultRequestContentType client nil)
     (when user-agent

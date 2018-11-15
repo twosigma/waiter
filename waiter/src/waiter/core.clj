@@ -500,7 +500,9 @@
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
    :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
-                  (http-utils/http-client-factory {:conn-timeout connection-timeout-ms}))
+                  (http-utils/http-client-factory {:conn-timeout connection-timeout-ms
+                                                   :follow-redirects? false
+                                                   :user-agent "waiter/1.0"}))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))

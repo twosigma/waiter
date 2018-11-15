@@ -159,7 +159,8 @@
 (defn make-http-client
   "Instantiates and returns a new HttpClient without a cookie store"
   []
-  (http-utils/http-client-factory {:user-agent "waiter-test/1.0"}))
+  (http-utils/http-client-factory {:clear-content-decoders false
+                                   :user-agent "waiter-test/1.0"}))
 
 (defn current-test-name
   "Get the name of the currently-running test."
