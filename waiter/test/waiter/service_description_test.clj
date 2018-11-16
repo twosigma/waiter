@@ -1937,7 +1937,7 @@
         (validate-schema (assoc service-description "metadata" {"a" "b" "c" 1}) {s/Str s/Any} nil)
         (is false "Exception should have been thrown for invalid service description.")
         (catch ExceptionInfo ex
-          (let [friendly-message (get-in (ex-data ex) [:friendly-error-message :metadata])]
+          (let [friendly-message (-> ex ex-data :friendly-error-message)]
             (is (str/includes? friendly-message "Metadata values must be strings.") friendly-message)
             (is (str/includes? friendly-message "did not have string values: c: 1.") friendly-message)))))
     (testing "too many metadata keys"
@@ -1973,7 +1973,7 @@
         (validate-schema (assoc service-description "env" {"abc" "def", "ABC" 1}) {s/Str s/Any} nil)
         (is false "Exception should have been thrown for invalid service description")
         (catch ExceptionInfo ex
-          (let [friendly-message (get-in (ex-data ex) [:friendly-error-message :env])]
+          (let [friendly-message (-> ex ex-data :friendly-error-message)]
             (is (str/includes? friendly-message "values must be strings") friendly-message)
             (is (str/includes? friendly-message "did not have string values: ABC: 1.") friendly-message)))))
 
@@ -2034,10 +2034,8 @@
          (is false "Fail as exception was not thrown!")
          (catch ExceptionInfo ex#
            (let [exception-data# (ex-data ex#)
-                 actual-error-message# (-> (or (get-in exception-data# [:friendly-error-message (keyword param-name#)])
-                                               (get exception-data# :friendly-error-message))
-                                           str)]
-             (is (str/includes? actual-error-message# error-message#))))))))
+                 actual-error-message# (:friendly-error-message exception-data#)]
+             (is (str/includes? (str actual-error-message#) (str error-message#)))))))))
 
 (deftest test-validate-schema
   (let [valid-description {"cpus" 1
@@ -2215,10 +2213,11 @@
           (validate builder service-description validation-settings)
           (is false)
           (catch ExceptionInfo ex
-            (is (= {:issue {"cpus" 'missing-required-key}
+            (is (= {:friendly-error-message "cpus must be a positive number."
+                    :issue {}
                     :status 400
                     :type :service-description-error}
-                   (select-keys (ex-data ex) [:issue :status :type])))))))
+                   (select-keys (ex-data ex) [:friendly-error-message :issue :status :type])))))))
 
     (testing "validate-service-description-cpus-outside-limits"
       (let [service-description (assoc basic-service-description "cpus" 200)]

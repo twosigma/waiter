@@ -328,7 +328,7 @@
                      :x-waiter-env-foo "bar"
                      :x-waiter-env-fee_fie "fum"}
             {:keys [body status]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
-            env-error-message (get-in (json/read-str body) ["waiter-error" "message" "env"])]
+            env-error-message (get-in (json/read-str body) ["waiter-error" "message"])]
         (is (= 400 status))
         (is (every? #(str/includes? env-error-message %)
                     ["The following environment variable keys are invalid:" "1_INVALID" "123456" "BEGIN-DATE" "END-DATE"]))

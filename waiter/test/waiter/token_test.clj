@@ -1245,7 +1245,7 @@
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
           (is (= 400 status))
-          (is (str/includes? message "invalid-authentication") body)))
+          (is (str/includes? message "authentication must be one of disabled or standard") body)))
 
       (testing "post:new-service-description:missing-permitted-user-with-authentication-disabled"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
