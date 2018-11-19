@@ -37,7 +37,8 @@
             [waiter.test-helpers :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
-  (:import java.io.StringBufferInputStream))
+  (:import java.io.StringBufferInputStream
+           (java.util.concurrent Executors)))
 
 (defn request
   [resource request-method & params]
@@ -406,6 +407,8 @@
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
+        scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
+        delete-service-result-atom (atom nil) ;; with-redefs fails as we are executing inside different threads
         configuration {:curator {:kv-store nil}
                        :daemons {:router-state-maintainer {:maintainer {:query-state-fn (constantly {})}}}
                        :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
@@ -414,29 +417,38 @@
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly {})}
                                   :service-id->service-description-fn (constantly {})
                                   :service-id->source-tokens-entries-fn (constantly #{})}
-                       :scheduler {:scheduler (Object.)}
-                       :state {:router-id "router-id"}
+                       :scheduler {:scheduler (reify scheduler/ServiceScheduler
+                                                (delete-service [_ _]
+                                                  (let [result @delete-service-result-atom]
+                                                    (if (instance? Throwable result)
+                                                      (throw result)
+                                                      result))))}
+                       :state {:router-id "router-id"
+                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
+
     (testing "service-handler:delete-successful"
-      (with-redefs [scheduler/delete-service (fn [_ service-id] {:result :deleted, :service-id service-id})
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom {:result :deleted, :service-id service-id})
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 200 status))
           (is (= {"content-type" "application/json"} headers))
           (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
+
     (testing "service-handler:delete-nil-response"
-      (with-redefs [scheduler/delete-service (fn [_ _] nil)
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom nil)
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 400 status))
           (is (= {"content-type" "application/json"} headers))
           (is (= {"success" false, "service-id" service-id} (json/read-str body))))))
+
     (testing "service-handler:delete-unauthorized-user"
-      (with-redefs [scheduler/delete-service (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" (str "another-" user), "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom (IllegalStateException. "Unexpected call!"))
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" (str "another-" user), "name" (str service-id "-name")})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
                        :request-method :delete
@@ -445,17 +457,19 @@
           (is (= 403 status))
           (is (= {"content-type" "application/json"} headers))
           (is (str/includes? body "User not allowed to delete service")))))
+
     (testing "service-handler:delete-404-response"
-      (with-redefs [scheduler/delete-service (fn [_ _] {:result :no-such-service-exists})
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom {:result :no-such-service-exists})
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
-              {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 404 status))
           (is (= {"content-type" "application/json"} headers))
           (is (= {"result" "no-such-service-exists", "service-id" service-id, "success" false} (json/read-str body))))))
+
     (testing "service-handler:delete-non-existent-service"
-      (with-redefs [scheduler/delete-service (fn [_ _] (throw (IllegalStateException. "Unexpected call!")))
-                    sd/fetch-core (fn [_ _ & _] {})]
+      (reset! delete-service-result-atom (IllegalStateException. "Unexpected call!"))
+      (with-redefs [sd/fetch-core (fn [_ _ & _] {})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
                        :request-method :delete
@@ -467,16 +481,19 @@
           (is (= {"content-type" "application/json"} headers))
           (is (= "Service not found" message))
           (is (= "test-service-1" service-id)))))
+
     (testing "service-handler:delete-throws-exception"
-      (with-redefs [scheduler/delete-service (fn [_ _] (throw (RuntimeException. "Error in deleting service")))
-                    sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (reset! delete-service-result-atom (RuntimeException. "Error in deleting service"))
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:authorization/user user
                        :headers {"accept" "application/json"}
                        :request-method :delete
                        :uri (str "/apps/" service-id)}
-              {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+              {:keys [headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 500 status))
-          (is (= {"content-type" "application/json"} headers)))))))
+          (is (= {"content-type" "application/json"} headers)))))
+
+    (.shutdown scheduler-interactions-thread-pool)))
 
 (deftest test-service-handler-get
   (let [user "waiter-user"
@@ -485,6 +502,7 @@
         router-state-atom (atom {})
         last-request-time (str service-id ".last-request-time")
         service-id->metrics {service-id {"last-request-time" last-request-time}}
+        scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
         configuration {:curator {:kv-store nil}
                        :daemons {:router-state-maintainer {:maintainer {:query-state-fn (fn [] @router-state-atom)}}}
                        :routines {:allowed-to-manage-service?-fn (constantly true)
@@ -494,7 +512,8 @@
                                   :service-id->service-description-fn (constantly {})
                                   :service-id->source-tokens-entries-fn (constantly #{})}
                        :scheduler {:scheduler (Object.)}
-                       :state {:router-id "router-id"}
+                       :state {:router-id "router-id"
+                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))
@@ -569,7 +588,9 @@
             (is (= last-request-time (get body-json "last-request-time")))
             (is (= 1 (get body-json "num-active-instances")))
             (is (= 0 (get body-json "num-routers")))
-            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))))
+            (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
+
+    (.shutdown scheduler-interactions-thread-pool)))
 
 (deftest test-make-inter-router-requests
   (let [auth-object (Object.)

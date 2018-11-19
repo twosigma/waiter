@@ -112,7 +112,7 @@
    The function stops and returns true when a successful kill is made.
    Else, it terminates after we have exhausted all candidate instances to kill or when a kill attempt returns a non-truthy value."
   [notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn scheduler instance-rpc-chan timeout-config
-   service-id correlation-id num-instances-to-kill response-chan]
+   service-id correlation-id num-instances-to-kill thread-pool response-chan]
   (let [{:keys [blacklist-backoff-base-time-ms inter-kill-request-wait-time-ms max-blacklist-time-ms]} timeout-config]
     (cid/with-correlation-id
       correlation-id
@@ -132,7 +132,13 @@
                       (do
                         (log/info "scaling down instance candidate" instance)
                         (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
-                        (let [{:keys [killed?] :as kill-result} (scheduler/kill-instance scheduler instance)]
+                        (let [{:keys [killed?] :as kill-result}
+                              (-> (au/execute
+                                    (fn kill-instance-for-scale-down-task []
+                                      (scheduler/kill-instance scheduler instance))
+                                    thread-pool)
+                                  async/<!
+                                  :result)]
                           (if killed?
                             (do
                               (log/info "marking instance" instance-id "as killed")
@@ -164,7 +170,7 @@
 (defn kill-instance-handler
   "Handler that supports killing instances of a particular service on a specific router."
   [notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn scheduler instance-rpc-chan timeout-config
-   {:keys [route-params] {:keys [src-router-id]} :basic-authentication}]
+   scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication}]
   (let [{:keys [service-id]} route-params
         correlation-id (cid/get-correlation-id)]
     (cid/cinfo correlation-id "received request to kill instance of" service-id "from" src-router-id)
@@ -173,8 +179,8 @@
             instance-killed? (async/<!
                                (execute-scale-down-request
                                  notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                                 scheduler instance-rpc-chan timeout-config
-                                 service-id correlation-id 1 response-chan))
+                                 scheduler instance-rpc-chan timeout-config service-id correlation-id 1
+                                 scale-service-thread-pool response-chan))
             {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
                                                                {:message :no-instance-killed, :status 404})]
         (if instance-killed?
@@ -272,16 +278,11 @@
                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "total"))
                           (if (or (nil? last-scale-down-time)
                                   (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
-                            (if (or (-> (au/execute
-                                          (fn execute-scale-down-request-task []
-                                            (-> (execute-scale-down-request
-                                                  notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                                                  scheduler instance-rpc-chan timeout-config
-                                                  service-id iter-correlation-id num-instances-to-kill response-chan)
-                                                async/<!!))
-                                          scale-service-thread-pool)
-                                        async/<!
-                                        :result)
+                            (if (or (async/<!
+                                      (execute-scale-down-request
+                                        notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
+                                        scheduler instance-rpc-chan timeout-config service-id iter-correlation-id
+                                        num-instances-to-kill scale-service-thread-pool response-chan))
                                     (delegate-instance-kill-request-fn service-id))
                               (assoc executor-state :last-scale-down-time (t/now))
                               executor-state)
@@ -476,7 +477,7 @@
   "Autoscaler encapsulated in goroutine.
    Acquires state of services and passes to scale-services."
   [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-service-fn
-   service-id->service-description-fn state-mult]
+   service-id->service-description-fn state-mult scheduler-interactions-thread-pool]
   (let [state-atom (atom (merge {:continue-looping true
                                  :global-state {}
                                  :iter-counter 1
@@ -531,7 +532,13 @@
                         (if (leader?-fn)
                           (let [global-state' (or (service-id->metrics-fn) global-state)
                                 cycle-start-time (t/now)
-                                service-id->scheduler-state' (get-service-instance-stats scheduler)]
+                                {:keys [error result]} (async/<!
+                                                         (au/execute
+                                                           (fn get-service-instance-stats-task []
+                                                             (get-service-instance-stats scheduler))
+                                                           scheduler-interactions-thread-pool))
+                                _ (when error (throw error))
+                                service-id->scheduler-state' result]
                             (timers/start-stop-time!
                               (metrics/waiter-timer "autoscaler" "processing")
                               (let [service->scale-state'

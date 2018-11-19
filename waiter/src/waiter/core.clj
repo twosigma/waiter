@@ -888,13 +888,15 @@
                         [:routines router-metrics-helpers service-id->service-description-fn]
                         [:scheduler scheduler]
                         [:settings [:scaling autoscaler-interval-ms]]
+                        [:state scheduler-interactions-thread-pool]
                         autoscaling-multiplexer router-state-maintainer]
                  (let [service-id->metrics-fn (:service-id->metrics-fn router-metrics-helpers)
                        {{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
                        {:keys [executor-multiplexer-chan]} autoscaling-multiplexer]
                    (scaling/autoscaler-goroutine
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
-                     scaling/scale-service service-id->service-description-fn router-state-push-mult)))
+                     scaling/scale-service service-id->service-description-fn router-state-push-mult
+                     scheduler-interactions-thread-pool)))
    :autoscaling-multiplexer (pc/fnk [[:routines delegate-instance-kill-request-fn peers-acknowledged-blacklist-requests-fn
                                       service-id->service-description-fn]
                                      [:scheduler scheduler]
@@ -1110,14 +1112,15 @@
    :kill-instance-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                       [:routines peers-acknowledged-blacklist-requests-fn]
                                       [:scheduler scheduler]
-                                      [:state instance-rpc-chan scaling-timeout-config]
+                                      [:state instance-rpc-chan scaling-timeout-config scheduler-interactions-thread-pool]
                                       wrap-router-auth-fn]
                                (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
                                  (wrap-router-auth-fn
                                    (fn kill-instance-handler-fn [request]
                                      (scaling/kill-instance-handler
                                        notify-instance-killed-fn peers-acknowledged-blacklist-requests-fn
-                                       scheduler instance-rpc-chan scaling-timeout-config request)))))
+                                       scheduler instance-rpc-chan scaling-timeout-config scheduler-interactions-thread-pool
+                                       request)))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
@@ -1155,7 +1158,7 @@
                                 [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-sync-fn
                                  router-metrics-helpers service-id->service-description-fn service-id->source-tokens-entries-fn]
                                 [:scheduler scheduler]
-                                [:state router-id]
+                                [:state router-id scheduler-interactions-thread-pool]
                                 wrap-secure-request-fn]
                          (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                {:keys [service-id->metrics-fn]} router-metrics-helpers]
@@ -1164,7 +1167,8 @@
                                (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
                                                         generate-log-url-fn make-inter-router-requests-sync-fn
                                                         service-id->service-description-fn service-id->source-tokens-entries-fn
-                                                        query-state-fn service-id->metrics-fn request)))))
+                                                        query-state-fn service-id->metrics-fn scheduler-interactions-thread-pool
+                                                        request)))))
    :service-id-handler-fn (pc/fnk [[:curator kv-store]
                                    [:routines store-service-description-fn]
                                    wrap-descriptor-fn wrap-secure-request-fn]

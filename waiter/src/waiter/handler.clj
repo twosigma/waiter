@@ -37,6 +37,7 @@
             [waiter.service :as service]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
+            [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]))
@@ -290,22 +291,36 @@
 
 (defn delete-service-handler
   "Deletes the service from the scheduler (after authorization checks)."
-  [service-id core-service-description scheduler allowed-to-manage-service?-fn request]
+  [service-id core-service-description scheduler allowed-to-manage-service?-fn scheduler-interactions-thread-pool
+   request]
   (let [auth-user (get request :authorization/user)
         run-as-user (get core-service-description "run-as-user")]
-    (when-not (allowed-to-manage-service?-fn service-id auth-user)
-      (throw (ex-info "User not allowed to delete service"
-                      {:existing-owner run-as-user
-                       :current-user auth-user
-                       :service-id service-id
-                       :status 403})))
-    (let [delete-result (scheduler/delete-service scheduler service-id)
-          response-status (case (:result delete-result)
-                            :deleted 200
-                            :no-such-service-exists 404
-                            400)
-          response-body-map (merge {:success (= 200 response-status), :service-id service-id} delete-result)]
-      (utils/clj->json-response response-body-map :status response-status))))
+    (if-not (allowed-to-manage-service?-fn service-id auth-user)
+      (throw
+        (ex-info "User not allowed to delete service"
+                 {:existing-owner run-as-user
+                  :current-user auth-user
+                  :service-id service-id
+                  :status 403}))
+      (async/go
+        (try
+          (let [{:keys [error result]} (async/<!
+                                         (au/execute
+                                           (fn delete-service-task []
+                                             (scheduler/delete-service scheduler service-id))
+                                           scheduler-interactions-thread-pool))]
+            (if error
+              (utils/exception->response error request)
+              (let [delete-result result
+                    response-status (case (:result delete-result)
+                                      :deleted 200
+                                      :no-such-service-exists 404
+                                      400)
+                    response-body-map (merge {:success (= 200 response-status), :service-id service-id} delete-result)]
+                (utils/clj->json-response response-body-map :status response-status))))
+          (catch Throwable ex
+            (log/error ex "error while deleting service" service-id)
+            (utils/exception->response ex request)))))))
 
 (defn generate-log-url
   "Generates the log url for an instance"
@@ -403,7 +418,8 @@
      :delete deletes the service from the scheduler (after authorization checks).
      :get returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
-   service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn request]
+   service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn
+   scheduler-interactions-thread-pool request]
   (try
     (when (not service-id)
       (throw (ex-info "Missing service-id" {:status 400})))
@@ -411,7 +427,8 @@
       (if (empty? core-service-description)
         (throw (ex-info "Service not found" {:status 404 :service-id service-id}))
         (case (:request-method request)
-          :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn request)
+          :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn
+                                          scheduler-interactions-thread-pool request)
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
                                     service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn request))))
@@ -662,7 +679,7 @@
               [query-chans initial-result]
               (loop [[[entry-key entry-value] & remaining]
                      (concat query-sources
-                       [[:responder-state responder-state-chan] [:work-stealing-state work-stealing-state-chan]])
+                             [[:responder-state responder-state-chan] [:work-stealing-state work-stealing-state-chan]])
                      query-chans {}
                      initial-result {:local-usage local-usage-state}]
                 (if entry-key
