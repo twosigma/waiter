@@ -49,7 +49,7 @@
                                                                     (s/required-key :ttl) schema/positive-int}
                                            s/Keyword schema/require-symbol-factory-fn}
                                           schema/contains-kind-sub-map?)
-   (s/optional-key :git-version) s/Any
+   (s/required-key :git-version) s/Any
    (s/required-key :health-check-config) {(s/required-key :health-check-timeout-ms) schema/positive-int
                                           (s/required-key :failed-check-threshold) schema/positive-int}
    (s/required-key :host) schema/non-empty-string

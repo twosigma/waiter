@@ -499,10 +499,10 @@
                           (utils/create-component entitlement-config))
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
-   :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
+   :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms] git-version]]
                   (http-utils/http-client-factory {:conn-timeout connection-timeout-ms
                                                    :follow-redirects? false
-                                                   :user-agent "waiter/1.0"}))
+                                                   :user-agent (str "waiter/" (str/join (take 7 git-version)))}))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
@@ -646,13 +646,13 @@
                                             (sd/service-id->service-description
                                               kv-store service-id service-description-defaults
                                               metric-group-mappings :effective? effective?)))
-   :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
+   :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold] git-version]
                                        [:state clock]
                                        service-id->service-description-fn*]
                                 (let [http-client (http-utils/http-client-factory
                                                     {:conn-timeout health-check-timeout-ms
                                                      :socket-timeout health-check-timeout-ms
-                                                     :user-agent "waiter-syncer/1.0"})
+                                                     :user-agent (str "waiter-syncer/" (str/join (take 7 git-version)))})
                                       available? (fn scheduler-available? [service-instance health-check-path]
                                                    (scheduler/available? http-client service-instance health-check-path))]
                                   (fn start-scheduler-syncer-fn

@@ -877,7 +877,7 @@
          (or (nil? watch-retries) (integer? watch-retries))]}
   (let [authorizer (utils/create-component authorizer)
         http-client (-> http-options
-                        (utils/assoc-if-absent :user-agent "waiter-k8s/1.0")
+                        (utils/assoc-if-absent :user-agent "waiter-k8s")
                         http-utils/http-client-factory)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder

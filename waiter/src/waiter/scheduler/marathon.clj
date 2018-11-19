@@ -593,7 +593,7 @@
     (log/info "scheduler mesos-slave-port or slave-directory is missing, log directory and url support will be disabled"))
   (let [authorizer (utils/create-component authorizer)
         http-client (-> http-options
-                        (utils/assoc-if-absent :user-agent "waiter-marathon/1.0")
+                        (utils/assoc-if-absent :user-agent "waiter-marathon")
                         http-utils/http-client-factory)
         marathon-api (marathon/api-factory http-client http-options url)
         mesos-api (mesos/api-factory http-client http-options mesos-slave-port slave-directory)
