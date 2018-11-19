@@ -19,6 +19,7 @@
             [qbits.jet.client.websocket :as ws-client]
             [waiter.auth.authentication :as auth]
             [waiter.cookie-support :as cs]
+            [waiter.correlation-id :as cid]
             [waiter.test-helpers]
             [waiter.websocket :refer :all])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder)
@@ -28,11 +29,36 @@
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
 (defn- reified-upgrade-request
-  [cookies-map]
-  (let [cookies-coll (map (fn [[name value]] (HttpCookie. name value)) cookies-map)
-        cookies-arraylist (ArrayList. ^Collection (seq cookies-coll))]
+  [config-map]
+  (let [cookies-coll (map (fn [[name value]] (HttpCookie. name value)) (:cookies config-map))
+        cookies-arraylist (ArrayList. ^Collection (or (seq cookies-coll) []))]
     (reify UpgradeRequest
-      (getCookies [_] cookies-arraylist))))
+      (getCookies [_] cookies-arraylist)
+      (getHeaders [_ name]
+        (let [header-value (get-in config-map [:headers name])
+              result-list (ArrayList.)]
+          (if (string? header-value)
+            (.add result-list header-value)
+            (doseq [value header-value]
+              (.add result-list value)))
+          result-list)))))
+
+(defn- reified-upgrade-response
+  []
+  (let [response-reason-atom (atom nil)
+        response-status-atom (atom 0)
+        response-subprotocol-atom (atom nil)]
+    (proxy [ServletUpgradeResponse] [nil]
+      (getAcceptedSubProtocol [] @response-subprotocol-atom)
+      (getStatusCode [] @response-status-atom)
+      (getStatusReason [] @response-reason-atom)
+      (sendError [status reason]
+        (reset! response-status-atom status)
+        (reset! response-reason-atom reason))
+      (sendForbidden [reason]
+        (reset! response-status-atom 403)
+        (reset! response-reason-atom reason))
+      (setAcceptedSubProtocol [subprotocol] (reset! response-subprotocol-atom subprotocol)))))
 
 (deftest test-request-authenticator
   (let [password (Object.)
@@ -41,67 +67,92 @@
         auth-principal (str auth-user "@test.com")
         auth-time (System/currentTimeMillis)]
     (testing "successful-auth"
-      (let [response-code-atom (atom nil)
-            request (reified-upgrade-request {"x-waiter-auth" cookie-value})
-            response (Object.)]
+      (let [request (reified-upgrade-request {:cookies {"x-waiter-auth" cookie-value}})
+            response (reified-upgrade-response)]
         (with-redefs [auth/get-auth-cookie-value identity
                       auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 [auth-principal auth-time])]
           (is (request-authenticator password request response))
-          (is (nil? @response-code-atom)))))
+          (is (zero? (.getStatusCode response))))))
 
     (testing "successful-auth:multiple-cookies"
-      (let [response-code-atom (atom nil)
-            request (reified-upgrade-request {"fee" "fie", "foo" "bar", "x-waiter-auth" cookie-value})
-            response (Object.)]
+      (let [request (reified-upgrade-request {:cookies {"fee" "fie", "foo" "bar", "x-waiter-auth" cookie-value}})
+            response (reified-upgrade-response)]
         (with-redefs [auth/get-auth-cookie-value identity
                       auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 [auth-principal auth-time])]
           (is (request-authenticator password request response))
-          (is (nil? @response-code-atom)))))
+          (is (zero? (.getStatusCode response))))))
 
     (testing "unsuccessful-auth:auth-header-absent"
-      (let [response-code-atom (atom nil)
-            request (reified-upgrade-request {"fee" "fie", "foo" "bar"})
-            response (proxy [ServletUpgradeResponse] [nil]
-                       (sendForbidden [code] (reset! response-code-atom code)))]
+      (let [request (reified-upgrade-request {:cookies {"fee" "fie", "foo" "bar"}})
+            response (reified-upgrade-response)]
         (with-redefs [auth/get-auth-cookie-value identity
                       auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 nil)]
           (is (not (request-authenticator password request response)))
-          (is (= "Unauthorized" @response-code-atom)))))
+          (is (= 403 (.getStatusCode response)))
+          (is (= "Unauthorized" (.getStatusReason response))))))
 
     (testing "unsuccessful-auth:auth-header-present"
-      (let [response-code-atom (atom nil)
-            request (reified-upgrade-request {"x-waiter-auth" cookie-value})
-            response (proxy [ServletUpgradeResponse] [nil]
-                       (sendForbidden [code] (reset! response-code-atom code)))]
+      (let [request (reified-upgrade-request {:cookies {"x-waiter-auth" cookie-value}})
+            response (reified-upgrade-response)]
         (with-redefs [auth/get-auth-cookie-value identity
                       auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 nil)]
           (is (not (request-authenticator password request response)))
-          (is (= "Unauthorized" @response-code-atom)))))
+          (is (= 403 (.getStatusCode response)))
+          (is (= "Unauthorized" (.getStatusReason response))))))
 
     (testing "unsuccessful-auth:exception"
-      (let [response-code-atom (atom nil)
-            request (reified-upgrade-request {"x-waiter-auth" cookie-value})
-            response (proxy [ServletUpgradeResponse] [nil]
-                       (sendError [status code] (reset! response-code-atom (str status ":" code))))]
+      (let [request (reified-upgrade-request {:cookies {"x-waiter-auth" cookie-value}})
+            response (reified-upgrade-response)]
         (with-redefs [auth/get-auth-cookie-value identity
                       auth/decode-auth-cookie (fn [in-cookie in-password]
                                                 (is (= cookie-value in-cookie))
                                                 (is (= password in-password))
                                                 (throw (Exception. "Test-Exception")))]
           (is (not (request-authenticator password request response)))
-          (is (= "500:Test-Exception" @response-code-atom)))))))
+          (is (= 500 (.getStatusCode response)))
+          (is (= "Test-Exception" (.getStatusReason response))))))))
+
+(deftest test-request-subprotocol-acceptor
+  (let []
+    (testing "sec-websocket-protocol:missing"
+      (let [request (reified-upgrade-request {:headers {}})
+            response (reified-upgrade-response)]
+        (is (request-subprotocol-acceptor request response))
+        (is (zero? (.getStatusCode response)))))
+
+    (testing "sec-websocket-protocol:single"
+      (let [request (reified-upgrade-request {:headers {"sec-websocket-protocol" "foo"}})
+            response (reified-upgrade-response)]
+        (is (request-subprotocol-acceptor request response))
+        (is (zero? (.getStatusCode response)))))
+
+    (testing "sec-websocket-protocol:multiple"
+      (let [request (reified-upgrade-request {:headers {"sec-websocket-protocol" ["foo" "bar"]}})
+            response (reified-upgrade-response)]
+        (is (not (request-subprotocol-acceptor request response)))
+        (is (= 500 (.getStatusCode response)))
+        (is (= "waiter does not yet support multiple subprotocols in websocket requests: [\"foo\" \"bar\"]"
+               (.getStatusReason response)))))
+
+    (testing "sec-websocket-protocol:exception"
+      (let [request (reified-upgrade-request {:headers {"sec-websocket-protocol" (Object.)}})
+            response (reified-upgrade-response)]
+        (is (not (request-subprotocol-acceptor request response)))
+        (is (= 500 (.getStatusCode response)))
+        (is (= "Don't know how to create ISeq from: java.lang.Object"
+               (.getStatusReason response)))))))
 
 (deftest test-inter-router-request-middleware
   (let [router-id "test-router-id"
@@ -164,6 +215,7 @@
         request-properties {:async-request-timeout-ms 1
                             :connection-timeout-ms 2
                             :initial-socket-timeout-ms 3}
+        test-cid "239874623hk2er7908245"
         passthrough-headers {"accept" "text/html"
                              "accept-charset" "ISO-8859-1,utf-8;q=0.7,*;q=0.7"
                              "accept-language" "en-us"
@@ -199,24 +251,24 @@
                              "transfer-encoding" "trailers, deflate"
                              "upgrade" "HTTP/2.0, HTTPS/1.3, IRC/6.9, RTA/x11, websocket"
                              "user-agent" "Test/App"
-                             "x-cid" "239874623hk2er7908245"
+                             "x-cid" test-cid
                              "x-forwarded-for" "client1, proxy1, proxy2"
                              "x-http-method-override" "DELETE"}
+        assertion-headers (dissoc passthrough-headers
+                                  "content-length" "expect" "authorization"
+                                  "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
+                                  "te" "trailers" "transfer-encoding" "upgrade"
+                                  "cache-control" "cookie" "connection" "host" "pragma"
+                                  "sec-websocket-accept" "sec-websocket-extensions" "sec-websocket-key"
+                                  "sec-websocket-protocol" "sec-websocket-version" "upgrade")
         end-route "/end-route"
         service-id->password-fn (fn service-id->password-fn [service-id]
                                   (is (= (:service-id instance) service-id))
                                   "password")
         connect-request (Object.)
         assert-request-headers (fn assert-request-headers [upgrade-request]
-                                 (is (every? (fn [[header-name header-value]]
-                                               (= header-value (.getHeader upgrade-request header-name)))
-                                             (dissoc passthrough-headers
-                                                     "content-length" "expect" "authorization"
-                                                     "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
-                                                     "te" "trailers" "transfer-encoding" "upgrade"
-                                                     "cache-control" "cookie" "connection" "host" "pragma"
-                                                     "sec-websocket-accept" "sec-websocket-extensions" "sec-websocket-key"
-                                                     "sec-websocket-protocol" "sec-websocket-version" "upgrade"))))]
+                                 (doseq [[header-name header-value] assertion-headers]
+                                   (is (= header-value (.getHeader upgrade-request header-name)) header-name)))]
 
     (testing "successful-connect-ws"
       (with-redefs [ws-client/connect! (fn [_ instance-endpoint request-callback {:keys [middleware] :as request-properties}]
@@ -228,12 +280,14 @@
                                            (middleware nil upgrade-request)
                                            (assert-request-headers upgrade-request))
                                          (request-callback connect-request))]
-        (let [websocket-client nil
-              instance (assoc instance :protocol "http")
-              response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
-              response-map (async/<!! response)]
-          (is (= #{:ctrl-mult :request} (-> response-map keys set)))
-          (is (= connect-request (-> response-map :request))))))
+        (cid/with-correlation-id
+          test-cid
+          (let [websocket-client nil
+                instance (assoc instance :protocol "http")
+                response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
+                response-map (async/<!! response)]
+            (is (= #{:ctrl-mult :request} (-> response-map keys set)))
+            (is (= connect-request (-> response-map :request)))))))
 
     (testing "successful-connect-wss"
       (with-redefs [ws-client/connect! (fn [_ instance-endpoint request-callback {:keys [middleware] :as request-properties}]
@@ -245,12 +299,14 @@
                                            (middleware nil upgrade-request)
                                            (assert-request-headers upgrade-request))
                                          (request-callback connect-request))]
-        (let [websocket-client nil
-              instance (assoc instance :protocol "https")
-              response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
-              response-map (async/<!! response)]
-          (is (= #{:ctrl-mult :request} (-> response-map keys set)))
-          (is (= connect-request (-> response-map :request))))))
+        (cid/with-correlation-id
+          test-cid
+          (let [websocket-client nil
+                instance (assoc instance :protocol "https")
+                response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
+                response-map (async/<!! response)]
+            (is (= #{:ctrl-mult :request} (-> response-map keys set)))
+            (is (= connect-request (-> response-map :request)))))))
 
     (testing "unsuccessful-connect"
       (let [test-exception (Exception. "Thrown-from-test")]
@@ -368,7 +424,7 @@
                           (async/>! out :data)
                           {:status 200}))
                       wrap-ws-close-on-error)
-          {:keys [status] :as response} (async/<!! (handler request))]
+          {:keys [status]} (async/<!! (handler request))]
       ;; response should indicate an internal server error
       (is (= 200 status))
       ;; channels should contain data and not be closed

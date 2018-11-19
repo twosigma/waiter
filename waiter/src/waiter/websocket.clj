@@ -17,6 +17,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [metrics.histograms :as histograms]
@@ -65,6 +66,29 @@
     (catch Throwable e
       (log/error e "error while authenticating websocket request")
       (.sendError response 500 (.getMessage e))
+      false)))
+
+(defn request-subprotocol-acceptor
+  "Associates a subprotocol (when present) in the request with the response.
+   Fails the upgrade connection if multiple subprotocols are provided as we are determining the
+   subprotocol without talking to the backend."
+  [^UpgradeRequest request ^ServletUpgradeResponse response]
+  (try
+    (let [sec-websocket-protocols (vec (.getHeaders request "sec-websocket-protocol"))]
+      (condp = (count sec-websocket-protocols)
+        0 true
+        1 (let [accepted-subprotocol (first sec-websocket-protocols)]
+            (log/info "accepting websocket subprotocol" accepted-subprotocol)
+            (.setAcceptedSubProtocol response accepted-subprotocol)
+            true)
+        (do
+          (log/info "rejecting websocket due to presence of multiple subprotocols" sec-websocket-protocols)
+          (->> (str "waiter does not yet support multiple subprotocols in websocket requests: " sec-websocket-protocols)
+               (.sendError response 500))
+          false)))
+    (catch Throwable th
+      (log/error th "error while selecting subprotocol for websocket request")
+      (.sendError response 500 (.getMessage th))
       false)))
 
 (defn inter-router-request-middleware
@@ -125,16 +149,20 @@
                                   (headers/dissoc-hop-by-hop-headers)
                                   (dissoc-forbidden-headers)
                                   (assoc "Authorization" (str "Basic " (String. ^bytes (b64/encode (.getBytes (str "waiter:" service-password) "utf-8")) "utf-8")))
-                                  (headers/assoc-auth-headers (:authorization/user ws-request) (:authorization/principal ws-request)))]
+                                  (headers/assoc-auth-headers (:authorization/user ws-request) (:authorization/principal ws-request))
+                                  (assoc "x-cid" (cid/get-correlation-id)))]
                           (add-headers-to-upgrade-request! request headers)))
         response (async/promise-chan)
         ctrl-chan (async/chan)
         control-mult (async/mult ctrl-chan)
-        ws-request-properties {:async-write-timeout (:async-request-timeout-ms request-properties)
-                               :connect-timeout (:connection-timeout-ms request-properties)
-                               :ctrl (fn ctrl-factory [] ctrl-chan)
-                               :max-idle-timeout (:initial-socket-timeout-ms request-properties)
-                               :middleware ws-middleware}
+        sec-websocket-protocol (get-in ws-request [:headers "sec-websocket-protocol"])
+        ws-request-properties (cond-> {:async-write-timeout (:async-request-timeout-ms request-properties)
+                                       :connect-timeout (:connection-timeout-ms request-properties)
+                                       :ctrl (fn ctrl-factory [] ctrl-chan)
+                                       :max-idle-timeout (:initial-socket-timeout-ms request-properties)
+                                       :middleware ws-middleware}
+                                (not (str/blank? sec-websocket-protocol))
+                                (assoc :subprotocols (str/split sec-websocket-protocol #",")))
         ws-protocol (if (= "https" (:protocol instance)) "wss" "ws")
         instance-endpoint (scheduler/end-point-url (assoc instance :protocol ws-protocol) end-route)
         service-id (scheduler/instance->service-id instance)

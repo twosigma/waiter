@@ -250,6 +250,7 @@ class HTTPWebSocketsHandler(http.server.BaseHTTPRequestHandler, LoggerMixin):
     def _handshake(self):
         headers=self.headers
         assert headers.get("Upgrade", None) == "websocket"
+        self.logger().info('Upgrade request headers:' + str(headers))
         key = headers['Sec-WebSocket-Key']
         sha1_hash = hashlib.sha1(key.encode('ascii') + self._ws_GUID)
         digest = base64.b64encode(sha1_hash.digest()).decode('ascii')
@@ -257,6 +258,8 @@ class HTTPWebSocketsHandler(http.server.BaseHTTPRequestHandler, LoggerMixin):
         self.send_header('Upgrade', 'websocket')
         self.send_header('Connection', 'Upgrade')
         self.send_header('Sec-WebSocket-Accept', digest)
+        if headers['Sec-WebSocket-Protocol']:
+            self.send_header('Sec-WebSocket-Protocol', headers['Sec-WebSocket-Protocol'])
         self.end_headers()
         self.connected = True
         self.on_ws_connected()

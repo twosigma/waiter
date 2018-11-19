@@ -74,7 +74,7 @@
    :scheduler core/scheduler
    :settings (pc/fnk dummy-symbol-for-fnk-schema-logic :- settings/settings-schema [] settings)
    :state core/state
-   :http-server (pc/fnk [[:routines generate-log-url-fn waiter-request?-fn websocket-request-authenticator]
+   :http-server (pc/fnk [[:routines generate-log-url-fn waiter-request?-fn websocket-request-acceptor]
                          [:settings cors-config host port support-info websocket-config]
                          [:state cors-validator router-id]
                          handlers] ; Insist that all systems are running before we start server
@@ -87,7 +87,7 @@
                                                           core/correlation-id-middleware
                                                           (core/wrap-request-info router-id support-info)
                                                           consume-request-stream)
-                                        :websocket-acceptor websocket-request-authenticator
+                                        :websocket-acceptor websocket-request-acceptor
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)
                                                                rlog/wrap-log
                                                                core/correlation-id-middleware
