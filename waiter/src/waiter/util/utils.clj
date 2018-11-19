@@ -263,7 +263,9 @@
   [^Exception ex request]
   (let [wrapped-ex (wrap-unhandled-exception ex)
         {:keys [friendly-error-message headers message status suppress-logging] :as data} (ex-data wrapped-ex)
-        response-msg (or friendly-error-message message (.getMessage wrapped-ex))
+        response-msg (if (or message friendly-error-message)
+                       (str/trim (str message \newline friendly-error-message))
+                       (.getMessage wrapped-ex))
         processed-headers (into {} (for [[k v] headers] [(name k) (str v)]))]
     (when-not suppress-logging
       (log/error wrapped-ex))

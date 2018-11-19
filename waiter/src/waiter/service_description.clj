@@ -349,6 +349,17 @@
   [service-description]
   (every? #(contains? service-description %) service-required-keys))
 
+(defmacro attach-error-message-for-parameter
+  "Helper function that attaches a parameter error message to the parameter->error-message map
+   if an issue exists for that parameter."
+  [parameter->error-message parameter->issues parameter error-message-body]
+  `(let [parameter->issues# ~parameter->issues
+         parameter-key# ~parameter
+         parameter-name# (name parameter-key#)]
+     (cond-> ~parameter->error-message
+       (contains? parameter->issues# parameter-name#)
+       (assoc parameter-key# (do ~error-message-body)))))
+
 (defn validate-schema
   "Validates the provided service description template.
    When requested to do so, it populates required fields to ensure validation does not fail for missing required fields."
@@ -362,37 +373,73 @@
                                              "run-as-user" "default-run-as-user"})
         service-description-to-use (merge default-valid-service-description service-description-template)
         exception-message (utils/message :invalid-service-description)
-        throw-error (fn throw-error [e issue parameter->error-message]
+        throw-error (fn throw-error [e issue friendly-error-message]
                       (sling/throw+ (cond-> {:type :service-description-error
                                              :message exception-message
                                              :service-description service-description-template
                                              :status 400
                                              :issue issue}
-                                            (not-empty parameter->error-message)
-                                            (assoc :friendly-error-message parameter->error-message))
+                                            (not (str/blank? friendly-error-message))
+                                            (assoc :friendly-error-message friendly-error-message))
                                     e))]
     (try
       (s/validate service-description-schema service-description-to-use)
       (catch Exception e
         (let [parameter->issues (s/check service-description-schema service-description-to-use)
-              parameter->error-message (cond-> {}
-                                         (contains? parameter->issues "allowed-params")
-                                         (assoc :allowed-params (generate-friendly-allowed-params-error-message parameter->issues))
-                                         (contains? parameter->issues "cmd")
-                                         (assoc :cmd "cmd must be a non-empty string.")
-                                         (contains? parameter->issues "env")
-                                         (assoc :env (generate-friendly-environment-variable-error-message parameter->issues))
-                                         (contains? parameter->issues "metadata")
-                                         (assoc :metadata (generate-friendly-metadata-error-message parameter->issues))
-                                         (contains? parameter->issues "metric-group")
-                                         (assoc :metric-group
-                                                (str "The metric-group must be be between 2 and 32 characters; "
-                                                     "only contain lowercase letters, numbers, dashes, and underscores; "
-                                                     "start with a lowercase letter; and "
-                                                     "only use dash and/or underscore as separators between alphanumeric portions.")))
+              parameter->error-message (-> {}
+                                           (attach-error-message-for-parameter
+                                             parameter->issues
+                                             :allowed-params
+                                             (generate-friendly-allowed-params-error-message parameter->issues))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :cmd "cmd must be a non-empty string.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :authentication "authentication must be one of disabled or standard.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :backend-proto "backend-proto must be one of http or https.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :concurrency-level
+                                             "concurrency-level must be an integer in the range [1, 10000].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :cpus "cpus must be a positive number.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :distribution-scheme
+                                             "distribution-scheme must be one of balanced or simple.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues
+                                             :env
+                                             (generate-friendly-environment-variable-error-message parameter->issues))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :grace-period-secs
+                                             "grace-period-secs must be an integer in the range [1, 3600].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :health-check-url "health-check-url must be a non-empty string.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :idle-timeout-mins
+                                             "idle-timeout-mins must be an integer in the range [1, 43200].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :mem "mem must be a positive number.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues
+                                             :metadata
+                                             (generate-friendly-metadata-error-message parameter->issues))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues
+                                             :metric-group
+                                             (str "The metric-group must be be between 2 and 32 characters; "
+                                                  "only contain lowercase letters, numbers, dashes, and underscores; "
+                                                  "start with a lowercase letter; and "
+                                                  "only use dash and/or underscore as separators between alphanumeric portions."))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :name "name must be a non-empty string.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :ports "ports must be an integer in the range [1, 10].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :version "version must be a non-empty string."))
               unresolved-parameters (set/difference (-> parameter->issues keys set)
-                                                    (->> parameter->error-message keys (map name) set))]
-          (throw-error e (select-keys parameter->issues unresolved-parameters) parameter->error-message))))
+                                                    (->> parameter->error-message keys (map name) set))
+              friendly-error-message (str/join (str \newline) (vals parameter->error-message))]
+          (throw-error e (select-keys parameter->issues unresolved-parameters) friendly-error-message))))
 
     (try
       (s/validate max-constraints-schema service-description-to-use)
@@ -863,7 +910,7 @@
            :source-tokens source-tokens})
         (catch [:type :service-description-error] ex-data
           (throw (ex-info (:message ex-data)
-                          (merge (error-message-map-fn passthrough-headers waiter-headers) (dissoc ex-data :message))
+                          (merge (error-message-map-fn passthrough-headers waiter-headers) ex-data)
                           (:throwable &throw-context))))))))
 
 (defn merge-service-description-and-id
