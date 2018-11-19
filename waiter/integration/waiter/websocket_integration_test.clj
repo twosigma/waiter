@@ -88,12 +88,80 @@
                            (websocket/add-headers-to-upgrade-request! request waiter-headers)
                            (add-auth-cookie request auth-cookie-value))})
           (is (= :done (deref response-promise default-timeout-period :timed-out))))
-        (is (= "Connected to kitchen" (first @ws-response-atom)))
+        (log/info "websocket responses:" @ws-response-atom)
+        (is (= "Connected to kitchen" (first @ws-response-atom)) (str @ws-response-atom))
         (let [{:keys [headers]} (-> @ws-response-atom second str json/read-str walk/keywordize-keys)
               {:keys [upgrade x-cid x-waiter-auth-principal]} headers]
           (is x-cid)
           (is (= upgrade "websocket"))
           (is (= x-waiter-auth-principal (retrieve-username))))
+        (finally
+          (delete-service waiter-url waiter-headers))))))
+
+(deftest ^:parallel ^:integration-fast test-request-auth-success-single-subprotocol
+  (testing-using-waiter-url
+    (let [auth-cookie-value (auth-cookie waiter-url)
+          ws-response-atom (atom [])
+          waiter-headers (assoc (kitchen-request-headers)
+                           "x-waiter-metric-group" "test-ws-support"
+                           "x-waiter-name" (rand-name))]
+      (is auth-cookie-value)
+      (try
+        (let [response-promise (promise)]
+          (ws-client/connect!
+            (websocket-client-factory)
+            (ws-url waiter-url "/websocket-auth")
+            (fn [{:keys [in out]}]
+              (async/go
+                (async/>! out "request-info")
+                (swap! ws-response-atom conj (async/<! in))
+                (swap! ws-response-atom conj (async/<! in))
+                (deliver response-promise :done)
+                (async/close! out)))
+            {:middleware (fn [_ ^UpgradeRequest request]
+                           (websocket/add-headers-to-upgrade-request! request waiter-headers)
+                           (add-auth-cookie request auth-cookie-value))
+             :subprotocols ["Chat-1.0"]})
+          (is (= :done (deref response-promise default-timeout-period :timed-out))))
+        (log/info "websocket responses:" @ws-response-atom)
+        (is (= "Connected to kitchen" (first @ws-response-atom)) (str @ws-response-atom))
+        (let [{:keys [headers]} (-> @ws-response-atom second str json/read-str walk/keywordize-keys)
+              {:keys [sec-websocket-protocol upgrade x-cid x-waiter-auth-principal]} headers]
+          (is x-cid)
+          (is (= upgrade "websocket"))
+          (is (= x-waiter-auth-principal (retrieve-username)))
+          (is (= "Chat-1.0" sec-websocket-protocol)))
+        (finally
+          (delete-service waiter-url waiter-headers))))))
+
+(deftest ^:parallel ^:integration-fast test-request-auth-success-multiple-subprotocols
+  (testing-using-waiter-url
+    (let [auth-cookie-value (auth-cookie waiter-url)
+          ws-response-atom (atom [])
+          waiter-headers (assoc (kitchen-request-headers)
+                           "x-waiter-metric-group" "test-ws-support"
+                           "x-waiter-name" (rand-name))]
+      (is auth-cookie-value)
+      (try
+        (let [response-promise (promise)
+              ctrl (async/chan)]
+          (ws-client/connect!
+            (websocket-client-factory)
+            (ws-url waiter-url "/websocket-auth")
+            (fn [{:keys [out]}]
+              (async/go
+                (deliver response-promise :unexpected)
+                (async/close! out)))
+            {:ctrl (constantly ctrl)
+             :middleware (fn [_ ^UpgradeRequest request]
+                           (websocket/add-headers-to-upgrade-request! request waiter-headers)
+                           (add-auth-cookie request auth-cookie-value))
+             :subprotocols ["Chat-1.0" "Chat-2.0"]})
+          (let [[ctrl-response _] (async/<!! ctrl)]
+            (deliver response-promise
+                     (if (= :qbits.jet.websocket/error ctrl-response) :failed :success)))
+          (is (= :failed (deref response-promise default-timeout-period :timed-out))))
+        (log/info "websocket responses:" @ws-response-atom)
         (finally
           (delete-service waiter-url waiter-headers))))))
 

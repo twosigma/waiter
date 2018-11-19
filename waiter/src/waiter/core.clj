@@ -73,7 +73,8 @@
            org.eclipse.jetty.client.HttpClient
            org.eclipse.jetty.client.util.BasicAuthentication$BasicResult
            org.eclipse.jetty.util.HttpCookieStore$Empty
-           org.eclipse.jetty.websocket.client.WebSocketClient))
+           org.eclipse.jetty.websocket.client.WebSocketClient
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse ServletUpgradeRequest)))
 
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
@@ -879,9 +880,12 @@
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
-   :websocket-request-authenticator (pc/fnk [[:state passwords]]
-                                      (fn websocket-request-authenticator [request response]
-                                        (ws/request-authenticator (first passwords) request response)))})
+   :websocket-request-acceptor (pc/fnk [[:state passwords]]
+                                 (fn websocket-request-acceptor [^ServletUpgradeRequest request ^ServletUpgradeResponse response]
+                                   (.setHeader response "x-cid" (cid/get-correlation-id))
+                                   (if (ws/request-authenticator (first passwords) request response)
+                                     (ws/request-subprotocol-acceptor request response)
+                                     false)))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:curator leader?-fn]
