@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.scheduler-test
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.test :refer :all]
@@ -117,18 +118,28 @@
       (let [available-services-atom (atom #{"service01" "service02" "service03" "service04stayalive" "service05"
                                             "service06faulty" "service07" "service08stayalive" "service09stayalive"
                                             "service10broken" "service11broken" "service12missingmetrics"})
-            initial-global-state {"service01" {"outstanding" 0 "total" 10}
-                                  "service02" {"outstanding" 5 "total" 20}
-                                  "service03" {"outstanding" 0 "total" 30}
-                                  "service04stayalive" {"outstanding" 1000 "total" 40}
-                                  "service05" {"outstanding" 10 "total" 50}
-                                  "service06faulty" {"outstanding" 2000 "total" 60}
-                                  "service07" {"outstanding" 15 "total" 70}
-                                  "service08stayalive" {"outstanding" 3000 "total" 80}
-                                  "service09stayalive" {"outstanding" 70 "total" 80}
-                                  "service10broken" {"outstanding" 70 "total" 80}
-                                  "service11broken" {"outstanding" 95 "total" 80}
-                                  "service12missingmetrics" {"outstanding" 24 "total" 30}}
+            initial-global-state {"service01" {"last-request-time" (tc/from-long 10)
+                                               "outstanding" 0}
+                                  "service02" {"last-request-time" (tc/from-long 20)
+                                               "outstanding" 5}
+                                  "service03" {"outstanding" 0} ;; missing last-request-time
+                                  "service04stayalive" {"outstanding" 1000} ;; missing last-request-time
+                                  "service05" {"last-request-time" (tc/from-long 50)
+                                               "outstanding" 10}
+                                  "service06faulty" {"last-request-time" (tc/from-long 60)
+                                                     "outstanding" 2000}
+                                  "service07" {"last-request-time" (tc/from-long 70)
+                                               "outstanding" 15}
+                                  "service08stayalive" {"last-request-time" (tc/from-long 80)
+                                                        "outstanding" 3000}
+                                  "service09stayalive" {"last-request-time" (tc/from-long 80)
+                                                        "outstanding" 70}
+                                  "service10broken" {"last-request-time" (tc/from-long 80)
+                                                     "outstanding" 70}
+                                  "service11broken" {"last-request-time" (tc/from-long 80)
+                                                     "outstanding" 95}
+                                  "service12missingmetrics" {"last-request-time" (tc/from-long 30)
+                                                             "outstanding" 24}}
             deleted-services-atom (atom #{})
             scheduler (reify ServiceScheduler
                         (delete-service [_ service-id]
@@ -161,7 +172,11 @@
                                              [service-id
                                               (when (or (not (str/includes? service-id "missingmetrics"))
                                                         (< n 10))
-                                                (update-in state ["outstanding"] (fn [v] (max 0 (- v n)))))])
+                                                (cond-> (update state "outstanding" (fn [v] (max 0 (- v n))))
+                                                  (-> n inc (mod 5) zero?)
+                                                  (dissoc "last-request-time")
+                                                  (-> n inc (mod 7) zero?)
+                                                  (assoc "last-request-time" (tc/from-long 1))))])
                                            initial-global-state)
                                       (into {}))]
                 (async/>!! scheduler-state-chan {:all-available-service-ids (set @available-services-atom)})
@@ -174,10 +189,16 @@
             (is (= #{"service04stayalive" "service06faulty" "service08stayalive" "service09stayalive"
                      "service10broken" "service11broken" "service12missingmetrics"}
                    @available-services-atom))
-            (is (= {:state {"outstanding" 15 "total" 30}}
+            (is (= {:state {"last-request-time" (tc/from-long 30)
+                            "outstanding" 15}}
                    (get (->> (read-state-fn "scheduler-services-gc")
                              (pc/map-vals #(dissoc % :last-modified-time)))
-                        "service12missingmetrics")))))))))
+                        "service12missingmetrics")))
+            ;; ensures last-request-time was not last when it was absent
+            (is (= (pc/map-vals #(get % "last-request-time" (tc/from-long 1))
+                                (select-keys initial-global-state @available-services-atom))
+                   (pc/map-vals #(get-in % [:state "last-request-time"])
+                                (read-state-fn "scheduler-services-gc"))))))))))
 
 (deftest test-scheduler-broken-services-gc
   (let [leader? (constantly true)
