@@ -876,7 +876,9 @@
          (fn? start-scheduler-syncer-fn)
          (or (nil? watch-retries) (integer? watch-retries))]}
   (let [authorizer (utils/create-component authorizer)
-        http-client (http-utils/http-client-factory http-options)
+        http-client (-> http-options
+                        (utils/assoc-if-absent :user-agent "waiter-k8s")
+                        http-utils/http-client-factory)
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn

@@ -21,8 +21,10 @@
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
             [waiter.auth.spnego :as spnego])
-  (:import java.net.URI
-           org.eclipse.jetty.client.HttpClient))
+  (:import (java.net URI)
+           (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.http HttpField HttpHeader)
+           (org.eclipse.jetty.util HttpCookieStore$Empty)))
 
 (defn http-request
   "Wrapper over the qbits.jet.client.http/request function.
@@ -35,12 +37,12 @@
   (let [request-map (cond-> {:as :string
                              :method (or request-method :get)
                              :url request-url}
-                            spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
-                            accept (assoc :accept accept)
-                            body (assoc :body body)
-                            (not (str/blank? content-type)) (assoc :content-type content-type)
-                            (seq headers) (assoc :headers headers)
-                            query-string (assoc :query-string query-string))
+                      spnego-auth (assoc :auth (spnego/spnego-authentication (URI. request-url)))
+                      accept (assoc :accept accept)
+                      body (assoc :body body)
+                      (not (str/blank? content-type)) (assoc :content-type content-type)
+                      (seq headers) (assoc :headers headers)
+                      query-string (assoc :query-string query-string))
         raw-response (http/request http-client request-map)
         {:keys [error status] :as response} (async/<!! raw-response)]
     (when error
@@ -58,5 +60,18 @@
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
-  [{:keys [conn-timeout socket-timeout]}]
-  (http/client {:connect-timeout conn-timeout, :idle-timeout socket-timeout}))
+  [{:keys [clear-content-decoders conn-timeout follow-redirects? socket-timeout user-agent]
+    :or {clear-content-decoders true}}]
+  (let [^HttpClient client
+        (http/client (cond-> {}
+                       (some? conn-timeout) (assoc :connect-timeout conn-timeout)
+                       (some? follow-redirects?) (assoc :follow-redirects? follow-redirects?)
+                       (some? socket-timeout) (assoc :idle-timeout socket-timeout)))]
+    (when clear-content-decoders
+      (.clear (.getContentDecoderFactories client)))
+    (.setCookieStore client (HttpCookieStore$Empty.))
+    (.setDefaultRequestContentType client nil)
+    (when user-agent
+      (let [new-user-agent-field (HttpField. HttpHeader/USER_AGENT (str user-agent))]
+        (.setUserAgentField client new-user-agent-field)))
+    client))

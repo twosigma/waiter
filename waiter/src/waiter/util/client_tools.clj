@@ -30,11 +30,10 @@
             [waiter.mesos.marathon :as marathon]
             [waiter.statsd :as statsd]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils]
-            [clojure.set :as set])
+            [waiter.util.http-utils :as http-utils]
+            [waiter.util.utils :as utils])
   (:import (java.net HttpCookie URI)
            (java.util.concurrent Callable Future Executors)
-           (org.eclipse.jetty.util HttpCookieStore$Empty)
            (org.joda.time Period)
            (org.joda.time.format PeriodFormatterBuilder)))
 
@@ -157,13 +156,30 @@
   `(using-waiter-url
      (time-it ~name ~@body)))
 
+(defn- git-show->branch-name [text]
+  (->
+    text
+    (str/trim)
+    (str/split #", ")
+    (last)
+    (str/replace ")" "")
+    (str/replace #"^.+/" "")))
+
+(deftest test-git-show->branch-name
+  (is (= "master" (git-show->branch-name "(HEAD, origin/master)")))
+  (is (= "foo" (git-show->branch-name " (HEAD, origin/foo, foo)"))))
+
+(defn- retrieve-git-branch []
+  (->
+    (shell/sh "git" "show" "-s" "--pretty=%d" "HEAD")
+    (:out)
+    (git-show->branch-name)))
+
 (defn make-http-client
   "Instantiates and returns a new HttpClient without a cookie store"
   []
-  (let [client (http/client)]
-    (.setCookieStore client (HttpCookieStore$Empty.))
-    (.setDefaultRequestContentType client nil)
-    client))
+  (http-utils/http-client-factory {:clear-content-decoders false
+                                   :user-agent (str "waiter-test/" (retrieve-git-branch))}))
 
 (defn current-test-name
   "Get the name of the currently-running test."
@@ -677,25 +693,6 @@
 
 (defn- statsd-port []
   (System/getenv "WAITER_STATSD_PORT"))
-
-(defn- git-show->branch-name [text]
-  (->
-    text
-    (str/trim)
-    (str/split #", ")
-    (last)
-    (str/replace ")" "")
-    (str/replace #"^.+/" "")))
-
-(deftest test-git-show->branch-name
-  (is (= "master" (git-show->branch-name "(HEAD, origin/master)")))
-  (is (= "foo" (git-show->branch-name " (HEAD, origin/foo, foo)"))))
-
-(defn- retrieve-git-branch []
-  (->
-    (shell/sh "git" "show" "-s" "--pretty=%d" "HEAD")
-    (:out)
-    (git-show->branch-name)))
 
 (defn- trim-port [url]
   (str/replace url #"\:[0-9]+$" ""))

@@ -27,11 +27,11 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [schema.core :as s]
-            [waiter.authorization :as authz]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as http-utils]
             [waiter.util.utils :as utils])
   (:import java.io.File
            java.lang.UNIXProcess
@@ -845,8 +845,10 @@
         (create-shell-scheduler (assoc config
                                   :id->service-agent id->service-agent
                                   :retrieve-syncer-state-fn retrieve-syncer-state-fn))
-        http-client (http/client {:connect-timeout health-check-timeout-ms
-                                  :idle-timeout health-check-timeout-ms})]
+        http-client (http-utils/http-client-factory
+                      {:conn-timeout health-check-timeout-ms
+                       :socket-timeout health-check-timeout-ms
+                       :user-agent "waiter-shell"})]
     (when backup-file-name
       (let [backup-file-path (str work-directory (File/separator) backup-file-name)]
         ;; restore the state of the shell scheduler

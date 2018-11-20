@@ -88,7 +88,8 @@
 
 (let [http-client (http-utils/http-client-factory {:conn-timeout 10000
                                                    :socket-timeout 10000
-                                                   :spnego-auth false})
+                                                   :spnego-auth false
+                                                   :user-agent "waiter-cook-health-check"})
       ;; TODO make this cache configurable
       healthy-instance-cache (cu/cache-factory {:threshold 5000
                                                 :ttl (-> 10 t/seconds t/in-millis)})]
@@ -523,7 +524,9 @@
          (au/chan? scheduler-state-chan)
          (utils/pos-int? scheduler-syncer-interval-secs)
          (fn? start-scheduler-syncer-fn)]}
-  (let [http-client (http-utils/http-client-factory http-options)
+  (let [http-client (-> http-options
+                        (utils/assoc-if-absent :user-agent "waiter-cook")
+                        http-utils/http-client-factory)
         cook-api {:http-client http-client
                   :impersonate impersonate
                   :slave-port mesos-slave-port

@@ -59,6 +59,7 @@
             [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as http-utils]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
@@ -72,7 +73,6 @@
            org.apache.curator.retry.BoundedExponentialBackoffRetry
            org.eclipse.jetty.client.HttpClient
            org.eclipse.jetty.client.util.BasicAuthentication$BasicResult
-           org.eclipse.jetty.util.HttpCookieStore$Empty
            org.eclipse.jetty.websocket.client.WebSocketClient
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse ServletUpgradeRequest)))
 
@@ -486,16 +486,6 @@
             (log/info router-id "relinquishing leadership as there are too few routers in cluster:" num-routers))
           (>= num-routers min-cluster-routers))))
 
-(defn- ^HttpClient http-client-factory
-  "Creates an instance of HttpClient with the specified timeout."
-  [connection-timeout-ms]
-  (let [client (http/client {:connect-timeout connection-timeout-ms
-                             :follow-redirects? false})]
-    (.clear (.getContentDecoderFactories client))
-    (.setCookieStore client (HttpCookieStore$Empty.))
-    (.setDefaultRequestContentType client nil)
-    client))
-
 ;; PRIVATE API
 (def state
   {:async-request-store-atom (pc/fnk [] (atom {}))
@@ -509,8 +499,10 @@
                           (utils/create-component entitlement-config))
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
-   :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]]
-                  (http-client-factory connection-timeout-ms))
+   :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms] git-version]]
+                  (http-utils/http-client-factory {:conn-timeout connection-timeout-ms
+                                                   :follow-redirects? false
+                                                   :user-agent (str "waiter/" (str/join (take 7 git-version)))}))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
@@ -654,11 +646,13 @@
                                             (sd/service-id->service-description
                                               kv-store service-id service-description-defaults
                                               metric-group-mappings :effective? effective?)))
-   :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
+   :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold] git-version]
                                        [:state clock]
                                        service-id->service-description-fn*]
-                                (let [http-client (http/client {:connect-timeout health-check-timeout-ms
-                                                                :idle-timeout health-check-timeout-ms})
+                                (let [http-client (http-utils/http-client-factory
+                                                    {:conn-timeout health-check-timeout-ms
+                                                     :socket-timeout health-check-timeout-ms
+                                                     :user-agent (str "waiter-syncer/" (str/join (take 7 git-version)))})
                                       available? (fn scheduler-available? [service-instance health-check-path]
                                                    (scheduler/available? http-client service-instance health-check-path))]
                                   (fn start-scheduler-syncer-fn
