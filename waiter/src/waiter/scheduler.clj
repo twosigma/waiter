@@ -275,11 +275,11 @@
                                      global-state (service-id->metrics-fn)]
                                  (pc/map-from-keys
                                    (fn scheduler-services-gc-service->raw-data-fn [service-id]
-                                     (let [{:strs [outstanding total]} (get global-state service-id)]
+                                     (let [{:strs [last-request-time outstanding]} (get global-state service-id)]
                                        ;; if outstanding and total are missing return unknown which results in cur state
-                                       (if (or outstanding total)
-                                         {"outstanding" outstanding
-                                          "total" total}
+                                       (if (or last-request-time (and outstanding (pos? outstanding)))
+                                         {"last-request-time" last-request-time
+                                          "outstanding" (or outstanding 0)}
                                          ::unknown)))
                                    all-available-service-ids)))
         service->state-fn (fn [_ cur-data new-data]
@@ -287,7 +287,7 @@
                                   cur-data
                                   new-data)
                                 (utils/assoc-if-absent "outstanding" 0)
-                                (utils/assoc-if-absent "total" 0)))
+                                (update "last-request-time" du/max-time (get cur-data "last-request-time"))))
         gc-service?-fn (fn [service-id {:keys [last-modified-time state]} current-time]
                          (let [outstanding (get state "outstanding")]
                            (and (number? outstanding)

@@ -75,6 +75,9 @@
 (defn max-time
   "Returns the max time of the two input time instances."
   [t1 t2]
-  (if (t/after? t1 t2)
-    t1
-    t2))
+  (cond
+    (nil? t1) t2
+    (nil? t2) t1
+    :else (if (t/after? t1 t2)
+            t1
+            t2)))
