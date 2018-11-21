@@ -136,5 +136,6 @@
                           "-XX:+PrintAdaptiveSizePolicy"
                           "-Xmx512m"
                           "-Xloggc:log/gc.log"]}
-             :override-maven {:local-repo ~(System/getenv "WAITER_MAVEN_LOCAL_REPO")}}
+             :override-maven {:local-repo ~(System/getenv "WAITER_MAVEN_LOCAL_REPO")}
+             :uberjar {:aot :all}}
   :uberjar-name ~(System/getenv "UBERJAR_NAME"))
