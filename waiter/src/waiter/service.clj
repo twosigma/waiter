@@ -298,14 +298,12 @@
   "Determines the service status at any point in time.
    A service can be one of the following states:
    - Starting: the service has no healthy instances and is starting one up,
-   - Running: the service is successfully running at its desired scale,
+   - Running: the service is running successfully with at least one healthy instance,
    - Failing: the service has instances failing to start,
-   - Waiting: the service is waiting to be started,
-   - Scaling: the service is being scaled."
+   - Idle: the service is waiting to be started."
   [deployment-error {:keys [healthy requested scheduled] :or {healthy 0 requested 0 scheduled 0}}]
   (cond
     deployment-error :service-state-failing
-    (and (zero? requested) (zero? scheduled) (zero? healthy)) :service-state-waiting
+    (and (zero? requested) (zero? scheduled) (zero? healthy)) :service-state-idle
     (zero? healthy) :service-state-starting
-    (or (not= requested scheduled) (not= healthy requested)) :service-state-scaling
     :else :service-state-running))

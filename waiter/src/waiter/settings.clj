@@ -258,10 +258,9 @@
               :not-found "Not found"
               :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"
               :service-state-failing "Failing"
+              :service-state-idle "Idle"
               :service-state-running "Running"
-              :service-state-scaling "Scaling"
-              :service-state-starting "Starting"
-              :service-state-waiting "Waiting"}
+              :service-state-starting "Starting"}
    :metric-group-mappings []
    :metrics-config {:inter-router-metrics-idle-timeout-ms 2000
                     :metrics-gc-interval-ms 60000
