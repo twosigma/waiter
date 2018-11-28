@@ -238,12 +238,20 @@
                     re-pattern)]
     #(re-matches pattern %)))
 
+(defn- retrieve-service-status
+  "Returns the status of the specified service."
+  [service-id {:keys [service-id->deployment-error service-id->instance-counts]}]
+  (let [deployment-error (get service-id->deployment-error service-id)
+        instance-counts (get service-id->instance-counts service-id)]
+    (-> (service/resolve-service-status deployment-error instance-counts)
+        utils/message)))
+
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
   [entitlement-manager query-state-fn prepend-waiter-url service-id->service-description-fn service-id->metrics-fn
    service-id->source-tokens-entries-fn request]
-  (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)]
+  (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
     (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
           auth-user (get request :authorization/user)
           viewable-services (filter
@@ -280,6 +288,7 @@
                                  :last-request-time (get-in service-id->metrics [service-id "last-request-time"])
                                  :service-id service-id
                                  :service-description service-description
+                                 :status (retrieve-service-status service-id global-state)
                                  :url (prepend-waiter-url (str "/apps/" service-id))}
                                 include-effective-parameters?
                                 (assoc :effective-parameters
@@ -337,9 +346,9 @@
   "Retrieve a {:active-instances [...] :failed-instances [...] :killed-instances [...]} map of
    scheduler/ServiceInstance records for the given service-id.
    The active-instances should not be assumed to be healthy (or live)."
-  [query-state-fn service-id]
+  [global-state service-id]
   (let [{:keys [service-id->failed-instances service-id->healthy-instances service-id->killed-instances
-                service-id->unhealthy-instances]} (query-state-fn)]
+                service-id->unhealthy-instances]} global-state]
     {:active-instances (concat (get service-id->healthy-instances service-id)
                                (get service-id->unhealthy-instances service-id))
      :failed-instances (get service-id->failed-instances service-id)
@@ -350,11 +359,12 @@
   [router-id service-id core-service-description kv-store generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn
    request]
-  (let [service-instance-maps (try
+  (let [global-state (query-state-fn)
+        service-instance-maps (try
                                 (let [assoc-log-url-to-instances
                                       (fn assoc-log-url-to-instances [instances]
                                         (map #(assoc-log-url generate-log-url-fn %) instances))]
-                                  (-> (get-service-instances query-state-fn service-id)
+                                  (-> (get-service-instances global-state service-id)
                                       (update :active-instances assoc-log-url-to-instances)
                                       (update :failed-instances assoc-log-url-to-instances)
                                       (update :killed-instances assoc-log-url-to-instances)))
@@ -390,7 +400,9 @@
         request-params (-> request ru/query-params-request :query-params)
         include-effective-parameters? (utils/request-flag request-params "effective-parameters")
         last-request-time (get-in (service-id->metrics-fn) [service-id "last-request-time"])
-        result-map (cond-> {:router-id router-id, :num-routers (count router->metrics)}
+        result-map (cond-> {:num-routers (count router->metrics)
+                            :router-id router-id
+                            :status (retrieve-service-status service-id global-state)}
                      (and (not-empty core-service-description) include-effective-parameters?)
                      (assoc :effective-parameters (service-id->service-description-fn service-id :effective? true))
                      (not-empty service-instance-maps)

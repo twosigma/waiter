@@ -293,3 +293,19 @@
         (.submit start-service-thread-pool
                  ^Runnable (fn [] (cid/with-correlation-id correlation-id (start-fn)))))
       (log/info service-id "has been started on another thread" cache-value))))
+
+(defn resolve-service-status
+  "Determines the service status at any point in time.
+   A service can be one of the following states:
+   - Starting: the service has no healthy instances and is starting one up,
+   - Running: the service is successfully running at its desired scale,
+   - Failing: the service has instances failing to start,
+   - Waiting: the service is waiting to be started,
+   - Scaling: the service is being scaled."
+  [deployment-error {:keys [healthy requested scheduled] :or {healthy 0 requested 0 scheduled 0}}]
+  (cond
+    deployment-error :service-state-failing
+    (and (zero? requested) (zero? scheduled) (zero? healthy)) :service-state-waiting
+    (zero? healthy) :service-state-starting
+    (or (not= requested scheduled) (not= healthy requested)) :service-state-scaling
+    :else :service-state-running))

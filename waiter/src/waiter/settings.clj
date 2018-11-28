@@ -256,7 +256,12 @@
               :invalid-service-description "Service description using waiter headers/token improperly configured"
               :not-enough-memory "Not enough memory allocated"
               :not-found "Not found"
-              :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"}
+              :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"
+              :service-state-failing "Failing"
+              :service-state-running "Running"
+              :service-state-scaling "Scaling"
+              :service-state-starting "Starting"
+              :service-state-waiting "Waiting"}
    :metric-group-mappings []
    :metrics-config {:inter-router-metrics-idle-timeout-ms 2000
                     :metrics-gc-interval-ms 60000

@@ -38,11 +38,16 @@
             {:x-waiter-name (rand-name)}
             #(make-kitchen-request waiter-url % :path "/hello"))]
 
-      (testing "instances are non-null"
-        (let [service-settings (service-settings waiter-url service-id)]
+      (let [service-settings (service-settings waiter-url service-id)]
+        (testing "instances are non-null"
           (is (get-in service-settings [:instances :active-instances]))
           (is (get-in service-settings [:instances :failed-instances]))
-          (is (get-in service-settings [:instances :killed-instances]))))
+          (is (get-in service-settings [:instances :killed-instances])))
+
+        (testing "status is reported"
+          (is (= "Running" (get service-settings :status)))))
+
+
 
       (testing "explicitly specifying default parameter resolves to different service"
         (let [{:keys [service-description-defaults]} (waiter-settings waiter-url)
@@ -372,6 +377,7 @@
         (testing "without parameters"
           (let [service (service waiter-url service-id {})] ;; see my app as myself
             (is service)
+            (is (= "Running" (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
@@ -379,18 +385,21 @@
           (let [run-as-user-param (->> current-user reverse (drop 2) (cons "*") reverse (str/join ""))
                 service (service waiter-url service-id {"run-as-user" run-as-user-param})] ;; see my app as myself
             (is service)
+            (is (= "Running" (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
         (testing "waiter user disabled" ;; see my app as myself
           (let [service (service waiter-url service-id {"force" "false"})]
             (is service)
+            (is (= "Running" (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
         (testing "waiter user disabled and same user" ;; see my app as myself
           (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
             (is service)
+            (is (= "Running" (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
@@ -421,6 +430,7 @@
         (testing "list-apps-with-waiter-user-disabled-and-see-another-app" ;; can see another user's app
           (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
             (is service)
+            (is (= "Running" (get service "status")))
             (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
             (is (pos? (get-in service ["service-description" "cpus"])) service)))
         (delete-service waiter-url service-id)))))
