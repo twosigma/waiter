@@ -42,10 +42,11 @@
         (testing "instances are non-null"
           (is (get-in service-settings [:instances :active-instances]))
           (is (get-in service-settings [:instances :failed-instances]))
-          (is (get-in service-settings [:instances :killed-instances])))
+          (is (get-in service-settings [:instances :killed-instances]))))
 
-        (testing "status is reported"
-          (is (wait-for #(= "Running" (get service-settings :status)) :interval 2 :timeout 30))))
+      (testing "status is reported"
+        (is (wait-for #(= "Running" (get (service-settings waiter-url service-id) :status)) :interval 2 :timeout 30)
+            (str "Service status is " (get (service-settings waiter-url service-id) :status))))
 
       (testing "explicitly specifying default parameter resolves to different service"
         (let [{:keys [service-description-defaults]} (waiter-settings waiter-url)
