@@ -256,7 +256,7 @@
               :invalid-service-description "Service description using waiter headers/token improperly configured"
               :not-enough-memory "Not enough memory allocated"
               :not-found "Not found"
-              :prestashed-tickets-not-available "Prestashed jobsystem tickets not available"
+              :prestashed-tickets-not-available "Prestashed tickets not available"
               :service-state-failing "Failing"
               :service-state-idle "Idle"
               :service-state-running "Running"
