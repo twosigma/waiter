@@ -309,6 +309,9 @@
                                    :max-patch-retries 5
                                    :max-name-length 63
                                    :pod-base-port 31000
+                                   ; Marathon also defaults this value to 3 seconds:
+                                   ; https://mesosphere.github.io/marathon/docs/health-checks.html#taskkillgraceperiodseconds
+                                   :pod-sigkill-delay-secs 3
                                    :pod-suffix-length 5
                                    :replicaset-api-version "extensions/v1beta1"
                                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
