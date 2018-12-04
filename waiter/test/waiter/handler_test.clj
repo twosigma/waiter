@@ -796,9 +796,9 @@
               (str "Body did not include necessary JSON keys:\n" body))
           (is (= 200 status)))))))
 
-(deftest test-get-autoscaler-state
+(deftest test-get-query-fn-state
   (let [router-id "test-router-id"
-        test-fn (wrap-handler-json-response get-autoscaler-state)]
+        test-fn (wrap-handler-json-response get-query-fn-state)]
     (testing "successful response"
       (let [state {"autoscaler" "state"}
             query-state-fn (constantly state)
