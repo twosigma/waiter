@@ -2,9 +2,11 @@
 #
 # A wrapper script for the Waiter-specific setup for a user command in a Waiter-K8s pod.
 # The script is usually invoked by prepending it to the user's Waiter command.
+# If this script is invoked by dumb-init (github.com/Yelp/dumb-init) or a similar utility,
+# please ensure that it is run in single-child mode.
 #
-# A single argument is expected, the user's command string,
-# which is executed as its own bash shell process.
+# A single argument is expected: the user's command string,
+# which is executed in its own bash shell process.
 
 # This variable will be used to store the user's app's process ID.
 # We set it to null here just in case it was set in the external environment.
