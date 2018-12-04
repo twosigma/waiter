@@ -349,12 +349,15 @@
   ;; 1) Delete the target pod with a grace period of 5 minutes
   ;;    Since the target pod is currently in the "Terminating" state,
   ;;    the owner ReplicaSet will not immediately create a replacement pod.
+  ;;    Since we never expect the 5 minute period to elapse before step 3 completes,
+  ;;    we call this the "soft" delete.
   ;; 2) Scale down the owner ReplicaSet by 1 pod.
   ;;    Since the target pod is still in the "Terminating" state (assuming delay < 5min),
   ;;    the owner ReplicaSet will not immediately delete a different victim pod.
-  ;; 3) Force-delete the target pod. This immediately removes the pod from Kubernetes.
+  ;; 3) Delete the target pod. This immediately removes the pod from Kubernetes.
   ;;    The state of the ReplicaSet (desired vs actual pods) should now be consistent.
-  ;;    We want to eagerly delete the pod to short-circuit the 5-minute delay from above.
+  ;;    This eager delete overrides the 5-minute delay from above,
+  ;;    making this a "hard" delete, using the default grace period set on the pod.
   ;; Note that if it takes more than 5 minutes to get from step 1 to step 2,
   ;; we assume we're already so far out of sync that the possibility of non-atomic scaling
   ;; doesn't hurt us significantly. If it takes more than 5 minutes to get from step 1
@@ -365,16 +368,12 @@
                      namespace
                      "/pods/"
                      pod-name)
-        base-body {:kind "DeleteOptions" :apiVersion "v1"}
-        ;; we use a 5-minute (300s) grace period on pods to enable manual victim selection on scale-down
-        term-json (-> base-body (assoc :gracePeriodSeconds 300) utils/clj->json)
-        ;; setting the grace period to 0 seconds results in an immediate SIGKILL to the pod
-        kill-json (-> base-body (assoc :gracePeriodSeconds 0) utils/clj->json)
         make-kill-response (fn [killed? message status]
                              {:instance-id id :killed? killed?
                               :message message :service-id service-id :status status})]
-    ; request termination of the instance
-    (api-request http-client pod-url :request-method :delete :body term-json)
+    ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
+    (api-request http-client pod-url :request-method :delete
+                 :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
     ; scale down the replicaset to reflect removal of this instance
     (try
       (scale-service-by-delta scheduler service -1)
@@ -382,7 +381,9 @@
         (log/error t "Error while scaling down ReplicaSet after pod termination")))
     ; force-kill the instance (should still be terminating)
     (try
-      (api-request http-client pod-url :request-method :delete :body kill-json)
+      ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
+      ; (note that the pod's default grace period is different from the 300s period set above)
+      (api-request http-client pod-url :request-method :delete)
       (catch Throwable t
         (log/error t "Error force-killing pod")))
     (comment "Success! Even if the scale-down or force-kill operation failed,
@@ -649,7 +650,7 @@
                                               :workingDir home-path}]
                                 :volumes [{:name "user-home"
                                            :emptyDir {}}]
-                                :terminationGracePeriodSeconds 0}}}}
+                                :terminationGracePeriodSeconds 20}}}}
       ;; Optional fileserver sidecar container
       (integer? (:port fileserver))
       (update-in
