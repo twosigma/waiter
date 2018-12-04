@@ -9,6 +9,8 @@ start_test() {
     printf '\nTest %s' "$test_desc"
     "$TARGET" "$cmd" &>/dev/null &
     test_pid=$!
+    sleep 0.1
+    working_dir=r$(( $(cat .waiter-container-runs) - 1 ))
 }
 
 send_sigterm() {
@@ -25,8 +27,12 @@ end_timing() {
     elapsed_seconds=$(( $ended_at - $started_at ))
 }
 
+dump_stdout() {
+    cat ./$working_dir/stdout
+}
+
 failure() {
-    printf "\nFailed condition: %s\n" "$1"
+    printf "\nFailed assertion: %s\n" "$1"
     exit 1
 }
 
@@ -45,6 +51,9 @@ await_exit_and_assert_code() {
     assert "EXIT=$?" == "EXIT=$1"
 }
 
+# Clean up any old copy of the restart state file
+rm -f .waiter-container-runs
+
 #
 # Ensure the script exits cleanly on normal exit.
 # The script should not block awaiting a sigterm
@@ -56,7 +65,7 @@ start_test 'normal exit' <<EOF
 sh -c 'echo OK && exit 123'
 EOF
 await_exit_and_assert_code 123
-assert "$(cat stdout)" == OK
+assert "$(dump_stdout)" == OK
 
 #
 # Ensure sigterm is propagated to child process.
@@ -69,7 +78,7 @@ EOF
 send_sigterm
 send_sigterm
 await_exit_and_assert_code 143
-assert "$(cat stdout)" == Terminated
+assert "$(dump_stdout)" == Terminated
 
 #
 # Ensure script waits for the user's process
@@ -82,10 +91,10 @@ start_timing
 send_sigterm
 send_sigterm
 assert_still_running
-assert "$(cat stdout)" == Delay
+assert "$(dump_stdout)" == Delay
 await_exit_and_assert_code 143
 end_timing
-assert "$(cat stdout)" == DelayX
+assert "$(dump_stdout)" == DelayX
 assert $elapsed_seconds -ge 2
 assert $elapsed_seconds -le 3
 
@@ -102,12 +111,26 @@ sh -c 'trap "echo Terminated; exit 1" TERM; sleep 10'
 EOF
 send_sigterm
 sleep 1
-assert "$(cat stdout)" == Terminated
+assert "$(dump_stdout)" == Terminated
 assert_still_running
 start_timing
 send_sigterm
 await_exit_and_assert_code 143
 end_timing
 assert $elapsed_seconds -le 1
+
+#
+# Ensure that a fresh working directory is created for each run,
+# and that it is exported as $HOME to the user's process.
+#
+old_working_dir=$working_dir
+fresh_file_name=$(date +%N).txt
+start_test 'fresh $HOME for each container restart' <<EOF
+echo hello > \$HOME/$fresh_file_name
+EOF
+await_exit_and_assert_code 0
+assert $working_dir != $old_working_dir
+assert -f $working_dir/$fresh_file_name
+assert $(cat $working_dir/$fresh_file_name) == hello
 
 printf '\n\nAll tests passed\n'

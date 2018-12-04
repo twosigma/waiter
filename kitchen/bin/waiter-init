@@ -47,6 +47,15 @@ handle_k8s_terminate() {
 }
 trap handle_k8s_terminate SIGTERM
 
+# Track container restart count
+waiter_restart_count=$(( $([ -f .waiter-container-runs ] && cat .waiter-container-runs) ))
+echo $(( $waiter_restart_count + 1 )) > .waiter-container-runs
+
+# Ensure that HOME is set to the fresh working directory for this container instance.
+export HOME="$PWD/r${waiter_restart_count}"
+mkdir -p "$HOME"
+cd "$HOME"
+
 # Copy stdout and stderr to respectively named files to mimic Mesos containers.
 # We tee the output so that stdout and stderr are still accessible
 # via the Kubernetes `kubectl logs <pod-name>` command.

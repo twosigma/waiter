@@ -388,7 +388,7 @@
                        {:healthy? true
                         :host "10.141.141.11"
                         :id "test-app-1234.test-app-1234-abcd1-0"
-                        :log-directory "/home/myself"
+                        :log-directory "/home/myself/r0"
                         :port 8080
                         :protocol "https"
                         :service-id "test-app-1234"
@@ -397,7 +397,7 @@
                        {:healthy? true
                         :host "10.141.141.12"
                         :id "test-app-1234.test-app-1234-abcd2-0"
-                        :log-directory "/home/myself"
+                        :log-directory "/home/myself/r0"
                         :port 8080
                         :protocol "https"
                         :service-id "test-app-1234"
@@ -411,7 +411,7 @@
                        {:healthy? true
                         :host "10.141.141.13"
                         :id "test-app-6789.test-app-6789-abcd1-0"
-                        :log-directory "/home/myself"
+                        :log-directory "/home/myself/r0"
                         :port 8080
                         :protocol "http"
                         :service-id "test-app-6789"
@@ -420,7 +420,7 @@
                        {:healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-1"
-                        :log-directory "/home/myself"
+                        :log-directory "/home/myself/r1"
                         :port 8080
                         :protocol "http"
                         :service-id "test-app-6789"
@@ -429,7 +429,7 @@
                        {:healthy? false
                         :host "10.141.141.15"
                         :id "test-app-6789.test-app-6789-abcd3-0"
-                        :log-directory "/home/myself"
+                        :log-directory "/home/myself/r0"
                         :port 8080
                         :protocol "http"
                         :service-id "test-app-6789"
@@ -440,7 +440,7 @@
                         :healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-0"
-                        :log-directory "/home/myself"
+                        :log-directory "/home/myself/r0"
                         :port 8080
                         :protocol "http"
                         :service-id "test-app-6789"
@@ -461,7 +461,7 @@
                     :healthy? true
                     :host "10.141.141.10"
                     :id instance-id
-                    :log-directory "/home/myself"
+                    :log-directory "/home/myself/r0"
                     :k8s/namespace "myself"
                     :port 8080
                     :protocol "https"
@@ -665,13 +665,14 @@
 
 (deftest test-retrieve-directory-content
   (let [service-id "test-service-id"
-        instance-id "test-service-instance-id"
+        instance-id "test-service-instance-id-0"
+        instance-base-dir "/r0"
         host "host.local"
         path "/some/path/"
         dummy-scheduler (make-dummy-scheduler [service-id])
         port (get-in dummy-scheduler [:fileserver :port])
         make-file (fn [file-name size]
-                    {:url (str "http://" host ":" port path file-name)
+                    {:url (str "http://" host ":" port instance-base-dir path file-name)
                      :name file-name
                      :size 1
                      :type "file"})

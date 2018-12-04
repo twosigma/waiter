@@ -136,6 +136,10 @@
          service-id (k8s-object->service-id pod)]
      (str service-id \. pod-name \- restart-count))))
 
+(defn- log-dir-path [namespace restart-count]
+  "Build log directory path string for a containter run."
+  (str "/home/" namespace "/r" restart-count))
+
 (defn- killed-by-k8s?
   "Determine whether a pod was killed (restarted) by its corresponding Kubernetes liveness checks."
   [{:keys [exitCode reason] :as pod-terminated-info}]
@@ -161,6 +165,8 @@
                                                 :flags failure-flags
                                                 :healthy? false
                                                 :id newest-failure-id
+                                                :log-directory (log-dir-path (:k8s/namespace live-instance)
+                                                                             (dec restart-count))
                                                 :started-at newest-failure-start-time)
                                         ;; To match the behavior of the marathon scheduler,
                                         ;; we don't include the exit code in failed instances that were killed by k8s.
@@ -173,7 +179,9 @@
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
   [scheduler pod]
   (try
-    (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])]
+    (let [port0 (get-in pod [:spec :containers 0 :ports 0 :containerPort])
+          restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
+          namespace (get-in pod [:metadata :namespace])]
       (scheduler/make-ServiceInstance
         {:extra-ports (->> (get-in pod [:metadata :annotations :waiter/port-count])
                            Integer/parseInt range next (mapv #(+ port0 %)))
@@ -181,10 +189,10 @@
          :host (get-in pod [:status :podIP])
          :id (pod->instance-id scheduler pod)
          :k8s/app-name (get-in pod [:metadata :labels :app])
-         :k8s/namespace (get-in pod [:metadata :namespace])
+         :k8s/namespace namespace
          :k8s/pod-name (k8s-object->id pod)
-         :k8s/restart-count (get-in pod [:status :containerStatuses 0 :restartCount])
-         :log-directory (str "/home/" (get-in pod [:metadata :namespace]))
+         :k8s/restart-count restart-count
+         :log-directory (log-dir-path namespace restart-count)
          :port port0
          :protocol (get-in pod [:metadata :annotations :waiter/protocol])
          :service-id (k8s-object->service-id pod)
@@ -537,9 +545,13 @@
 
   (retrieve-directory-content
     [{:keys [http-client] {:keys [port scheme]} :fileserver}
-     _ _ host browse-path]
+     _ instance-id host browse-path]
     (let [auth-str @k8s-api-auth-str
           headers (when auth-str {"Authorization" auth-str})
+          instance-restart-number (->> (string/last-index-of instance-id \-)
+                                       inc
+                                       (subs instance-id))
+          instance-base-dir (str "/r" instance-restart-number)
           browse-path (if (string/blank? browse-path) "/" browse-path)
           browse-path (cond->
                         browse-path
@@ -547,7 +559,7 @@
                         (str "/")
                         (not (string/starts-with? browse-path "/"))
                         (->> (str "/")))
-          target-url (str scheme "://" host ":" port browse-path)]
+          target-url (str scheme "://" host ":" port instance-base-dir browse-path)]
       (when port
         (ss/try+
           (let [result (http-utils/http-request
