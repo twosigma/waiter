@@ -2,28 +2,62 @@
 #
 # A wrapper script for the Waiter-specific setup for a user command in a Waiter-K8s pod.
 # The script is usually invoked by prepending it to the user's Waiter command.
+# If this script is invoked by dumb-init (github.com/Yelp/dumb-init) or a similar utility,
+# please ensure that it is run in single-child mode.
 #
-# A single argument is expected, the user's command string,
-# which is executed as its own bash shell process.
+# A single argument is expected: the user's command string,
+# which is executed in its own bash shell process.
 
-# Ignore SIGTERM sent by Kubernetes on pod deletion,
-# waiting for SIGKILL (force delete) before exiting.
-trap : SIGTERM
+# This variable will be used to store the user's app's process ID.
+# We set it to null here just in case it was set in the external environment.
+waiter_child_pid=
 
-# Run the user's Waiter app command,
-# copying stdout and stderr to respectively named files.
+# Catch the first SIGTERM sent by Kubernetes on pod deletion,
+# waiting for a second signal (SIGTERM or SIGKILL) before exiting.
+# This double-termination is an important part of our Waiter scale-down logic,
+# and the mechanics are described in more detail below.
+handle_k8s_terminate() {
+    trap : SIGTERM  # reset SIGTERM handler to no-op
+
+    # Propagate the SIGTERM to the user's app's process group,
+    # giving it the opportunity to shut down gracefully.
+    if [ "$waiter_child_pid" ]; then
+        kill -- -$waiter_child_pid
+    else
+        echo 'waiter error: user process not initialized' >&2
+    fi
+
+    # Wait for a long time (15 minutes), awaiting another signal from Kubernetes.
+    # This delay gives Waiter time to safely update the desired replica count
+    # before the pod actually terminates, avoiding a race to replace this pod.
+    # If we receive a second SIGTERM from Kubernetes, then the sleep period is canceled,
+    # and we simply wait for the user's process to complete (or get SIGKILLed).
+    # The main point here is to NOT exit before the second SIGTERM is received.
+    # If for some reason the second SIGTERM never arrives, the sleep will eventually expire,
+    # or the pod's grace period will expire (resulting in a SIGKILL from Kubernetes).
+    # Likewise, if the user's process takes too long to terminate gracefully,
+    # the pod's grace period will expire (resulting in a SIGKILL from Kubernetes).
+    sleep 900 &
+    wait     # wait for sleep to complete, or a second SIGTERM
+    kill %2  # cancel sleep
+    wait     # wait for graceful termination of user's process
+
+    # Exit container with code 128+15=143, indicating termination via SIGTERM.
+    exit 143
+}
+trap handle_k8s_terminate SIGTERM
+
+# Copy stdout and stderr to respectively named files to mimic Mesos containers.
 # We tee the output so that stdout and stderr are still accessible
 # via the Kubernetes `kubectl logs <pod-name>` command.
-/bin/bash -c "$1" 1> >(tee stdout) 2> >(tee stderr 1>&2)
-exit_code=$?
+exec 2> >(tee stderr 1>&2)
+exec 1> >(tee stdout)
 
-# If the sub-command exited 143 (usually indicated it was killed via SIGTERM),
-# then sleep for a long time (15 minutes) awaiting a SIGKILL from Kubernetes.
-# This delay gives Waiter time to safely update the desired replica count
-# before the pod actually terminates, avoiding a race to replace this pod.
-if [ $exit_code -eq 143 ]; then
-    sleep 900
-fi
+# Run the user's Waiter app command in its own process group.
+/usr/bin/setsid /bin/bash -c "$1" &
+waiter_child_pid=$!
 
-# Propagate the user's command's exit code
-exit $exit_code
+# Wait for the user's process to exit, propagating the exit code.
+# If this wait call is interrupted by a SIGTERM,
+# then the control flow switches to the handle_k8s_terminate routine.
+wait %1

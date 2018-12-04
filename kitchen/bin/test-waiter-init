@@ -1,0 +1,113 @@
+#!/bin/bash
+
+: ${TARGET:=./bin/waiter-init}
+failures=0
+
+start_test() {
+    test_desc="$1"
+    cmd="$(cat)"
+    printf '\nTest %s' "$test_desc"
+    "$TARGET" "$cmd" &>/dev/null &
+    test_pid=$!
+}
+
+send_sigterm() {
+    sleep 0.1
+    kill $test_pid
+}
+
+start_timing() {
+    started_at=$(date +%s)
+}
+
+end_timing() {
+    ended_at=$(date +%s)
+    elapsed_seconds=$(( $ended_at - $started_at ))
+}
+
+failure() {
+    printf "\nFailed condition: %s\n" "$1"
+    exit 1
+}
+
+assert() {
+    test "$@" || failure "$*"
+    echo -n .
+}
+
+assert_still_running() {
+    kill -0 $test_pid &>/dev/null
+    assert "RUNNING=$?" == "RUNNING=0"
+}
+
+await_exit_and_assert_code() {
+    wait $test_pid
+    assert "EXIT=$?" == "EXIT=$1"
+}
+
+#
+# Ensure the script exits cleanly on normal exit.
+# The script should not block awaiting a sigterm
+# if the user's process exited normally.
+# The script should also propagate the user process's
+# exit code as the script exit code in this case.
+#
+start_test 'normal exit' <<EOF
+sh -c 'echo OK && exit 123'
+EOF
+await_exit_and_assert_code 123
+assert "$(cat stdout)" == OK
+
+#
+# Ensure sigterm is propagated to child process.
+# The script should return 128+15=143,
+# which indicates the script exited due to a sigterm.
+#
+start_test 'immediate graceful termination' <<EOF
+sh -c 'trap "echo Terminated; exit 1" TERM; sleep 10'
+EOF
+send_sigterm
+send_sigterm
+await_exit_and_assert_code 143
+assert "$(cat stdout)" == Terminated
+
+#
+# Ensure script waits for the user's process
+# to terminate gracefully before exiting.
+#
+start_test 'slow graceful termination' <<EOF
+sh -c 'trap "echo -n Delay; sleep 2; echo X; exit 1" TERM; sleep 10'
+EOF
+start_timing
+send_sigterm
+send_sigterm
+assert_still_running
+assert "$(cat stdout)" == Delay
+await_exit_and_assert_code 143
+end_timing
+assert "$(cat stdout)" == DelayX
+assert $elapsed_seconds -ge 2
+assert $elapsed_seconds -le 3
+
+#
+# Ensure script waits for both sigterm signals.
+# If the user's process terminates gracefully
+# before the second sigterm arrives,
+# the script needs to continue waiting,
+# but the script should then immediately terminate
+# after receiving the second sigterm.
+#
+start_test 'waits for second sigterm' <<EOF
+sh -c 'trap "echo Terminated; exit 1" TERM; sleep 10'
+EOF
+send_sigterm
+sleep 1
+assert "$(cat stdout)" == Terminated
+assert_still_running
+start_timing
+send_sigterm
+await_exit_and_assert_code 143
+end_timing
+assert $elapsed_seconds -le 1
+
+printf '\n\nAll tests passed\n'
