@@ -440,6 +440,7 @@
                                 max-patch-retries
                                 max-name-length
                                 pod-base-port
+                                pod-sigkill-delay-secs
                                 pod-suffix-length
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
@@ -579,8 +580,8 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name fileserver pod-base-port replicaset-api-version
-           service-id->password-fn] :as scheduler}
+  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
+           replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures mem min-instances ports
@@ -650,7 +651,7 @@
                                               :workingDir home-path}]
                                 :volumes [{:name "user-home"
                                            :emptyDir {}}]
-                                :terminationGracePeriodSeconds 20}}}}
+                                :terminationGracePeriodSeconds pod-sigkill-delay-secs}}}}
       ;; Optional fileserver sidecar container
       (integer? (:port fileserver))
       (update-in
@@ -849,7 +850,7 @@
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authentication authorizer cluster-name http-options max-patch-retries max-name-length
-           pod-base-port pod-suffix-length replicaset-api-version replicaset-spec-builder
+           pod-base-port pod-sigkill-delay-secs pod-suffix-length replicaset-api-version replicaset-spec-builder
            scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn url start-scheduler-syncer-fn watch-retries]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver}]
@@ -865,6 +866,8 @@
          (not (string/blank? cluster-name))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
+         (integer? pod-sigkill-delay-secs)
+         (<= 0 pod-sigkill-delay-secs 300)
          (utils/pos-int? pod-suffix-length)
          (not (string/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
@@ -916,6 +919,7 @@
                                            max-patch-retries
                                            max-name-length
                                            pod-base-port
+                                           pod-sigkill-delay-secs
                                            pod-suffix-length
                                            replicaset-api-version
                                            replicaset-spec-builder-fn

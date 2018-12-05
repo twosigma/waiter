@@ -54,6 +54,7 @@
       :max-patch-retries 5
       :max-name-length 63
       :pod-base-port 8080
+      :pod-sigkill-delay-secs 3
       :pod-suffix-length default-pod-suffix-length
       :replicaset-api-version "extensions/v1beta1"
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
@@ -727,6 +728,7 @@
                     :max-patch-retries 5
                     :max-name-length 63
                     :pod-base-port 8080
+                    :pod-sigkill-delay-secs 3
                     :pod-suffix-length default-pod-suffix-length
                     :replicaset-api-version "extensions/v1beta1"
                     :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
@@ -757,7 +759,13 @@
           (testing "bad base port number"
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port -1))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port "8080"))))
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port 1234567890))))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port 1234567890)))))
+
+          (testing "bad pod termination grace period"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs -1))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs "10"))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs 1200))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs 1234567890))))))
 
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
