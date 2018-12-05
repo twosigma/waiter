@@ -599,7 +599,8 @@
            health-check-max-consecutive-failures mem min-instances ports
            run-as-user] :as service-description}
    {:keys [default-container-image] :as context}]
-  (let [home-path (str "/home/" run-as-user)
+  (let [work-path (str "/home/" run-as-user)
+        home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
                                         service-id->password-fn home-path)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
@@ -658,9 +659,9 @@
                                                                    :memory memory}
                                                           :requests {:cpu cpus
                                                                      :memory memory}}
-                                              :volumeMounts [{:mountPath home-path
+                                              :volumeMounts [{:mountPath work-path
                                                               :name "user-home"}]
-                                              :workingDir home-path}]
+                                              :workingDir work-path}]
                                 :volumes [{:name "user-home"
                                            :emptyDir {}}]
                                 :terminationGracePeriodSeconds pod-sigkill-delay-secs}}}}
@@ -682,7 +683,7 @@
                        :requests {:cpu cpu :memory memory}}
            :volumeMounts [{:mountPath "/srv/www"
                            :name "user-home"}]
-           :workingDir home-path})))))
+           :workingDir work-path})))))
 
 (defn start-auth-renewer
   "Initialize the k8s-api-auth-str atom,

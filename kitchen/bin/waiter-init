@@ -52,8 +52,10 @@ waiter_restart_count=$(( $([ -f .waiter-container-runs ] && cat .waiter-containe
 echo $(( $waiter_restart_count + 1 )) > .waiter-container-runs
 
 # Ensure that HOME is set to the fresh working directory for this container instance.
-export HOME="$PWD/r${waiter_restart_count}"
-mkdir -p "$HOME"
+# HOME should be a symlink ./latest, which points to the new working directory.
+waiter_sandbox_dir="./r${waiter_restart_count}"
+mkdir -p "$waiter_sandbox_dir"
+ln -Tsf $waiter_sandbox_dir latest
 cd "$HOME"
 
 # Copy stdout and stderr to respectively named files to mimic Mesos containers.

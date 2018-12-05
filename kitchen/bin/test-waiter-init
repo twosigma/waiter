@@ -54,6 +54,9 @@ await_exit_and_assert_code() {
 # Clean up any old copy of the restart state file
 rm -f .waiter-container-runs
 
+# Set up the expected container $HOME value
+export HOME=$PWD/latest
+
 #
 # Ensure the script exits cleanly on normal exit.
 # The script should not block awaiting a sigterm
