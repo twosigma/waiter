@@ -400,7 +400,7 @@
                               {:strs [min-instances run-as-user]} service-description]
                           (when-not (contains? allowed-users run-as-user)
                             (throw (ex-info "User not allowed to launch service via cook scheduler"
-                                            {:service-id service-id :user run-as-user})))
+                                            {:logging :info :service-id service-id :user run-as-user})))
                           (launch-jobs cook-api service-id service-description service-id->password-fn
                                        home-path-prefix min-instances allowed-priorities #{} backend-port)
                           true)
@@ -466,13 +466,13 @@
        :success false}))
 
   (retrieve-directory-content [_ service-id instance-id host directory]
-    (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {})))
-    (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {})))
-    (when (str/blank? host) (throw (ex-info (str "Host is missing!") {})))
+    (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {:logging :info})))
+    (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {:logging :info})))
+    (when (str/blank? host) (throw (ex-info (str "Host is missing!") {:logging :info})))
     (let [task-id-start-index (str/last-index-of instance-id "_")
           task-id (->> task-id-start-index inc (subs instance-id))
           log-directory (or directory (mesos/retrieve-log-url cook-api task-id host "cook"))]
-      (when (str/blank? log-directory) (throw (ex-info "No directory found for instance!" {})))
+      (when (str/blank? log-directory) (throw (ex-info "No directory found for instance!" {:logging :info})))
       (mesos/retrieve-directory-content-from-host cook-api host log-directory)))
 
   (service-id->state [_ service-id]

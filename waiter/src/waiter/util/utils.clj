@@ -256,18 +256,19 @@
   (let [{:keys [status]} (ex-data ex)]
     (if status
       ex
-      (ex-info "Internal error" {:status 500} ex))))
+      (ex-info (str "Internal error: " (.getMessage ex)) {:status 500} ex))))
 
 (defn exception->response
   "Converts an exception into a ring response."
   [^Exception ex request]
   (let [wrapped-ex (wrap-unhandled-exception ex)
-        {:keys [friendly-error-message headers message status suppress-logging] :as data} (ex-data wrapped-ex)
+        {:keys [friendly-error-message headers logging message status] :as data} (ex-data wrapped-ex)
         response-msg (if (or message friendly-error-message)
                        (str/trim (str message \newline friendly-error-message))
                        (.getMessage wrapped-ex))
         processed-headers (into {} (for [[k v] headers] [(name k) (str v)]))]
-    (when-not suppress-logging
+    (condp = logging
+      :info (log/info (.getMessage wrapped-ex))
       (log/error wrapped-ex))
     (-> {:details data, :headers processed-headers, :message response-msg, :status status}
         (data->error-response request))))
