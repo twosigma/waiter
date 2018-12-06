@@ -37,7 +37,7 @@
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.15.1"
                   :exclusions [joda-time]]
-                 [com.google.guava/guava "20.0"]
+                 [com.google.guava/guava "27.0.1-jre"]
                  [com.taoensso/nippy "2.14.0"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [comb "0.1.1"
@@ -60,14 +60,14 @@
                                metrics-clojure
                                org.clojure/clojure
                                org.slf4j/slf4j-api]]
-                 [org.apache.curator/curator-framework "2.11.0"
+                 [org.apache.curator/curator-framework "4.0.1"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
-                 [org.apache.curator/curator-recipes "2.11.0"
+                 [org.apache.curator/curator-recipes "4.0.1"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
-                 [org.apache.curator/curator-test "2.11.0"
+                 [org.apache.curator/curator-test "4.0.1"
                   :exclusions [com.google.guava/guava
                                io.netty/netty]]
-                 [org.apache.curator/curator-x-discovery "2.11.0"
+                 [org.apache.curator/curator-x-discovery "4.0.1"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/core.async "0.4.474"
