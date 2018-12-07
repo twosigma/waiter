@@ -18,7 +18,6 @@
             [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.test :refer :all]
-            [waiter.auth.authentication :as auth]
             [waiter.auth.kerberos :refer :all]
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)

@@ -14,9 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.auth.spnego-test
-  (:require [clj-time.core :as t]
-            [clojure.test :refer :all]
-            [waiter.cookie-support :as cs]
+  (:require [clojure.test :refer :all]
             [waiter.auth.spnego :refer :all]))
 
 (deftest test-decode-input-token
