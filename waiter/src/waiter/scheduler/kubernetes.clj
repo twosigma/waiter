@@ -17,7 +17,6 @@
   (:require [cheshire.core :as cheshire]
             [clj-http.client :as clj-http]
             [clj-time.core :as t]
-            [clojure.core.async :as async]
             [clojure.java.io :as io]
             [clojure.string :as string]
             [clojure.tools.logging :as log]

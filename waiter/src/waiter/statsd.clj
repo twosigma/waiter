@@ -15,7 +15,6 @@
 ;;
 (ns waiter.statsd
   (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]

@@ -15,8 +15,7 @@
 ;;
 (ns waiter.mesos.mesos
   (:require [clojure.string :as str]
-            [waiter.util.http-utils :as http-utils]
-            [waiter.util.utils :as utils])
+            [waiter.util.http-utils :as http-utils])
   (:import org.eclipse.jetty.client.HttpClient))
 
 (defrecord MesosApi [^HttpClient http-client spnego-auth slave-port slave-directory])

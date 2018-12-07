@@ -17,8 +17,7 @@
   (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.mesos.mesos :refer :all]
-            [waiter.util.http-utils :as http-utils]
-            [waiter.util.utils :as utils]))
+            [waiter.util.http-utils :as http-utils]))
 
 (deftest test-mesos-api
   (let [http-client (Object.)

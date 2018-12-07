@@ -14,8 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.statsd-test
-  (require [clojure.core.async :as async]
-           [clojure.test :refer :all]
+  (require [clojure.test :refer :all]
            [clojure.tools.logging :as log]
            [waiter.statsd :as statsd]
            [waiter.test-helpers :refer :all])
