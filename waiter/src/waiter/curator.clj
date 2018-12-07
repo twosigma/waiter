@@ -47,7 +47,7 @@
   (condp = serializer
     :nippy (nippy/freeze data)
     :none data
-    :else (throw (ex-info "Unknown serializer" {:serializer serializer}))))
+    (throw (ex-info "Unknown serializer" {:serializer serializer}))))
 
 (defn deserialize
   [serializer data]
@@ -61,7 +61,7 @@
                                (-> (ex-data e)
                                    (update-in [:opts :password] (fn [password] (when password "***"))))))))
     :none data
-    :else (throw (ex-info "Unknown serializer" {:serializer serializer}))))
+    (throw (ex-info "Unknown serializer" {:serializer serializer}))))
 
 (defn create-path
   ([^CuratorFramework curator path & {:keys [mode noop-on-exists? create-parent-zknodes?]
