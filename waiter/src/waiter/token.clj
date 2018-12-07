@@ -479,7 +479,7 @@
       :get (handle-get-token-request kv-store token-root waiter-hostnames request)
       :post (handle-post-token-request clock synchronize-fn kv-store token-root history-length waiter-hostnames entitlement-manager
                                        make-peer-requests-fn validate-service-description-fn request)
-      (throw (ex-info "Invalid request method" {:logging :info :request-method request-method :status 405})))
+      (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status 405})))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -512,7 +512,7 @@
                                    (assoc :owner owner :token token)))))))
                   flatten
                   utils/clj->streaming-json-response))
-      (throw (ex-info "Only GET supported" {:logging :info
+      (throw (ex-info "Only GET supported" {:log-level :info
                                             :request-method request-method
                                             :status 405})))
     (catch Exception ex
@@ -529,7 +529,7 @@
     (case request-method
       :get (let [owner->owner-ref (token-owners-map kv-store)]
              (utils/clj->json-response owner->owner-ref))
-      (throw (ex-info "Only GET supported" {:logging :info
+      (throw (ex-info "Only GET supported" {:log-level :info
                                             :request-method request-method
                                             :status 405})))
     (catch Exception ex
@@ -562,7 +562,7 @@
                                      :method :post
                                      :body (utils/clj->json {:index true}))
               (utils/clj->json-response {:message "Successfully re-indexed" :tokens (count tokens)}))
-      (throw (ex-info "Only POST supported" {:logging :info
+      (throw (ex-info "Only POST supported" {:log-level :info
                                              :request-method request-method
                                              :status 405})))
     (catch Exception ex

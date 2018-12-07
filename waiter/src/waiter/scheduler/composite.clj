@@ -113,7 +113,7 @@
       scheduler
       (throw (ex-info "No matching scheduler found!"
                       {:available-schedulers (-> scheduler-id->scheduler keys sort)
-                       :logging :info
+                       :log-level :info
                        :service-id service-id
                        :specified-scheduler scheduler-id})))))
 

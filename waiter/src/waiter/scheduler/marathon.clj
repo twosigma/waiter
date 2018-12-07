@@ -422,11 +422,11 @@
         (log/debug (:throwable &throw-context) "[autoscaler] Marathon unavailable"))))
 
   (retrieve-directory-content [_ service-id instance-id host directory]
-    (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {:logging :info})))
-    (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {:logging :info})))
-    (when (str/blank? host) (throw (ex-info (str "Host is missing!") {:logging :info})))
+    (when (str/blank? service-id) (throw (ex-info (str "Service id is missing!") {:log-level :info})))
+    (when (str/blank? instance-id) (throw (ex-info (str "Instance id is missing!") {:log-level :info})))
+    (when (str/blank? host) (throw (ex-info (str "Host is missing!") {:log-level :info})))
     (let [log-directory (or directory (mesos/retrieve-log-url mesos-api instance-id host "marathon"))]
-      (when (str/blank? log-directory) (throw (ex-info "No directory found for instance!" {:logging :info})))
+      (when (str/blank? log-directory) (throw (ex-info "No directory found for instance!" {:log-level :info})))
       (mesos/retrieve-directory-content-from-host mesos-api host log-directory)))
 
   (service-id->state [_ service-id]

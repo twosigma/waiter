@@ -64,7 +64,7 @@
   (let [{:keys [host location port request-id router-id service-id]} route-params]
     (when-not (and host location port request-id router-id service-id)
       (throw (ex-info "Missing host, location, port, request-id, router-id or service-id in uri"
-                      {:logging :info :route-params route-params :status 400 :uri uri})))
+                      {:log-level :info :route-params route-params :status 400 :uri uri})))
     (counters/inc! (metrics/service-counter service-id "request-counts" counter-name))
     (let [{:strs [backend-proto metric-group]} (service-id->service-description-fn service-id)
           instance (scheduler/make-ServiceInstance {:host host :port port :protocol backend-proto :service-id service-id})
@@ -77,9 +77,9 @@
   (try
     (let [{:keys [request-id service-id]} route-params]
       (when (str/blank? service-id)
-        (throw (ex-info "No service-id specified" {:logging :info :src-router-id src-router-id :status 400 :uri uri})))
+        (throw (ex-info "No service-id specified" {:log-level :info :src-router-id src-router-id :status 400 :uri uri})))
       (when (str/blank? request-id)
-        (throw (ex-info "No request-id specified" {:logging :info :src-router-id src-router-id :status 400 :uri uri})))
+        (throw (ex-info "No request-id specified" {:log-level :info :src-router-id src-router-id :status 400 :uri uri})))
       (let [succeeded (async-request-terminate-fn request-id)]
         (utils/clj->json-response {:request-id request-id, :success succeeded})))
     (catch Exception ex
@@ -148,7 +148,7 @@
                 (or (not (integer? period-in-ms)) (neg? period-in-ms)))
           (throw (ex-info "Must provide the service-id, the instance id, the reason, and a positive period"
                           {:input-data request-body-map
-                           :logging :info
+                           :log-level :info
                            :status 400}))
           (let [response-chan (async/promise-chan)
                 _ (service/blacklist-instance! instance-rpc-chan service-id instance-id period-in-ms response-chan)
@@ -186,7 +186,7 @@
   (async/go
     (try
       (when (str/blank? service-id)
-        (throw (ex-info "Missing service-id" {:logging :info :status 400})))
+        (throw (ex-info "Missing service-id" {:log-level :info :status 400})))
       (let [response-chan (async/promise-chan)
             _ (service/query-instance! instance-rpc-chan service-id response-chan)
             _ (log/info "Waiting for response from query-state channel...")
@@ -310,7 +310,7 @@
         (ex-info "User not allowed to delete service"
                  {:current-user auth-user
                   :existing-owner run-as-user
-                  :logging :info
+                  :log-level :info
                   :service-id service-id
                   :status 403}))
       (async/go
@@ -436,10 +436,10 @@
    scheduler-interactions-thread-pool request]
   (try
     (when (not service-id)
-      (throw (ex-info "Missing service-id" {:logging :info :status 400})))
+      (throw (ex-info "Missing service-id" {:log-level :info :status 400})))
     (let [core-service-description (sd/fetch-core kv-store service-id :refresh true)]
       (if (empty? core-service-description)
-        (throw (ex-info "Service not found" {:logging :info :service-id service-id :status 404}))
+        (throw (ex-info "Service not found" {:log-level :info :service-id service-id :status 404}))
         (case (:request-method request)
           :delete (delete-service-handler service-id core-service-description scheduler allowed-to-manage-service?-fn
                                           scheduler-interactions-thread-pool request)
@@ -459,7 +459,7 @@
   [kv-store allowed-to-manage-service? make-inter-router-requests-fn service-id mode request]
   (try
     (when (str/blank? service-id)
-      (throw (ex-info "Missing service-id" {:logging :info :status 400})))
+      (throw (ex-info "Missing service-id" {:log-level :info :status 400})))
     ; throw exception if no service description for service-id exists
     (sd/fetch-core kv-store service-id :refresh true :nil-on-missing? false)
     (let [auth-user (get request :authorization/user)
@@ -479,7 +479,7 @@
                                        :success success})))
         (throw (ex-info (str auth-user " not allowed to modify " service-id)
                         {:auth-user auth-user
-                         :logging :info
+                         :log-level :info
                          :service-id service-id
                          :status 403}))))
     (catch Exception ex
@@ -489,7 +489,7 @@
   "Handles overrides for a service."
   [kv-store allowed-to-manage-service? make-inter-router-requests-fn service-id {:keys [request-method] :as request}]
   (when (str/blank? service-id)
-    (throw (ex-info "Missing service-id" {:logging :info :status 400})))
+    (throw (ex-info "Missing service-id" {:log-level :info :status 400})))
   ; throw exception if no service description for service-id exists
   (sd/fetch-core kv-store service-id :refresh true :nil-on-missing? false)
   (let [auth-user (get request :authorization/user)]
@@ -503,7 +503,7 @@
             (trigger-service-refresh make-inter-router-requests-fn service-id)
             (utils/clj->json-response {:service-id service-id, :success true}))
           (throw (ex-info (str auth-user " not allowed to override " service-id)
-                          {:auth-user auth-user :logging :info :service-id service-id, :status 403}))))
+                          {:auth-user auth-user :log-level :info :service-id service-id, :status 403}))))
 
       :get
       (if (allowed-to-manage-service? service-id auth-user)
@@ -511,7 +511,7 @@
             (assoc :service-id service-id)
             utils/clj->json-response)
         (throw (ex-info (str auth-user " not allowed view override information of " service-id)
-                        {:auth-user auth-user :logging :info :service-id service-id :status 403})))
+                        {:auth-user auth-user :log-level :info :service-id service-id :status 403})))
 
       :post
       (do
@@ -523,9 +523,9 @@
             (trigger-service-refresh make-inter-router-requests-fn service-id)
             (utils/clj->json-response {:service-id service-id, :success true}))
           (throw (ex-info (str auth-user " not allowed to override " service-id)
-                          {:auth-user auth-user :logging :info :service-id service-id :status 403}))))
+                          {:auth-user auth-user :log-level :info :service-id service-id :status 403}))))
 
-      (throw (ex-info "Unsupported request method" {:logging :info :request-method request-method :status 405})))))
+      (throw (ex-info "Unsupported request method" {:log-level :info :request-method request-method :status 405})))))
 
 (defn service-view-logs-handler
   "Redirects user to the log directory on the slave"
@@ -533,9 +533,9 @@
   (try
     (let [{:strs [instance-id host directory]} (-> request ru/query-params-request :query-params)
           _ (when-not instance-id
-              (throw (ex-info "Missing instance-id parameter" {:logging :info :status 400})))
+              (throw (ex-info "Missing instance-id parameter" {:log-level :info :status 400})))
           _ (when-not host
-              (throw (ex-info "Missing host parameter" {:logging :info :status 400})))
+              (throw (ex-info "Missing host parameter" {:log-level :info :status 400})))
           directory-content (map (fn [{:keys [path type] :as entry}]
                                    (if (= type "file")
                                      entry
@@ -559,7 +559,7 @@
         (log/info "received work-stealing offer" (:id instance) "of" service-id "from" router-id)
         (if-not (and cid instance request-id router-id service-id)
           (throw (ex-info "Missing one of cid, instance, request-id, router-id or service-id"
-                          (assoc request-body-map :logging :info :status 400)))
+                          (assoc request-body-map :log-level :info :status 400)))
           (let [response-chan (async/promise-chan)
                 offer-params {:cid cid
                               :instance (scheduler/make-ServiceInstance instance)
@@ -681,7 +681,7 @@
   (async/go
     (try
       (if (str/blank? service-id)
-        (throw (ex-info "Missing service-id" {:logging :info :status 400}))
+        (throw (ex-info "Missing service-id" {:log-level :info :status 400}))
         (let [timeout-ms (-> 10 t/seconds t/in-millis)
               _ (log/info "waiting for response from query-state channel...")
               responder-state-chan
@@ -732,30 +732,30 @@
    consent-cookie-value add-encoded-cookie consent-expiry-days {:keys [request-method] :as request}]
   (try
     (when-not (= :post request-method)
-      (throw (ex-info "Only POST supported" {:logging :info :request-method request-method :status 405})))
+      (throw (ex-info "Only POST supported" {:log-level :info :request-method request-method :status 405})))
     (let [{:keys [headers params] :as request} (multipart-params/multipart-params-request request)
           {:strs [host origin referer x-requested-with]} headers
           {:strs [mode service-id] :as params} params]
       (when-not (str/blank? origin)
         (when-not (utils/same-origin request)
           (throw (ex-info "Origin is not the same as the host"
-                          {:host host :logging :info :origin origin :status 400}))))
+                          {:host host :log-level :info :origin origin :status 400}))))
       (when (and (not (str/blank? origin)) (not (str/blank? referer)))
         (when-not (str/starts-with? referer origin)
           (throw (ex-info "Referer does not start with origin"
-                          {:origin origin :logging :info :referer referer :status 400}))))
+                          {:origin origin :log-level :info :referer referer :status 400}))))
       (when-not (= x-requested-with "XMLHttpRequest")
         (throw (ex-info "Header x-requested-with does not match expected value"
-                        {:actual x-requested-with :expected "XMLHttpRequest" :logging :info :status 400})))
+                        {:actual x-requested-with :expected "XMLHttpRequest" :log-level :info :status 400})))
       (when-not (and mode (contains? #{"service" "token"} mode))
-        (throw (ex-info "Missing or invalid mode" (assoc params :logging :info :status 400))))
+        (throw (ex-info "Missing or invalid mode" (assoc params :log-level :info :status 400))))
       (when (= "service" mode)
         (when-not service-id
-          (throw (ex-info "Missing service-id" (assoc params :logging :info :status 400)))))
+          (throw (ex-info "Missing service-id" (assoc params :log-level :info :status 400)))))
       (let [token (utils/authority->host host)
             service-description-template (token->service-description-template token)]
         (when-not (seq service-description-template)
-          (throw (ex-info "Unable to load description for token" {:logging :info :status 400 :token token})))
+          (throw (ex-info "Unable to load description for token" {:log-level :info :status 400 :token token})))
         (when (= "service" mode)
           (let [auth-user (:authorization/user request)
                 computed-service-id (-> service-description-template
@@ -763,7 +763,7 @@
                                         service-description->service-id)]
             (when-not (= service-id computed-service-id)
               (log/error "computed" computed-service-id ", but user[" auth-user "] provided" service-id "for" token)
-              (throw (ex-info "Invalid service-id for specified token" (assoc params :logging :info :status 400))))))
+              (throw (ex-info "Invalid service-id for specified token" (assoc params :log-level :info :status 400))))))
         (let [token-metadata (token->token-metadata token)
               cookie-name "x-waiter-consent"
               cookie-value (consent-cookie-value mode service-id token token-metadata)]
@@ -792,13 +792,13 @@
    {:keys [headers query-string request-method request-time route-params] :as request}]
   (try
     (when-not (= :get request-method)
-      (throw (ex-info "Only GET supported" {:logging :info :request-method request-method :status 405})))
+      (throw (ex-info "Only GET supported" {:log-level :info :request-method request-method :status 405})))
     (let [host-header (get headers "host")
           token (utils/authority->host host-header)
           {:keys [path]} route-params
           {:strs [interstitial-secs] :as service-description-template} (token->service-description-template token)]
       (when-not (seq service-description-template)
-        (throw (ex-info "Unable to load description for token" {:logging :info :status 404 :token token})))
+        (throw (ex-info "Unable to load description for token" {:log-level :info :status 404 :token token})))
       (let [auth-user (:authorization/user request)
             service-id (-> service-description-template
                            (sd/assoc-run-as-requester-fields auth-user)
@@ -857,11 +857,11 @@
                       "text/html" (render-welcome-html welcome-info)
                       "text/plain" (render-welcome-text welcome-info))
               :headers {"content-type" content-type}}
-        (throw (ex-info "Only GET supported" {:logging :info :status 405})))
+        (throw (ex-info "Only GET supported" {:log-level :info :status 405})))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
 (defn not-found-handler
   "Responds with a handler indicating a resource isn't found."
   [request]
-  (utils/exception->response (ex-info (utils/message :not-found) {:logging :info :status 404}) request))
+  (utils/exception->response (ex-info (utils/message :not-found) {:log-level :info :status 404}) request))
