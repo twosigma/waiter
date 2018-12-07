@@ -100,6 +100,9 @@
                               ["/autoscaler" :state-autoscaler-handler-fn]
                               ["/autoscaling-multiplexer" :state-autoscaling-multiplexer-handler-fn]
                               ["/fallback" :state-fallback-handler-fn]
+                              ["/gc-broken-services" :state-gc-for-broken-services]
+                              ["/gc-services" :state-gc-for-services]
+                              ["/gc-transient-metrics" :state-gc-for-transient-metrics]
                               ["/interstitial" :state-interstitial-handler-fn]
                               ["/launch-metrics" :state-launch-metrics-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
@@ -327,6 +330,11 @@
    service->state-fn gc-service? perform-gc-fn]
   {:pre (pos? timeout-interval-ms)}
   (let [query-chan (async/chan 10)
+        state-cache (cu/cache-factory {:ttl (/ timeout-interval-ms 2)})
+        query-state-fn (fn query-state-fn []
+                         (cu/cache-get-or-load state-cache name #(read-state-fn name)))
+        query-service-state-fn (fn query-service-state-fn [{:keys [service-id]}]
+                                 (-> (query-state-fn) (get service-id) (or {})))
         exit-chan (async/chan 1)]
     (cid/with-correlation-id
       name
@@ -339,8 +347,8 @@
                             :priority true)]
           (case chan
             :exit (log/info "[service-gc-go-routine] exiting" name)
-            :query (let [{:keys [service-id response-chan]} args
-                         state (get (read-state-fn name) service-id)]
+            :query (let [{:keys [response-chan]} args
+                         state (query-service-state-fn args)]
                      (async/>! response-chan (or state {}))
                      (recur (inc iter) timeout-chan))
             :continue
@@ -387,12 +395,15 @@
                                     (count service->raw-data) "services in latest update."))
                         (when (not-empty apps-failed-to-delete)
                           (log/warn "unable to delete services:" apps-failed-to-delete))
-                        (write-state-fn name service->state''))
+                        (write-state-fn name service->state'')
+                        (cu/cache-evict state-cache name))
                       (catch Exception e
                         (log/error e "error in" name {:iteration iter}))))))
               (recur (inc iter) (async/timeout timeout-interval-ms)))))))
     {:exit exit-chan
-     :query query-chan}))
+     :query query-chan
+     :query-service-state-fn query-service-state-fn
+     :query-state-fn query-state-fn}))
 
 (defn make-inter-router-requests
   "Helper function to make inter-router requests with basic authentication.
@@ -1037,12 +1048,12 @@
                     {:autoscaler-state (:query-service-state-fn autoscaler)
                      :autoscaling-multiplexer-state (:query-chan autoscaling-multiplexer)
                      :interstitial-maintainer-state (:query-chan interstitial-maintainer)
-                     :scheduler-broken-services-gc-state (:query scheduler-broken-services-gc)
-                     :scheduler-services-gc-state (:query scheduler-services-gc)
+                     :scheduler-broken-services-gc-state (:query-service-state-fn scheduler-broken-services-gc)
+                     :scheduler-services-gc-state (:query-service-state-fn scheduler-services-gc)
                      :scheduler-state (fn scheduler-state-fn [service-id]
                                         (scheduler/service-id->state scheduler service-id))
                      :service-maintainer-state query-service-maintainer-chan
-                     :transient-metrics-gc-state (:query gc-for-transient-metrics)})
+                     :transient-metrics-gc-state (:query-service-state-fn gc-for-transient-metrics)})
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
                     router-state-maintainer]
@@ -1236,7 +1247,7 @@
                                   (let [{:keys [query-state-fn]} autoscaler]
                                     (wrap-secure-request-fn
                                       (fn state-autoscaler-handler-fn [request]
-                                        (handler/get-autoscaler-state router-id query-state-fn request)))))
+                                        (handler/get-query-fn-state router-id query-state-fn request)))))
    :state-autoscaling-multiplexer-handler-fn (pc/fnk [[:daemons autoscaling-multiplexer]
                                                       [:state router-id]
                                                       wrap-secure-request-fn]
@@ -1251,6 +1262,27 @@
                                   (wrap-secure-request-fn
                                     (fn state-fallback-handler-fn [request]
                                       (handler/get-query-chan-state-handler router-id fallback-query-chan request)))))
+   :state-gc-for-broken-services (pc/fnk [[:daemons scheduler-broken-services-gc]
+                                          [:state router-id]
+                                          wrap-secure-request-fn]
+                                   (let [{:keys [query-state-fn]} scheduler-broken-services-gc]
+                                     (wrap-secure-request-fn
+                                       (fn state-autoscaler-handler-fn [request]
+                                         (handler/get-query-fn-state router-id query-state-fn request)))))
+   :state-gc-for-services (pc/fnk [[:daemons scheduler-services-gc]
+                                   [:state router-id]
+                                   wrap-secure-request-fn]
+                            (let [{:keys [query-state-fn]} scheduler-services-gc]
+                              (wrap-secure-request-fn
+                                (fn state-autoscaler-handler-fn [request]
+                                  (handler/get-query-fn-state router-id query-state-fn request)))))
+   :state-gc-for-transient-metrics (pc/fnk [[:daemons gc-for-transient-metrics]
+                                            [:state router-id]
+                                            wrap-secure-request-fn]
+                                     (let [{:keys [query-state-fn]} gc-for-transient-metrics]
+                                       (wrap-secure-request-fn
+                                         (fn state-autoscaler-handler-fn [request]
+                                           (handler/get-query-fn-state router-id query-state-fn request)))))
    :state-interstitial-handler-fn (pc/fnk [[:daemons interstitial-maintainer]
                                            [:state router-id]
                                            wrap-secure-request-fn]
