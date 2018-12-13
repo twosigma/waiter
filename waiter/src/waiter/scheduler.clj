@@ -209,9 +209,9 @@
         SocketTimeoutException (log/debug error "timeout while connecting to backend for health check" error-map)
         TimeoutException (log/debug error "timeout while connecting to backend for health check" error-map)
         Throwable (log/error error "unexpected error while connecting to backend for health check" error-map)))
-    (when (not (or (<= 200 status 299)
-                   (= 404 status)
-                   (= 504 status)))
+    (when-not (or (<= 200 status 299)
+                  (= 404 status)
+                  (= 504 status))
       (log/info "unexpected status from health check" {:status status
                                                        :instance service-instance
                                                        :service instance-health-check-url}))))
@@ -561,10 +561,10 @@
 
                        state-query-chan
                        ([{:keys [response-chan service-id]}]
-                         (->> (if service-id
-                                (retrieve-syncer-state current-state service-id)
-                                (retrieve-syncer-state current-state))
-                              (async/>! response-chan))
+                         (async/>! response-chan
+                                   (if service-id
+                                     (retrieve-syncer-state current-state service-id)
+                                     (retrieve-syncer-state current-state)))
                          current-state)
 
                        timeout-chan
@@ -618,8 +618,8 @@
          {"HOME" home-path
           "LOGNAME" run-as-user
           "USER" run-as-user
-          "WAITER_CPUS" (-> cpus str)
-          "WAITER_MEM_MB" (-> mem str)
+          "WAITER_CPUS" (str cpus)
+          "WAITER_MEM_MB" (str mem)
           "WAITER_PASSWORD" (service-id->password-fn service-id)
           "WAITER_SERVICE_ID" service-id
           "WAITER_USERNAME" "waiter"}))

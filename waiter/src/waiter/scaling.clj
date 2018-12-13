@@ -395,7 +395,7 @@
         expired-instances-to-replace (int (Math/ceil (* expired-instances expired-instance-restart-rate)))
         ; if we are scaling down and all instances are healthy, do not account for expired instances
         ; since the instance killer will kill the expired instances
-        scaling-down (< scale-amount 0)
+        scaling-down (neg? scale-amount)
         all-instances-are-healthy (= total-instances healthy-instances)
         scale-to-instances' (cond-> scale-to-instances
                               (and (pos? expired-instances)
@@ -512,7 +512,7 @@
                         (let [{:keys [service-id->healthy-instances service-id->unhealthy-instances service-id->expired-instances]} args
                               existing-service-ids-set (-> service-id->router-state keys set)
                               service-ids-set (into (-> service-id->healthy-instances keys set)
-                                                    (-> service-id->unhealthy-instances keys))
+                                                    (keys service-id->unhealthy-instances))
                               deleted-service-ids (set/difference existing-service-ids-set service-ids-set)
                               new-service-ids (set/difference service-ids-set existing-service-ids-set)
                               service-id->router-state' (pc/map-from-keys
@@ -555,7 +555,7 @@
                                         (when (seq excluded-service-ids)
                                           (log/info "services excluded this iteration" excluded-service-ids))
                                         (scale-services scalable-service-ids
-                                                        (pc/map-from-keys #(service-id->service-description-fn %) scalable-service-ids)
+                                                        (pc/map-from-keys service-id->service-description-fn scalable-service-ids)
                                                         ; default to 0 outstanding requests for services without metrics
                                                         (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
                                                         service-id->scale-state

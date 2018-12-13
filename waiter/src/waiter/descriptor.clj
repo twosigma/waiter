@@ -82,7 +82,7 @@
       (catch Exception e
         (if (missing-run-as-user? e)
           (let [{:keys [query-string uri]} request
-                location (str "/waiter-consent" uri (when (not (str/blank? query-string)) (str "?" query-string)))]
+                location (str "/waiter-consent" uri (when-not (str/blank? query-string) (str "?" query-string)))]
             (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "redirect"))
             (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "redirect"))
             {:headers {"location" location} :status 303})
@@ -124,12 +124,12 @@
 
                     query-chan
                     (let [{:keys [response-chan service-id]} message]
-                      (->> (if service-id
-                             {:available (contains? available-service-ids service-id)
-                              :healthy (contains? healthy-service-ids service-id)
-                              :service-id service-id}
-                             {:state current-state})
-                           (async/>! response-chan))
+                      (async/>! response-chan
+                                (if service-id
+                                  {:available (contains? available-service-ids service-id)
+                                   :healthy (contains? healthy-service-ids service-id)
+                                   :service-id service-id}
+                                  {:state current-state}))
                       current-state)
 
                     router-state-chan

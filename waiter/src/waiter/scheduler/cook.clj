@@ -162,7 +162,7 @@
             (log/info "container support enabled" container-data)
             (throw (ex-info "to use container support format version as namespace/name:label" container-data)))))
       {:jobs [(cond-> {:application {:name name
-                                     :version (if image-label image-label version)}
+                                     :version (or image-label version)}
                        :command cmd
                        :cpus cpus
                        :disable-mea-culpa-retries true
@@ -261,7 +261,7 @@
   [jobs]
   (let [service-id (-> jobs first :labels :service-id)
         num-jobs (count jobs)
-        num-running-jobs (count (filter #(= "running" (-> % :status)) jobs))
+        num-running-jobs (count (filter #(= "running" (:status %)) jobs))
         num-healthy-jobs (count (filter job-healthy? jobs))]
     (scheduler/make-Service
       {:id service-id

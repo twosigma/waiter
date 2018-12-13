@@ -90,7 +90,7 @@
 (defn check-has-prestashed-tickets
   "Checks if the run-as-user has prestashed tickets available. Throws an exception if not."
   [prestash-cache query-chan run-as-user service-id]
-  (when (not (is-prestashed? prestash-cache run-as-user))
+  (when-not (is-prestashed? prestash-cache run-as-user)
     (let [response-chan (async/promise-chan)
           _ (async/>!! query-chan {:response-chan response-chan})
           [users chan] (async/alts!! [response-chan (async/timeout 1000)] :priority true)]

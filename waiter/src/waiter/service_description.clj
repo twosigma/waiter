@@ -339,8 +339,7 @@
   (let [{:strs [name]} service-description
         prefix (cond-> service-id-prefix
                        name (str (str/replace (str/lower-case name) #"[^a-z0-9]" "") "-"))
-        service-hash (-> (select-keys service-description service-description-keys)
-                         parameters->id)]
+        service-hash (parameters->id (select-keys service-description service-description-keys))]
     (str prefix service-hash)))
 
 (defn required-keys-present?
@@ -597,8 +596,7 @@
 (defn token->token-hash
   "Retrieves the hash for a token"
   [kv-store token]
-  (-> (token->token-data kv-store token token-data-keys false false)
-      token-data->token-hash))
+  (token-data->token-hash (token->token-data kv-store token token-data-keys false false)))
 
 (defn token-data->token-description
   "Retrieves the token description for the given token when the raw kv data (merged value of service
@@ -611,8 +609,7 @@
 (defn token->token-description
   "Retrieves the token description for the given token."
   [kv-store ^String token & {:keys [include-deleted] :or {include-deleted false}}]
-  (-> (token->token-data kv-store token token-data-keys false include-deleted)
-      token-data->token-description))
+  (token-data->token-description (token->token-data kv-store token token-data-keys false include-deleted)))
 
 (defn token->service-parameter-template
   "Retrieves the service description template for the given token containing only the service parameters."
@@ -679,8 +676,7 @@
 (defn compute-service-description-template-from-tokens
   "Computes the service description, preauthorization and authentication data using the token-sequence and token-data."
   [token-defaults token-sequence token->token-data]
-  (let [merged-token-data (->> (token-sequence->merged-data token->token-data token-sequence)
-                               (merge token-defaults))
+  (let [merged-token-data (merge token-defaults (token-sequence->merged-data token->token-data token-sequence))
         service-description-template (select-keys merged-token-data service-parameter-keys)
         source-tokens (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
@@ -1032,8 +1028,7 @@
               (if-not (contains? existing-entries source-tokens)
                 (do
                   (log/info "associating" source-tokens "with" service-id "source-tokens entries")
-                  (->> (conj existing-entries source-tokens)
-                       (kv/store kv-store (service-id->key service-id)))
+                  (kv/store kv-store (service-id->key service-id) (conj existing-entries source-tokens))
                   ;; refresh the entry
                   (service-id->source-tokens-entries kv-store service-id :refresh true))
                 (do

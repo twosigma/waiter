@@ -229,19 +229,20 @@
         content-type (request->content-type request)]
     {:body (case content-type
              "application/json"
-             (-> {:waiter-error error-context}
-                 (json/write-str :key-fn stringify-keys :value-fn stringify-elements :escape-slash false))
+             (json/write-str {:waiter-error error-context}
+                             :escape-slash false
+                             :key-fn stringify-keys
+                             :value-fn stringify-elements)
              "text/html"
              (-> error-context
-                 (update :message #(urls->html-links %))
+                 (update :message urls->html-links)
                  (update :details #(with-out-str (pprint/pprint %)))
                  render-error-html)
              "text/plain"
              (-> error-context
                  (update :details (fn [v]
                                     (when v
-                                      (-> (with-out-str (pprint/pprint v))
-                                          (str/replace #"\n" "\n  ")))))
+                                      (str/replace (with-out-str (pprint/pprint v)) #"\n" "\n  "))))
                  render-error-text
                  (str/replace #"\n" "\n  ")
                  (str/replace #"\n  $" "\n")))
@@ -502,8 +503,7 @@
 (defn wrap-identity
   "A wrapper middleware that does nothing."
   [handler]
-  (fn [request]
-    (handler request)))
+  handler)
 
 (defn update-exception
   "Updates an exception, regardless of whether it's an ExceptionInfo or just Exception."

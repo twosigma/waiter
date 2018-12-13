@@ -678,8 +678,7 @@
                          query-state-chan
                          (let [{:keys [cid response-chan service-id]} data]
                            (cid/cinfo cid "returning current state of" service-id)
-                           (->> (dissoc current-state :timer-context)
-                                (async/put! response-chan))
+                           (async/put! response-chan (dissoc current-state :timer-context))
                            current-state)
 
                          update-state-chan
@@ -1010,12 +1009,12 @@
           ; base case: done assigning slots
           (zero? num-slots-to-consume) instance-id->assigned-slots
           ; we've exhausted all slots but we still need to assign some slots to the router (e.g. 1 slot for 3 routers case)
-          (zero? num-slots-available) (->> (take num-slots-to-consume sorted-instance-ids)
-                                           (reduce (fn [instance-id->assigned-slots instance-id]
-                                                     (if (contains? instance-id->assigned-slots instance-id)
-                                                       instance-id->assigned-slots
-                                                       (assign-slot-fn instance-id->assigned-slots instance-id)))
-                                                   instance-id->assigned-slots))
+          (zero? num-slots-available) (reduce (fn [instance-id->assigned-slots instance-id]
+                                                (if (contains? instance-id->assigned-slots instance-id)
+                                                  instance-id->assigned-slots
+                                                  (assign-slot-fn instance-id->assigned-slots instance-id)))
+                                              instance-id->assigned-slots
+                                              (take num-slots-to-consume sorted-instance-ids))
           ; consume a slot from the currently preferred instance
           :else (let [slot-available? (pos? (get instance-id->available-slots instance-id 0))
                       instance-id->assigned-slots' (cond-> instance-id->assigned-slots

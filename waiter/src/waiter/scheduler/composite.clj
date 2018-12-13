@@ -193,8 +193,7 @@
                                                          first
                                                          second
                                                          :scheduler-sync-time)))
-                   available-services-messages (->> (vals scheduler-id->type->messages')
-                                                    (mapcat :update-available-services))
+                   available-services-messages (mapcat :update-available-services (vals scheduler-id->type->messages'))
                    services-message (->> available-services-messages
                                          (map #(select-keys (second %) [:available-service-ids :healthy-service-ids]))
                                          (apply merge-with set/union)

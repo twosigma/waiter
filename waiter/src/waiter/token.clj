@@ -44,8 +44,7 @@
 (defn- token-description->token-hash
   "Converts the token metadata to a hash."
   [{:keys [service-parameter-template token-metadata]}]
-  (-> (merge service-parameter-template token-metadata)
-      sd/token-data->token-hash))
+  (sd/token-data->token-hash (merge service-parameter-template token-metadata)))
 
 (defn- validate-token-modification-based-on-hash
   "Validates whether the token modification should be allowed on based on the provided token version-hash."
@@ -151,7 +150,7 @@
           (let [owner->owner-key (kv/fetch kv-store token-owners-key)
                 owner-key (ensure-owner-key kv-store owner->owner-key owner)]
             (update-kv! kv-store owner-key (fn [index] (dissoc index token)))
-            (when (not hard-delete)
+            (when-not hard-delete
               (let [{:keys [last-update-time] :as token-data} (kv/fetch kv-store token)
                     token-hash (sd/token-data->token-hash token-data)]
                 (update-kv! kv-store owner-key (fn [index]
@@ -197,7 +196,7 @@
   (defn token-owners-map
     "Get the token owners map state"
     [kv-store]
-    (-> (kv/fetch kv-store token-owners-key) (into {})))
+    (into {} (kv/fetch kv-store token-owners-key)))
 
   (defn reindex-tokens
     "Reindex all tokens. `tokens` is a sequence of token maps.  Remove existing index entries."
@@ -307,11 +306,10 @@
                                  (not (contains? token-metadata "root"))
                                  (assoc "root" token-root))))
           :headers {"etag" token-hash}))
-      (do
-        (throw (ex-info (str "Couldn't find token " token)
-                        {:headers {"etag" token-hash}
-                         :status 404
-                         :token token}))))))
+      (throw (ex-info (str "Couldn't find token " token)
+                      {:headers {"etag" token-hash}
+                       :status 404
+                       :token token})))))
 
 (defn- handle-post-token-request
   "Validates that the user is the creator of the token if it already exists.
@@ -502,8 +500,7 @@
                            (filter
                              (fn [[token _]]
                                (or (nil? can-manage-as-user)
-                                   (->> {"owner" owner}
-                                        (authz/manage-token? entitlement-manager can-manage-as-user token)))))
+                                   (authz/manage-token? entitlement-manager can-manage-as-user token {"owner" owner}))))
                            (map
                              (fn [[token entry]]
                                (-> (if show-metadata

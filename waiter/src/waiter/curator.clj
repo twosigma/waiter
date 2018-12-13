@@ -58,8 +58,7 @@
                (log/error "Error in deserializing data" (.getMessage e))
                ;; remove password from exception thrown by nippy
                (throw (ex-info (.getMessage e)
-                               (-> (ex-data e)
-                                   (update-in [:opts :password] (fn [password] (when password "***"))))))))
+                               (update-in (ex-data e) [:opts :password] (fn [password] (when password "***")))))))
     :none data
     (throw (ex-info "Unknown serializer" {:serializer serializer}))))
 
@@ -116,11 +115,11 @@
                                       :or {serializer :none nil-on-missing? false}}]
    (try
      (let [stat (Stat.)]
-       {:data (->> (.. curator
-                       (getData)
-                       (storingStatIn stat)
-                       (forPath path))
-                   (deserialize serializer))
+       {:data (deserialize serializer
+                           (.. curator
+                               (getData)
+                               (storingStatIn stat)
+                               (forPath path)))
         :stat (bean stat)})
      (catch KeeperException$NoNodeException e
        (when-not nil-on-missing?

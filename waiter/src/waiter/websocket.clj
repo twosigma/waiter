@@ -83,8 +83,7 @@
             true)
         (do
           (log/info "rejecting websocket due to presence of multiple subprotocols" sec-websocket-protocols)
-          (->> (str "waiter does not yet support multiple subprotocols in websocket requests: " sec-websocket-protocols)
-               (.sendError response 500))
+          (.sendError response 500 (str "waiter does not yet support multiple subprotocols in websocket requests: " sec-websocket-protocols))
           false)))
     (catch Throwable th
       (log/error th "error while selecting subprotocol for websocket request")
@@ -95,8 +94,7 @@
   "Attaches a dummy x-waiter-auth cookie into the request to enable mimic-ing auth in inter-router websocket requests."
   [router-id password ^UpgradeRequest request]
   (let [cookie-value [(str router-id "@waiter-peer-router") (System/currentTimeMillis)]
-        auth-cookie-value (-> (cookie-support/encode-cookie cookie-value password)
-                              (URLEncoder/encode "UTF-8"))]
+        auth-cookie-value (URLEncoder/encode (cookie-support/encode-cookie cookie-value password) "UTF-8")]
     (log/info "attaching" auth-cookie-value "to websocket request")
     (-> request
         (.getCookies)
@@ -350,7 +348,7 @@
               (when (= :instance source)
                 (let [correlation-id (cid/get-correlation-id)]
                   (async/>!
-                    (-> request :out)
+                    (:out request)
                     (fn close-session [_]
                       (cid/with-correlation-id
                         correlation-id
@@ -370,7 +368,7 @@
            (statsd/inc! metric-group (str "response_status_" status))
            (if (successful? status)
              (deliver reservation-status-promise (if (successful? status) :success :instance-error))))
-         (watch-ctrl-chan :instance (-> response :ctrl-mult) reservation-status-promise request-close-promise-chan))
+         (watch-ctrl-chan :instance (:ctrl-mult response) reservation-status-promise request-close-promise-chan))
 
     (try
       ;; stream data between client and instance
