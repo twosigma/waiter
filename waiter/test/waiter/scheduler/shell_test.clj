@@ -550,7 +550,7 @@
       (force-update-service-health scheduler scheduler-config))
     (let [instances (-> (scheduler/service-id->state scheduler "foo") :id->instance vals)
           failed-instances (filter :failed? instances)]
-      (is (= 0 (- (count instances) (count failed-instances))))
+      (is (zero? (- (count instances) (count failed-instances))))
       (is (= 1 (count failed-instances))))))
 
 (deftest test-pid->memory

@@ -34,7 +34,7 @@
   (testing "sync w/ exception"
     (let [handler (-> (fn [request]
                         (is (= :value (:key request)))
-                        (throw (ex-data "test" {})))
+                        (throw (ex-info "test" {})))
                       (wrap-assoc :key :value))]
       (try
         (handler {})

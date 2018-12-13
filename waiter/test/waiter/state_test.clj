@@ -44,7 +44,7 @@
         unhealthy-instance-combo [instance-1 instance-4 instance-7]
         unhealthy-instance-ids (map :id unhealthy-instance-combo)
         all-instance-combo (concat healthy-instance-combo unhealthy-instance-combo)
-        all-sorted-instance-ids (-> (map :id all-instance-combo) (sort))
+        all-sorted-instance-ids (sort (map :id all-instance-combo))
         instance-id->state-fn #(merge
                                  (into {} (map (fn [instance-id] [instance-id {:slots-assigned 1, :slots-used 0, :status-tags #{:healthy}}]) %1))
                                  (into {} (map (fn [instance-id] [instance-id {:slots-assigned 0, :slots-used 0, :status-tags #{:unhealthy}}]) %2)))
@@ -107,7 +107,7 @@
                         :reason :serve-request
                         :instance-id->state (instance-id->state-fn healthy-instance-ids unhealthy-instance-ids)
                         :exclude-ids-set exclude-ids-set})
-                     (let [exclude-ids-set (into #{} healthy-instance-ids)]
+                     (let [exclude-ids-set (set healthy-instance-ids)]
                        {:name "find-instance-to-offer:exclude-all-healthy-instances"
                         :expected [nil]
                         :reason :serve-request
@@ -320,13 +320,13 @@
                                                  instance-id->request-id->use-reason-map lingering-request-threshold-ms)
                          (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id?))]
             (when (or (and (nil? expected) (not (nil? actual)))
-                      (and expected (not (some #(= actual %) expected))))
+                      (and expected (not-any? #(= actual %) expected)))
               (println name)
               (doseq [[k v] (into (sorted-map) instance-id->state)] (println "  " k "=>" v))
               (println "  Expected: " expected ", Actual: " actual))
             (when (nil? expected)
               (is (nil? actual)))
-            (when (not (nil? expected))
+            (when-not (nil? expected)
               (is (not (contains? exclude-ids-set (:id actual))))
               (if (= 1 (count expected))
                 (is (= (first expected) actual))
@@ -868,7 +868,7 @@
           (testing (str "Test " name)
             (let [actual (distribute-slots-using-consistent-hash-distribution routers instances hash-fn concurrency-level distribution-scheme)]
               (is (= (set routers) (set (keys actual))))
-              (when (> (count instances) 0)
+              (when (pos? (count instances))
                 ; ensure every router got assigned at least one instance
                 (is (every? #(pos? (count (second %))) actual))
                 ; ensure a given instance is not shared more often than others
@@ -1358,24 +1358,23 @@
 
 (defmacro check-service-maintainer-state-fn
   [query-state-chan service-id expected-state]
-  `(do
-     (let [query-state-response-chan# (async/chan 1)]
-       (async/>!! ~query-state-chan {:response-chan query-state-response-chan#, :service-id ~service-id})
-       (let [actual-state# (async/<!! query-state-response-chan#)
-             check-fn# (fn [item-key#]
-                         (let [expected# (item-key# ~expected-state)
-                               actual# (item-key# actual-state#)]
-                           (when (not (nil? expected#))
-                             (when (not= expected# actual#)
-                               (let [sanitize-data# (fn [data#] (cond->> data# (map? data#) (into (sorted-map))))]
-                                 (log/info (first *testing-vars*) ":" (name item-key#))
-                                 (log/info "Expected: " (sanitize-data# expected#))
-                                 (log/info "Actual:   " (sanitize-data# actual#))))
-                             (is (= expected# actual#) (str "Checking: " (name item-key#))))))]
-         (check-fn# :service-id->channel-map)
-         (check-fn# :maintainer-chan-available)
-         (check-fn# :last-state-update-time)
-         actual-state#))))
+  `(let [query-state-response-chan# (async/chan 1)]
+     (async/>!! ~query-state-chan {:response-chan query-state-response-chan#, :service-id ~service-id})
+     (let [actual-state# (async/<!! query-state-response-chan#)
+           check-fn# (fn [item-key#]
+                       (let [expected# (item-key# ~expected-state)
+                             actual# (item-key# actual-state#)]
+                         (when (not (nil? expected#))
+                           (when (not= expected# actual#)
+                             (let [sanitize-data# (fn [data#] (cond->> data# (map? data#) (into (sorted-map))))]
+                               (log/info (first *testing-vars*) ":" (name item-key#))
+                               (log/info "Expected: " (sanitize-data# expected#))
+                               (log/info "Actual:   " (sanitize-data# actual#))))
+                           (is (= expected# actual#) (str "Checking: " (name item-key#))))))]
+       (check-fn# :service-id->channel-map)
+       (check-fn# :maintainer-chan-available)
+       (check-fn# :last-state-update-time)
+       actual-state#)))
 
 (let [service-channel-map-atom (atom {})
       start-service (fn [service-id]

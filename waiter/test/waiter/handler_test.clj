@@ -804,7 +804,7 @@
             query-state-fn (constantly state)
             {:keys [body status]} (test-fn router-id query-state-fn {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
 
     (testing "exception response"
       (let [query-state-fn (fn [] (throw (Exception. "from test")))
@@ -817,10 +817,10 @@
         test-fn (wrap-handler-json-response get-kv-store-state)]
     (testing "successful response"
       (let [kv-store (kv/new-local-kv-store {})
-            state (-> (kv/state kv-store) walk/stringify-keys)
+            state (walk/stringify-keys (kv/state kv-store))
             {:keys [body status]} (test-fn router-id kv-store {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
 
     (testing "exception response"
       (let [kv-store (Object.)
@@ -836,7 +836,7 @@
             last-request-time-agent (agent last-request-time-state)
             {:keys [body status]} (test-fn router-id last-request-time-agent {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" last-request-time-state}))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" last-request-time-state}))))
 
     (testing "exception response"
       (let [handler (core/wrap-error-handling #(test-fn router-id nil %))
@@ -853,7 +853,7 @@
             state {"leader?" (leader?-fn), "leader-id" (leader-id-fn)}
             {:keys [body status]} (test-fn router-id leader?-fn leader-id-fn {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
 
     (testing "exception response"
       (let [leader?-fn (fn [] (throw (Exception. "Test Exception")))
@@ -871,7 +871,7 @@
             _ (reset! state-atom state)
             {:keys [body status]} (test-fn router-id query-state-fn {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-router-metrics-state
   (let [router-id "test-router-id"
@@ -882,7 +882,7 @@
             {:keys [body status]} (test-fn router-id router-metrics-state-fn {})]
         (is (= 200 status))
         (is (= {"router-id" router-id "state" state}
-               (-> body json/read-str)))))
+               (json/read-str body)))))
 
     (testing "exception response"
       (let [router-metrics-state-fn (fn [] (throw (Exception. "Test Exception")))
@@ -901,7 +901,7 @@
                   (async/>! response-chan state)))
             {:keys [body status]} (async/<!! (test-fn router-id scheduler-chan {}))]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-scheduler-state
   (let [router-id "test-router-id"
@@ -910,19 +910,19 @@
                       {:scheduler "state"}))
         test-fn (wrap-handler-json-response get-scheduler-state)]
     (testing "successful response"
-      (let [state (-> (scheduler/state scheduler) walk/stringify-keys)
+      (let [state (walk/stringify-keys (scheduler/state scheduler))
             {:keys [body status]} (test-fn router-id scheduler {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-statsd-state
   (let [router-id "test-router-id"
         test-fn (wrap-handler-json-response get-statsd-state)]
     (testing "successful response"
-      (let [state (-> (statsd/state) walk/stringify-keys)
+      (let [state (walk/stringify-keys (statsd/state))
             {:keys [body status]} (test-fn router-id {})]
         (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
+        (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-service-state
   (let [router-id "router-id"
@@ -961,8 +961,7 @@
       (let [query-sources {:autoscaler-state (fn [{:keys [service-id]}]
                                                {:service-id service-id :source "autoscaler"})
                            :maintainer-state maintainer-state-chan}
-            response (->> (get-service-state router-id instance-rpc-chan local-usage-agent service-id query-sources {})
-                          (async/<!!))
+            response (async/<!! (get-service-state router-id instance-rpc-chan local-usage-agent service-id query-sources {}))
             service-state (json/read-str (:body response) :key-fn keyword)]
         (is (= router-id (get-in service-state [:router-id])))
         (is (= responder-state (get-in service-state [:state :responder-state])))

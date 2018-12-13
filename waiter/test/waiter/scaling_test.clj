@@ -754,11 +754,11 @@
     (testing "scale up to min"
       (scales-like 1 1 1, default-scaling 0 0 0 0 0))
     (testing "prevent jitter: threshold not met scaling up"
-      (scales-like 0 1 (+ 1 (- jitter-threshold epsilon)), (assoc default-scaling "scale-up-factor" (- jitter-threshold epsilon)) 1 2 1.0 1 0))
+      (scales-like 0 1 (inc (- jitter-threshold epsilon)), (assoc default-scaling "scale-up-factor" (- jitter-threshold epsilon)) 1 2 1.0 1 0))
     (testing "prevent jitter: threshold met scaling up"
-      (scales-like 1 2 (+ 1 (+ jitter-threshold epsilon)), (assoc default-scaling "scale-up-factor" (+ jitter-threshold epsilon)) 1 2 1.0 1 0))
+      (scales-like 1 2 (inc (+ jitter-threshold epsilon)), (assoc default-scaling "scale-up-factor" (+ jitter-threshold epsilon)) 1 2 1.0 1 0))
     (testing "prevent jitter: threshold not met scaling down"
-      (scales-like 0 2 (+ 1 (* 2 epsilon)), (assoc default-scaling "scale-down-factor" (- 1 (* 2 epsilon))) 2 1 2.0 2 0))
+      (scales-like 0 2 (inc (* 2 epsilon)), (assoc default-scaling "scale-down-factor" (- 1 (* 2 epsilon))) 2 1 2.0 2 0))
     (testing "prevent jitter: threshold met scaling down"
       (scales-like -1 1 1, (assoc default-scaling "scale-down-factor" 1) 2 1 2.0 2 0))
     (testing "epsilon test"

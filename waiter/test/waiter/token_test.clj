@@ -743,8 +743,7 @@
                                        :last-update-time (- (clock-millis) 1000) :owner auth-user
                                        :token token})
               _ (kv/store kv-store token service-description-1)
-              service-description-2 (-> service-description-1
-                                        (dissoc "last-update-time" "owner"))
+              service-description-2 (dissoc service-description-1 "last-update-time" "owner")
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
@@ -1555,12 +1554,12 @@
         (delete-service-description-for-token
           clock synchronize-fn kv-store history-length token "test-user-3" "test-auth-3")
 
-        (is (= (-> token-data-3
-                   (assoc "deleted" true
-                          "last-update-user" "test-auth-3"
-                          "previous" (->> token-data-1
-                                          (assoc token-data-2 "previous")
-                                          (assoc token-data-3 "previous"))))
+        (is (= (assoc token-data-3
+                 "deleted" true
+                 "last-update-user" "test-auth-3"
+                 "previous" (->> token-data-1
+                                 (assoc token-data-2 "previous")
+                                 (assoc token-data-3 "previous")))
                (kv/fetch kv-store token)))
 
         (let [service-description-4 {"cmd" "cmd-400" "version" "foo-bar-4"}
@@ -1584,14 +1583,14 @@
       (kv/store kv-store token token-data))
     (reindex-tokens synchronize-fn kv-store (keys tokens))
     (is (= {"token1" {:deleted false
-                      :etag (-> (get tokens "token1") sd/token-data->token-hash)
+                      :etag (sd/token-data->token-hash (get tokens "token1"))
                       :last-update-time 1000}
             "token2" {:deleted false
-                      :etag (-> (get tokens "token2") sd/token-data->token-hash)
+                      :etag (sd/token-data->token-hash (get tokens "token2"))
                       :last-update-time nil}}
            (list-index-entries-for-owner kv-store "owner1")))
     (is (= {"token3" {:deleted false
-                      :etag (-> (get tokens "token3") sd/token-data->token-hash)
+                      :etag (sd/token-data->token-hash (get tokens "token3"))
                       :last-update-time 3000}}
            (list-index-entries-for-owner kv-store "owner2")))))
 
@@ -1613,7 +1612,7 @@
                                   {:request-method :post})
           json-response (json/read-str body)]
       (is (= 200 status))
-      (is (= {:message "Successfully re-indexed" :tokens 3} (-> json-response walk/keywordize-keys)))
+      (is (= {:message "Successfully re-indexed" :tokens 3} (walk/keywordize-keys json-response)))
       (is @inter-router-request-fn-called))
 
     (let [inter-router-request-fn-called (atom nil)
@@ -1636,7 +1635,7 @@
                               (authorized? [_ _ _ _] (throw (UnsupportedOperationException. "enexpected call"))))
         handle-list-tokens-request (wrap-handler-json-response handle-list-tokens-request)
         last-update-time-seed (clock-millis)
-        token->token-hash (fn [token] (-> (kv/fetch kv-store token) sd/token-data->token-hash))]
+        token->token-hash (fn [token] (sd/token-data->token-hash (kv/fetch kv-store token)))]
     (store-service-description-for-token
       synchronize-fn kv-store history-length "token1"
       {"cpus" 1} {"last-update-time" (- last-update-time-seed 1000) "owner" "owner1"})

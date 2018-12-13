@@ -350,8 +350,7 @@
 
 (deftest test-wrap-suspended-service
   (testing "returns error for suspended app"
-    (let [handler (-> (fn [_] {:status 200})
-                      wrap-suspended-service)
+    (let [handler (wrap-suspended-service (fn [_] {:status 200}))
           request {:descriptor {:service-id "service-id-1"
                                 :suspended-state {:suspended true
                                                   :last-updated-by "test-user"
@@ -362,8 +361,7 @@
       (is (str/includes? body "test-user"))))
 
   (testing "passes apps by default"
-    (let [handler (-> (fn [_] {:status 200})
-                      wrap-suspended-service)
+    (let [handler (wrap-suspended-service (fn [_] {:status 200}))
           request {}
           {:keys [status]} (handler request)]
       (is (= 200 status)))))
@@ -374,8 +372,7 @@
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 10)
-      (let [handler (-> (fn [_] {:status 200})
-                        wrap-too-many-requests)
+      (let [handler (wrap-too-many-requests (fn [_] {:status 200}))
             request {:descriptor {:service-id service-id
                                   :service-description {"max-queue-length" 5}}}
             {:keys [status body]} (handler request)]
@@ -387,8 +384,7 @@
           counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
       (counters/clear! counter)
       (counters/inc! counter 3)
-      (let [handler (-> (fn [_] {:status 200})
-                        wrap-too-many-requests)
+      (let [handler (wrap-too-many-requests (fn [_] {:status 200}))
             request {:descriptor {:service-id service-id
                                   :service-description {"max-queue-length" 10}}}
             {:keys [status]} (handler request)]
@@ -402,8 +398,7 @@
                                                               :x-waiter-headers {"queue-length" 100}})))
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (-> (fn [_] {:status 200})
-                    (descriptor/wrap-descriptor request->descriptor-fn start-new-service-fn fallback-state-atom))]
+        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn start-new-service-fn fallback-state-atom)]
     (testing "with-query-params"
       (let [request {:headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
             {:keys [headers status]} (handler request)]
@@ -426,8 +421,7 @@
   (let [request->descriptor-fn (fn [_] (throw (Exception. "Exception message")))
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (-> (fn [_] {:status 200})
-                    (descriptor/wrap-descriptor request->descriptor-fn start-new-service-fn fallback-state-atom))
+        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn start-new-service-fn fallback-state-atom)
         request {}
         {:keys [body headers status]} (handler request)]
     (is (= 500 status))
@@ -439,8 +433,7 @@
   (let [request->descriptor-fn (fn [_] (throw (ex-info "Error message for user" {:status 404})))
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (-> (fn [_] {:status 200})
-                    (descriptor/wrap-descriptor request->descriptor-fn start-new-service-fn fallback-state-atom))
+        handler (descriptor/wrap-descriptor (fn [_] {:status 200}) request->descriptor-fn start-new-service-fn fallback-state-atom)
         request {}
         {:keys [body headers status]} (handler request)]
     (is (= 404 status))

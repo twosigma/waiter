@@ -78,8 +78,7 @@
   (let [log-entries (atom [])]
     (with-redefs [log (fn [log-data]
                         (swap! log-entries conj log-data))]
-      (let [handler (-> (fn [request] {:status 200})
-                        wrap-log)
+      (let [handler (wrap-log (fn [_] {:status 200}))
             request {:headers {"x-cid" "123"
                                "host" "host"}
                      :remote-addr "127.0.0.1"

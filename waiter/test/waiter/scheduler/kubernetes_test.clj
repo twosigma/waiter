@@ -17,7 +17,7 @@
   (:require [clojure.core.async :as async]
             [clojure.data]
             [clojure.pprint]
-            [clojure.string :as string]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
@@ -104,7 +104,7 @@
 
 (deftest test-service-id->k8s-app-name
   (let [base-scheduler-spec {:pod-suffix-length default-pod-suffix-length}
-        long-app-name (apply str (repeat 200 \A))
+        long-app-name (str/join (repeat 200 \A))
         sample-uuid "e8b625cc83c411e8974c38d5474b213d"
         short-app-name "myapp"
         short-sample-uuid (str (subs sample-uuid 0 8)
@@ -594,7 +594,7 @@
       (let [spec-json (with-redefs [api-request (fn [_ _ & {:keys [body]}] body)
                                     replicaset->Service identity]
                         (create-service descriptor dummy-scheduler))]
-        (is (string/includes? spec-json "\"annotations\":{\"waiter/x\":\"waiter/y\"}"))))))
+        (is (str/includes? spec-json "\"annotations\":{\"waiter/x\":\"waiter/y\"}"))))))
 
 (deftest test-delete-service
   (let [service-id "test-service-id"
@@ -627,8 +627,7 @@
         service-id "test-service-id"
         service (scheduler/make-Service {:id service-id :instances 1 :k8s/app-name service-id :k8s/namespace "myself"})
         service-state (atom {:service-id->service {service-id service}})
-        dummy-scheduler (-> (make-dummy-scheduler [service-id])
-                            (assoc :watch-state service-state))]
+        dummy-scheduler (assoc (make-dummy-scheduler [service-id]) :watch-state service-state)]
     (with-redefs [service-id->service (constantly service)]
       (testing "successful-scale"
         (let [actual (with-redefs [api-request (constantly {:status "OK"})]
@@ -957,7 +956,7 @@
           inst3 (get-instance dummy-scheduler 3)]
       (is (== healthy 1))
       (is (== running 2))
-      (is (== staged 0))
+      (is (zero? staged))
       (is (== unhealthy 1))
       (is (:healthy? inst1))
       (is (some? inst2))
@@ -991,7 +990,7 @@
           inst3 (get-instance dummy-scheduler 3)]
       (is (== healthy 2))
       (is (== running 3))
-      (is (== staged 0))
+      (is (zero? staged))
       (is (== unhealthy 1))
       (is (:healthy? inst1))
       (is (:healthy? inst2))
@@ -1009,7 +1008,7 @@
           inst3 (get-instance dummy-scheduler 3)]
       (is (== healthy 1))
       (is (== running 2))
-      (is (== staged 0))
+      (is (zero? staged))
       (is (== unhealthy 1))
       (is (nil? inst1))
       (is (:healthy? inst2))
@@ -1263,7 +1262,7 @@
           inst3 (get-instance dummy-scheduler 3)]
       (is (== healthy 1))
       (is (== running 2))
-      (is (== staged 0))
+      (is (zero? staged))
       (is (== unhealthy 1))
       (is (:healthy? inst1))
       (is (some? inst2))
@@ -1299,7 +1298,7 @@
           inst3 (get-instance dummy-scheduler 3)]
       (is (== healthy 2))
       (is (== running 3))
-      (is (== staged 0))
+      (is (zero? staged))
       (is (== unhealthy 1))
       (is (:healthy? inst1))
       (is (:healthy? inst2))
@@ -1316,7 +1315,7 @@
           inst3 (get-instance dummy-scheduler 3)]
       (is (== healthy 2))
       (is (== running 3))
-      (is (== staged 0))
+      (is (zero? staged))
       (is (== unhealthy 1))
       (is (:healthy? inst1))
       (is (:healthy? inst2))
@@ -1335,7 +1334,7 @@
           inst3 (get-instance dummy-scheduler 3)]
       (is (== healthy 1))
       (is (== running 2))
-      (is (== staged 0))
+      (is (zero? staged))
       (is (== unhealthy 1))
       (is (nil? inst1))
       (is (:healthy? inst2))

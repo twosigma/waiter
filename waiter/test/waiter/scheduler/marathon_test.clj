@@ -424,7 +424,7 @@
         service-id-2 "test-service-id-failed-instances-2"
         service-id->failed-instances-transient-store (atom {})]
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
     (is (= 1 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
@@ -440,7 +440,7 @@
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "D") common-extractor-fn)
     (is (= 4 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [])
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "A") common-extractor-fn)
     (is (= 1 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "B") common-extractor-fn)
@@ -458,15 +458,15 @@
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "H") common-extractor-fn)
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-1 (faled-instance-response-fn service-id-1 "I") common-extractor-fn)
     (is (= 9 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-2))))
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-2))))
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-2 (faled-instance-response-fn service-id-2 "X") common-extractor-fn)
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-2 (faled-instance-response-fn service-id-2 "Y") common-extractor-fn)
     (parse-and-store-failed-instance! service-id->failed-instances-transient-store service-id-2 (faled-instance-response-fn service-id-2 "Z") common-extractor-fn)
     (remove-failed-instances-for-service! service-id->failed-instances-transient-store service-id-1)
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (is (= 3 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-2))))
     (preserve-only-failed-instances-for-services! service-id->failed-instances-transient-store [service-id-2])
-    (is (= 0 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
+    (is (zero? (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-1))))
     (is (= 3 (count (service-id->failed-instances service-id->failed-instances-transient-store service-id-2))))))
 
 (deftest test-retrieve-log-url

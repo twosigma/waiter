@@ -25,7 +25,7 @@
 (deftest test-url-decode
   (is (= "testtest" (url-decode "testtest")))
   (is (= "test test" (url-decode "test%20test")))
-  (is (= nil (url-decode nil))))
+  (is (nil? (url-decode nil))))
 
 (deftest test-cookie-value
   (let [cookie-string "user=john; mode=test; product-name=waiter; special=\"quotes\"abound\""]

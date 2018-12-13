@@ -148,7 +148,7 @@
         response (proxy [ServletResponse] []
                    (getOutputStream [] sos))]
     (body response)
-    (.toString baos)))
+    (str baos)))
 
 (defn- process-streaming-body [{:keys [body headers] :as resp}]
   (if (and (= "application/json" (get headers "content-type"))
@@ -203,7 +203,7 @@
     {:test ..., :pass ..., :fail ..., :error ..., :type :summary}"
   []
   (let [namespaces (find/find-namespaces-in-dir (io/file "./test"))]
-    (dorun (map #(require %) namespaces))
+    (run! require namespaces)
     (apply run-tests namespaces)))
 
 (defn run-all-unit-tests-and-throw
@@ -218,12 +218,12 @@
   "
   []
   (let [{:keys [test pass fail error] :as m} (run-all-unit-tests)]
-    (when-not (> test 0)
+    (when-not (pos? test)
       (throw (ex-info "0 tests ran" m)))
-    (when-not (> pass 0)
+    (when-not (pos? pass)
       (throw (ex-info "0 assertions passed" m)))
-    (when-not (= fail 0)
+    (when-not (zero? fail)
       (throw (ex-info (str fail " failure(s)") m)))
-    (when-not (= error 0)
+    (when-not (zero? error)
       (throw (ex-info (str error " error(s)") m)))))
 

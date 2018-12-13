@@ -33,8 +33,8 @@
 (deftest test-compute-help-required
   (is (= -6 (compute-help-required {"outstanding" 6, "slots-available" 2, "slots-in-use" 10, "slots-received" 0})))
   (is (= -10 (compute-help-required {"outstanding" 6, "slots-available" 2, "slots-in-use" 14, "slots-received" 0})))
-  (is (= 0 (compute-help-required {"outstanding" 10, "slots-available" 10, "slots-in-use" 0, "slots-received" 0})))
-  (is (= 0 (compute-help-required {"outstanding" 14, "slots-available" 10, "slots-in-use" 4, "slots-received" 0})))
+  (is (zero? (compute-help-required {"slots-received" 0, "outstanding" 10, "slots-available" 10, "slots-in-use" 0})))
+  (is (zero? (compute-help-required {"slots-received" 0, "outstanding" 14, "slots-available" 10, "slots-in-use" 4})))
 
   (is (= 13 (compute-help-required {"outstanding" 25, "slots-available" 2, "slots-in-use" 10, "slots-received" 0})))
   (is (= 9 (compute-help-required {"outstanding" 25, "slots-available" 2, "slots-in-use" 14, "slots-received" 0})))
@@ -155,7 +155,7 @@
                             "router-2" (make-metrics {:slots-available 20})})
       (check-work-stealing-balancer-query-state query-chan {:iteration 10, :request-id->work-stealer {},
                                                             :slots {:offerable 0, :offered 0}})
-      (is (= 0 @reserve-instance-counter))
+      (is (zero? (deref reserve-instance-counter)))
       (async/>!! exit-chan :exit)))
 
   (deftest test-work-stealing-balancer-no-instance-available
@@ -213,8 +213,7 @@
       (async/>!! custom-timeout-chan :custom-timeout)
       (check-work-stealing-balancer-query-state query-chan {:iteration 11
                                                             :request-id->work-stealer
-                                                            (-> {}
-                                                                (populate-request-id->workstealer 10 0 "router-1" "test-instance-id-1"))
+                                                            (populate-request-id->workstealer {} 10 0 "router-1" "test-instance-id-1")
                                                             :slots {:offerable 5, :offered 1}})
 
       (is (pos? @reserve-instance-counter))

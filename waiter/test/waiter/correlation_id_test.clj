@@ -59,19 +59,18 @@
 
 (deftest test-with-correlation-id
   (testing "Test with-correlation-id"
-    (do
-      (with-correlation-id
-        "foo"
-        (do
-          (is (= "foo" dynamic-correlation-id))
-          (is (= "foo" (get-correlation-id)))
-          (with-correlation-id
-            "bar"
-            (do
-              (is (= "bar" dynamic-correlation-id))
-              (is (= "bar" (get-correlation-id)))))
-          (is (= "foo" dynamic-correlation-id))
-          (is (= "foo" (get-correlation-id))))))))
+    (with-correlation-id
+      "foo"
+      (do
+        (is (= "foo" dynamic-correlation-id))
+        (is (= "foo" (get-correlation-id)))
+        (with-correlation-id
+          "bar"
+          (do
+            (is (= "bar" dynamic-correlation-id))
+            (is (= "bar" (get-correlation-id)))))
+        (is (= "foo" dynamic-correlation-id))
+        (is (= "foo" (get-correlation-id)))))))
 
 (deftest test-replace-pattern-layout-in-log4j-appenders
   []
@@ -81,12 +80,13 @@
         appender3 (ConsoleAppender. (EnhancedPatternLayout. format))
         root-logger (Logger/getRootLogger)
         log (fn [^Appender appender]
-              (-> (.getLayout appender)
-                  (.format (LoggingEvent. "category"
-                                          (Category/getInstance "category-name")
-                                          Priority/INFO
-                                          "message"
-                                          nil))))
+              (.format
+                (.getLayout appender)
+                (LoggingEvent. "category"
+                               (Category/getInstance "category-name")
+                               Priority/INFO
+                               "message"
+                               nil)))
         simple-layout-format (log appender2)]
     ; setup
     (.addAppender root-logger appender1)

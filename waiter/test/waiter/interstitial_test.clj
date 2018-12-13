@@ -91,8 +91,8 @@
           (is (not (get @interstitial-state-atom :initialized?)))
           (is (not (realized? interstitial-promise)))
           (is (contains? (get @interstitial-state-atom :service-id->interstitial-promise) service-id))
-          (is (->> (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id])
-                   (identical? interstitial-promise)))))))
+          (is (identical? interstitial-promise
+                          (get-in (deref interstitial-state-atom) [:service-id->interstitial-promise service-id])))))))
 
   (testing "existing-entry"
     (let [initial-interstitial-promise (promise)
@@ -113,8 +113,8 @@
           (is (not (realized? interstitial-promise)))
           (is (contains? (get @interstitial-state-atom :service-id->interstitial-promise) service-id))
           (is (identical? initial-interstitial-promise interstitial-promise))
-          (is (->> (get-in @interstitial-state-atom [:service-id->interstitial-promise service-id])
-                   (identical? interstitial-promise)))))))
+          (is (identical? interstitial-promise
+                          (get-in (deref interstitial-state-atom) [:service-id->interstitial-promise service-id])))))))
 
   (testing "new-entry with concurrency"
     (let [interstitial-state-atom (atom {:initialized? false
@@ -223,8 +223,7 @@
     (async/>!! exit-chan :exit)))
 
 (deftest test-wrap-interstitial
-  (let [handler (fn [request] (-> (select-keys request [:query-string :request-id])
-                                  (assoc :status 201)))
+  (let [handler (fn [request] (assoc (select-keys request [:query-string :request-id]) :status 201))
         service-id (str "test-service-id-" (rand-int 100000))]
 
     (testing "zero interstitial secs"

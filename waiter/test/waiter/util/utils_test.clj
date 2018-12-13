@@ -200,7 +200,7 @@
                                  (if (pos? cur)
                                    cur
                                    (throw (ex-info "Non-positive value found!" {})))))]
-    (is (= nil (log-and-suppress-when-exception-thrown "Error message" (get-when-positive-fn))))
+    (is (nil? (log-and-suppress-when-exception-thrown "Error message" (get-when-positive-fn))))
     (is (= 1 (log-and-suppress-when-exception-thrown "Error message" (get-when-positive-fn))))
     (is (= 2 (log-and-suppress-when-exception-thrown "Error message" (get-when-positive-fn))))))
 
@@ -567,7 +567,7 @@
 
 (deftest test-urls->html-links
   (testing "nil"
-    (is (= nil (urls->html-links nil))))
+    (is (nil? (urls->html-links nil))))
   (testing "http"
     (is (= "<a href=\"http://localhost\">http://localhost</a>"
            (urls->html-links "http://localhost"))))
