@@ -28,7 +28,7 @@
     (let [requests-per-thread 5
           router-count (count (routers waiter-url))
           parallelism router-count
-          extra-headers {:x-waiter-min-instances 0
+          extra-headers {:x-waiter-min-instances 1
                          :x-waiter-distribution-scheme "simple"
                          :x-waiter-scale-down-factor 0.99
                          :x-waiter-scale-up-factor 0.99

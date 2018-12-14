@@ -88,7 +88,7 @@
    (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= 1 % 1000) 'between-one-and-1000))
-   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 0 % 2) 'between-zero-and-two))
+   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= 1 % 2) 'either-one-or-two))
    (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
