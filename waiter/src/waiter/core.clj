@@ -47,6 +47,7 @@
             [waiter.metrics-sync :as metrics-sync]
             [waiter.password-store :as password-store]
             [waiter.process-request :as pr]
+            [waiter.reporter]
             [waiter.scaling :as scaling]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
@@ -64,7 +65,8 @@
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
             [waiter.work-stealing :as work-stealing])
-  (:import (java.net InetAddress URI)
+  (:import (com.codahale.metrics ScheduledReporter)
+           (java.net InetAddress URI)
            java.util.concurrent.Executors
            org.apache.curator.framework.CuratorFrameworkFactory
            org.apache.curator.framework.api.CuratorEventType
@@ -103,6 +105,7 @@
                               ["/gc-broken-services" :state-gc-for-broken-services]
                               ["/gc-services" :state-gc-for-services]
                               ["/gc-transient-metrics" :state-gc-for-transient-metrics]
+                              ["/graphite-metrics-reporter" :state-graphite-reporter-handler-fn]
                               ["/interstitial" :state-interstitial-handler-fn]
                               ["/launch-metrics" :state-launch-metrics-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
@@ -927,6 +930,17 @@
                                       scheduler instance-rpc-chan quanta-constraints scaling-timeout-config
                                       scheduler-interactions-thread-pool service-id))
                                   {})))
+   :codahale-reporters (pc/fnk [[:settings [:metrics-config reporters]]]
+                         (pc/map-vals
+                           (fn make-codahale-reporter [{:keys [factory-fn] :as reporter-config}]
+                             (let [resolved-factory-fn (utils/resolve-symbol! factory-fn)
+                                   reporter-instance (resolved-factory-fn reporter-config)]
+                               (if-not (instance? ScheduledReporter reporter-instance)
+                                 (throw (ex-info "Reporter factory did not create an instance of ScheduledReporter"
+                                                 {:reporter-config reporter-config
+                                                  :reporter-instance reporter-instance
+                                                  :resolved-factory-fn resolved-factory-fn})))))
+                           reporters))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  router-state-maintainer]
                           (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
@@ -1261,6 +1275,12 @@
                                                  (wrap-secure-request-fn
                                                    (fn state-autoscaling-multiplexer-handler-fn [request]
                                                      (handler/get-query-chan-state-handler router-id query-chan request)))))
+   :state-graphite-reporter-handler-fn (pc/fnk [[:state router-id]
+                                                wrap-secure-request-fn]
+                                         (wrap-secure-request-fn
+                                           (fn state-graphite-reporter-handler-fn [request]
+                                             (handler/get-graphite-reporter-state router-id request))))
+
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]

@@ -690,13 +690,43 @@
                   ;; for sharing metrics between routers in the cluster:
                   :inter-router-metrics-idle-timeout-ms 2000
 
-                  ;; The interval (milliesconds) on which Waiter deletes
+                  ;; The interval (milliseconds) on which Waiter deletes
                   ;; metrics for services that are no longer running:
                   :metrics-gc-interval-ms 60000
 
                   ;; Waiter periodically triggers publishing of metrics with peer routers.
                   ;; This value (milliseconds) is used to throttle the rate of sending metrics:
                   :metrics-sync-interval-ms 50
+
+                  ;; Define optional reporters for codahale metrics.
+                  ;; Each reporter must have a :factory-fn key that specifies a factory method.
+                  ;; The factory method must create and start an instance of com.codahale.metrics.ScheduledReporter.
+                  ;; Users can add arbitrary reporters:
+                  :reporters {
+                              ;; Enables a reporter that writes to stdout:
+                              :console {
+                                        ;; Method that creates and starts an instance of com.codahale.metrics.ConsoleReporter
+                                        :factory-fn waiter.reporter/init-console-reporter
+                                        ;; If present, a regex to filter by metric name
+                                        :filter-regex #config/regex ".*"
+                                        ;; Reporting period in milliseconds
+                                        :period-ms 30000}
+                              ;; Enables a reporter that sends to a Graphite host:
+                              :graphite {
+                                         ;; Method that creates and starts an instance of com.codahale.metrics.graphite.GraphiteReporter
+                                         :factory-fn waiter.reporter/init-graphite-reporter
+                                         ;; Reporting period in milliseconds
+                                         :filter-regex #config/regex ".*"
+                                         ;; Graphite hostname
+                                         :host "graphite.example.com"
+                                         ;; Optional prefix for metric names
+                                         :period-ms 30000
+                                         ;; Flag to enable compression
+                                         :pickled? true
+                                         ;; If present, a regex to filter by metric name
+                                         :prefix "waiter-internal"
+                                         ;; The port to send metrics to
+                                         :port 1111}}
 
                   ;; The rate of listening for router state updates
                   ;; is throttled at this value (milliseconds):
