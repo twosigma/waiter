@@ -66,43 +66,43 @@
                 (complete-async-request :success)
                 (if (= trigger-chan exit-chan) :request-terminated :request-no-longer-active))
               (let [{:keys [body headers error status]} (async/<! (make-http-request))]
-                (when body (async/close! body))
-                (do
-                  (if error
+                (when body
+                  (async/close! body))
+                (if error
+                  (do
+                    (condp instance? error
+                      ConnectException (log/debug error "error in performing status check")
+                      SocketTimeoutException (log/debug error "timeout in performing status check")
+                      TimeoutException (log/debug error "timeout in performing status check")
+                      Throwable (log/warn error "unexpected error in performing status check"))
+                    (log/info (.getMessage error) "releasing allocated instance")
+                    (complete-async-request :instance-error)
+                    :make-request-error)
+                  (case (int status)
+                    200
                     (do
-                      (condp instance? error
-                        ConnectException (log/debug error "error in performing status check")
-                        SocketTimeoutException (log/debug error "timeout in performing status check")
-                        TimeoutException (log/debug error "timeout in performing status check")
-                        Throwable (log/warn error "unexpected error in performing status check"))
-                      (log/info (.getMessage error) "releasing allocated instance")
-                      (complete-async-request :instance-error)
-                      :make-request-error)
-                    (case (int status)
-                      200
-                      (do
-                        (cid/cdebug correlation-id "async request has not yet completed")
-                        (recur (max 0 (- ttl check-interval-ms))))
-                      303
-                      (do
-                        (log/info "async request has completed, result headers" headers)
-                        (let [location-header (get headers "location")
-                              location (normalize-location-header status-endpoint location-header)]
-                          (if (str/starts-with? (str location) "/")
-                            (recur (max 0 (- ttl check-interval-ms)))
-                            (do
-                              (log/info "completing async request as result location is not a relative path:" location)
-                              (complete-async-request :success)
-                              :status-see-other))))
-                      410
-                      (do
-                        (log/info "async request has completed, result is no longer available!")
-                        (complete-async-request :success)
-                        :status-gone)
-                      (do
-                        (log/warn "status check returned unsupported status" status ", releasing reserved instance")
-                        (complete-async-request :success)
-                        :unknown-status-code))))))))))))
+                      (cid/cdebug correlation-id "async request has not yet completed")
+                      (recur (max 0 (- ttl check-interval-ms))))
+                    303
+                    (do
+                      (log/info "async request has completed, result headers" headers)
+                      (let [location-header (get headers "location")
+                            location (normalize-location-header status-endpoint location-header)]
+                        (if (str/starts-with? (str location) "/")
+                          (recur (max 0 (- ttl check-interval-ms)))
+                          (do
+                            (log/info "completing async request as result location is not a relative path:" location)
+                            (complete-async-request :success)
+                            :status-see-other))))
+                    410
+                    (do
+                      (log/info "async request has completed, result is no longer available!")
+                      (complete-async-request :success)
+                      :status-gone)
+                    (do
+                      (log/warn "status check returned unsupported status" status ", releasing reserved instance")
+                      (complete-async-request :success)
+                      :unknown-status-code)))))))))))
 
 (defn complete-async-request-locally
   "Helper function that stops tracking an async request locally and releases the instance associated with it.
@@ -181,5 +181,4 @@
           status-url (cond-> status-location
                              query-string (str "?" query-string))]
       (log/info "updating status location to" status-location "from" location "with query string" query-string)
-      (-> response
-          (assoc-in [:headers "location"] status-url)))))
+      (assoc-in response [:headers "location"] status-url))))

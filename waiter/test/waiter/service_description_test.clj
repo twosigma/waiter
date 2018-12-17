@@ -1444,8 +1444,10 @@
             basic-service-id
             "current-request-user"
             {"scale-factor" 0.3})
-          (is (= (-> basic-service-description
-                     (assoc "health-check-url" "/ping" "permitted-user" "bob" "scale-factor" 0.3))
+          (is (= (assoc basic-service-description
+                   "health-check-url" "/ping"
+                   "permitted-user" "bob"
+                   "scale-factor" 0.3)
                  (service-description {:defaults {"health-check-url" "/ping"
                                                   "permitted-user" "bob"
                                                   "scale-factor" 1}
@@ -1458,8 +1460,9 @@
             kv-store
             basic-service-id
             "current-request-user")
-          (is (= (-> basic-service-description
-                     (assoc "health-check-url" "/ping" "permitted-user" "bob"))
+          (is (= (assoc basic-service-description
+                   "health-check-url" "/ping"
+                   "permitted-user" "bob")
                  (service-description {:defaults {"health-check-url" "/ping"
                                                   "permitted-user" "bob"}
                                        :headers {"cmd" "on-the-fly-cmd"
@@ -2123,7 +2126,7 @@
   (let [current-time (t/now)
         current-time-ms (.getMillis ^DateTime current-time)
         clock (constantly current-time)]
-    (is (= nil (consent-cookie-value clock nil nil nil nil)))
+    (is (nil? (consent-cookie-value clock nil nil nil nil)))
     (is (= ["unsupported" current-time-ms] (consent-cookie-value clock "unsupported" nil nil nil)))
     (is (= ["service" current-time-ms] (consent-cookie-value clock "service" nil nil nil)))
     (is (= ["service" current-time-ms "service-id"] (consent-cookie-value clock "service" "service-id" nil nil)))

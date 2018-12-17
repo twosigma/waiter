@@ -95,7 +95,7 @@
                      :priority true)]
         (let [new-service-data (into {} (map (fn [[service data]]
                                                [service (if (:delete data)
-                                                          (assoc data :counter (dec (:counter data)))
+                                                          (update-in data [:counter] dec)
                                                           data)])
                                              @service-data-atom))]
           (reset! service-data-atom new-service-data))
@@ -228,7 +228,7 @@
                                   :service-description-defaults service-description-defaults}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-override-handler-fn ((:service-override-handler-fn request-handlers) configuration)}
-        request-handler (-> (ring-handler-factory waiter-request?-fn handlers) wrap-error-handling)
+        request-handler (wrap-error-handling (ring-handler-factory waiter-request?-fn handlers))
         test-service-id "service-id-1"]
     (sd/store-core kv-store test-service-id service-description-defaults (constantly nil))
     (testing "override-service-handler"
@@ -561,7 +561,7 @@
             (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
             (is (= last-request-time (get body-json "last-request-time")))
             (is (= 1 (get body-json "num-active-instances")))
-            (is (= 0 (get body-json "num-routers")))
+            (is (zero? (get body-json "num-routers")))
             (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
 
     (testing "service-handler:valid-response-including-active-killed-and-failed"
@@ -587,7 +587,7 @@
             (is (= {"aggregate" {"routers-sent-requests-to" 0}} (get body-json "metrics")))
             (is (= last-request-time (get body-json "last-request-time")))
             (is (= 1 (get body-json "num-active-instances")))
-            (is (= 0 (get body-json "num-routers")))
+            (is (zero? (get body-json "num-routers")))
             (is (= {"name" "test-service-1-name", "run-as-user" "waiter-user"} (get body-json "service-description")))))))
 
     (.shutdown scheduler-interactions-thread-pool)))
@@ -643,7 +643,7 @@
               make-request-fn (make-request-fn-factory urls-invoked-atom)]
           (make-inter-router-requests make-request-fn make-basic-auth-fn my-router-id discovery passwords "test/endpoint3"
                                       :acceptable-router? (fn [router-id] (some #(str/includes? router-id %) ["A" "B" "C"])))
-          (is (= 0 (count @urls-invoked-atom))))))))
+          (is (zero? (count (deref urls-invoked-atom)))))))))
 
 (deftest test-make-request-async
   (let [http-client (Object.)
@@ -742,7 +742,7 @@
       (is (= "ok" (str body))))))
 
 (deftest test-leader-fn-factory
-  (with-redefs [discovery/cluster-size (fn [discovery] (int discovery))]
+  (with-redefs [discovery/cluster-size int]
     (testing "leader-as-single-instance"
       (let [discovery 1
             has-leadership? (constantly true)

@@ -179,7 +179,7 @@
        :started-at started-at
        :healthy? nil
        :host (str "127.0.0." (inc (rand-int 10)))
-       :port (-> reserved-ports first)
+       :port (first reserved-ports)
        :extra-ports (-> reserved-ports rest vec)
        :protocol backend-proto
        :log-directory working-directory
@@ -251,9 +251,8 @@
               (launch-service service-id service-description service-id->password-fn
                               work-directory port->reservation-atom port-range)]
           (deliver completion-promise :created)
-          (let [service-entry (-> {:service service
-                                   :id->instance {(:id instance) instance}}
-                                  update-task-stats)]
+          (let [service-entry (update-task-stats {:id->instance {(:id instance) instance}
+                                                  :service service})]
             (assoc id->service service-id service-entry)))))
     (catch Throwable e
       (log/error e "error attempting to create service" service-id)
@@ -785,13 +784,13 @@
           (let [{:strs [id->service port->reservation time]} (-> backup-file-path slurp json/read-str)]
             (log/info scheduler-name "scheduler was last backed up at" time)
             (let [actually-running-pids (get-running-pids work-directory)
-                  id->service (->> id->service
-                                   (pc/map-vals
-                                     (fn [service]
-                                       (-> (pc/map-keys keyword service)
-                                           (update :id->instance #(mark-lost-processes actually-running-pids %))
-                                           (update :service keywordize-task-stats)
-                                           update-task-stats))))]
+                  id->service (pc/map-vals
+                                (fn [service]
+                                  (-> (pc/map-keys keyword service)
+                                      (update :id->instance #(mark-lost-processes actually-running-pids %))
+                                      (update :service keywordize-task-stats)
+                                      update-task-stats))
+                                id->service)]
               (log/info "restoring" (count id->service) "entries into id->service-agent")
               (send id->service-agent (constantly id->service))
               (kill-orphaned-processes! id->service actually-running-pids)

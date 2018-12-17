@@ -63,8 +63,7 @@
     (testing "cors request allowed"
       (let [allow-all (allow-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (-> (fn [_] {:status 200})
-                        (wrap-cors-request allow-all waiter-request? exposed-headers))
+            handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= 200 status))
         (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
@@ -76,8 +75,7 @@
             exposed-headers ["foo" "bar"]
             allow-all (allow-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (-> (fn [_] {:status 200})
-                        (wrap-cors-request allow-all waiter-request? exposed-headers))
+            handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= 200 status))
         (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
@@ -91,8 +89,7 @@
             request {:headers {"host" "does.matter"
                                "origin" "http://does.matter"}
                      :scheme "http"}
-            handler (-> (fn [_] {:status 200})
-                        (wrap-cors-request allow-all waiter-request? exposed-headers))
+            handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= 200 status))
         (is (= "http://does.matter" (get headers "Access-Control-Allow-Origin")))
@@ -104,8 +101,7 @@
             exposed-headers []
             allow-all (allow-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (-> (fn [_] {:status 200})
-                        (wrap-cors-request allow-all waiter-request? exposed-headers))
+            handler (wrap-cors-request (fn [_] {:status 200}) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= 200 status))
         (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
@@ -128,9 +124,8 @@
           request {:headers {"origin" "doesnt.matter"
                              "access-control-request-headers" "x-test-header"}
                    :request-method :options}
-          handler (-> (fn [request] {:status 200})
-                      (wrap-cors-preflight allow-all max-age))
-          {:keys [headers status] :as response} (handler request)]
+          handler (wrap-cors-preflight (fn [_] {:status 200}) allow-all max-age)
+          {:keys [headers status]} (handler request)]
       (is (= 200 status))
       (is (= "doesnt.matter" (get headers "Access-Control-Allow-Origin")))
       (is (= "x-test-header" (get headers "Access-Control-Allow-Headers")))

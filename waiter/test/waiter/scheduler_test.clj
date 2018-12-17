@@ -68,7 +68,7 @@
       (is (= "instance-id" (:id test-instance)))
       (is (= "service-id" (:service-id test-instance)))
       (is (= start-time (:started-at test-instance)))
-      (is (= true (:healthy? test-instance)))
+      (is (true? (:healthy? test-instance)))
       (is (= 200 (:health-check-status test-instance)))
       (is (= "www.scheduler-test.example.com" (:host test-instance)))
       (is (= 1234 (:port test-instance)))
@@ -274,7 +274,7 @@
                                                                      :status 200}
                                  :else {:healthy? false
                                         :status 400})))
-        start-time-ms (-> (clock) .getMillis)
+        start-time-ms (.getMillis (clock))
         failed-check-threshold 5
         scheduler-name "test-scheduler"
         {:keys [exit-chan query-chan retrieve-syncer-state-fn]}
@@ -324,7 +324,7 @@
           response (async/alt!!
                      response-chan ([state] state)
                      (async/timeout 10000) ([_] {:message "Request timed out!"}))
-          end-time-ms (-> (clock) .getMillis)]
+          end-time-ms (.getMillis (clock))]
       (doseq [required-key [:instance-id->failed-health-check-count
                             :instance-id->tracked-failed-instance
                             :instance-id->unhealthy-instance

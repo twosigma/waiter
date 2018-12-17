@@ -170,7 +170,7 @@
         (log/info "request received:"
                   (-> (dissoc request :body :ctrl :request-time :server-name :server-port :servlet-request
                               :ssl-client-cert :support-info)
-                      (update-in [:headers] headers/truncate-header-values)))
+                      (update :headers headers/truncate-header-values)))
         (let [response (handler request)
               get-request-cid (fn get-request-cid [] request-cid)]
           (if (map? response)
@@ -575,14 +575,15 @@
                     curator (CuratorFrameworkFactory/newClient zk-connection-string 5000 5000 retry-policy)]
                 (.start curator)
                 ; register listener that notifies of sync call completions
-                (-> (.getCuratorListenable curator)
-                    (.addListener (reify CuratorListener
-                                    (eventReceived [_ _ event]
-                                      (when (= CuratorEventType/SYNC (.getType event))
-                                        (log/info "received SYNC event for" (.getPath event))
-                                        (when-let [response-promise (.getContext event)]
-                                          (log/info "releasing response promise provided for" (.getPath event))
-                                          (deliver response-promise :release)))))))
+                (.addListener
+                  (.getCuratorListenable curator)
+                  (reify CuratorListener
+                    (eventReceived [_ _ event]
+                      (when (= CuratorEventType/SYNC (.getType event))
+                        (log/info "received SYNC event for" (.getPath event))
+                        (when-let [response-promise (.getContext event)]
+                          (log/info "releasing response promise provided for" (.getPath event))
+                          (deliver response-promise :release))))))
                 curator))
    :curator-base-init (pc/fnk [curator [:settings [:zookeeper base-path]]]
                         (curator/create-path curator base-path :create-parent-zknodes? true))

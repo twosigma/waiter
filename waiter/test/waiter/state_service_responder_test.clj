@@ -113,7 +113,7 @@
         (if (keyword? expected-result)
           (is (= expected-result reserved-result))
           (let [actual-result (select-keys reserved-result [:id])]
-            (when (not (= {:id expected-result} actual-result))
+            (when (not= {:id expected-result} actual-result)
               (println (first *testing-contexts*) "check-request-instance-fn:"
                        "Expected: " {:id expected-result} "Actual:   " actual-result))
             (is (= {:id expected-result} actual-result) (str "Error in requesting instance for cid-" @id-counter)))))))
@@ -136,7 +136,7 @@
           (is (= expected-result reserved-result))
           (let [expected-result {:id expected-result}
                 actual-result (select-keys reserved-result [:id])]
-            (when (not (= expected-result actual-result))
+            (when (not= expected-result actual-result)
               (println (first *testing-contexts*) "check-request-instance-fn:"
                        "Expected: " expected-result "Actual:   " actual-result))
             (is (= expected-result actual-result) (str "Error in requesting instance for cid-" @id-counter)))))))
@@ -416,8 +416,7 @@
                           {:instance-id->blacklist-expiry-time {}
                            :instance-id->request-id->use-reason-map {}
                            :instance-id->consecutive-failures {}
-                           :instance-id->state (-> {}
-                                                   (update-slot-state-fn "s1.h2" 1 0))})
+                           :instance-id->state (update-slot-state-fn {} "s1.h2" 1 0)})
           (async/>!! exit-chan :exit))))
 
     (deftest test-start-service-chan-responder-simple-state-updates-with-reserved-kill
@@ -1601,7 +1600,7 @@
                          :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                          :request-id->work-stealer {}
                          :work-stealing-queue (make-queue [])})
-        (is (= 0 (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
+        (is (zero? (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))))
         (is (= :rejected (async/<!! response-chan-3)))
         (async/>!! exit-chan :exit)))
 
@@ -1846,8 +1845,7 @@
                                                                                 "req-18" {:cid "cid-18" :request-id "req-18" :reason :serve-request}}
                                                                        "s1.u3" {"req-13" {:cid "cid-13" :request-id "req-13" :reason :kill-instance}}}
                              :instance-id->consecutive-failures {"s1.h1" 1 "s1.h2" 1 "s1.u1" 1 "s1.u2" 1 "s1.u3" 1}
-                             :instance-id->state (-> test-instance-id->state
-                                                     (update-slot-state-fn "s1.h2" 1 0 #{:blacklisted :healthy}))
+                             :instance-id->state (update-slot-state-fn test-instance-id->state "s1.h2" 1 0 #{:blacklisted :healthy})
                              :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                              :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")}
                              :work-stealing-queue (make-queue [])})
@@ -2144,8 +2142,7 @@
             initial-state {:instance-id->blacklist-expiry-time {}
                            :instance-id->request-id->use-reason-map {"s1.h1" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}}
                            :instance-id->consecutive-failures {}
-                           :instance-id->state (-> {}
-                                                   (update-slot-state-fn "s1.h1" 1 1 #{:healthy}))
+                           :instance-id->state (update-slot-state-fn {} "s1.h1" 1 1 #{:healthy})
                            :work-stealing-queue (make-queue [(make-work-stealing-data "cid-17" "s1.h4" response-chan-1 "test-router-1")
                                                              (make-work-stealing-data "cid-18" "s1.h5" response-chan-2 "test-router-2")])}
             {:keys [exit-chan kill-instance-chan query-state-chan release-instance-chan]}

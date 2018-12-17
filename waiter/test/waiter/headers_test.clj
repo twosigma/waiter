@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.headers-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.string :as str]
+            [clojure.test :refer :all]
             [waiter.headers :refer :all]
             [waiter.token :as token]
             [waiter.util.utils :as utils]))
@@ -49,7 +50,7 @@
     (is (= "JLgw1jg81Melpev3gXtL3COyATKrqZKj" (parse-header-value "x-waiter-token" "JLgw1jg81Melpev3gXtL3COyATKrqZKj"))))
 
   (testing "parse-header-value:json-boolean"
-    (is (= true (parse-header-value "x-waiter-json-boolean" "true"))))
+    (is (true? (parse-header-value "x-waiter-json-boolean" "true"))))
 
   (testing "parse-header-value:json-int"
     (is (= 123 (parse-header-value "x-waiter-json-int" "123"))))
@@ -131,11 +132,11 @@
   (testing "Truncating header values"
 
     (testing "should truncate to 80 characters by default"
-      (let [value (apply str (repeat 30 "foo"))]
+      (let [value (str/join (repeat 30 "foo"))]
         (is (= 90 (count value)))
         (is (= {"some-header" (utils/truncate value 80)} (truncate-header-values {"some-header" value})))))
 
     (testing "should not truncate x-waiter-token"
-      (let [token (apply str (repeat 30 "foo"))]
+      (let [token (str/join (repeat 30 "foo"))]
         (is (= 90 (count token)))
         (is (= {"x-waiter-token" token} (truncate-header-values {"x-waiter-token" token})))))))

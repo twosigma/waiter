@@ -548,9 +548,9 @@
       (fn sync-deployment-maintainer-timer-task []
         (if (compare-and-set! processing-mutex ::idle ::busy)
           (try
-            (->> (trigger-sync-deployment-maintainer-iteration
-                   leader?-fn @service-id->out-of-sync-state-store marathon-scheduler trigger-timeout)
-                 (reset! service-id->out-of-sync-state-store))
+            (reset! service-id->out-of-sync-state-store
+                    (trigger-sync-deployment-maintainer-iteration
+                      leader?-fn @service-id->out-of-sync-state-store marathon-scheduler trigger-timeout))
             (finally
               (reset! processing-mutex ::idle)))
           (log/warn "sync-deployment-maintainer is busy processing previous iteration")))

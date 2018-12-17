@@ -244,8 +244,7 @@
   [service-id {:keys [service-id->deployment-error service-id->instance-counts]}]
   (let [deployment-error (get service-id->deployment-error service-id)
         instance-counts (get service-id->instance-counts service-id)]
-    (-> (service/resolve-service-status deployment-error instance-counts)
-        utils/message)))
+    (utils/message (service/resolve-service-status deployment-error instance-counts))))
 
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
@@ -435,7 +434,7 @@
    service-id->service-description-fn service-id->source-tokens-entries-fn query-state-fn service-id->metrics-fn
    scheduler-interactions-thread-pool request]
   (try
-    (when (not service-id)
+    (when-not service-id
       (throw (ex-info "Missing service-id" {:log-level :info :status 400})))
     (let [core-service-description (sd/fetch-core kv-store service-id :refresh true)]
       (if (empty? core-service-description)
@@ -590,14 +589,14 @@
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (-> {:details (->> ["autoscaler" "autoscaling-multiplexer" "fallback"
-                          "gc-broken-services" "gc-services" "gc-transient-metrics"
-                          "interstitial" "kv-store" "launch-metrics" "leader" "local-usage" "maintainer"
-                          "router-metrics" "scheduler" "statsd"]
-                         (pc/map-from-keys make-url))
-           :router-id router-id
-           :routers routers}
-          (utils/clj->streaming-json-response)))
+      (utils/clj->streaming-json-response
+        {:details (->> ["autoscaler" "autoscaling-multiplexer" "fallback"
+                        "gc-broken-services" "gc-services" "gc-transient-metrics"
+                        "interstitial" "kv-store" "launch-metrics" "leader" "local-usage" "maintainer"
+                        "router-metrics" "scheduler" "statsd"]
+                       (pc/map-from-keys make-url))
+         :router-id router-id
+         :routers routers}))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -608,8 +607,7 @@
     (log/info (str "Waiting for response from state channel"))
     (let [data (query-state-fn)
           state (or data {:message "No data available"})]
-      (-> {:router-id router-id :state state}
-          (utils/clj->streaming-json-response)))
+      (utils/clj->streaming-json-response {:router-id router-id :state state}))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -624,8 +622,7 @@
         (log/info (str "Waiting for response from query channel"))
         (let [[data _] (async/alts! [response-chan timeout-chan] :priority true)
               state (or data {:message "Request timeout"})]
-          (-> {:router-id router-id :state state}
-              (utils/clj->streaming-json-response))))
+          (utils/clj->streaming-json-response {:router-id router-id :state state})))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
@@ -633,9 +630,7 @@
   "Outputs the state obtained by invoking `retrieve-state-fn`."
   [retrieve-state-fn router-id request]
   (try
-    (-> {:router-id router-id
-         :state (retrieve-state-fn)}
-        (utils/clj->streaming-json-response))
+    (utils/clj->streaming-json-response {:router-id router-id :state (retrieve-state-fn)})
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -657,10 +652,11 @@
 (defn get-leader-state
   "Outputs the leader state."
   [router-id leader?-fn leader-id-fn request]
-  (-> (fn leader-state-fn []
-        {:leader? (leader?-fn)
-         :leader-id (leader-id-fn)})
-      (get-function-state router-id request)))
+  (get-function-state
+    (fn leader-state-fn []
+      {:leader? (leader?-fn)
+       :leader-id (leader-id-fn)})
+    router-id request))
 
 (defn get-router-metrics-state
   "Outputs the router metrics state."
@@ -805,10 +801,10 @@
             service-id (-> service-description-template
                            (sd/assoc-run-as-requester-fields auth-user)
                            service-description->service-id)
-            query-string' (str (when (not (str/blank? query-string)) query-string)
+            query-string' (str (when-not (str/blank? query-string) query-string)
                                (when (some-> interstitial-secs pos?)
                                  ;; add the bypass query param only if interstitial is enabled
-                                 (str (when (not (str/blank? query-string)) "&")
+                                 (str (when-not (str/blank? query-string) "&")
                                       (interstitial/request-time->interstitial-param-string request-time))))]
         (counters/inc! (metrics/waiter-counter "auto-run-as-requester" "form-render"))
         (meters/mark! (metrics/waiter-meter "auto-run-as-requester" "form-render"))
@@ -818,7 +814,7 @@
                   :service-description-template service-description-template
                   :service-id service-id
                   :target-url (str (name (utils/request->scheme request)) "://" host-header "/" path
-                                   (when (not (str/blank? query-string')) (str "?" query-string')))
+                                   (when-not (str/blank? query-string') (str "?" query-string')))
                   :token token})
          :headers {"content-type" "text/html"}
          :status 200}))

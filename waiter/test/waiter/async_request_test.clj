@@ -329,12 +329,12 @@
                               (let [route-uri (subs (str uri) (count prefix))
                                     [request-id router-id service-id host port & remaining] (str/split (str route-uri) #"/")
                                     decode #(URLDecoder/decode %1 "UTF-8")]
-                                {:host (when (not (str/blank? host)) host)
+                                {:host (when-not (str/blank? host) host)
                                  :location (when (seq remaining) (str "/" (str/join "/" remaining)))
-                                 :port (when (not (str/blank? port)) port)
-                                 :request-id (when (not (str/blank? request-id)) (decode request-id))
-                                 :router-id (when (not (str/blank? router-id)) (decode router-id))
-                                 :service-id (when (not (str/blank? service-id)) service-id)})))
+                                 :port (when-not (str/blank? port) port)
+                                 :request-id (when-not (str/blank? request-id) (decode request-id))
+                                 :router-id (when-not (str/blank? router-id) (decode router-id))
+                                 :service-id (when-not (str/blank? service-id) service-id)})))
         execute-test (fn [params]
                        (let [prefix "/my-test-prefix/"
                              uri (route-params->uri prefix params)

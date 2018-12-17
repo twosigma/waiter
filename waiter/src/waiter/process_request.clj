@@ -177,8 +177,7 @@
               :else
               [:instance-error (utils/message :backend-request-failed) 502])]
     (deliver reservation-status-promise promise-value)
-    (-> (ex-info message (assoc metrics-map :status status) error)
-        (utils/exception->response request))))
+    (utils/exception->response (ex-info message (assoc metrics-map :status status) error) request)))
 
 (defn- make-http-request
   "Makes an asynchronous request to the endpoint using Basic authentication."
@@ -308,7 +307,7 @@
                           (throw e)))]
                   (let [bytes-reported-to-statsd'
                         (let [unreported-bytes (- bytes-streamed' bytes-reported-to-statsd)]
-                          (if (or (and (not more-bytes-possibly-available?) (> unreported-bytes 0))
+                          (if (or (and (not more-bytes-possibly-available?) (pos? unreported-bytes))
                                   (>= unreported-bytes 1000000))
                             (do
                               (statsd/inc! metric-group "response_bytes" unreported-bytes)

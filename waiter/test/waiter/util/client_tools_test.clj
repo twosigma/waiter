@@ -20,7 +20,7 @@
 (deftest test-parse-set-cookie-string
   (is (= (list {:name "name" :value "value"}) (parse-set-cookie-string "name=value")))
   (is (= (list {:name "name" :value "value"}) (parse-set-cookie-string "name=value;Path=/")))
-  (is (= nil (parse-set-cookie-string nil))))
+  (is (nil? (parse-set-cookie-string nil))))
 
 (deftest test-parse-cookies
   (is (= [{:name "name" :value "value"}] (parse-cookies "name=value")))

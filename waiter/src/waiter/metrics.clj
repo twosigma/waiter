@@ -113,8 +113,7 @@
                       (throw (IllegalArgumentException. (str "Please pass a Meter instance: " ~title-or-meter-end))))]
      (try
        (meters/mark! meter-start#)
-       (do
-         ~@body)
+       (do ~@body)
        (finally
          (meters/mark! meter-end#)))))
 
@@ -125,8 +124,7 @@
                     (throw (IllegalArgumentException. (str "Please pass a Counter instance: " ~title-or-counter))))]
      (try
        (counters/inc! counter#)
-       (do
-         ~@body)
+       (do ~@body)
        (finally
          (counters/dec! counter#)))))
 
@@ -167,10 +165,10 @@
         included-counter-names ["in-flight" "outstanding" "slots-available" "slots-in-use" "total"]
         metric-filter (reify MetricFilter
                         (matches [_ name _]
-                          (-> (and (str/starts-with? name services-string)
-                                   (str/includes? name "counters")
-                                   (some #(str/includes? name %) included-counter-names))
-                              boolean)))
+                          (boolean
+                            (and (str/starts-with? name services-string)
+                                 (str/includes? name "counters")
+                                 (some #(str/includes? name %) included-counter-names)))))
         service-id->codahale-metrics (-> (get-metrics mc/default-registry metric-filter)
                                          (get services-string))]
     (pc/map-vals (fn [metrics]

@@ -29,8 +29,7 @@
                     (.port port)
                     (.address (if (= host "0.0.0.0")
                                 (let [inet-addresses (ServiceInstanceBuilder/getAllLocalIPs)
-                                      ipv4-address (->> inet-addresses
-                                                        (some #(when (instance? Inet4Address %) %)))]
+                                      ipv4-address (some #(when (instance? Inet4Address %) %) inet-addresses)]
                                   (if ipv4-address
                                     (.getHostAddress ipv4-address)
                                     (throw (ex-info "No IPv4 address found for host"

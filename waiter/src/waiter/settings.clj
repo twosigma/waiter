@@ -191,7 +191,7 @@
        (walk/postwalk (fn [data]
                         (if-not (and (map? data) (contains? data :kind))
                           data
-                          (->> (-> data keys)
+                          (->> (keys data)
                                (remove #(let [nested-data (get data %)]
                                           (and (not= % :kind)
                                                (not= % (:kind data))

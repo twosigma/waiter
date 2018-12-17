@@ -287,7 +287,7 @@
                 response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
                 response-map (async/<!! response)]
             (is (= #{:ctrl-mult :request} (-> response-map keys set)))
-            (is (= connect-request (-> response-map :request)))))))
+            (is (= connect-request (:request response-map)))))))
 
     (testing "successful-connect-wss"
       (with-redefs [ws-client/connect! (fn [_ instance-endpoint request-callback {:keys [middleware] :as request-properties}]
@@ -306,7 +306,7 @@
                 response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
                 response-map (async/<!! response)]
             (is (= #{:ctrl-mult :request} (-> response-map keys set)))
-            (is (= connect-request (-> response-map :request)))))))
+            (is (= connect-request (:request response-map)))))))
 
     (testing "unsuccessful-connect"
       (let [test-exception (Exception. "Thrown-from-test")]
@@ -409,8 +409,7 @@
   (testing "error case"
     (let [out (async/chan 1)
           request {:out out}
-          handler (-> (fn [_] {:status 500})
-                      wrap-ws-close-on-error)
+          handler (wrap-ws-close-on-error (fn [_] {:status 500}))
           {:keys [status]} (handler request)]
       ;; response should indicate an error
       (is (= 500 status))

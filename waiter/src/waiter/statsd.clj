@@ -134,7 +134,7 @@
       whose :delete-on-publish?-fn indicate that they should be deleted"
       [values-map]
       (try
-        (dorun (map publish-value values-map))
+        (run! publish-value values-map)
         (utils/filterm save-on-publish values-map)
         (catch Exception e
           (log/error e "Error publishing aggregated values to Statsd")
@@ -167,7 +167,7 @@
           (init-configuration host port :prefix "waiter.")
           (when config-histogram-max-size
             (reset! histogram-max-size config-histogram-max-size))
-          (when (> config-publish-interval-ms 0)
+          (when (pos? config-publish-interval-ms)
             (du/start-timer-task (t/millis config-publish-interval-ms) trigger-publish
                                  :delay-ms config-publish-interval-ms)))))
 
@@ -192,8 +192,7 @@
 
       Assumes that coll is sorted (see percentiles below for context)"
       [coll p]
-      (if (or (empty? coll) (not (number? p)) (<= p 0) (> p 100))
-        nil
+      (when-not (or (empty? coll) (not (number? p)) (<= p 0) (> p 100))
         (nth coll
              (-> p
                  (/ 100)
@@ -212,7 +211,7 @@
     (defn set-publish
       "Publishes a Statsd set metric for each value in values-set"
       [metric-group metric values-set]
-      (dorun (map #(unique metric-group metric %) values-set)))
+      (run! #(unique metric-group metric %) values-set))
 
     (defn- gauge-delta-publish
       "Publishes a Statsd gauge metric for value"
@@ -234,10 +233,9 @@
       "Publishes a Statsd timer metric for each of the 50th, 75th, 95th,
       and 100th percentiles of the values that have been locally aggregated"
       [metric-group metric values]
-      (dorun
-        (map (fn [[k v]]
-               (gauge #(metric-path metric-group (str metric "_p" k)) v))
-             (percentiles values 50 75 95 99 100))))
+      (run! (fn [[k v]]
+              (gauge #(metric-path metric-group (str metric "_p" k)) v))
+            (percentiles values 50 75 95 99 100)))
 
     (defn bounded-conj
       "Like conj, except it will start to pop after the count reaches @histogram-max-size.
@@ -288,7 +286,7 @@
 
     (def histo-metric
       "Histograms aggregate by concatenating"
-      {:seed-fn (fn [value] (-> PersistentQueue/EMPTY (conj value)))
+      {:seed-fn (fn [value] (conj PersistentQueue/EMPTY value))
        :aggregate-fn bounded-conj
        :publish-fn histo-publish
        :delete-on-publish?-fn (constantly true)
@@ -351,13 +349,13 @@
   "Publishes a gauge for the number of cpus, mem, healthy instances, unhealthy instances, and
    failed instances corresponding to each metric group in the provided map."
   [metric-group->counts]
-  (dorun (map (fn [[metric-group {:keys [healthy-instances unhealthy-instances failed-instances cpus mem]}]]
-                (gauge! metric-group "instances.healthy" healthy-instances)
-                (gauge! metric-group "instances.unhealthy" unhealthy-instances)
-                (gauge! metric-group "instances.failed" failed-instances)
-                (gauge! metric-group "cpus" cpus)
-                (gauge! metric-group "mem" mem))
-              metric-group->counts)))
+  (run! (fn [[metric-group {:keys [healthy-instances unhealthy-instances failed-instances cpus mem]}]]
+          (gauge! metric-group "instances.healthy" healthy-instances)
+          (gauge! metric-group "instances.unhealthy" unhealthy-instances)
+          (gauge! metric-group "instances.failed" failed-instances)
+          (gauge! metric-group "cpus" cpus)
+          (gauge! metric-group "mem" mem))
+        metric-group->counts))
 
 (defn merge-service-state
   "Merges the current map of resources by metric group with service data from a router state update message."
@@ -418,8 +416,7 @@
                     (t/millis sync-instances-interval-ms)
                     (fn run-instance-metrics-publisher []
                       (log/info "service-instance-metrics-publisher publishing router state")
-                      (-> (query-state-fn)
-                          (process-router-state service-id->service-description-fn))))]
+                      (process-router-state (query-state-fn) service-id->service-description-fn)))]
     (fn cancel-instance-metrics-publisher []
       (log/info "service-instance-metrics-publisher stopping")
       (cancel-fn))))

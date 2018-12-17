@@ -33,4 +33,4 @@
                                         {}
                                         {25 num-clients 75 (- 0 num-clients)})]
       (is (= num-clients (:total-instances (get tickstate 50))))
-      (is (= 0 (:total-instances (get tickstate 100))) (str "Didn't scale down to zero instances" "num-clients" num-clients "tickstate" (get tickstate 100))))))
+      (is (zero? (:total-instances (get tickstate 100))) (str "Didn't scale down to zero instances" "num-clients" num-clients "tickstate" (get tickstate 100))))))

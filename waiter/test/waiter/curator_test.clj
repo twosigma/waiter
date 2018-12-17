@@ -77,14 +77,14 @@
         (is (every? #(not (nil? (.forPath (.checkExists curator) (str services-base-path "/" %)))) paths-to-work-on))
         (doseq [service-id paths-to-work-on]
           (is (= {:service-id service-id}
-                 (->> (read-path curator (str services-base-path "/" service-id) :serializer serializer) (:data)))
+                 (:data (read-path curator (str services-base-path "/" service-id) :serializer serializer)))
               (str "Data not equal for " service-id)))
         (doseq [service-id paths-to-work-on]
           (write-path curator (str services-base-path "/" service-id) {:service-id service-id, :pass 2} :serializer serializer))
         (is (every? #(not (nil? (.forPath (.checkExists curator) (str services-base-path "/" %)))) paths-to-work-on))
         (doseq [service-id paths-to-work-on]
           (is (= {:service-id service-id, :pass 2}
-                 (->> (read-path curator (str services-base-path "/" service-id) :serializer serializer) (:data)))
+                 (:data (read-path curator (str services-base-path "/" service-id) :serializer serializer)))
               (str "Data not equal for " service-id))))
 
       (testing "write-on-new-nested-paths"
@@ -94,7 +94,7 @@
         (is (every? #(not (nil? (.forPath (.checkExists curator) (str services-base-path "/" %)))) paths-to-work-on))
         (doseq [service-id paths-to-work-on]
           (is (= {:service-id service-id}
-                 (->> (read-path curator (str services-base-path "/new/" service-id) :serializer serializer) (:data)))
+                 (:data (read-path curator (str services-base-path "/new/" service-id) :serializer serializer)))
               (str "Data not equal for " service-id))))
       (finally
         (.close curator)

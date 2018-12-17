@@ -61,8 +61,7 @@
   "Inserts the provided name-value pair as a Set-Cookie header in the response"
   [response password name value age-in-days]
   (letfn [(add-cookie-into-response [response]
-            (let [encoded-cookie (-> (encode-cookie value password)
-                                     UrlEncoded/encodeString)
+            (let [encoded-cookie (UrlEncoded/encodeString (encode-cookie value password))
                   max-age (-> age-in-days t/days t/in-seconds)
                   path "/"
                   set-cookie-header (str name "=" encoded-cookie ";Max-Age=" max-age ";Path=" path ";HttpOnly=true")
@@ -86,8 +85,7 @@
       (log/error "Error in decoding cookie" (.getMessage e))
       ;; remove password from exception throw by nippy
       (throw (ex-info (.getMessage e)
-                      (-> (ex-data e)
-                          (update-in [:opts :password] (fn [password] (when password "***")))))))))
+                      (update-in (ex-data e) [:opts :password] (fn [password] (when password "***"))))))))
 
 (let [cookie-cache (cu/cache-factory {:ttl (-> 300 t/seconds t/in-millis)})]
   (defn decode-cookie-cached

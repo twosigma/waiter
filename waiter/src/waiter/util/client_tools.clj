@@ -232,7 +232,7 @@
 (defn strip-trailing-slash
   "If s ends with /, returns s with the / stripped"
   [s]
-  (cond-> s (str/ends-with? s "/") (subs 0 (- (count s) 1))))
+  (cond-> s (str/ends-with? s "/") (subs 0 (dec (count s)))))
 
 (defn parse-set-cookie-string
   "Parse the value of a single Set-Cookie header."
@@ -287,7 +287,7 @@
                                   form-params (assoc :form-params form-params)
                                   (not (str/blank? content-type)) (assoc :content-type content-type)
                                   cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies)))))
-             response-body (if body (async/<!! body) nil)]
+             response-body (when body (async/<!! body))]
          (when verbose
            (log/info (get request-headers "x-cid") "response size:" (count (str response-body))))
          {:body response-body
@@ -525,7 +525,7 @@
                       (retrieve-service-id waiter-url service-id-or-waiter-headers))]
      (delete-service waiter-url service-id 5)))
   ([waiter-url service-id limit]
-   (when (not (str/blank? service-id))
+   (when-not (str/blank? service-id)
      (try
        ((utils/retry-strategy {:delay-multiplier 1.2, :inital-delay-ms 250, :max-retries limit})
          (fn []
@@ -799,8 +799,8 @@
 (defn service-id->metric-group
   "Retrieves the metric-group corresponding to the provided service-id"
   [waiter-url service-id]
-  (-> (service waiter-url service-id {"effective-parameters" "true"})
-      (get-in ["effective-parameters" "metric-group"])))
+  (get-in (service waiter-url service-id {"effective-parameters" "true"})
+          ["effective-parameters" "metric-group"]))
 
 (defn retrieve-debug-response-headers
   [waiter-url]
