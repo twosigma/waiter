@@ -14,14 +14,12 @@
 ;; limitations under the License.
 ;;
 (ns waiter.killed-instance-test
-  (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
+  (:require [clojure.core.async :as async]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
-            [waiter.util.client-tools :refer :all]
-            [waiter.util.date-utils :as du]))
+            [waiter.util.client-tools :refer :all]))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-delegate-kill-instance
   (testing-using-waiter-url
@@ -50,7 +48,7 @@
         (wait-for #(= 0 (num-instances waiter-url service-id)) :timeout 180)))))
 
 (defn- trigger-blacklisting-of-instance [target-url request-headers cookies]
-  (log/info "requesting killing of instance")
+  (log/info "issuing request which will respond with a 503 on" target-url)
   (let [{:keys [instance-id] :as response}
         (make-request-with-debug-info
           request-headers
@@ -67,61 +65,45 @@
     (when (some #(= "blacklisted" %) (:status-tags instance-state))
       (get-in responder-state [:instance-id->blacklist-expiry-time instance-keyword]))))
 
-(deftest ^:parallel ^:integration-slow ^:explicit test-blacklisted-instance-not-reserved
-  ;; Verifies that a blacklisted instance is not used to process a request.
-  ;; The test first blacklists an instance on all routers.
-  ;; It then makes a few requests and verifies if they responded inside the blacklist
-  ;; expiry period that the blacklisted instance was not used to process the request.
+(deftest ^:parallel ^:integration-fast ^:explicit test-instance-blacklisted-on-503
+  ;; Verifies the instance blacklisted on a 503 response behavior.
+  ;; Separate unit tests assert that a blacklisted instance is not used to process a request.
   (testing-using-waiter-url
-    (log/info "Testing blacklisted instance is not reserved")
-    (let [router-id->router-url (routers waiter-url)
-          num-routers (count router-id->router-url)
-          extra-headers {:x-waiter-blacklist-on-503 true
-                         :x-waiter-concurrency-level (* 2 num-routers)
-                         :x-waiter-name (rand-name)
-                         :x-waiter-scale-up-factor 0.99}
-          make-request-fn (fn make-request-fn []
-                            (make-request-with-debug-info
-                              extra-headers #(make-kitchen-request waiter-url %)))
-          {:keys [cookies request-headers instance-id service-id] :as response} (make-request-fn)]
-      (assert-response-status response 200)
-      (log/info "canary instance-id:" instance-id)
-      (with-service-cleanup
-        service-id
-        (dotimes [_ 4] ;; incrementally cause longer blacklist duration for instance
+    (log/info "Testing instance is blacklisted on 503 response.")
+    (doseq [blacklist-on-503 [true false]]
+      (log/info "Verifying behavior when blacklisted on 503 is" blacklist-on-503)
+      (let [router-id->router-url (routers waiter-url)
+            num-routers (count router-id->router-url)
+            extra-headers {:x-waiter-blacklist-on-503 blacklist-on-503
+                           :x-waiter-concurrency-level (* 2 num-routers)
+                           :x-waiter-name (rand-name)
+                           :x-waiter-scale-up-factor 0.99}
+            make-request-fn (fn make-request-fn []
+                              (make-request-with-debug-info
+                                extra-headers #(make-kitchen-request waiter-url %)))
+            {:keys [cookies request-headers instance-id service-id] :as response} (make-request-fn)]
+        (assert-response-status response 200)
+        (log/info "canary instance-id:" instance-id)
+        (with-service-cleanup
+          service-id
           (->> router-id->router-url
                (map (fn [[_ router-url]]
                       (launch-thread
                         (trigger-blacklisting-of-instance router-url request-headers cookies))))
                (map async/<!!)
-               doall))
+               doall)
 
-        (let [router-id->blacklist-expiry-time-str
-              (pc/map-from-keys
-                (fn [router-id]
-                  (let [router-url (router-id->router-url router-id)]
-                    (instance-blacklisted-by-router? router-url service-id instance-id cookies)))
-                (keys router-id->router-url))]
-          (doseq [[router-id _] router-id->router-url]
-            (is (-> router-id router-id->blacklist-expiry-time-str str/blank? not)
-                (str "instance not blacklisted on router"
-                     {:instance-id instance-id
-                      :router-id router-id
-                      :router-id->blacklist-expiry-time-str router-id->blacklist-expiry-time-str})))
-
-          (let [router-id->blacklist-expiry-time (pc/map-vals du/str-to-date router-id->blacklist-expiry-time-str)
-                instance-id->request-count (atom {})]
-            (parallelize-requests
-              (max 10 (* 4 num-routers))
-              1
-              (fn []
-                (let [request-start-time (t/now)
-                      {:keys [instance-id router-id]} (make-request-fn)]
-                  (if (t/before? request-start-time (router-id->blacklist-expiry-time router-id))
-                    (swap! instance-id->request-count update instance-id (fnil inc 0))
-                    (log/warn "request responded after blacklist period, not including instance" instance-id)))))
-            (log/info "instance-id->request-count:" @instance-id->request-count)
-            (if-not (seq @instance-id->request-count)
-              (log/warn "no requests completed after blacklist expiry time of" instance-id)
-              (is (not (contains? @instance-id->request-count instance-id))
-                  (str {:instance-id instance-id :instance-id->request-count @instance-id->request-count})))))))))
+          (let [router-id->blacklist-expiry-time-str
+                (pc/map-from-keys
+                  (fn [router-id]
+                    (let [router-url (router-id->router-url router-id)]
+                      (instance-blacklisted-by-router? router-url service-id instance-id cookies)))
+                  (keys router-id->router-url))]
+            (doseq [[router-id _] router-id->router-url]
+              (is (-> router-id router-id->blacklist-expiry-time-str str/blank? not (= blacklist-on-503))
+                  (str "instance "
+                       (when blacklist-on-503 "not ")
+                       "blacklisted on router"
+                       {:instance-id instance-id
+                        :router-id router-id
+                        :router-id->blacklist-expiry-time-str router-id->blacklist-expiry-time-str})))))))))
