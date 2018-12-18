@@ -694,7 +694,6 @@
             (is (= "application/json" (get headers "content-type")))
             (is (not (str/includes? body "last-update-time")))
             (let [body-map (-> body str json/read-str)]
-              (println body-map)
               (doseq [key sd/service-parameter-keys]
                 (is (= (get service-description key) (get body-map key))))
               (doseq [key (disj sd/user-metadata-keys "stale-timeout-mins")]
@@ -892,7 +891,42 @@
                                 "previous" existing-service-description
                                 "root" token-root)
                          (utils/dissoc-in (repeat history-length "previous")))
-                     (kv/fetch kv-store token))))))))))
+                     (kv/fetch kv-store token)))))))
+
+      (testing "post:new-service-description:token-limit-not-validated-for-admin-mode"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              test-user "test-user"
+              _ (dotimes [n limit-per-owner]
+                  (let [test-token (str token "-" n)]
+                    (is (nil? (kv/fetch kv-store test-token)))
+                    (store-service-description-for-token
+                      synchronize-fn kv-store history-length limit-per-owner test-token
+                      {"cmd" "tc1" "cpus" 1 "mem" 200} {"owner" test-user})
+                    (is (kv/fetch kv-store test-token))))
+              token "test-token-sync-limit"
+              entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ subject verb {:keys [user]}]
+                                      (and (= subject test-user) (= :admin verb) (= test-user user))))
+              service-description (walk/stringify-keys
+                                    {:cmd "tc1" :cpus 1 :mem 200 :permitted-user "user1" :run-as-user test-user
+                                     :owner test-user :root "foo-bar" :token token})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user test-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"x-waiter-token" token}
+                 :query-params {"update-mode" "admin"}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (str/includes? body "Successfully created test-token"))
+          (is (= (-> service-description
+                     (dissoc "token")
+                     (assoc "last-update-time" (clock-millis)
+                            "last-update-user" test-user
+                            "owner" test-user
+                            "root" "foo-bar"))
+                 (kv/fetch kv-store token))))))))
 
 (deftest test-post-failure-in-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-parameter-keys))))]
@@ -1409,7 +1443,26 @@
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "fallback-period-secs") body)
-          (is (str/includes? message "User metadata validation failed") body))))))
+          (is (str/includes? message "User metadata validation failed") body)))
+
+      (testing "post:new-service-description:token-limit-reached"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              test-user "test-user"
+              token "test-token-limits"
+              service-description-2 {"cpus" 4 "mem" 1024 "token" token}
+              _ (dotimes [n limit-per-owner]
+                  (store-service-description-for-token
+                    synchronize-fn kv-store history-length limit-per-owner (str token "-" n)
+                    {"cmd" "tc1" "cpus" 1 "mem" 200} {"owner" test-user}))
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user test-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
+                 :request-method :post})]
+          (is (= 403 status))
+          (is (str/includes? body "You have reached the limit of number of tokens allowed"))
+          (is (nil? (kv/fetch kv-store token))))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1479,9 +1532,20 @@
           (is (thrown?
                 ExceptionInfo #"You have reached the limit of number of tokens allowed"
                 (store-service-description-for-token
-                  synchronize-fn kv-store history-length limit-per-owner token
-                  service-description token-metadata)))
+                  synchronize-fn kv-store history-length limit-per-owner token service-description token-metadata)))
           (is (nil? (kv/fetch kv-store token))))))
+
+    (testing "token limits ignored when nil passed"
+      (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+            test-user "test-user-1234"
+            token-metadata {"last-update-time" current-time
+                            "owner" test-user}]
+        (is (> limit-per-owner 5))
+        (dotimes [n (* 2 limit-per-owner)]
+          (let [token (str token-prefix "-" n)]
+            (store-service-description-for-token
+              synchronize-fn kv-store history-length nil token service-description token-metadata)
+            (is (kv/fetch kv-store token))))))
 
     (testing "limit per owner not reached on deleted tokens"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1492,8 +1556,7 @@
         (dotimes [n limit-per-owner]
           (let [token (str token-prefix "-" n)]
             (store-service-description-for-token
-              synchronize-fn kv-store history-length limit-per-owner token
-              service-description token-metadata)
+              synchronize-fn kv-store history-length limit-per-owner token service-description token-metadata)
             (is (kv/fetch kv-store token))))
         (dotimes [n (min 2 limit-per-owner)]
           (let [token (str token-prefix "-" n)]
@@ -1502,8 +1565,7 @@
             (is (get (kv/fetch kv-store token) "deleted"))))
         (let [token (str token-prefix "-" limit-per-owner)]
           (store-service-description-for-token
-            synchronize-fn kv-store history-length limit-per-owner token
-            service-description token-metadata)
+            synchronize-fn kv-store history-length limit-per-owner token service-description token-metadata)
           (is (kv/fetch kv-store token)))))))
 
 (deftest test-delete-service-description-for-token

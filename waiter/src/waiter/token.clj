@@ -89,7 +89,7 @@
 
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store."
-    [synchronize-fn kv-store history-length limit-per-owner ^String token service-parameter-template token-metadata &
+    [synchronize-fn kv-store history-length token-limit ^String token service-parameter-template token-metadata &
      {:keys [version-hash]}]
     (synchronize-fn
       token-lock
@@ -107,18 +107,20 @@
           ; Validate the token modification for concurrency races
           (validate-token-modification-based-on-hash existing-token-description version-hash)
           ; Validate that the maximum number of tokens per owner limit has not been reached
-          (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)]
-            (validate-kv! kv-store owner-key
-                          (fn validate-limit-per-owner [index]
-                            (let [active-index (utils/filterm (fn [[_ {:keys [deleted]}]] (not deleted)) index)]
-                              (when (>= (count (dissoc active-index token)) limit-per-owner)
-                                (let [message (str "You have reached the limit of number of tokens allowed. "
-                                                   "Please delete at least one of your existing tokens to be able to create this token.")]
-                                  (throw (ex-info message
-                                                  {:limit-per-owner limit-per-owner
-                                                   :num-owned-tokens (count active-index)
-                                                   :owner owner
-                                                   :status 403}))))))))
+          (when (integer? token-limit)
+            (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)]
+              (validate-kv!
+                kv-store owner-key
+                (fn validate-limit-per-owner [index]
+                  (let [active-index (utils/filterm (fn [[_ {:keys [deleted]}]] (not deleted)) index)]
+                    (when (>= (count (dissoc active-index token)) token-limit)
+                      (let [message (str "You have reached the limit of number of tokens allowed. "
+                                         "Please delete at least one of your existing tokens to create this token.")]
+                        (throw (ex-info message
+                                        {:allowed-owned-tokens token-limit
+                                         :num-owned-tokens (count active-index)
+                                         :owner owner
+                                         :status 403})))))))))
           ; Store the service description
           (kv/store kv-store token (-> new-token-data
                                        (ensure-history existing-token-data)
@@ -332,6 +334,7 @@
   [clock synchronize-fn kv-store token-root history-length limit-per-owner waiter-hostnames entitlement-manager
    make-peer-requests-fn validate-service-description-fn {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
+        admin-mode? (= "admin" (get request-params "update-mode"))
         authenticated-user (get request :authorization/user)
         {:strs [token] :as new-token-data} (-> request
                                                ru/json-request
@@ -448,15 +451,19 @@
           existing-editable-token-data (-> (merge (:service-parameter-template existing-token-description)
                                                   (:token-metadata existing-token-description))
                                            (select-keys sd/token-user-editable-keys))]
-      (if (and (not= "admin" (get request-params "update-mode"))
+      (if (and (not admin-mode?)
                (= existing-editable-token-data new-user-editable-token-data))
         (utils/clj->json-response
           {:message (str "No changes detected for " token)
            :service-description (:service-parameter-template existing-token-description)}
           :headers {"etag" (token-description->token-hash existing-token-description)})
-        (do
+        (let [token-limit (if admin-mode?
+                            (do
+                              (log/info "will not enforce count limit on owner tokens in admin mode" {:owner owner})
+                              nil)
+                            limit-per-owner)]
           (store-service-description-for-token
-            synchronize-fn kv-store history-length limit-per-owner token new-service-parameter-template new-token-metadata
+            synchronize-fn kv-store history-length token-limit token new-service-parameter-template new-token-metadata
             :version-hash version-hash)
           ; notify peers of token update
           (make-peer-requests-fn "tokens/refresh"
