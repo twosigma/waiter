@@ -548,7 +548,9 @@
   item found in the instance's working directory + relative-dir"
   [{:keys [id->instance]} instance-id relative-dir]
   (let [{:keys [:shell-scheduler/working-directory]} (get id->instance instance-id)
-        directory (io/file working-directory relative-dir)
+        directory (if (str/blank? relative-dir)
+                    (io/file working-directory)
+                    (io/file working-directory relative-dir))
         directory-content (vec (.listFiles directory))]
     (map (fn [^File file]
            (cond-> {:name (.getName file)

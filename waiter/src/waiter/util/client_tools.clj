@@ -494,18 +494,6 @@
       (log/debug service-id "has" tasks-running' "task(s) running."))
     (int tasks-running')))
 
-(defn active-instances
-  "Returns the active instances for the given service-id"
-  [waiter-url service-id]
-  (get-in (service-settings waiter-url service-id) [:instances :active-instances]))
-
-(defn num-instances
-  "Returns the number of active instances for the given service-id"
-  [waiter-url service-id]
-  (let [instances (count (active-instances waiter-url service-id))]
-    (log/debug service-id "has" instances "instances.")
-    instances))
-
 (defn scale-service-to [waiter-url service-id target-instances]
   (let [marathon-url (marathon-url waiter-url)]
     (log/info service-id "being scaled to" target-instances "task(s).")
@@ -931,3 +919,23 @@
            walk/keywordize-keys
            (map :service-id)
            set))
+
+(defn active-instances
+  "Returns the active instances for the given service-id"
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (get-in (service-settings waiter-url service-id :cookies cookies)
+          [:instances :active-instances]))
+
+(defn num-instances
+  "Returns the number of active instances for the given service-id"
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (let [instances (count (active-instances waiter-url service-id :cookies cookies))]
+    (log/debug service-id "has" instances "instances.")
+    instances))
+
+(defmacro assert-service-on-all-routers
+  [waiter-url service-id cookies]
+  `(let [service-id# ~service-id
+         cookies# ~cookies]
+     (doseq [[_# router-url#] (routers ~waiter-url)]
+       (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#)))))))
