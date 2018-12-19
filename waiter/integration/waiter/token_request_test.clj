@@ -282,12 +282,15 @@
                 token-entries (json/read-str body)]
             (assert-response-status tokens-response 200)
             (is (every? (fn [token-entry] (contains? token-entry "deleted")) token-entries))
-            (is (every? (fn [token-entry] (contains? token-entry "etag")) token-entries))
-            (comment
-              ;; TODO Excluded as assertion is flaky
-              (is (not-any? (fn [token-entry] (= token (get token-entry "token"))) token-entries)
-                  (str token "entry found in list of deleted tokens!"
-                       (->> token-entries (filter (fn [token-entry] (= token (get token-entry "token")))) vec)))))))
+            (is (every? (fn [token-entry] (contains? token-entry "etag")) token-entries))))
+        ;; the token must be removed from at least one router (others may have temporarily cached values)
+        (is (some
+              (fn [router-url]
+                (let [{:keys [body]} (list-tokens router-url current-user cookies {"include" ["deleted" "metadata"]})
+                      token-entries (json/read-str body)]
+                  (not-any? (fn [token-entry] (= token (get token-entry "token"))) token-entries)))
+              (vals (routers waiter-url)))
+            (str token " entry found in list of deleted tokens on all routers")))
 
       (log/info "ensuring tokens can no longer be retrieved on each router with include=deleted parameter after hard-delete")
       (doseq [token tokens-to-create]
