@@ -78,7 +78,8 @@
   [{:keys [store-token]} cluster-urls token latest-token-description cluster-url->token-data]
   (pc/map-from-keys
     (fn [cluster-url]
-      (let [cluster-result
+      (let [ignored-root-mismatch-equality-comparison-keys ["last-update-time" "last-update-user" "previous" "root"]
+            cluster-result
             (try
               (let [{:keys [description error status] :as token-data} (get cluster-url->token-data cluster-url)
                     latest-root (get latest-token-description "root")
@@ -96,7 +97,10 @@
                   {:code :error/token-read
                    :details {:message "token root missing from latest token description"}}
 
-                  (and (seq description) (not= latest-root cluster-root))
+                  (and (seq description)
+                       (not= latest-root cluster-root)
+                       (not= (apply dissoc description ignored-root-mismatch-equality-comparison-keys)
+                             (apply dissoc latest-token-description ignored-root-mismatch-equality-comparison-keys)))
                   {:code :error/root-mismatch
                    :details {:cluster description
                              :latest latest-token-description}}

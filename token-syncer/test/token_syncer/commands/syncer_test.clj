@@ -245,6 +245,68 @@
                                                :latest token-description}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
 
+    (testing "sync cluster same parameters and owner but different root"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"cpus" 1
+                               "mem" 1024
+                               "name" "test-name"
+                               "owner" "test-user-1"}
+            token-description-1 (assoc token-description "root" "cluster-1")
+            token-description-2 (assoc token-description "root" "cluster-2")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/sync-update
+                                     :details {:etag (str test-token-etag ".2.new")
+                                               :status 200}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+
+    (testing "sync cluster same owner, soft-deleted on one and different root"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"cpus" 1
+                               "mem" 1024
+                               "name" "test-name"
+                               "owner" "test-user-1"}
+            token-description-1 (assoc token-description "deleted" true "root" "cluster-1")
+            token-description-2 (assoc token-description "root" "cluster-2")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :error/root-mismatch
+                                     :details {:cluster token-description-2
+                                               :latest token-description-1}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+
+    (testing "sync cluster same owner, different parameters and root"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"mem" 1024
+                               "name" "test-name"
+                               "owner" "test-user-1"}
+            token-description-1 (assoc token-description "cpus" 1 "root" "cluster-1")
+            token-description-2 (assoc token-description "cpus" 2 "root" "cluster-2")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :error/root-mismatch
+                                     :details {:cluster token-description-2
+                                               :latest token-description-1}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+
     (testing "sync cluster with missing owners"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"
