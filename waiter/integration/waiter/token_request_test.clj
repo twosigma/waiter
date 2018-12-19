@@ -772,7 +772,7 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest ^:parallel ^:integration-fast ^:explicit test-on-the-fly-to-token
+(deftest ^:parallel ^:integration-fast test-on-the-fly-to-token
   (testing-using-waiter-url
     (let [name-string (rand-name)
           {:keys[cookies] :as canary-response}

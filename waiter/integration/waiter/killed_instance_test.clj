@@ -65,7 +65,7 @@
     (when (some #(= "blacklisted" %) (:status-tags instance-state))
       (get-in responder-state [:instance-id->blacklist-expiry-time instance-keyword]))))
 
-(deftest ^:parallel ^:integration-fast ^:explicit test-instance-blacklisted-on-503
+(deftest ^:parallel ^:integration-fast test-instance-blacklisted-on-503
   ;; Verifies the instance blacklisted on a 503 response behavior.
   ;; Separate unit tests assert that a blacklisted instance is not used to process a request.
   (testing-using-waiter-url

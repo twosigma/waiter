@@ -612,7 +612,7 @@
       (is (= (-> num-threads range reverse) @response-priorities-atom))
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-fast ^:explicit test-multiple-ports
+(deftest ^:parallel ^:integration-fast test-multiple-ports
   (testing-using-waiter-url
     (let [num-ports 8
           waiter-headers {:x-waiter-name (rand-name)
