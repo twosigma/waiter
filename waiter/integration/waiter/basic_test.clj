@@ -187,35 +187,31 @@
 
 (deftest ^:parallel ^:integration-fast test-basic-logs
   (testing-using-waiter-url
-    (if (contains? #{"cook" "kubernetes" "marathon"} (scheduler-kind waiter-url))
-      (let [waiter-headers {:x-waiter-name (rand-name)}
-            {:keys [cookies router-id service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))
-            router-url (get (routers waiter-url) router-id)]
-        (let [active-instances (get-in (service-settings router-url service-id :cookies cookies)
-                                       [:instances :active-instances])
-              log-url (:log-url (first active-instances))
-              _ (log/debug "Log Url:" log-url)
-              make-request-fn (fn [url] (make-request url "" :verbose true))
-              {:keys [body] :as logs-response} (make-request-fn log-url)
-              _ (assert-response-status logs-response 200)
-              _ (log/debug "Response body:" body)
-              log-files-list (walk/keywordize-keys (json/read-str body))
-              stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
-              stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
-          (is (every? #(str/includes? body %) ["stderr" "stdout"])
-              (str "Directory listing is missing entries: stderr and stdout, got response: " logs-response))
-          (when (using-marathon? waiter-url)
-            (is (str/includes? body service-id)
-                (str "Directory listing is missing entries: " service-id
-                     ": got response: " logs-response)))
-          (let [stdout-response (make-request-fn stdout-file-link)]
-            (is (= 200 (:status stdout-response))
-                (str "Expected 200 while getting stdout, got response: " stdout-response)))
-          (let [stderr-response (make-request-fn stderr-file-link)]
-            (is (= 200 (:status stderr-response))
-                (str "Expected 200 while getting stderr, got response: " stderr-response))))
-        (delete-service waiter-url service-id))
-      (log/warn "test-basic-logs cannot run because the target Waiter is not using Marathon"))))
+    (let [waiter-headers {:x-waiter-name (rand-name)}
+          {:keys [cookies service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))]
+      (assert-service-on-all-routers waiter-url service-id cookies)
+      (let [active-instances (get-in (service-settings waiter-url service-id :cookies cookies)
+                                     [:instances :active-instances])
+            log-url (:log-url (first active-instances))
+            _ (log/debug "Log Url:" log-url)
+            make-request-fn (fn [url] (make-request url "" :verbose true))
+            {:keys [body] :as logs-response} (make-request-fn log-url)
+            _ (assert-response-status logs-response 200)
+            _ (log/debug "Response body:" body)
+            log-files-list (walk/keywordize-keys (json/read-str body))
+            stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
+            stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
+        (is (every? #(str/includes? body %) ["stderr" "stdout"])
+            (str "Directory listing is missing entries: stderr and stdout, got response: " logs-response))
+        (when (using-marathon? waiter-url)
+          (is (str/includes? body service-id)
+              (str "Directory listing is missing entries: " service-id
+                   ": got response: " logs-response)))
+        (doseq [file-link [stderr-file-link stdout-file-link]]
+          (if (str/starts-with? (str file-link) "http")
+            (assert-response-status (make-request-fn file-link) 200)
+            (log/warn "test-basic-logs did not verify file link:" stdout-file-link))))
+      (delete-service waiter-url service-id))))
 
 (deftest ^:parallel ^:integration-fast test-basic-backoff-config
   (let [path "/req"]
@@ -621,15 +617,14 @@
     (let [num-ports 8
           waiter-headers {:x-waiter-name (rand-name)
                           :x-waiter-ports num-ports}
-          {:keys [body router-id service-id]}
-          (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url % :path "/environment"))
+          {:keys [body service-id]} (make-request-with-debug-info
+                                      waiter-headers #(make-kitchen-request waiter-url % :path "/environment"))
           body-json (json/read-str (str body))]
       (is (every? #(contains? body-json (str "PORT" %)) (range num-ports))
           (str body-json))
       (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
-            router-url (get (routers waiter-url) router-id)
-            {:keys [extra-ports port] :as active-instance} (-> (service-settings router-url service-id :cookies cookies)
-                                                               (get-in [:instances :active-instances 0]))]
+            _ (assert-service-on-all-routers waiter-url service-id cookies)
+            {:keys [extra-ports port] :as active-instance} (first (active-instances waiter-url service-id))]
         (log/info service-id "active-instance:" active-instance)
         (is (seq active-instance) (str active-instance))
         (is (pos? port) (str active-instance))
