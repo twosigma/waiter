@@ -22,7 +22,8 @@
             [waiter.auth.authentication :as auth]
             [waiter.authorization :as authz]
             [waiter.auth.spnego :as spnego]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils])
+  (:import (java.util.concurrent ExecutorService Executors)))
 
 (defn get-opt-in-accounts
   "Returns the list of users whose tickets are prestashed on host"
@@ -101,16 +102,19 @@
                          :status 403
                          :user run-as-user}))))))
 
-(defrecord KerberosAuthenticator [password]
+(defrecord KerberosAuthenticator [^ExecutorService thread-pool password]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
-    (spnego/require-gss request-handler password)))
+    (spnego/require-gss request-handler thread-pool password)))
 
 (defn kerberos-authenticator
   "Factory function for creating Kerberos authenticator middleware"
-  [{:keys [password]}]
-  {:pre [(not-empty password)]}
-  (->KerberosAuthenticator password))
+  [{:keys [concurrency-level password]}]
+  {:pre [(not-empty password)
+         (integer? concurrency-level)
+         (pos? concurrency-level)]}
+  (let [thread-pool (Executors/newFixedThreadPool concurrency-level)]
+    (->KerberosAuthenticator thread-pool password)))
 
 (defrecord KerberosAuthorizer
   [prestash-cache query-chan]

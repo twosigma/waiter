@@ -167,7 +167,9 @@
 
                         ;; :kind :kerberos enables authentication using the Kerberos protocol
                         ;:kind :kerberos
-                        :kerberos {:factory-fn waiter.auth.kerberos/kerberos-authenticator}}
+                        :kerberos {:factory-fn waiter.auth.kerberos/kerberos-authenticator
+                                   ;; the number of concurrent Kerberos library (GSSLibStub) invocations allowed
+                                   :concurrency-level 20}}
 
  ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
  ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.

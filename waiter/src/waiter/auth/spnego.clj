@@ -20,16 +20,19 @@
             [clojure.tools.logging :as log]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
+            [metrics.timers :as timers]
             [ring.middleware.cookies :as cookies]
             [ring.util.response :as rr]
             [waiter.auth.authentication :as auth]
+            [waiter.correlation-id :as cid]
             [waiter.middleware :as middleware]
             [waiter.metrics :as metrics])
   (:import (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.http HttpHeader)
            (org.ietf.jgss GSSManager GSSCredential GSSContext GSSName Oid)
-           (java.net URI)))
+           (java.net URI)
+           (java.util.concurrent ExecutorService)))
 
 (defn decode-input-token
   "Decode the input token from the negotiate line, expects the authorization token to exist"
@@ -73,7 +76,7 @@
     (meters/mark! (metrics/waiter-meter "core" "gss-context-creation"))
     gss))
 
-(defn gss-get-princ
+(defn gss-get-principal
   [^GSSContext gss]
   (str (.getSrcName gss)))
 
@@ -83,8 +86,8 @@
    will be run, otherwise the handler will not be run and 401
    returned instead.  This middleware doesn't handle cookies for
    authentication, but that should be stacked before this handler."
-  [request-handler password]
-  (fn require-gss-handler [{:keys [headers] :as req}]
+  [request-handler ^ExecutorService thread-pool password]
+  (fn require-gss-handler [{:keys [headers] :as request}]
     (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
           [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
       (cond
@@ -92,23 +95,46 @@
         (auth/decoded-auth-valid? decoded-auth-cookie)
         (let [auth-params-map (auth/auth-params-map auth-principal)
               request-handler' (middleware/wrap-merge request-handler auth-params-map)]
-          (request-handler' req))
+          (request-handler' request))
         ;; Try and authenticate using kerberos and add cookie in response when valid
-        (get-in req [:headers "authorization"])
-        (let [^GSSContext gss_context (gss-context-init)
-              token (do-gss-auth-check gss_context req)]
-          (if (.isEstablished gss_context)
-            (let [principal (gss-get-princ gss_context)
-                  user (first (str/split principal #"@" 2))
-                  resp (auth/handle-request-auth request-handler req user principal password)]
-              (log/debug "added cookies to response")
-              (if token
-                (if (map? resp)
-                  (rr/header resp "WWW-Authenticate" token)
-                  (async/go
-                    (rr/header (async/<! resp) "WWW-Authenticate" token)))
-                resp))
-            (response-401-negotiate)))
+        (get-in request [:headers "authorization"])
+        (let [current-correlation-id (cid/get-correlation-id)
+              response-chan (async/promise-chan)
+              timer-context (timers/start (metrics/waiter-timer "core" "spnego" "throttle-delay"))]
+          ;; launch task that will populate the response in response-chan
+          (.execute
+            thread-pool
+            (fn process-gss-task []
+              (cid/with-correlation-id
+                current-correlation-id
+                (try
+                  (timers/stop timer-context)
+                  (let [^GSSContext gss-context (gss-context-init)
+                        token (do-gss-auth-check gss-context request)]
+                    (if (.isEstablished gss-context)
+                      (let [principal (gss-get-principal gss-context)
+                            user (first (str/split principal #"@" 2))
+                            response (auth/handle-request-auth request-handler request user principal password)]
+                        (log/debug "added cookies to response")
+                        (if token
+                          (if (map? response)
+                            (async/>!! response-chan (rr/header response "WWW-Authenticate" token))
+                            (async/go
+                              (cid/with-correlation-id
+                                current-correlation-id
+                                (try
+                                  (let [actual-response (async/<! response)]
+                                    (async/>! response-chan (rr/header actual-response "WWW-Authenticate" token)))
+                                  (catch Throwable th
+                                    (log/error th "error while processing response")
+                                    (async/>! response-chan th))))))
+                          (async/>!! response-chan response)))
+                      (async/>!! response-chan (response-401-negotiate))))
+                  (catch Throwable th
+                    (log/error th "error while performing kerberos auth")
+                    (async/>!! response-chan th))))))
+          ;; response-chan has our response
+          response-chan)
         ;; Default to unauthorized
         :else
         (response-401-negotiate)))))
