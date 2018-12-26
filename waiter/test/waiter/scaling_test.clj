@@ -166,7 +166,10 @@
                         {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                     {:keys [body headers status]} (async/<!! response-chan)]
                 (is (= 200 status))
-                (is (= {"content-type" "application/json", "x-cid" correlation-id} headers))
+                (is (= {"content-type" "application/json"
+                        "server" "waiter"
+                        "x-cid" correlation-id}
+                       headers))
                 (is (= {:kill-response {:instance-id "instance-1", :killed? true, :message "Killed", :service-id test-service-id, :status 200},
                         :service-id test-service-id, :source-router-id src-router-id, :success true}
                        (walk/keywordize-keys (json/read-str body))))
@@ -194,7 +197,10 @@
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
-              (is (= {"content-type" "application/json", "x-cid" correlation-id} headers))
+              (is (= {"content-type" "application/json"
+                      "server" "waiter"
+                      "x-cid" correlation-id}
+                     headers))
               (is (= {:kill-response {:message "no-instance-killed", :status 404}, :service-id test-service-id,
                       :source-router-id src-router-id, :success false}
                      (walk/keywordize-keys (json/read-str body))))
@@ -226,7 +232,10 @@
                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
                   {:keys [body headers status]} (async/<!! response-chan)]
               (is (= 404 status))
-              (is (= {"content-type" "application/json", "x-cid" correlation-id} headers))
+              (is (= {"content-type" "application/json"
+                      "server" "waiter"
+                      "x-cid" correlation-id}
+                     headers))
               (is (= {:kill-response {:instance-id "instance-1", :killed? false, :message "Failure message",
                                       :service-id test-service-id, :status 404},
                       :service-id test-service-id, :source-router-id src-router-id, :success false}
