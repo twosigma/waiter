@@ -118,9 +118,7 @@
     (testing "should convert empty map"
       (let [{:keys [body headers status]} (clj->json-response {})]
         (is (= 200 status))
-        (is (= {"content-type" "application/json"
-                "server" "waiter"}
-               headers))
+        (is (= expected-json-response-headers headers))
         (is (not (nil? body)))))
 
     (testing "should convert regex patterns to strings"
@@ -134,9 +132,7 @@
   (testing "convert empty map"
     (let [{:keys [body headers status]} (clj->streaming-json-response {})]
       (is (= 200 status))
-      (is (= {"content-type" "application/json"
-              "server" "waiter"}
-             headers))
+      (is (= expected-json-response-headers headers))
       (is (= {} (json/read-str (json-response->str body))))))
   (testing "consumes status argument"
     (let [{:keys [status]} (clj->streaming-json-response {} :status 404)]
@@ -168,9 +164,7 @@
               (ex-info "TestCase Exception" (map->TestResponse {:status 400}))
               (assoc-in request [:headers "accept"] "text/html"))]
         (is (= 400 status))
-        (is (= {"content-type" "text/html"
-                "server" "waiter"}
-               headers))
+        (is (= expected-html-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))
     (testing "html response with links"
       (let [{:keys [body headers status]}
@@ -179,9 +173,7 @@
                                                                 :friendly-error-message "See http://localhost/path"}))
               (assoc-in request [:headers "accept"] "text/html"))]
         (is (= 400 status))
-        (is (= {"content-type" "text/html"
-                "server" "waiter"}
-               headers))
+        (is (= expected-html-response-headers headers))
         (is (str/includes? body "See <a href=\"http://localhost/path\">http://localhost/path</a>"))))
     (testing "plaintext response"
       (let [{:keys [body headers status]}
@@ -189,9 +181,7 @@
               (ex-info "TestCase Exception" (map->TestResponse {:status 400}))
               (assoc-in request [:headers "accept"] "text/plain"))]
         (is (= 400 status))
-        (is (= {"content-type" "text/plain"
-                "server" "waiter"}
-               headers))
+        (is (= expected-text-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))
     (testing "json response"
       (let [{:keys [body headers status]}
@@ -199,9 +189,7 @@
               (ex-info "TestCase Exception" (map->TestResponse {:status 500}))
               (assoc-in request [:headers "accept"] "application/json"))]
         (is (= 500 status))
-        (is (= {"content-type" "application/json"
-                "server" "waiter"}
-               headers))
+        (is (= expected-json-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))))
 
 (deftest test-log-and-suppress-when-exception-thrown
