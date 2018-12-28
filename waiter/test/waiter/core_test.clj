@@ -434,7 +434,7 @@
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (= {"success" true, "service-id" service-id, "result" "deleted"} (json/read-str body))))))
 
     (testing "service-handler:delete-nil-response"
@@ -443,7 +443,7 @@
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 400 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (= {"success" false, "service-id" service-id} (json/read-str body))))))
 
     (testing "service-handler:delete-unauthorized-user"
@@ -455,7 +455,7 @@
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 403 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (str/includes? body "User not allowed to delete service")))))
 
     (testing "service-handler:delete-404-response"
@@ -464,7 +464,7 @@
         (let [request {:request-method :delete, :uri (str "/apps/" service-id), :authorization/user user}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 404 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (= {"result" "no-such-service-exists", "service-id" service-id, "success" false} (json/read-str body))))))
 
     (testing "service-handler:delete-non-existent-service"
@@ -478,7 +478,7 @@
               {{message "message"
                 {:strs [service-id]} "details"} "waiter-error"} (json/read-str body)]
           (is (= 404 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (= "Service not found" message))
           (is (= "test-service-1" service-id)))))
 
@@ -491,7 +491,7 @@
                        :uri (str "/apps/" service-id)}
               {:keys [headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= 500 status))
-          (is (= {"content-type" "application/json"} headers)))))
+          (is (= expected-json-response-headers headers)))))
 
     (.shutdown scheduler-interactions-thread-pool)))
 
@@ -526,7 +526,7 @@
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 404 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (let [{{message "message"
                   {:strs [service-id]} "details"} "waiter-error"} (json/read-str (str body))]
             (is (= "Service not found" message))
@@ -546,7 +546,7 @@
                        :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (let [body-json (json/read-str (str body))]
             (is (= {"active-instances" [{"id" (str service-id ".A")
                                          "service-id" service-id
@@ -572,7 +572,7 @@
         (let [request {:request-method :get, :uri (str "/apps/" service-id)}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (let [body-json (json/read-str (str body))]
             (is (= {"active-instances" [{"id" (str service-id ".A")
                                          "service-id" service-id
@@ -796,7 +796,7 @@
                        :uri "/metrics"}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (str/includes? (str body) "metrics-from-get-metrics")))))
 
     (testing "metrics-request-handler:all-metrics:error"
@@ -806,14 +806,14 @@
                        :uri "/metrics"}
               {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 500 status))
-          (is (= {"content-type" "application/json"} headers)))))
+          (is (= expected-json-response-headers headers)))))
 
     (testing "metrics-request-handler:waiter-metrics"
       (with-redefs [metrics/get-waiter-metrics (fn get-waiter-metrics-fn [] {:data (str "metrics-for-waiter")})]
         (let [request {:request-method :get, :uri "/metrics", :query-string "exclude-services=true"}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (str/includes? (str body) "metrics-for-waiter")))))
 
     (testing "metrics-request-handler:service-metrics"
@@ -821,7 +821,7 @@
         (let [request {:request-method :get, :uri "/metrics", :query-string "service-id=abcd"}
               {:keys [body headers status]} (ring-handler request)]
           (is (= 200 status))
-          (is (= {"content-type" "application/json"} headers))
+          (is (= expected-json-response-headers headers))
           (is (str/includes? (str body) "metrics-for-abcd")))))
 
     (testing "metrics-request-handler:service-metrics:error"
@@ -832,7 +832,7 @@
                        :uri "/metrics"}
               {:keys [headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
           (is (= 500 status))
-          (is (= {"content-type" "application/json"} headers)))))))
+          (is (= expected-json-response-headers headers)))))))
 
 (deftest test-async-result-handler-call
   (testing "test-async-result-handler-call"

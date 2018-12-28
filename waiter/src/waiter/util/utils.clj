@@ -93,12 +93,30 @@
   "Returns true if x is a non-negative integer"
   (and (integer? x) (non-neg? x)))
 
+(defn assoc-if-absent
+  "If the specified key, k, is not already associated with a value, v, in the map, m, associate k with v in m."
+  [m k v]
+  (cond-> m
+    (not (contains? m k)) (assoc k v)))
+
 (defn generate-secret-word
   [src-id dest-id processed-passwords]
   (let [password (second (first processed-passwords))
         secret-word (digest/md5 (str src-id ":" dest-id ":" password))]
     (log/debug "generate-secret-word" [src-id dest-id] "->" secret-word)
     secret-word))
+
+(let [server-name-atom (atom "waiter")]
+  (defn get-current-server-name
+    "Returns the name of the server used to handle the request."
+    []
+    (deref server-name-atom))
+
+  (defn reset-server-name-atom!
+    "Resets the server name."
+    [server-name]
+    (log/info "server name has been initialized to" server-name)
+    (reset! server-name-atom server-name)))
 
 (defn keyword->str
   "Converts keyword to string including the namespace."
@@ -140,14 +158,17 @@
   [data-map & {:keys [headers status] :or {headers {} status 200}}]
   {:body (clj->json data-map)
    :status status
-   :headers (assoc headers "content-type" "application/json")})
+   :headers (assoc headers
+              "content-type" "application/json"
+              "server" (get-current-server-name))})
 
 (defn clj->streaming-json-response
   "Converts the data into a json response which can be streamed back to the client."
   [data-map & {:keys [status] :or {status 200}}]
   (let [data-map (doall data-map)]
     {:status status
-     :headers {"content-type" "application/json"}
+     :headers {"content-type" "application/json"
+               "server" (get-current-server-name)}
      :body (fn [^ServletResponse resp]
              (let [writer (OutputStreamWriter. (.getOutputStream resp))]
                (try
@@ -246,7 +267,9 @@
                  render-error-text
                  (str/replace #"\n" "\n  ")
                  (str/replace #"\n  $" "\n")))
-     :headers (merge {"content-type" content-type} headers)
+     :headers (-> headers
+                  (assoc-if-absent "content-type" content-type)
+                  (assoc-if-absent "server" (get-current-server-name)))
      :status status}))
 
 (defn- wrap-unhandled-exception
@@ -297,12 +320,6 @@
           (dissoc m k)))
       m)
     (dissoc m k)))
-
-(defn assoc-if-absent
-  "If the specified key, k, is not already associated with a value, v, in the map, m, associate k with v in m."
-  [m k v]
-  (cond-> m
-          (not (contains? m k)) (assoc k v)))
 
 (defn sleep
   "Helper function that wraps sleep call to java.lang.Thread"

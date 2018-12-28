@@ -510,10 +510,11 @@
                           (utils/create-component entitlement-config))
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
-   :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms] git-version]]
+   :http-client (pc/fnk [[:settings [:instance-request-properties connection-timeout-ms]]
+                         server-name]
                   (http-utils/http-client-factory {:conn-timeout connection-timeout-ms
                                                    :follow-redirects? false
-                                                   :user-agent (str "waiter/" (str/join (take 7 git-version)))}))
+                                                   :user-agent server-name}))
    :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
@@ -538,6 +539,10 @@
                               :max-blacklist-time-ms max-blacklist-time-ms})
    :scheduler-interactions-thread-pool (pc/fnk [] (Executors/newFixedThreadPool 20))
    :scheduler-state-chan (pc/fnk [] (au/latest-chan))
+   :server-name (pc/fnk [[:settings git-version]]
+                  (let [server-name (str "waiter/" (str/join (take 7 git-version)))]
+                    (utils/reset-server-name-atom! server-name)
+                    server-name))
    :service-description-builder (pc/fnk [[:settings service-description-builder-config service-description-constraints]]
                                   (when-let [unknown-keys (-> service-description-constraints
                                                               keys
