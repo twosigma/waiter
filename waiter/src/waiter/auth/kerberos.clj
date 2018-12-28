@@ -22,8 +22,9 @@
             [waiter.auth.authentication :as auth]
             [waiter.authorization :as authz]
             [waiter.auth.spnego :as spnego]
+            [waiter.metrics :as metrics]
             [waiter.util.utils :as utils])
-  (:import (java.util.concurrent ExecutorService Executors)))
+  (:import (java.util.concurrent LinkedBlockingQueue ThreadPoolExecutor TimeUnit)))
 
 (defn get-opt-in-accounts
   "Returns the list of users whose tickets are prestashed on host"
@@ -102,18 +103,24 @@
                          :status 403
                          :user run-as-user}))))))
 
-(defrecord KerberosAuthenticator [^ExecutorService thread-pool password]
+(defrecord KerberosAuthenticator [thread-pool password]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
     (spnego/require-gss request-handler thread-pool password)))
 
 (defn kerberos-authenticator
   "Factory function for creating Kerberos authenticator middleware"
-  [{:keys [concurrency-level password]}]
+  [{:keys [concurrency-level keep-alive-mins password]}]
   {:pre [(not-empty password)
          (integer? concurrency-level)
-         (pos? concurrency-level)]}
-  (let [thread-pool (Executors/newFixedThreadPool concurrency-level)]
+         (pos? concurrency-level)
+         (integer? keep-alive-mins)
+         (pos? keep-alive-mins)]}
+  (let [thread-pool (ThreadPoolExecutor. 1 concurrency-level keep-alive-mins TimeUnit/MINUTES (LinkedBlockingQueue.))]
+    (metrics/waiter-gauge #(.getActiveCount thread-pool) "core" "kerberos" "throttle" "active-thread-count")
+    (metrics/waiter-gauge #(.getMaximumPoolSize thread-pool) "core" "kerberos" "throttle" "max-thread-count")
+    (metrics/waiter-gauge #(-> thread-pool .getQueue .size) "core" "kerberos" "throttle" "pending-task-count")
+    (metrics/waiter-gauge #(.getTaskCount thread-pool) "core" "kerberos" "throttle" "scheduled-task-count")
     (->KerberosAuthenticator thread-pool password)))
 
 (defrecord KerberosAuthorizer

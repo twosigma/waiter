@@ -100,7 +100,7 @@
         (get-in request [:headers "authorization"])
         (let [current-correlation-id (cid/get-correlation-id)
               response-chan (async/promise-chan)
-              timer-context (timers/start (metrics/waiter-timer "core" "spnego" "throttle-delay"))]
+              timer-context (timers/start (metrics/waiter-timer "core" "kerberos" "throttle" "delay"))]
           ;; launch task that will populate the response in response-chan
           (.execute
             thread-pool

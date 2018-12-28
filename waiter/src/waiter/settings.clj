@@ -207,7 +207,8 @@
 (def settings-defaults
   {:authenticator-config {:kind :one-user
                           :kerberos {:factory-fn 'waiter.auth.kerberos/kerberos-authenticator
-                                     :concurrency-level 20}
+                                     :concurrency-level 20
+                                     :keep-alive-mins 5}
                           :one-user {:factory-fn 'waiter.auth.authentication/one-user-authenticator}}
    :cors-config {:kind :patterns
                  :patterns {:factory-fn 'waiter.cors/pattern-based-validator

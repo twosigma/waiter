@@ -111,6 +111,7 @@
 (deftest test-kerberos-authenticator
   (with-redefs [start-prestash-cache-maintainer (constantly nil)]
     (let [config {:concurrency-level 20
+                  :keep-alive-mins 5
                   :password "test-password"
                   :prestash-cache-refresh-ms 100
                   :prestash-cache-min-refresh-ms 10
