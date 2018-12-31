@@ -913,6 +913,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='A toy HTTP Service for testing the Waiter platform')
     parser.add_argument('--hostname', metavar='HOSTNAME', default='', help='Server host name')
+    parser.add_argument('--log-output', metavar='LOG_OUTPUT', choices=['stdout', 'stderr', 'file'], default='stdout', help='Log output destination')
     parser.add_argument('-p', '--port', metavar='PORT_NUMBER', type=int, default=8080, help='Server port number')
     parser.add_argument('--ssl', action='store_true', help='Enable HTTPS (TLS) mode')
     parser.add_argument('--start-up-sleep-ms', metavar='MILLIS', type=int, default=0, help='Delay before starting server')
@@ -922,8 +923,13 @@ if __name__ == '__main__':
             help='Maximum text message response size (in characters) allowed by the WebSocket server')
     args = parser.parse_args()
 
-    log_file_path = '{}/kitchen.log'.format(os.environ.get('MESOS_SANDBOX', '.'))
-    logging.basicConfig(filename=log_file_path, level=logging.DEBUG)
+    if args.log_output == 'file':
+        log_file_path = '{}/kitchen.log'.format(os.environ.get('MESOS_SANDBOX', '.'))
+        logging_config = {'filename': log_file_path}
+    else:
+        logging_config = {'stream': getattr(sys, args.log_output)}
+
+    logging.basicConfig(level=logging.DEBUG, **logging_config)
     kitchen_logger = logging.getLogger('kitchen')
     kitchen_logger.setLevel(logging.DEBUG)
 
