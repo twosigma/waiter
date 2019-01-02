@@ -99,7 +99,7 @@
         ;; Try and authenticate using kerberos and add cookie in response when valid
         (get-in request [:headers "authorization"])
         (let [current-correlation-id (cid/get-correlation-id)
-              response-chan (async/promise-chan)
+              gss-response-chan (async/promise-chan)
               timer-context (timers/start (metrics/waiter-timer "core" "kerberos" "throttle" "delay"))]
           ;; launch task that will populate the response in response-chan
           (.execute
@@ -110,31 +110,37 @@
                 (try
                   (timers/stop timer-context)
                   (let [^GSSContext gss-context (gss-context-init)
-                        token (do-gss-auth-check gss-context request)]
-                    (if (.isEstablished gss-context)
-                      (let [principal (gss-get-principal gss-context)
-                            user (first (str/split principal #"@" 2))
+                        token (do-gss-auth-check gss-context request)
+                        principal (when (.isEstablished gss-context)
+                                    (gss-get-principal gss-context))]
+                    (async/>!! gss-response-chan {:principal principal
+                                                  :token token}))
+                  (catch Throwable th
+                    (log/error th "error while performing kerberos auth")
+                    (async/>!! gss-response-chan {:error th}))
+                  (finally
+                    (async/close! gss-response-chan))))))
+          (async/go
+            (cid/with-correlation-id
+              current-correlation-id
+              (let [{:keys [error principal token]} (async/<! gss-response-chan)]
+                (if-not error
+                  (try
+                    (if principal
+                      (let [user (first (str/split principal #"@" 2))
                             response (auth/handle-request-auth request-handler request user principal password)]
                         (log/debug "added cookies to response")
                         (if token
                           (if (map? response)
-                            (async/>!! response-chan (rr/header response "WWW-Authenticate" token))
-                            (async/go
-                              (cid/with-correlation-id
-                                current-correlation-id
-                                (try
-                                  (let [actual-response (async/<! response)]
-                                    (async/>! response-chan (rr/header actual-response "WWW-Authenticate" token)))
-                                  (catch Throwable th
-                                    (log/error th "error while processing response")
-                                    (async/>! response-chan th))))))
-                          (async/>!! response-chan response)))
-                      (async/>!! response-chan (response-401-negotiate))))
-                  (catch Throwable th
-                    (log/error th "error while performing kerberos auth")
-                    (async/>!! response-chan th))))))
-          ;; response-chan has our response
-          response-chan)
+                            (rr/header response "WWW-Authenticate" token)
+                            (let [actual-response (async/<! response)]
+                              (rr/header actual-response "WWW-Authenticate" token)))
+                          response))
+                      (response-401-negotiate))
+                    (catch Throwable th
+                      (log/error th "error while processing response")
+                      th))
+                  error)))))
         ;; Default to unauthorized
         :else
         (response-401-negotiate)))))
