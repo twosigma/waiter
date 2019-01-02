@@ -117,10 +117,16 @@
          (integer? keep-alive-mins)
          (pos? keep-alive-mins)]}
   (let [thread-pool (ThreadPoolExecutor. 1 concurrency-level keep-alive-mins TimeUnit/MINUTES (LinkedBlockingQueue.))]
-    (metrics/waiter-gauge #(.getActiveCount thread-pool) "core" "kerberos" "throttle" "active-thread-count")
-    (metrics/waiter-gauge #(.getMaximumPoolSize thread-pool) "core" "kerberos" "throttle" "max-thread-count")
-    (metrics/waiter-gauge #(-> thread-pool .getQueue .size) "core" "kerberos" "throttle" "pending-task-count")
-    (metrics/waiter-gauge #(.getTaskCount thread-pool) "core" "kerberos" "throttle" "scheduled-task-count")
+    (metrics/waiter-gauge #(.getActiveCount thread-pool)
+                          "core" "kerberos" "throttle" "active-thread-count")
+    (metrics/waiter-gauge #(- concurrency-level (.getActiveCount thread-pool))
+                          "core" "kerberos" "throttle" "available-thread-count")
+    (metrics/waiter-gauge #(.getMaximumPoolSize thread-pool)
+                          "core" "kerberos" "throttle" "max-thread-count")
+    (metrics/waiter-gauge #(-> thread-pool .getQueue .size)
+                          "core" "kerberos" "throttle" "pending-task-count")
+    (metrics/waiter-gauge #(.getTaskCount thread-pool)
+                          "core" "kerberos" "throttle" "scheduled-task-count")
     (->KerberosAuthenticator thread-pool password)))
 
 (defrecord KerberosAuthorizer
