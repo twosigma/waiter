@@ -792,8 +792,8 @@
       (testing "display router state"
         (let [{:keys [status body]} (test-fn router-id query-state-fn {})]
           (is (every? #(str/includes? (str body) %1)
-                      ["fallback" "graphite-metrics-reporter" "interstitial" "kv-store" "leader" "local-usage"
-                       "maintainer" "router-metrics" "scheduler" "statsd"])
+                      ["fallback" "interstitial" "kv-store" "leader" "local-usage"
+                       "maintainer" "metrics-reporters" "router-metrics" "scheduler" "statsd"])
               (str "Body did not include necessary JSON keys:\n" body))
           (is (= 200 status)))))))
 
@@ -924,16 +924,6 @@
             {:keys [body status]} (test-fn router-id {})]
         (is (= 200 status))
         (is (= (json/read-str body) {"router-id" router-id, "state" state}))))))
-
-(deftest test-get-graphite-reporter-state
-  (let [router-id "test-router-id"
-        test-fn (wrap-handler-json-response get-graphite-reporter-state)]
-    (testing "successful response"
-      (let [state (-> (reporter/graphite-state) walk/stringify-keys)
-            {:keys [body status]} (test-fn router-id {})]
-        (println body)
-        (is (= 200 status))
-        (is (= (-> body json/read-str) {"router-id" router-id, "state" state}))))))
 
 (deftest test-get-service-state
   (let [router-id "router-id"

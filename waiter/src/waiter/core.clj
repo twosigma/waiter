@@ -47,7 +47,7 @@
             [waiter.metrics-sync :as metrics-sync]
             [waiter.password-store :as password-store]
             [waiter.process-request :as pr]
-            [waiter.reporter]
+            [waiter.reporter :as reporter]
             [waiter.scaling :as scaling]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
@@ -65,8 +65,7 @@
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
             [waiter.work-stealing :as work-stealing])
-  (:import (com.codahale.metrics ScheduledReporter)
-           (java.net InetAddress URI)
+  (:import (java.net InetAddress URI)
            java.util.concurrent.Executors
            org.apache.curator.framework.CuratorFrameworkFactory
            org.apache.curator.framework.api.CuratorEventType
@@ -76,7 +75,8 @@
            org.eclipse.jetty.client.HttpClient
            org.eclipse.jetty.client.util.BasicAuthentication$BasicResult
            org.eclipse.jetty.websocket.client.WebSocketClient
-           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse ServletUpgradeRequest)))
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse ServletUpgradeRequest)
+           (waiter.reporter CodahaleReporter)))
 
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
@@ -105,13 +105,13 @@
                               ["/gc-broken-services" :state-gc-for-broken-services]
                               ["/gc-services" :state-gc-for-services]
                               ["/gc-transient-metrics" :state-gc-for-transient-metrics]
-                              ["/graphite-metrics-reporter" :state-graphite-reporter-handler-fn]
                               ["/interstitial" :state-interstitial-handler-fn]
                               ["/launch-metrics" :state-launch-metrics-handler-fn]
                               ["/kv-store" :state-kv-store-handler-fn]
                               ["/leader" :state-leader-handler-fn]
                               ["/local-usage" :state-local-usage-handler-fn]
                               ["/maintainer" :state-maintainer-handler-fn]
+                              ["/metrics-reporters" :state-metrics-reporters-handler-fn]
                               ["/router-metrics" :state-router-metrics-handler-fn]
                               ["/scheduler" :state-scheduler-handler-fn]
                               ["/statsd" :state-statsd-handler-fn]
@@ -180,7 +180,7 @@
             (cid/ensure-correlation-id response get-request-cid)
             (async/go
               (let [nested-response (async/<! response)]
-                (if (map? nested-response) ;; websocket responses may be another channel
+                (if (map? nested-response)                  ;; websocket responses may be another channel
                   (cid/ensure-correlation-id nested-response get-request-cid)
                   nested-response)))))))))
 
@@ -478,7 +478,7 @@
   (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
-        (or (#{"/app-name" "/service-id" "/token"} uri) ; special urls that are always for Waiter (FIXME)
+        (or (#{"/app-name" "/service-id" "/token"} uri)     ; special urls that are always for Waiter (FIXME)
             (some #(str/starts-with? (str uri) %)
                   ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"
                    "/waiter-interstitial"])
@@ -518,7 +518,7 @@
                   (http-utils/http-client-factory {:conn-timeout connection-timeout-ms
                                                    :follow-redirects? false
                                                    :user-agent server-name}))
-   :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
+   :instance-rpc-chan (pc/fnk [] (async/chan 1024))         ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
    :local-usage-agent (pc/fnk [] (agent {}))
@@ -532,8 +532,8 @@
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
                 (cond->> (utils/unique-identifier)
-                  (not (str/blank? router-id-prefix))
-                  (str (str/replace router-id-prefix #"[@.]" "-") "-")))
+                         (not (str/blank? router-id-prefix))
+                         (str (str/replace router-id-prefix #"[@.]" "-") "-")))
    :scaling-timeout-config (pc/fnk [[:settings
                                      [:blacklist-config blacklist-backoff-base-time-ms max-blacklist-time-ms]
                                      [:scaling inter-kill-request-wait-time-ms]]]
@@ -935,11 +935,12 @@
                            (fn make-codahale-reporter [{:keys [factory-fn] :as reporter-config}]
                              (let [resolved-factory-fn (utils/resolve-symbol! factory-fn)
                                    reporter-instance (resolved-factory-fn reporter-config)]
-                               (if-not (instance? ScheduledReporter reporter-instance)
-                                 (throw (ex-info "Reporter factory did not create an instance of ScheduledReporter"
+                               (if-not (instance? CodahaleReporter reporter-instance)
+                                 (throw (ex-info "Reporter factory did not create an instance of CodahaleReporter"
                                                  {:reporter-config reporter-config
                                                   :reporter-instance reporter-instance
-                                                  :resolved-factory-fn resolved-factory-fn})))))
+                                                  :resolved-factory-fn resolved-factory-fn})))
+                               reporter-instance))
                            reporters))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  router-state-maintainer]
@@ -1275,12 +1276,6 @@
                                                  (wrap-secure-request-fn
                                                    (fn state-autoscaling-multiplexer-handler-fn [request]
                                                      (handler/get-query-chan-state-handler router-id query-chan request)))))
-   :state-graphite-reporter-handler-fn (pc/fnk [[:state router-id]
-                                                wrap-secure-request-fn]
-                                         (wrap-secure-request-fn
-                                           (fn state-graphite-reporter-handler-fn [request]
-                                             (handler/get-graphite-reporter-state router-id request))))
-
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]
@@ -1347,6 +1342,14 @@
                                     (wrap-secure-request-fn
                                       (fn maintainer-state-handler-fn [request]
                                         (handler/get-chan-latest-state-handler router-id query-state-fn request)))))
+   :state-metrics-reporters-handler-fn (pc/fnk [[:daemons codahale-reporters]
+                                                [:state router-id]]
+                                         (fn codahale-reporter-state-handler-fn [request]
+                                           (handler/get-query-fn-state
+                                             router-id
+                                             #(into {} (for [[k reporter-instance] codahale-reporters]
+                                                         [k (reporter/state reporter-instance)]))
+                                             request)))
    :state-router-metrics-handler-fn (pc/fnk [[:routines router-metrics-helpers]
                                              [:state router-id]
                                              wrap-secure-request-fn]

@@ -590,11 +590,9 @@
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (utils/clj->streaming-json-response
-        {:details (->> ["autoscaler" "autoscaling-multiplexer" "fallback"
-                        "gc-broken-services" "gc-services" "gc-transient-metrics"
-                        "graphite-metrics-reporter" "interstitial"
-                          "kv-store" "launch-metrics" "leader" "local-usage" "maintainer"
+      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "fallback"
+                          "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
+                          "kv-store" "launch-metrics" "leader" "local-usage" "maintainer" "metrics-reporters"
                         "router-metrics" "scheduler"
                           "statsd"]
                        (pc/map-from-keys make-url))
@@ -675,11 +673,6 @@
   "Outputs the statsd state."
   [router-id request]
   (get-function-state statsd/state router-id request))
-
-(defn get-graphite-reporter-state
-  "Outputs the graphite metrics reporter state."
-  [router-id request]
-  (get-function-state reporter/graphite-state router-id request))
 
 (defn get-service-state
   "Retrieves the state for a particular service on the router."
