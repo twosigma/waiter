@@ -26,13 +26,14 @@
             [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
             [waiter.middleware :as middleware]
-            [waiter.metrics :as metrics])
+            [waiter.metrics :as metrics]
+            [waiter.util.utils :as utils])
   (:import (org.apache.commons.codec.binary Base64)
            (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.http HttpHeader)
            (org.ietf.jgss GSSManager GSSCredential GSSContext GSSName Oid)
            (java.net URI)
-           (java.util.concurrent ExecutorService)))
+           (java.util.concurrent ThreadPoolExecutor)))
 
 (defn decode-input-token
   "Decode the input token from the negotiate line, expects the authorization token to exist"
@@ -63,7 +64,20 @@
   (-> (rr/response "Unauthorized")
       (rr/status 401)
       (rr/header "Content-Type" "text/html")
+      (rr/header "Server" (utils/get-current-server-name))
       (rr/header "WWW-Authenticate" "Negotiate")
+      (cookies/cookies-response)))
+
+(defn response-503-temporarily-unavailable
+  "Tell the client you're overloaded and would like them to try later"
+  []
+  (log/info "triggering 401 negotiate for spnego authentication")
+  (counters/inc! (metrics/waiter-counter "core" "response-status" "503"))
+  (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "503"))
+  (-> (rr/response "Service Temporarily Unavailable - Too Many Kerberos authentication requests")
+      (rr/status 503)
+      (rr/header "Content-Type" "text/html")
+      (rr/header "Server" (utils/get-current-server-name))
       (cookies/cookies-response)))
 
 (defn gss-context-init
@@ -80,13 +94,45 @@
   [^GSSContext gss]
   (str (.getSrcName gss)))
 
+(defn too-many-pending-auth-requests?
+  "Returns true if there are too many pending Kerberos auth requests."
+  [thread-pool max-queue-length]
+  (-> thread-pool
+      .getQueue
+      .size
+      (>= max-queue-length)))
+
+(defn populate-gss-credentials
+  "Perform Kerberos authentication on the provided thread pool and populate the result in the response channel."
+  [thread-pool request response-chan]
+  (let [current-correlation-id (cid/get-correlation-id)
+        timer-context (timers/start (metrics/waiter-timer "core" "kerberos" "throttle" "delay"))]
+    (.execute
+      thread-pool
+      (fn process-gss-task []
+        (cid/with-correlation-id
+          current-correlation-id
+          (try
+            (timers/stop timer-context)
+            (let [^GSSContext gss-context (gss-context-init)
+                  token (do-gss-auth-check gss-context request)
+                  principal (when (.isEstablished gss-context)
+                              (gss-get-principal gss-context))]
+              (async/>!! response-chan {:principal principal
+                                            :token token}))
+            (catch Throwable th
+              (log/error th "error while performing kerberos auth")
+              (async/>!! response-chan {:error th}))
+            (finally
+              (async/close! response-chan))))))))
+
 (defn require-gss
   "This middleware enables the application to require a SPNEGO
    authentication. If SPNEGO is successful then the handler `request-handler`
    will be run, otherwise the handler will not be run and 401
    returned instead.  This middleware doesn't handle cookies for
    authentication, but that should be stacked before this handler."
-  [request-handler ^ExecutorService thread-pool password]
+  [request-handler ^ThreadPoolExecutor thread-pool max-queue-length password]
   (fn require-gss-handler [{:keys [headers] :as request}]
     (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
           [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
@@ -96,30 +142,15 @@
         (let [auth-params-map (auth/auth-params-map auth-principal)
               request-handler' (middleware/wrap-merge request-handler auth-params-map)]
           (request-handler' request))
+        ;; Ensure we are not already queued with lots of Kerberos auth requests
+        (too-many-pending-auth-requests? thread-pool max-queue-length)
+        (response-503-temporarily-unavailable)
         ;; Try and authenticate using kerberos and add cookie in response when valid
         (get-in request [:headers "authorization"])
         (let [current-correlation-id (cid/get-correlation-id)
-              gss-response-chan (async/promise-chan)
-              timer-context (timers/start (metrics/waiter-timer "core" "kerberos" "throttle" "delay"))]
+              gss-response-chan (async/promise-chan)]
           ;; launch task that will populate the response in response-chan
-          (.execute
-            thread-pool
-            (fn process-gss-task []
-              (cid/with-correlation-id
-                current-correlation-id
-                (try
-                  (timers/stop timer-context)
-                  (let [^GSSContext gss-context (gss-context-init)
-                        token (do-gss-auth-check gss-context request)
-                        principal (when (.isEstablished gss-context)
-                                    (gss-get-principal gss-context))]
-                    (async/>!! gss-response-chan {:principal principal
-                                                  :token token}))
-                  (catch Throwable th
-                    (log/error th "error while performing kerberos auth")
-                    (async/>!! gss-response-chan {:error th}))
-                  (finally
-                    (async/close! gss-response-chan))))))
+          (populate-gss-credentials thread-pool request gss-response-chan)
           (async/go
             (cid/with-correlation-id
               current-correlation-id

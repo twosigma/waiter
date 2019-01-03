@@ -171,7 +171,10 @@
                                    ;; the maximum number of concurrent Kerberos library (GSSLibStub) invocations allowed
                                    :concurrency-level 20
                                    ;; the idle time before cached threads from the invocation throttler are terminated
-                                   :keep-alive-mins 5}}
+                                   :keep-alive-mins 5
+                                   ;; the maximum number of request waiting for Kerberos auth before server responds
+                                   ;; with a 503 temporarily unavailable
+                                   :max-queue-length 1000}}
 
  ;; Waiter supports the run-as-requester feature to launch a service as the requesting user.
  ;; Triggering this feature without passing explicit headers requires providing an explicit consent and storing this in a cookie.

@@ -103,19 +103,21 @@
                          :status 403
                          :user run-as-user}))))))
 
-(defrecord KerberosAuthenticator [thread-pool password]
+(defrecord KerberosAuthenticator [thread-pool max-queue-length password]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
-    (spnego/require-gss request-handler thread-pool password)))
+    (spnego/require-gss request-handler thread-pool max-queue-length password)))
 
 (defn kerberos-authenticator
   "Factory function for creating Kerberos authenticator middleware"
-  [{:keys [concurrency-level keep-alive-mins password]}]
+  [{:keys [concurrency-level keep-alive-mins max-queue-length password]}]
   {:pre [(not-empty password)
          (integer? concurrency-level)
          (pos? concurrency-level)
          (integer? keep-alive-mins)
-         (pos? keep-alive-mins)]}
+         (pos? keep-alive-mins)
+         (integer? max-queue-length)
+         (pos? max-queue-length)]}
   (let [thread-pool (ThreadPoolExecutor. 1 concurrency-level keep-alive-mins TimeUnit/MINUTES (LinkedBlockingQueue.))]
     (metrics/waiter-gauge #(.getActiveCount thread-pool)
                           "core" "kerberos" "throttle" "active-thread-count")
@@ -127,7 +129,7 @@
                           "core" "kerberos" "throttle" "pending-task-count")
     (metrics/waiter-gauge #(.getTaskCount thread-pool)
                           "core" "kerberos" "throttle" "scheduled-task-count")
-    (->KerberosAuthenticator thread-pool password)))
+    (->KerberosAuthenticator thread-pool max-queue-length password)))
 
 (defrecord KerberosAuthorizer
   [prestash-cache query-chan]
