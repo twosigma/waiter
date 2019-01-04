@@ -180,7 +180,7 @@
             (cid/ensure-correlation-id response get-request-cid)
             (async/go
               (let [nested-response (async/<! response)]
-                (if (map? nested-response)                  ;; websocket responses may be another channel
+                (if (map? nested-response) ;; websocket responses may be another channel
                   (cid/ensure-correlation-id nested-response get-request-cid)
                   nested-response)))))))))
 
@@ -478,7 +478,7 @@
   (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
-        (or (#{"/app-name" "/service-id" "/token"} uri)     ; special urls that are always for Waiter (FIXME)
+        (or (#{"/app-name" "/service-id" "/token"} uri) ; special urls that are always for Waiter (FIXME)
             (some #(str/starts-with? (str uri) %)
                   ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-consent"
                    "/waiter-interstitial"])
@@ -518,7 +518,7 @@
                   (http-utils/http-client-factory {:conn-timeout connection-timeout-ms
                                                    :follow-redirects? false
                                                    :user-agent server-name}))
-   :instance-rpc-chan (pc/fnk [] (async/chan 1024))         ; TODO move to service-chan-maintainer
+   :instance-rpc-chan (pc/fnk [] (async/chan 1024)) ; TODO move to service-chan-maintainer
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
    :local-usage-agent (pc/fnk [] (agent {}))

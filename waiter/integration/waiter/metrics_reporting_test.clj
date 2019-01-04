@@ -14,130 +14,54 @@
 ;; limitations under the License.
 ;;
 (ns waiter.metrics-reporting-test
-  (:require [clj-time.coerce :as tc]
-            [clj-time.core :as t]
-            [clj-time.format :as f]
-            [clojure.core.async :as async]
-            [clojure.java.io :as io]
+  (:require [clojure.core.async :as async]
             [clojure.test :refer :all]
-            [clojure.tools.logging :as log]
-            [schema.core :as s]
-            [waiter.schema :as schema]
-            [waiter.util.client-tools :refer :all])
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.date-utils :as du])
   (:import [java.net ServerSocket]))
 
 (defn- get-graphite-reporter-state
-  []
+  [waiter-url]
   (let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)
-        _ (assert-response-status response 200)
-        {{:keys [graphite]} "state"} (-> body str try-parse-json)]
-    graphite))
+        _ (assert-response-status response 200)]
+    (-> body str try-parse-json (get-in ["state" "graphite"]))))
 
-(defn- parse-date-time
-  [value]
-  (if value
-    (f/parse (f/formatters :date-time) value)
-    nil))
+(defmacro ^:private wait-for-period
+  [fun]
+  `(wait-for ~fun :interval ~'wait-for-delay :timeout (* ~'period-ms 2) :unit-multiplier 1))
+
+(defmacro ^:private check-events-within-period
+  [successful?]
+  (let [last-event-time (if successful? 'last-reporting-time 'last-connect-failed-time)
+        last-event-time-ms (symbol (str last-event-time "-ms"))
+        next-last-event-time-ms (symbol (str "next-" last-event-time-ms))]
+    `(let [{:strs [~'last-report-successful ~last-event-time]} (get-graphite-reporter-state ~'waiter-url)
+           _# (is (= ~'last-report-successful ~successful?))
+           _# (is ~last-event-time)
+           ~last-event-time-ms (-> ~last-event-time du/str-to-date .getMillis)
+           ~next-last-event-time-ms (wait-for-period #(let [~next-last-event-time-ms (-> ~'waiter-url
+                                                                                       get-graphite-reporter-state
+                                                                                       (get ~(str last-event-time))
+                                                                                       du/str-to-date
+                                                                                       .getMillis)]
+                                                       (if (not= ~next-last-event-time-ms ~last-event-time-ms)
+                                                         ~next-last-event-time-ms nil)))]
+       (is ~next-last-event-time-ms)
+       (when ~next-last-event-time-ms
+         (is (< (Math/abs (- ~next-last-event-time-ms ~last-event-time-ms ~'period-ms)) 100))))))
 
 (deftest ^:parallel ^:integration-fast test-graphite-metrics-reporting
   (testing-using-waiter-url
-    (let [{{{:keys [graphite]} :reporters} :metrics-config} (waiter-settings waiter-url)]
+    (let [{:keys [graphite]} (get-in (waiter-settings waiter-url) [:metrics-config :reporters])]
       (when graphite
         (let [{:keys [period-ms port]} graphite
-              wait-for-delay (/ period-ms 2)
-              graphite-reporter-active (wait-for #(let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)
-                                                        _ (assert-response-status response 200)
-                                                        {{{:strs [last-report-successful]} "graphite"} "state"} (-> body str try-parse-json)] (some? last-report-successful))
-                                                 :interval wait-for-delay :timeout (* period-ms 2) :unit-multiplier 1)]
-          (is (some? graphite-reporter-active))
-          (let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)
-                _ (assert-response-status response 200)
-                {{{:strs [last-report-successful last-connect-failed-time]} "graphite"} "state"} (-> body str try-parse-json)
-                _ (is (some? last-connect-failed-time))
-                last-connect-failed-time-ms (.getMillis (parse-date-time last-connect-failed-time))
-                next-last-connect-failed-time-ms (wait-for #(let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)
-                                                                  _ (assert-response-status response 200)
-                                                                  {{{:strs [last-connect-failed-time]} "graphite"} "state"} (-> body str try-parse-json)
-                                                                  next-last-connect-failed-time-ms (.getMillis (parse-date-time last-connect-failed-time))]
-                                                              (if (not= next-last-connect-failed-time-ms last-connect-failed-time-ms)
-                                                                next-last-connect-failed-time-ms nil))
-                                                           :interval wait-for-delay :timeout (* period-ms 2) :unit-multiplier 1)]
-
-            (is (some? next-last-connect-failed-time-ms))
-            (if (some? next-last-connect-failed-time-ms)
-              (is (< (Math/abs (- next-last-connect-failed-time-ms last-connect-failed-time-ms period-ms)) 100)))
-
-
-            (let [ctrl (async/chan)]
-              (async/go (with-open [server-socket (ServerSocket. port)
-                                    socket (.accept server-socket)]
-                          (async/<! ctrl)
-                          ))
-
-
-              (wait-for #(let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)
-                               _ (assert-response-status response 200)
-                               {{{:strs [last-report-successful]} "graphite"} "state"} (-> body str try-parse-json)] last-report-successful)
-                        :interval wait-for-delay :timeout (* period-ms 2) :unit-multiplier 1)
-
-              (let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)
-                    _ (assert-response-status response 200)
-                    {{{:strs [last-report-successful last-reporting-time]} "graphite"} "state"} (-> body str try-parse-json)
-                    _ (is last-report-successful)
-                    last-reporting-time-ms (.getMillis (parse-date-time last-reporting-time))
-                    next-last-reporting-time-ms (wait-for #(let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)
-                                                                 _ (assert-response-status response 200)
-                                                                 {{{:strs [last-reporting-time]} "graphite"} "state"} (-> body str try-parse-json)
-                                                                 next-last-reporting-time-ms (.getMillis (parse-date-time last-reporting-time))]
-                                                             (if (not= next-last-reporting-time-ms last-reporting-time-ms)
-                                                               next-last-reporting-time-ms nil))
-                                                          :interval wait-for-delay :timeout (* period-ms 2) :unit-multiplier 1)]
-
-
-                (is (some? next-last-reporting-time-ms))
-                (if (some? next-last-reporting-time-ms)
-                  (is (< (Math/abs (- next-last-reporting-time-ms last-reporting-time-ms period-ms)) 100)))
-
-                )
-              (async/>!! ctrl true)
-              )
-
-            ;(with-open [ss (ServerSocket. port)
-            ;            sock (.accept ss)
-            ;            reader (io/reader sock)]
-            ;
-            ;  (println (.readLine reader))
-            ;  ;(doseq [msg-in (#(line-seq (io/reader %)) sock)]
-            ;  ;  (println msg-in)
-            ;  ;  (.close sock))
-            ;  )
-
-            ;(let [ss (ServerSocket. port)
-            ;      sock (.accept ss)
-            ;      reader (io/reader sock)]
-            ;
-            ;  (println (.readLine reader))
-            ;
-            ;    (doseq [msg-in (#(line-seq (io/reader %)) sock)]
-            ;      (println msg-in))
-            ;  (.setKeepAlive sock false)
-            ;  (.close reader)
-            ;  (.close sock)
-            ;  (.close ss)
-            ;  )
-            ;
-            ;(with-open [sock (.accept (ServerSocket. port))
-            ;            reader (io/reader sock)]
-            ;
-            ;  (println (.readLine reader))
-            ;  ;(doseq [msg-in (#(line-seq (io/reader %)) sock)]
-            ;  ;  (println msg-in)
-            ;  ;  (.close sock))
-            ;  (.setKeepAlive sock false)
-            ;  (.close reader)
-            ;  (.close sock)
-            ;  )
-
-
-            ;(println (get-graphite-reporter-state))
-            ))))))
+              wait-for-delay (/ period-ms 2)]
+          (is (wait-for-period #(-> waiter-url get-graphite-reporter-state (get "last-report-successful") some?)))
+          (check-events-within-period false)
+          (let [ctrl (async/chan)]
+            (async/go (with-open [server-socket (ServerSocket. port)
+                                  socket (.accept server-socket)]
+                        (async/<! ctrl)))
+            (wait-for-period #(-> waiter-url get-graphite-reporter-state (get "last-report-successful")))
+            (check-events-within-period true)
+            (async/>!! ctrl true)))))))
