@@ -22,8 +22,8 @@
 
 (defn- get-graphite-reporter-state
   [waiter-url]
-  (let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)
-        _ (assert-response-status response 200)]
+  (let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)]
+    (assert-response-status response 200)
     (-> body str try-parse-json (get-in ["state" "graphite"]))))
 
 (defmacro ^:private wait-for-period
