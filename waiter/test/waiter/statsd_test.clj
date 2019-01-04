@@ -255,24 +255,6 @@
         (is (= 1 (count packets)))
         (is (= "waiter.testing.env.cluster.server.foo:6|c" (first packets)))))))
 
-(deftest test-inc-zzz!
-  (testing "Incrementing a counter"
-    (testing "should aggregate and send packets appropriately"
-
-      (statsd/setup {:host                "localhost"
-                     :port                5555
-                     :environment         "env"
-                     :cluster             "cluster"
-                     :server              "server"
-                     :publish-interval-ms 0})
-      (statsd/await-agents)
-      (statsd/inc! "testing" "foo" 1)
-      (statsd/drain)
-      (statsd/teardown)
-      (println "zzzz")
-      (println "zzzz2")
-      )))
-
 (deftest test-histo!
   (testing "Setting a histogram value"
 
