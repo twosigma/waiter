@@ -63,20 +63,32 @@
 
 (defn parse-and-store-failed-instance!
   "Parses the failed instance marathon response and adds it to the known set of failed instances."
-  [service-id->failed-instances-transient-store service-id failed-marathon-task common-extractor-fn]
-  (when failed-marathon-task
-    (let [failed-instance (scheduler/make-ServiceInstance
-                            (let [instance-id (remove-slash-prefix (:taskId failed-marathon-task))]
-                              (merge
-                                (common-extractor-fn instance-id failed-marathon-task)
-                                {:id instance-id
-                                 :started-at (some-> failed-marathon-task :timestamp (du/str-to-date formatter-marathon))
-                                 :healthy? false
-                                 :port 0})))
-          max-instances-to-keep 10]
-      (scheduler/add-instance-to-buffered-collection!
-        service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance
-        (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set)))))))
+  [service-id->failed-instances-transient-store service-id active-instances failed-marathon-task common-extractor-fn]
+  (let [failed-instance-ids (->> (get @service-id->failed-instances-transient-store service-id)
+                                 (map :id)
+                                 set)]
+    (when failed-marathon-task
+      (let [instance-id (remove-slash-prefix (:taskId failed-marathon-task))]
+        (when-not (contains? failed-instance-ids instance-id)
+          (let [failed-instance (scheduler/make-ServiceInstance
+                                  (assoc
+                                    (common-extractor-fn instance-id failed-marathon-task)
+                                    :id instance-id
+                                    :healthy? false
+                                    :port 0
+                                    :started-at (some-> failed-marathon-task :timestamp (du/str-to-date formatter-marathon))))
+                max-instances-to-keep 10]
+            (scheduler/add-instance-to-buffered-collection!
+              service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance
+              (fn [] #{}) (fn [instances] (-> (scheduler/sort-instances instances) (rest) (set))))))))
+    (when (some failed-instance-ids (map :id active-instances))
+      ;; remove erroneous entries that are now healthy despite Marathon previously claiming them to be failed
+      (swap! service-id->failed-instances-transient-store
+             (fn [service-id->failed-instances]
+               (update service-id->failed-instances service-id
+                       (fn [failed-instances]
+                         (let [active-instance-ids (->> active-instances (map :id) set)]
+                           (set (remove #(contains? active-instance-ids (:id %)) failed-instances))))))))))
 
 (defn- get-deployment-info
   "Extracts the deployments section from the response body if it exists."
@@ -190,10 +202,11 @@
                                    ;; first port must be used for the web server, extra ports can be used freely.
                                    :port (-> % :ports first)
                                    :extra-ports (-> % :ports rest vec)})))
-                           active-marathon-tasks)]
+                           active-marathon-tasks)
+        failed-task (get-in marathon-response (conj service-keys :lastTaskFailure))]
     (parse-and-store-failed-instance!
       service-id->failed-instances-transient-store
-      service-id (get-in marathon-response (conj service-keys :lastTaskFailure)) common-extractor-fn)
+      service-id active-instances failed-task common-extractor-fn)
     {:active-instances active-instances
      :failed-instances (service-id->failed-instances service-id->failed-instances-transient-store service-id)}))
 
