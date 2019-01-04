@@ -103,10 +103,10 @@
                          :status 403
                          :user run-as-user}))))))
 
-(defrecord KerberosAuthenticator [thread-pool max-queue-length password]
+(defrecord KerberosAuthenticator [^ThreadPoolExecutor executor max-queue-length password]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
-    (spnego/require-gss request-handler thread-pool max-queue-length password)))
+    (spnego/require-gss request-handler executor max-queue-length password)))
 
 (defn kerberos-authenticator
   "Factory function for creating Kerberos authenticator middleware"
@@ -118,18 +118,18 @@
          (pos? keep-alive-mins)
          (integer? max-queue-length)
          (pos? max-queue-length)]}
-  (let [thread-pool (ThreadPoolExecutor. 1 concurrency-level keep-alive-mins TimeUnit/MINUTES (LinkedBlockingQueue.))]
-    (metrics/waiter-gauge #(.getActiveCount thread-pool)
+  (let [executor (ThreadPoolExecutor. 1 concurrency-level keep-alive-mins TimeUnit/MINUTES (LinkedBlockingQueue.))]
+    (metrics/waiter-gauge #(.getActiveCount executor)
                           "core" "kerberos" "throttle" "active-thread-count")
-    (metrics/waiter-gauge #(- concurrency-level (.getActiveCount thread-pool))
+    (metrics/waiter-gauge #(- concurrency-level (.getActiveCount executor))
                           "core" "kerberos" "throttle" "available-thread-count")
-    (metrics/waiter-gauge #(.getMaximumPoolSize thread-pool)
+    (metrics/waiter-gauge #(.getMaximumPoolSize executor)
                           "core" "kerberos" "throttle" "max-thread-count")
-    (metrics/waiter-gauge #(-> thread-pool .getQueue .size)
+    (metrics/waiter-gauge #(-> executor .getQueue .size)
                           "core" "kerberos" "throttle" "pending-task-count")
-    (metrics/waiter-gauge #(.getTaskCount thread-pool)
+    (metrics/waiter-gauge #(.getTaskCount executor)
                           "core" "kerberos" "throttle" "scheduled-task-count")
-    (->KerberosAuthenticator thread-pool max-queue-length password)))
+    (->KerberosAuthenticator executor max-queue-length password)))
 
 (defrecord KerberosAuthorizer
   [prestash-cache query-chan]

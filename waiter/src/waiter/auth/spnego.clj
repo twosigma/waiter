@@ -63,7 +63,7 @@
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
   (-> (rr/response "Unauthorized")
       (rr/status 401)
-      (rr/header "Content-Type" "text/html")
+      (rr/header "Content-Type" "text/plain")
       (rr/header "Server" (utils/get-current-server-name))
       (rr/header "WWW-Authenticate" "Negotiate")
       (cookies/cookies-response)))
@@ -74,9 +74,9 @@
   (log/info "triggering 401 negotiate for spnego authentication")
   (counters/inc! (metrics/waiter-counter "core" "response-status" "503"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "503"))
-  (-> (rr/response "Service Temporarily Unavailable - Too Many Kerberos authentication requests")
+  (-> (rr/response "Too many Kerberos authentication requests")
       (rr/status 503)
-      (rr/header "Content-Type" "text/html")
+      (rr/header "Content-Type" "text/plain")
       (rr/header "Server" (utils/get-current-server-name))
       (cookies/cookies-response)))
 
@@ -96,19 +96,19 @@
 
 (defn too-many-pending-auth-requests?
   "Returns true if there are too many pending Kerberos auth requests."
-  [thread-pool max-queue-length]
-  (-> thread-pool
+  [^ThreadPoolExecutor thread-pool-executor max-queue-length]
+  (-> thread-pool-executor
       .getQueue
       .size
       (>= max-queue-length)))
 
 (defn populate-gss-credentials
   "Perform Kerberos authentication on the provided thread pool and populate the result in the response channel."
-  [thread-pool request response-chan]
+  [^ThreadPoolExecutor thread-pool-executor request response-chan]
   (let [current-correlation-id (cid/get-correlation-id)
         timer-context (timers/start (metrics/waiter-timer "core" "kerberos" "throttle" "delay"))]
     (.execute
-      thread-pool
+      thread-pool-executor
       (fn process-gss-task []
         (cid/with-correlation-id
           current-correlation-id
@@ -132,7 +132,7 @@
    will be run, otherwise the handler will not be run and 401
    returned instead.  This middleware doesn't handle cookies for
    authentication, but that should be stacked before this handler."
-  [request-handler ^ThreadPoolExecutor thread-pool max-queue-length password]
+  [request-handler ^ThreadPoolExecutor thread-pool-executor max-queue-length password]
   (fn require-gss-handler [{:keys [headers] :as request}]
     (let [waiter-cookie (auth/get-auth-cookie-value (get headers "cookie"))
           [auth-principal _ :as decoded-auth-cookie] (auth/decode-auth-cookie waiter-cookie password)]
@@ -143,14 +143,14 @@
               request-handler' (middleware/wrap-merge request-handler auth-params-map)]
           (request-handler' request))
         ;; Ensure we are not already queued with lots of Kerberos auth requests
-        (too-many-pending-auth-requests? thread-pool max-queue-length)
+        (too-many-pending-auth-requests? thread-pool-executor max-queue-length)
         (response-503-temporarily-unavailable)
         ;; Try and authenticate using kerberos and add cookie in response when valid
         (get-in request [:headers "authorization"])
         (let [current-correlation-id (cid/get-correlation-id)
               gss-response-chan (async/promise-chan)]
           ;; launch task that will populate the response in response-chan
-          (populate-gss-credentials thread-pool request gss-response-chan)
+          (populate-gss-credentials thread-pool-executor request gss-response-chan)
           (async/go
             (cid/with-correlation-id
               current-correlation-id

@@ -40,7 +40,7 @@
         standard-request {}
         handler (require-gss request-handler thread-pool max-queue-length password)
         standard-401-response {:body "Unauthorized"
-                               :headers {"Content-Type" "text/html"
+                               :headers {"Content-Type" "text/plain"
                                          "Server" "waiter"
                                          "WWW-Authenticate" "Negotiate"}
                                :status 401}]
@@ -58,8 +58,8 @@
                     auth/decoded-auth-valid? (constantly false)
                     too-many-pending-auth-requests? (constantly true)]
         (let [handler (require-gss request-handler thread-pool max-queue-length password)]
-          (is (= {:body "Service Temporarily Unavailable - Too Many Kerberos authentication requests"
-                  :headers {"Content-Type" "text/html"
+          (is (= {:body "Too many Kerberos authentication requests"
+                  :headers {"Content-Type" "text/plain"
                             "Server" "waiter"}
                   :status 503}
                  (handler standard-request))))))
