@@ -929,7 +929,7 @@ if __name__ == '__main__':
     else:
         logging_config = {'stream': getattr(sys, args.log_output)}
 
-    logging.basicConfig(level=logging.DEBUG, **logging_config)
+    logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.DEBUG, **logging_config)
     kitchen_logger = logging.getLogger('kitchen')
     kitchen_logger.setLevel(logging.DEBUG)
 
