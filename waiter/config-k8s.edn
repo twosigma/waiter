@@ -17,7 +17,7 @@
                                          ;; Method that creates and starts an instance of com.codahale.metrics.graphite.GraphiteReporter
                                          :factory-fn waiter.reporter/graphite-reporter
                                          ;; If present, a regex to filter by metric name
-                                         :filter-regex #config/regex ".*"
+                                         :filter-regex #config/regex "^jvm.*|^waiter.*"
                                          ;; Graphite hostname
                                          :host "localhost"
                                          ;; Reporting period in milliseconds

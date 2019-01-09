@@ -246,12 +246,14 @@
 
 (deftest test-validate-minimesos-settings
   (testing "Test validating minimesos settings"
-    (let [port 12345
+    (let [graphite-server-port 5555
+          port 12345
           run-as-user "foo"
           marathon "bar"
           zk-connect-string "qux"]
       (with-redefs [env (fn [name _]
                           (case name
+                            "GRAPHITE_SERVER_PORT" (str graphite-server-port)
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             "WAITER_MARATHON" marathon
@@ -259,6 +261,7 @@
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-minimesos-settings)]
           (is (nil? (s/check settings-schema settings)))
+          (is (= graphite-server-port (get-in settings [:metrics-config :reporters :graphite :port])))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user])))
           (is (= marathon (get-in settings [:scheduler-config :marathon :url])))
@@ -266,29 +269,35 @@
 
 (deftest test-validate-shell-settings
   (testing "Test validating shell scheduler settings"
-    (let [port 12345
+    (let [graphite-server-port 5555
+          port 12345
           run-as-user "foo"]
       (with-redefs [env (fn [name _]
                           (case name
+                            "GRAPHITE_SERVER_PORT" (str graphite-server-port)
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-shell-settings)]
           (is (nil? (s/check settings-schema settings)))
+          (is (= graphite-server-port (get-in settings [:metrics-config :reporters :graphite :port])))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
 
 (deftest test-validate-composite-settings
   (testing "Test validating composite scheduler settings"
-    (let [port 12345
+    (let [graphite-server-port 5555
+          port 12345
           run-as-user "foo"]
       (with-redefs [env (fn [name _]
                           (case name
+                            "GRAPHITE_SERVER_PORT" (str graphite-server-port)
                             "WAITER_PORT" (str port)
                             "WAITER_AUTH_RUN_AS_USER" run-as-user
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-composite-settings)]
           (is (nil? (s/check settings-schema settings)))
+          (is (= graphite-server-port (get-in settings [:metrics-config :reporters :graphite :port])))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
 
