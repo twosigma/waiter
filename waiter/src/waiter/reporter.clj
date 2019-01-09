@@ -15,10 +15,10 @@
 ;;
 (ns waiter.reporter
   (:require [clj-time.core :as t]
+            [clojure.tools.logging :as log]
             [metrics.core :as metrics]
             [schema.core :as s]
-            [waiter.schema :as schema]
-            [clojure.tools.logging :as log])
+            [waiter.schema :as schema])
   (:import (com.codahale.metrics ConsoleReporter MetricFilter ScheduledReporter)
            (com.codahale.metrics.graphite Graphite GraphiteReporter GraphiteSender PickledGraphite)
            java.io.PrintStream
@@ -39,12 +39,12 @@
   (reify MetricFilter (matches [_ name _] (some? (re-matches filter-regex name)))))
 
 (defn- make-codahale-reporter
-  [^ScheduledReporter scheduled-reporter state period-ms]
+  [^ScheduledReporter scheduled-reporter state-atom period-ms]
   (.start scheduled-reporter period-ms TimeUnit/MILLISECONDS)
+  (swap! state-atom merge [:run-state :started])
   (reify CodahaleReporter
-    (close! [_] (.close scheduled-reporter) (reset! state :closed))
-    (state [_] @state)))
-
+    (close! [_] (.close scheduled-reporter) (swap! state-atom [:run-state :closed]))
+    (state [_] @state-atom)))
 
 (defn validate-console-reporter-config
   "Validates ConsoleReporter settings and sets defaults"
@@ -57,33 +57,31 @@
   "Creates a ConsoleReporter for codahale metrics"
   ([filter-regex] (make-console-reporter filter-regex nil))
   ([filter-regex ^PrintStream output]
-   (let [state (atom {})
-         console-reporter (cond-> (ConsoleReporter/forRegistry metrics/default-registry)
-                                  output (.outputTo output)
-                                  filter-regex (.filter (make-metrics-filter filter-regex))
-                                  true (-> (.convertRatesTo TimeUnit/SECONDS)
-                                           (.convertDurationsTo TimeUnit/MILLISECONDS)
-                                           (.build)))]
-     [console-reporter state])))
+   (let [state-atom (atom {:run-state :created})
+         console-reporter (-> (cond-> (ConsoleReporter/forRegistry metrics/default-registry)
+                                      output (.outputTo output)
+                                      filter-regex (.filter (make-metrics-filter filter-regex)))
+                              (.convertRatesTo TimeUnit/SECONDS)
+                              (.convertDurationsTo TimeUnit/MILLISECONDS)
+                              (.build))]
+     [console-reporter state-atom])))
 
 (defn console-reporter
   "Creates and starts a ConsoleReporter for codahale metrics"
   [config]
   (let [{:keys [period-ms filter-regex]} (validate-console-reporter-config config)
-        [console-reporter state] (make-console-reporter filter-regex)]
-    (make-codahale-reporter console-reporter state period-ms)))
-
-
+        [console-reporter state-atom] (make-console-reporter filter-regex)]
+    (make-codahale-reporter console-reporter state-atom period-ms)))
 
 (defn validate-graphite-reporter-config
   "Validates GraphiteReporter settings and sets defaults"
   [config]
-  (s/validate {(s/required-key :period-ms) schema/positive-int
-               (s/optional-key :filter-regex) s/Regex
+  (s/validate {(s/optional-key :filter-regex) s/Regex
                (s/required-key :host) s/Str
+               (s/required-key :period-ms) schema/positive-int
+               (s/required-key :pickled?) s/Bool
                (s/optional-key :prefix) s/Str
                (s/required-key :port) schema/positive-int
-               (s/required-key :pickled?) s/Bool
                s/Any s/Any}
               (merge {:pickled? true} config)))
 
@@ -96,56 +94,40 @@
                                     (Graphite. addr))]
      (make-graphite-reporter filter-regex prefix graphite)))
   ([filter-regex prefix ^GraphiteSender graphite]
-   (let [state (atom {})
+   (let [state-atom (atom {:run-state :created})
+         update-state (fn [event last-report-successful?]
+                        (swap! state-atom merge
+                               [event (t/now)]
+                               [:failed-writes-to-server (.getFailures graphite)]
+                               [:last-report-successful last-report-successful?]))
+         try-operation (fn [operation f failure-event]
+                         (try (f)
+                              (catch Exception e
+                                (log/warn "GraphiteSender failed to" operation "with error:" (.getMessage e))
+                                (update-state failure-event false)
+                                (throw e))))
          graphite-wrapper (reify GraphiteSender
                             (connect [_]
-                              (try (.connect graphite)
-                                   (catch Exception e
-                                     (swap! state #(merge % {
-                                                             :last-connect-failed-time (t/now)
-                                                             :failed-writes-to-server (.getFailures graphite)
-                                                             :last-report-successful false
-                                                             }))
-                                     (throw e))))
-                            (send [_ a b c]
-                              (try (.send graphite a b c)
-                                   (catch Exception e
-                                     (swap! state #(merge % {
-                                                             :last-send-failed-time (t/now)
-                                                             :failed-writes-to-server (.getFailures graphite)
-                                                             :last-report-successful false
-                                                             }))
-                                     (throw e))))
+                              (try-operation "connect" #(.connect graphite) :last-connect-failed-time))
+                            (send [_ name value timestamp]
+                              (try-operation "send" #(.send graphite name value timestamp) :last-send-failed-time))
                             (flush [_]
-                              (try
-                                (.flush graphite)
-                                (catch Exception e
-                                  (swap! state #(merge % {
-                                                          :last-flush-failed-time (t/now)
-                                                          :failed-writes-to-server (.getFailures graphite)
-                                                          :last-report-successful false
-                                                          }))
-                                  (throw e)))
-                              (swap! state #(merge % {
-                                                      :last-reporting-time (t/now)
-                                                      :failed-writes-to-server (.getFailures graphite)
-                                                      :last-report-successful true
-                                                      })))
+                              (try-operation "flush" #(.flush graphite) :last-flush-failed-time)
+                              (update-state :last-reporting-time true))
                             (isConnected [_] (.isConnected graphite))
                             (getFailures [_] (.getFailures graphite))
                             (close [_] (.close graphite)))
-         graphite-reporter (cond-> (GraphiteReporter/forRegistry metrics/default-registry)
-                                   filter-regex (.filter (make-metrics-filter filter-regex))
-                                   true (-> (.prefixedWith prefix)
-                                            (.convertRatesTo TimeUnit/SECONDS)
-                                            (.convertDurationsTo TimeUnit/MILLISECONDS)
-                                            (.build ^GraphiteSender graphite-wrapper)))]
-     [graphite-reporter state])))
-
+         graphite-reporter (-> (cond-> (GraphiteReporter/forRegistry metrics/default-registry)
+                                       filter-regex (.filter (make-metrics-filter filter-regex)))
+                               (.prefixedWith prefix)
+                               (.convertRatesTo TimeUnit/SECONDS)
+                               (.convertDurationsTo TimeUnit/MILLISECONDS)
+                               (.build ^GraphiteSender graphite-wrapper))]
+     [graphite-reporter state-atom])))
 
 (defn graphite-reporter
   "Creates and starts a GraphiteReporter for metrics"
   [config]
   (let [{:keys [period-ms filter-regex prefix host port pickled?]} (validate-graphite-reporter-config config)
-        [graphite-reporter state] (make-graphite-reporter filter-regex prefix host port pickled?)]
-    (make-codahale-reporter graphite-reporter state period-ms)))
+        [graphite-reporter state-atom] (make-graphite-reporter filter-regex prefix host port pickled?)]
+    (make-codahale-reporter graphite-reporter state-atom period-ms)))

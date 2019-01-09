@@ -75,8 +75,7 @@
            org.eclipse.jetty.client.HttpClient
            org.eclipse.jetty.client.util.BasicAuthentication$BasicResult
            org.eclipse.jetty.websocket.client.WebSocketClient
-           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse ServletUpgradeRequest)
-           (waiter.reporter CodahaleReporter)))
+           (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse ServletUpgradeRequest)))
 
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
@@ -935,7 +934,7 @@
                            (fn make-codahale-reporter [{:keys [factory-fn] :as reporter-config}]
                              (let [resolved-factory-fn (utils/resolve-symbol! factory-fn)
                                    reporter-instance (resolved-factory-fn reporter-config)]
-                               (if-not (instance? CodahaleReporter reporter-instance)
+                               (when-not (satisfies? reporter/CodahaleReporter reporter-instance)
                                  (throw (ex-info "Reporter factory did not create an instance of CodahaleReporter"
                                                  {:reporter-config reporter-config
                                                   :reporter-instance reporter-instance
@@ -1347,8 +1346,7 @@
                                          (fn codahale-reporter-state-handler-fn [request]
                                            (handler/get-query-fn-state
                                              router-id
-                                             #(into {} (for [[k reporter-instance] codahale-reporters]
-                                                         [k (reporter/state reporter-instance)]))
+                                             #(pc/map-vals reporter/state codahale-reporters)
                                              request)))
    :state-router-metrics-handler-fn (pc/fnk [[:routines router-metrics-helpers]
                                              [:state router-id]

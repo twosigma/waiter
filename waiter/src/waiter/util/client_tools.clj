@@ -409,11 +409,6 @@
         settings-json (try-parse-json (:body settings-result))]
     (walk/keywordize-keys settings-json)))
 
-(defn waiter-daemons [waiter-url & {:keys [cookies] :or {cookies []}}]
-  (let [daemons-result (make-request waiter-url "/daemons" :verbose true :cookies cookies)
-        daemons-json (try-parse-json (:body daemons-result))]
-    (walk/keywordize-keys daemons-json)))
-
 (defn service-settings
   "Fetches and returns the service data at the /apps/<service-id> endpoint."
   [waiter-url service-id & {:keys [cookies keywordize-keys query-params]

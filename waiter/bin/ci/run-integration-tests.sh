@@ -16,6 +16,11 @@ SCHEDULER="${1:-shell}-scheduler"
 SUBCMD="${DIR}/run-integration-tests-${SCHEDULER}.sh ${2:-parallel-test} ${3:-integration}"
 
 if [ "${TRAVIS}" == true ]; then
+
+    export GRAPHITE_SERVER_PORT=5555
+    # Start netcat to listen to a port. The Codahale Graphite reporter will be able to report without failing and spamming logs.
+    nc -kl localhost $GRAPHITE_SERVER_PORT > /dev/null &
+
     # Capture integration test command output into a log file
     mkdir -p ${WAITER_DIR}/log
     bash -x -c "${SUBCMD}" &> >(tee ${WAITER_DIR}/log/travis.log)

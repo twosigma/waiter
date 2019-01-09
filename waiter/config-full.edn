@@ -700,7 +700,7 @@
 
                   ;; Define optional reporters for codahale metrics.
                   ;; Each reporter must have a :factory-fn key that specifies a factory method.
-                  ;; The factory method must create and start an instance of com.codahale.metrics.ScheduledReporter.
+                  ;; The factory method must create and start an instance of waiter.reporter.CodahaleReporter.
                   ;; Users can add arbitrary reporters:
                   :reporters {
                               ;; Enables a reporter that writes to stdout:

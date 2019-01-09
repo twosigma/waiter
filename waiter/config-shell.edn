@@ -5,6 +5,31 @@
              ;; Use an in-process ZK (not for production use):
              :connect-string :in-process}
 
+ ; ---------- Metrics - Internal ----------
+
+ :metrics-config {
+                  ;; Define optional reporters for codahale metrics.
+                  ;; Each reporter must have a :factory-fn key that specifies a factory method.
+                  ;; The factory method must create and start an instance of waiter.reporter.CodahaleReporter.
+                  ;; Users can add arbitrary reporters:
+                  :reporters {
+                              ;; Enables a reporter that sends to a Graphite host:
+                              :graphite {
+                                         ;; Method that creates and starts an instance of com.codahale.metrics.graphite.GraphiteReporter
+                                         :factory-fn waiter.reporter/graphite-reporter
+                                         ;; If present, a regex to filter by metric name
+                                         :filter-regex #config/regex ".*"
+                                         ;; Graphite hostname
+                                         :host "localhost"
+                                         ;; Reporting period in milliseconds
+                                         :period-ms 3000
+                                         ;; Flag to enable compression
+                                         :pickled? true
+                                         ;; Optional prefix for metric names
+                                         :prefix "waiter-internal"
+                                         ;; The port to send metrics to
+                                         :port #config/env-int "GRAPHITE_SERVER_PORT"}}}
+
  ; ---------- Network ----------
 
  ;; Set the bind address to a specific IP:

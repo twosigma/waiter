@@ -591,13 +591,13 @@
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
       (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "fallback"
-                          "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
-                          "kv-store" "launch-metrics" "leader" "local-usage" "maintainer" "metrics-reporters"
-                        "router-metrics" "scheduler"
-                          "statsd"]
-                       (pc/map-from-keys make-url))
-         :router-id router-id
-         :routers routers}))
+                                                          "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
+                                                          "kv-store" "launch-metrics" "leader" "local-usage" "maintainer" "metrics-reporters"
+                                                          "router-metrics" "scheduler"
+                                                          "statsd"]
+                                                         (pc/map-from-keys make-url))
+                                           :router-id router-id
+                                           :routers routers}))
     (catch Exception ex
       (utils/exception->response ex request))))
 

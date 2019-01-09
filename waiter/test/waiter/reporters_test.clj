@@ -79,7 +79,7 @@ services.service-id.counters.foo.bar
                   (clojure.string/split-lines)
                   (drop 1)
                   (clojure.string/join "\n"))))
-      (is (= {} @state)))))
+      (is (= {:run-state :created} @state)))))
 
 (deftest console-reporter-filter
   (with-isolated-registry
@@ -99,7 +99,7 @@ services.service-id.counters.fee.fie
                   (clojure.string/split-lines)
                   (drop 1)
                   (clojure.string/join "\n"))))
-      (is (= {} @state)))))
+      (is (= {:run-state :created} @state)))))
 
 (deftest graphite-reporter-no-filter
   (with-isolated-registry
@@ -122,7 +122,8 @@ services.service-id.counters.fee.fie
                "prefix.services.service-id.counters.foo.count0"
                "prefix.services.service-id.counters.foo.bar.count100"}
              @actual-values))
-      (is (= {:last-reporting-time time
+      (is (= {:run-state :created
+              :last-reporting-time time
               :failed-writes-to-server 0
               :last-report-successful true} @state)))))
 
@@ -145,7 +146,8 @@ services.service-id.counters.fee.fie
         (.report graphite-reporter))
       (is (= #{"prefix.services.service-id.counters.fee.fie.count0"}
              @actual-values))
-      (is (= {:last-reporting-time time
+      (is (= {:run-state :created
+              :last-reporting-time time
               :failed-writes-to-server 0
               :last-report-successful true} @state)))))
 
@@ -168,6 +170,7 @@ services.service-id.counters.fee.fie
         (is (thrown-with-msg? ExceptionInfo #"^test$"
                             (.report graphite-reporter))))
       (is (= #{} @actual-values))
-      (is (= {:last-send-failed-time time
+      (is (= {:run-state :created
+              :last-send-failed-time time
               :failed-writes-to-server 0
               :last-report-successful false} @state)))))
