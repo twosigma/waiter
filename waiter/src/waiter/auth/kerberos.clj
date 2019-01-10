@@ -22,7 +22,9 @@
             [waiter.auth.authentication :as auth]
             [waiter.authorization :as authz]
             [waiter.auth.spnego :as spnego]
-            [waiter.util.utils :as utils]))
+            [waiter.metrics :as metrics]
+            [waiter.util.utils :as utils])
+  (:import (java.util.concurrent LinkedBlockingQueue ThreadPoolExecutor TimeUnit)))
 
 (defn get-opt-in-accounts
   "Returns the list of users whose tickets are prestashed on host"
@@ -101,16 +103,33 @@
                          :status 403
                          :user run-as-user}))))))
 
-(defrecord KerberosAuthenticator [password]
+(defrecord KerberosAuthenticator [^ThreadPoolExecutor executor max-queue-length password]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
-    (spnego/require-gss request-handler password)))
+    (spnego/require-gss request-handler executor max-queue-length password)))
 
 (defn kerberos-authenticator
   "Factory function for creating Kerberos authenticator middleware"
-  [{:keys [password]}]
-  {:pre [(not-empty password)]}
-  (->KerberosAuthenticator password))
+  [{:keys [concurrency-level keep-alive-mins max-queue-length password]}]
+  {:pre [(not-empty password)
+         (integer? concurrency-level)
+         (pos? concurrency-level)
+         (integer? keep-alive-mins)
+         (pos? keep-alive-mins)
+         (integer? max-queue-length)
+         (pos? max-queue-length)]}
+  (let [executor (ThreadPoolExecutor. 1 concurrency-level keep-alive-mins TimeUnit/MINUTES (LinkedBlockingQueue.))]
+    (metrics/waiter-gauge #(.getActiveCount executor)
+                          "core" "kerberos" "throttle" "active-thread-count")
+    (metrics/waiter-gauge #(- concurrency-level (.getActiveCount executor))
+                          "core" "kerberos" "throttle" "available-thread-count")
+    (metrics/waiter-gauge #(.getMaximumPoolSize executor)
+                          "core" "kerberos" "throttle" "max-thread-count")
+    (metrics/waiter-gauge #(-> executor .getQueue .size)
+                          "core" "kerberos" "throttle" "pending-task-count")
+    (metrics/waiter-gauge #(.getTaskCount executor)
+                          "core" "kerberos" "throttle" "scheduled-task-count")
+    (->KerberosAuthenticator executor max-queue-length password)))
 
 (defrecord KerberosAuthorizer
   [prestash-cache query-chan]
