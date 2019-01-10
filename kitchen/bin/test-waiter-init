@@ -13,6 +13,18 @@ start_test() {
     working_dir=r$(( $(cat .waiter-container-runs) - 1 ))
 }
 
+start_guarded_test() {
+    test_desc="$1"
+    shift
+    if test "$@"; then
+        start_test "$test_desc"
+        test_started=true
+    else
+        printf '\nSkipping Test %s' "$test_desc"
+        test_started=false
+    fi
+}
+
 send_sigterm() {
     sleep 0.1
     kill $test_pid
@@ -135,5 +147,24 @@ await_exit_and_assert_code 0
 assert $working_dir != $old_working_dir
 assert -f $working_dir/$fresh_file_name
 assert $(cat $working_dir/$fresh_file_name) == hello
+
+#
+# Ensure that the stdout file captured by the wrapper script
+# is uploaded to S3 when the script is terminated.
+# This test runs iff WAITER_LOG_BUCKET_URL is non-null.
+#
+start_guarded_test 'stdout uploaded to s3 bucket' "$WAITER_LOG_BUCKET_URL" <<EOF
+echo TestString && sleep 10
+EOF
+if $test_started; then
+    send_sigterm
+    send_sigterm
+    await_exit_and_assert_code 143
+    pod_name=$(hostname --short)
+    target_bucket_dir=$WAITER_LOG_BUCKET_URL/$pod_name/$working_dir
+    assert "$(curl -s $target_bucket_dir/stdout)" == TestString
+    assert "$(curl -s $target_bucket_dir/index.json | jq -r '.[0].name')" == stdout
+    assert "$(curl -s $target_bucket_dir/index.json | jq '.[0].size')" == 11
+fi
 
 printf '\n\nAll tests passed\n'

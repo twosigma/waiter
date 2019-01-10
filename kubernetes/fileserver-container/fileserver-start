@@ -7,5 +7,5 @@ export WAITER_FILESERVER_PORT
 # Generate server config from template
 envsubst </root/nginx.conf.template >/root/nginx.conf
 
-# Start server in non-daemon mode
-nginx -c /root/nginx.conf
+# Start server in non-daemon mode, replacing current process
+exec nginx -c /root/nginx.conf

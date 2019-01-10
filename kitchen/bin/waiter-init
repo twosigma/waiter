@@ -17,7 +17,8 @@ waiter_child_pid=
 # This double-termination is an important part of our Waiter scale-down logic,
 # and the mechanics are described in more detail below.
 handle_k8s_terminate() {
-    trap : SIGTERM  # reset SIGTERM handler to no-op
+    waiter_2nd_sigterm=false
+    trap handle_2nd_k8s_terminate SIGTERM  # new handler for next sigterm
 
     # Propagate the SIGTERM to the user's app's process group,
     # giving it the opportunity to shut down gracefully.
@@ -27,24 +28,75 @@ handle_k8s_terminate() {
         echo 'waiter error: user process not initialized' >&2
     fi
 
-    # Wait for a long time (15 minutes), awaiting another signal from Kubernetes.
-    # This delay gives Waiter time to safely update the desired replica count
-    # before the pod actually terminates, avoiding a race to replace this pod.
-    # If we receive a second SIGTERM from Kubernetes, then the sleep period is canceled,
-    # and we simply wait for the user's process to complete (or get SIGKILLed).
-    # The main point here is to NOT exit before the second SIGTERM is received.
-    # If for some reason the second SIGTERM never arrives, the sleep will eventually expire,
-    # or the pod's grace period will expire (resulting in a SIGKILL from Kubernetes).
-    # Likewise, if the user's process takes too long to terminate gracefully,
-    # the pod's grace period will expire (resulting in a SIGKILL from Kubernetes).
-    sleep 900 &
-    wait     # wait for sleep to complete, or a second SIGTERM
-    kill %2  # cancel sleep
-    wait     # wait for graceful termination of user's process
+    waiter_init_pid=$$
+
+    {
+        # Give the user's application a few seconds to gracefully exit,
+        # then forcefully terminate with a SIGKILL if it's still running.
+        sleep ${WAITER_GRACE_SECS:=3}
+        kill -9 -- -$waiter_child_pid
+
+        # Wait for another signal from Kubernetes.
+        # This delay gives Waiter time to safely update the desired replica count
+        # before the pod actually terminates, avoiding a race to replace this pod.
+        # If we receive a second SIGTERM from Kubernetes, then the sleep period is canceled,
+        # and we simply wait for the user's process to complete (or get SIGKILLed).
+        # The main point here is to NOT exit before the second SIGTERM is received.
+        # If for some reason the second SIGTERM never arrives, the sleep will eventually expire,
+        # or the pod's grace period will expire (resulting in a SIGKILL from Kubernetes).
+        # Likewise, if the user's process takes too long to terminate gracefully,
+        # the pod's grace period will expire (resulting in a SIGKILL from Kubernetes).
+        # However, if we don't see the second SIGTERM after a reasonable delay,
+        # we assume we missed it (due to the asyncronous nature of the system),
+        # and that it is now safe to terminate this pod.
+        sleep ${WAITER_SYNC_MAX_SECS:=10}
+        kill -15 $waiter_init_pid
+    } &
+
+    # wait for graceful termination of user's process
+    while kill -0 $waiter_child_pid; do
+        wait %1
+    done &>/dev/null
+
+    # send logs to S3 (if enabled)
+    if [ "$WAITER_LOG_BUCKET_URL" ]; then
+        # Extract this pod's name from the hostname
+        # (this is used to create a unique path in S3)
+        pod_name=$(hostname --short)
+        base_url="$WAITER_LOG_BUCKET_URL/$pod_name"
+        # For each ./r* directory created by a container restart,
+        # we upload the stdout and stderr to the target directory in the S3 bucket.
+        # We work backwards from the most recent run down to 0 to increase the odds
+        # that our most recent runs' logs are successfully persisted before a SIGKILL.
+        cd "$waiter_sandbox_base_dir"
+        for i in $(seq $waiter_restart_count -1 0); do
+            waiter_log_files='stdout stderr'
+            for f in $waiter_log_files; do
+                logfile="r$i/$f"
+                # Using the -T option with curl PUTs the target file to the given URL,
+                # and avoids loading the full file into memory when sending the payload.
+                curl -s -T "$logfile" "$base_url/$logfile"
+            done
+        done
+    fi
+
+    # wait for second sigterm to arrive
+    while [ $waiter_2nd_sigterm != true ]; do
+        sleep 0.1
+    done
 
     # Exit container with code 128+15=143, indicating termination via SIGTERM.
     exit 143
 }
+
+# Catch the second SIGTERM sent by Kubernetes on pod deletion.
+# This double-termination is an important part of our Waiter scale-down logic,
+# and the mechanics are described in more detail above (in handle_k8s_terminate).
+handle_2nd_k8s_terminate() {
+    trap : SIGTERM  # reset SIGTERM handler to no-op
+    waiter_2nd_sigterm=true
+}
+
 trap handle_k8s_terminate SIGTERM
 
 # Track container restart count
@@ -53,6 +105,7 @@ echo $(( $waiter_restart_count + 1 )) > .waiter-container-runs
 
 # Ensure that HOME is set to the fresh working directory for this container instance.
 # HOME should be a symlink ./latest, which points to the new working directory.
+waiter_sandbox_base_dir="$(pwd -P)"
 waiter_sandbox_dir="./r${waiter_restart_count}"
 mkdir -p "$waiter_sandbox_dir"
 ln -Tsf $waiter_sandbox_dir latest

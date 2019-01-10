@@ -24,6 +24,8 @@
                     :kubernetes {:authorizer {:kind :sanity-check
                                               :sanity-check {:factory-fn waiter.authorization/sanity-check-authorizer}}
                                  :fileserver {:port 591}
+                                 :log-bucket-sync-secs 10
+                                 :log-bucket-url #config/env-default ["WAITER_S3_BUCKET" nil]
                                  :url "http://localhost:8001"}}
 
  ; ---------- Error Handling ----------

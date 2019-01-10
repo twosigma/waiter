@@ -51,6 +51,8 @@
       :cluster-name "waiter"
       :fileserver {:port 9090
                    :scheme "http"}
+      :log-bucket-sync-secs 60
+      :log-bucket-url "http://waiter.example.com:8888/waiter-service-logs"
       :max-patch-retries 5
       :max-name-length 63
       :pod-base-port 8080
@@ -663,12 +665,49 @@
                  actual)))))))
 
 (deftest test-retrieve-directory-content
+  ;; Killed pod
+  (let [service-id "service-id"
+        instance-id "service-id.instance-id-321"
+        instance-base-dir "/myself/service-id/instance-id/r321"
+        path "/x/a"
+        expected [{:name "bar",
+                   :size 4,
+                   :type "file",
+                   :url
+                   "http://waiter.example.com:8888/waiter-service-logs/myself/service-id/instance-id/r321/x/a/bar"}
+                  {:name "baz",
+                   :size 4,
+                   :type "file",
+                   :url
+                   "http://waiter.example.com:8888/waiter-service-logs/myself/service-id/instance-id/r321/x/a/baz"}
+                  {:name "hello.txt",
+                   :size 6,
+                   :type "file",
+                   :url
+                   "http://waiter.example.com:8888/waiter-service-logs/myself/service-id/instance-id/r321/x/a/hello.txt"}
+                  {:name "aa",
+                   :path "/myself/service-id/instance-id/r321/x/a/aa",
+                   :type "directory"}
+                  {:name "bb",
+                   :path "/myself/service-id/instance-id/r321/x/a/bb",
+                   :type "directory"}]
+        xml-response "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>waiter-service-logs</Name><Prefix>myself/service-id/instance-id/r321/x/a/</Prefix><Marker/><MaxKeys>1000</MaxKeys><Delimiter>/</Delimiter><IsTruncated>false</IsTruncated><Contents><Key>myself/service-id/instance-id/r321/x/a/bar</Key><LastModified>2019-01-15T16:01:46.824Z</LastModified><ETag>&quot;c157a79031e1c40f85931829bc5fc552&quot;</ETag><Size>4</Size><Owner><ID>http://acs.amazonaws.com/groups/global/AllUsers</ID><DisplayName>undefined</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>myself/service-id/instance-id/r321/x/a/baz</Key><LastModified>2019-01-15T16:01:46.995Z</LastModified><ETag>&quot;258622b1688250cb619f3c9ccaefb7eb&quot;</ETag><Size>4</Size><Owner><ID>http://acs.amazonaws.com/groups/global/AllUsers</ID><DisplayName>undefined</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>myself/service-id/instance-id/r321/x/a/hello.txt</Key><LastModified>2019-01-15T16:01:46.950Z</LastModified><ETag>&quot;b1946ac92492d2347c6235b4d2611184&quot;</ETag><Size>6</Size><Owner><ID>http://acs.amazonaws.com/groups/global/AllUsers</ID><DisplayName>undefined</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><CommonPrefixes><Prefix>myself/service-id/instance-id/r321/x/a/aa/</Prefix></CommonPrefixes><CommonPrefixes><Prefix>myself/service-id/instance-id/r321/x/a/bb/</Prefix></CommonPrefixes></ListBucketResult>"
+        dummy-scheduler (make-dummy-scheduler [service-id])
+        host "host.local"]
+    (testing "s3 logs from killed pod"
+      (let [actual (with-redefs [hu/http-request (constantly xml-response)]
+                     (scheduler/retrieve-directory-content
+                       dummy-scheduler service-id instance-id host path))]
+        (is (= expected actual)))))
+
+  ;; Live pod
   (let [service-id "test-service-id"
-        instance-id "test-service-instance-id-0"
+        instance-id "test-service-id.instance-id-0"
         instance-base-dir "/r0"
+        pod-name "instance-id"
         host "host.local"
         path "/some/path/"
-        dummy-scheduler (make-dummy-scheduler [service-id])
+        {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler [service-id])
         port (get-in dummy-scheduler [:fileserver :port])
         make-file (fn [file-name size]
                     {:url (str "http://" host ":" port instance-base-dir path file-name)
@@ -695,6 +734,7 @@
                             (make-dir "x")
                             (make-dir "y")
                             (make-dir "z")]}]]
+    (swap! watch-state assoc-in [:service-id->pod-id->pod service-id pod-name] ::pod)
     (doseq [{:keys [description expected]} inputs]
       (testing description
         (let [actual (with-redefs [hu/http-request (constantly (strip-links expected))]
@@ -725,6 +765,8 @@
                     :watch-state (atom nil)
                     :http-options {:conn-timeout 10000
                                    :socket-timeout 10000}
+                    :log-bucket-sync-secs 60
+                    :log-bucket-url nil
                     :max-patch-retries 5
                     :max-name-length 63
                     :pod-base-port 8080

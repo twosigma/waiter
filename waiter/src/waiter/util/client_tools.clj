@@ -484,6 +484,11 @@
   [waiter-url & {:keys [verbose] :or {verbose false}}]
   (setting waiter-url [:scheduler-config :marathon :url] :verbose verbose))
 
+(defn k8s-log-bucket-url
+  "Returns the S3 bucket url for K8s service log backups"
+  [waiter-url & {:keys [verbose] :or {verbose false}}]
+  (setting waiter-url [:scheduler-config :kubernetes :log-bucket-url] :verbose verbose))
+
 (defn num-tasks-running [waiter-url service-id & {:keys [verbose prev-tasks-running] :or {verbose false prev-tasks-running -1}}]
   (let [http-options {:conn-timeout 10000, :socket-timeout 10000, :spnego-auth use-spnego}
         marathon-url (marathon-url waiter-url :verbose verbose)

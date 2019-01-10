@@ -176,6 +176,8 @@
         (log/info "reading settings from file:" config-file-path)
         (let [edn-readers {:readers {'config/regex (fn [expr] (re-pattern expr))
                                      'config/env #(env % config-file-path)
+                                     'config/env-default (fn [[var-name default]]
+                                                          (or (System/getenv var-name) default))
                                      'config/env-int #(Integer/parseInt (env % config-file-path))}}
               settings (edn/read-string edn-readers (slurp config-file-path))]
           (log/info "configured settings:\n" (with-out-str (clojure.pprint/pprint settings)))
@@ -299,17 +301,18 @@
                              :mesos-slave-port 5051
                              :search-interval-days 10}
                       :kubernetes {; Default values are not provided below for the following keys:
-                                   ; :authentication [:fileserver :port] :url
+                                   ; :authentication [:fileserver :port] :log-bucket-url :url
                                    :factory-fn 'waiter.scheduler.kubernetes/kubernetes-scheduler
                                    :authorizer {:kind :default
                                                 :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                                    :cluster-name "waiter"
                                    :fileserver {:cmd ["/bin/fileserver-start"]
-                                                :image "twosigma/waiter-fileserver:latest"
+                                                :image "twosigma/waiter-fileserver:20190114"
                                                 :resources {:cpu 0.1 :mem 128}
                                                 :scheme "http"}
                                    :http-options {:conn-timeout 10000
                                                   :socket-timeout 10000}
+                                   :log-bucket-sync-secs 180
                                    :max-patch-retries 5
                                    :max-name-length 63
                                    :pod-base-port 31000
@@ -319,7 +322,7 @@
                                    :pod-suffix-length 5
                                    :replicaset-api-version "extensions/v1beta1"
                                    :replicaset-spec-builder {:factory-fn 'waiter.scheduler.kubernetes/default-replicaset-builder
-                                                             :default-container-image "twosigma/kitchen:latest"}}
+                                                             :default-container-image "twosigma/kitchen:20190115"}}
                       :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                  :authorizer {:kind :default
                                               :default {:factory-fn 'waiter.authorization/noop-authorizer}}
