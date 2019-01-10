@@ -53,8 +53,9 @@
 
 (deftest ^:parallel ^:integration-fast test-graphite-metrics-reporting
   (testing-using-waiter-url
-    (let [{:keys [graphite]} (get-in (waiter-settings waiter-url) [:metrics-config :reporters])]
-      (when graphite
-        (let [{:keys [period-ms]} graphite]
-          (is (wait-for-period period-ms #(-> waiter-url get-graphite-reporter-state (get "last-report-successful") some?)))
-          (check-events-within-period waiter-url period-ms true))))))
+    (doseq [router-url (vals (routers waiter-url))]
+      (let [{:keys [graphite]} (get-in (waiter-settings router-url) [:metrics-config :reporters])]
+        (when graphite
+          (let [{:keys [period-ms]} graphite]
+            (is (wait-for-period period-ms #(-> router-url get-graphite-reporter-state (get "last-report-successful") some?)))
+            (check-events-within-period router-url period-ms true)))))))
