@@ -19,8 +19,8 @@
             [waiter.util.date-utils :as du]))
 
 (defn- get-graphite-reporter-state
-  [waiter-url]
-  (let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get)]
+  [waiter-url cookies]
+  (let [{:keys [body] :as response} (make-request waiter-url "/state/metrics-reporters" :method :get :cookies cookies)]
     (assert-response-status response 200)
     (-> body str try-parse-json (get-in ["state" "graphite"]))))
 
@@ -30,8 +30,8 @@
     (wait-for fun :interval wait-for-delay :timeout (* period-ms 2) :unit-multiplier 1)))
 
 (defn- check-events-within-period
-  [waiter-url period-ms successful?]
-  (let [state (get-graphite-reporter-state waiter-url)
+  [waiter-url period-ms successful? cookies]
+  (let [state (get-graphite-reporter-state waiter-url cookies)
         last-event-time-str (if successful? "last-reporting-time" "last-connect-failed-time")
         last-event-time (get state last-event-time-str)
         last-report-successful (get state "last-report-successful")
@@ -40,8 +40,7 @@
         last-event-time-ms (-> last-event-time du/str-to-date .getMillis)
         next-last-event-time-ms (wait-for-period
                                   period-ms
-                                  #(let [next-last-event-time-ms (-> waiter-url
-                                                                     get-graphite-reporter-state
+                                  #(let [next-last-event-time-ms (-> (get-graphite-reporter-state waiter-url cookies)
                                                                      (get last-event-time-str)
                                                                      du/str-to-date
                                                                      .getMillis)]
@@ -53,9 +52,13 @@
 
 (deftest ^:parallel ^:integration-fast test-graphite-metrics-reporting
   (testing-using-waiter-url
-    (doseq [router-url (vals (routers waiter-url))]
-      (let [{:keys [graphite]} (get-in (waiter-settings router-url) [:metrics-config :reporters])]
-        (when graphite
-          (let [{:keys [period-ms]} graphite]
-            (is (wait-for-period period-ms #(-> router-url get-graphite-reporter-state (get "last-report-successful") some?)))
-            (check-events-within-period router-url period-ms true)))))))
+    (let [{:keys [service-id cookies]}
+          (make-request-with-debug-info {:x-waiter-name (rand-name)} #(make-kitchen-request waiter-url %))]
+      (doseq [router-url (vals (routers waiter-url))]
+        (let [{:keys [graphite]} (get-in (waiter-settings router-url :cookies cookies) [:metrics-config :reporters])]
+          (when graphite
+            (let [{:keys [period-ms]} graphite]
+              (is (wait-for-period period-ms #(-> (get-graphite-reporter-state router-url cookies)
+                                                  (get "last-report-successful")
+                                                  some?)))
+              (check-events-within-period router-url period-ms true cookies))))))))
