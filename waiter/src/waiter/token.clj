@@ -88,7 +88,8 @@
                                new-owner-key)))]
 
   (defn store-service-description-for-token
-    "Store the token mapping of the service description template in the key-value store."
+    "Store the token mapping of the service description template in the key-value store.
+     When token-limit is nil, the token count check is avoided."
     [synchronize-fn kv-store history-length token-limit ^String token service-parameter-template token-metadata &
      {:keys [version-hash]}]
     (synchronize-fn
@@ -107,7 +108,7 @@
           ; Validate the token modification for concurrency races
           (validate-token-modification-based-on-hash existing-token-description version-hash)
           ; Validate that the maximum number of tokens per owner limit has not been reached
-          (when (integer? token-limit)
+          (when token-limit
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)]
               (validate-kv!
                 kv-store owner-key
