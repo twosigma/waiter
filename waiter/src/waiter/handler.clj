@@ -590,9 +590,9 @@
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "fallback"
+      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters" "fallback"
                                                           "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
-                                                          "kv-store" "launch-metrics" "leader" "local-usage" "maintainer" "metrics-reporters"
+                                                          "kv-store" "launch-metrics" "leader" "local-usage" "maintainer"
                                                           "router-metrics" "scheduler"
                                                           "statsd"]
                                                          (pc/map-from-keys make-url))

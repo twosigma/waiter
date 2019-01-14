@@ -35,15 +35,17 @@
     "Returns the state of this reporter"))
 
 (defn- make-metrics-filter
+  "Create instance of com.codahale.metrics.MetricFilter from a regex"
   [filter-regex]
   (reify MetricFilter (matches [_ name _] (some? (re-matches filter-regex name)))))
 
 (defn- make-codahale-reporter
+  "Create a CodahaleReporter from a com.codahale.metrics.ScheduledReporter"
   [^ScheduledReporter scheduled-reporter state-atom period-ms]
   (.start scheduled-reporter period-ms TimeUnit/MILLISECONDS)
-  (swap! state-atom merge [:run-state :started])
+  (swap! state-atom assoc :run-state :started)
   (reify CodahaleReporter
-    (close! [_] (.close scheduled-reporter) (swap! state-atom [:run-state :closed]))
+    (close! [_] (.close scheduled-reporter) (swap! state-atom assoc :run-state :closed))
     (state [_] @state-atom)))
 
 (defn validate-console-reporter-config
@@ -96,10 +98,10 @@
   ([filter-regex prefix ^GraphiteSender graphite]
    (let [state-atom (atom {:run-state :created})
          update-state (fn [event last-report-successful?]
-                        (swap! state-atom merge
-                               [event (t/now)]
-                               [:failed-writes-to-server (.getFailures graphite)]
-                               [:last-report-successful last-report-successful?]))
+                        (swap! state-atom assoc
+                               event (t/now)
+                               :failed-writes-to-server (.getFailures graphite)
+                               :last-report-successful last-report-successful?))
          try-operation (fn [operation f failure-event]
                          (try (f)
                               (catch Exception e

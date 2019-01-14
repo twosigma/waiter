@@ -75,7 +75,7 @@
    (s/required-key :metrics-config) {(s/required-key :inter-router-metrics-idle-timeout-ms) schema/positive-int
                                      (s/required-key :metrics-gc-interval-ms) schema/positive-int
                                      (s/required-key :metrics-sync-interval-ms) schema/positive-int
-                                     (s/required-key :reporters) {s/Keyword {(s/required-key :factory-fn) s/Symbol
+                                     (s/required-key :codahale-reporters) {s/Keyword {(s/required-key :factory-fn) s/Symbol
                                                                              s/Any s/Any}}
                                      (s/required-key :router-update-interval-ms) schema/positive-int
                                      (s/required-key :transient-metrics-timeout-ms) schema/positive-int}
@@ -267,7 +267,7 @@
    :metrics-config {:inter-router-metrics-idle-timeout-ms 2000
                     :metrics-gc-interval-ms 60000
                     :metrics-sync-interval-ms 50
-                    :reporters {}
+                    :codahale-reporters {}
                     :router-update-interval-ms 5000
                     :transient-metrics-timeout-ms 300000}
    :password-store-config {:kind :configured

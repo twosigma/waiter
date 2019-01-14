@@ -110,7 +110,7 @@
                               ["/leader" :state-leader-handler-fn]
                               ["/local-usage" :state-local-usage-handler-fn]
                               ["/maintainer" :state-maintainer-handler-fn]
-                              ["/metrics-reporters" :state-metrics-reporters-handler-fn]
+                              ["/codahale-reporters" :state-codahale-reporters-handler-fn]
                               ["/router-metrics" :state-router-metrics-handler-fn]
                               ["/scheduler" :state-scheduler-handler-fn]
                               ["/statsd" :state-statsd-handler-fn]
@@ -929,7 +929,7 @@
                                       scheduler instance-rpc-chan quanta-constraints scaling-timeout-config
                                       scheduler-interactions-thread-pool service-id))
                                   {})))
-   :codahale-reporters (pc/fnk [[:settings [:metrics-config reporters]]]
+   :codahale-reporters (pc/fnk [[:settings [:metrics-config codahale-reporters]]]
                          (pc/map-vals
                            (fn make-codahale-reporter [{:keys [factory-fn] :as reporter-config}]
                              (let [resolved-factory-fn (utils/resolve-symbol! factory-fn)
@@ -940,7 +940,7 @@
                                                   :reporter-instance reporter-instance
                                                   :resolved-factory-fn resolved-factory-fn})))
                                reporter-instance))
-                           reporters))
+                           codahale-reporters))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  router-state-maintainer]
                           (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
@@ -1275,6 +1275,13 @@
                                                  (wrap-secure-request-fn
                                                    (fn state-autoscaling-multiplexer-handler-fn [request]
                                                      (handler/get-query-chan-state-handler router-id query-chan request)))))
+   :state-codahale-reporters-handler-fn (pc/fnk [[:daemons codahale-reporters]
+                                                 [:state router-id]]
+                                          (fn codahale-reporter-state-handler-fn [request]
+                                            (handler/get-query-fn-state
+                                              router-id
+                                              #(pc/map-vals reporter/state codahale-reporters)
+                                              request)))
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]
@@ -1341,13 +1348,6 @@
                                     (wrap-secure-request-fn
                                       (fn maintainer-state-handler-fn [request]
                                         (handler/get-chan-latest-state-handler router-id query-state-fn request)))))
-   :state-metrics-reporters-handler-fn (pc/fnk [[:daemons codahale-reporters]
-                                                [:state router-id]]
-                                         (fn codahale-reporter-state-handler-fn [request]
-                                           (handler/get-query-fn-state
-                                             router-id
-                                             #(pc/map-vals reporter/state codahale-reporters)
-                                             request)))
    :state-router-metrics-handler-fn (pc/fnk [[:routines router-metrics-helpers]
                                              [:state router-id]
                                              wrap-secure-request-fn]

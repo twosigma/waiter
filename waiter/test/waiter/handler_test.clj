@@ -792,8 +792,8 @@
       (testing "display router state"
         (let [{:keys [status body]} (test-fn router-id query-state-fn {})]
           (is (every? #(str/includes? (str body) %1)
-                      ["fallback" "interstitial" "kv-store" "leader" "local-usage"
-                       "maintainer" "metrics-reporters" "router-metrics" "scheduler" "statsd"])
+                      ["codahale-reporters" "fallback" "interstitial" "kv-store" "leader" "local-usage"
+                       "maintainer" "router-metrics" "scheduler" "statsd"])
               (str "Body did not include necessary JSON keys:\n" body))
           (is (= 200 status)))))))
 

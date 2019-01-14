@@ -261,7 +261,7 @@
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-minimesos-settings)]
           (is (nil? (s/check settings-schema settings)))
-          (is (= graphite-server-port (get-in settings [:metrics-config :reporters :graphite :port])))
+          (is (= graphite-server-port (get-in settings [:metrics-config :codahale-reporters :graphite :port])))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user])))
           (is (= marathon (get-in settings [:scheduler-config :marathon :url])))
@@ -280,7 +280,7 @@
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-shell-settings)]
           (is (nil? (s/check settings-schema settings)))
-          (is (= graphite-server-port (get-in settings [:metrics-config :reporters :graphite :port])))
+          (is (= graphite-server-port (get-in settings [:metrics-config :codahale-reporters :graphite :port])))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
 
@@ -297,7 +297,7 @@
                             (throw (ex-info "Unexpected environment variable" {:name name}))))]
         (let [settings (load-composite-settings)]
           (is (nil? (s/check settings-schema settings)))
-          (is (= graphite-server-port (get-in settings [:metrics-config :reporters :graphite :port])))
+          (is (= graphite-server-port (get-in settings [:metrics-config :codahale-reporters :graphite :port])))
           (is (= port (:port settings)))
           (is (= run-as-user (get-in settings [:authenticator-config :one-user :run-as-user]))))))))
 

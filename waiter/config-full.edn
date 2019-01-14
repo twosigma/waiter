@@ -702,7 +702,7 @@
                   ;; Each reporter must have a :factory-fn key that specifies a factory method.
                   ;; The factory method must create and start an instance of waiter.reporter.CodahaleReporter.
                   ;; Users can add arbitrary reporters:
-                  :reporters {
+                  :codahale-reporters {
                               ;; Enables a reporter that writes to stdout:
                               :console {
                                         ;; Method that creates and starts an instance of com.codahale.metrics.ConsoleReporter
@@ -717,7 +717,7 @@
                                          :factory-fn waiter.reporter/graphite-reporter
                                          ;; If present, a regex to filter by metric name
                                          :filter-regex #config/regex ".*"
-                                         ;; Graphite hostname
+                                         ;; The hostname of where the Graphite server is running
                                          :host "graphite.example.com"
                                          ;; Reporting period in milliseconds
                                          :period-ms 30000
@@ -725,7 +725,7 @@
                                          :pickled? true
                                          ;; Optional prefix for metric names
                                          :prefix "waiter-internal"
-                                         ;; The port to send metrics to
+                                         ;; The port on which the Graphite server is expecting metrics submissions
                                          :port 1111}}
 
                   ;; The rate of listening for router state updates
