@@ -29,6 +29,7 @@
             [waiter.handler :refer :all]
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
+            [waiter.reporter :as reporter]
             [waiter.scheduler :as scheduler]
             [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
@@ -791,8 +792,8 @@
       (testing "display router state"
         (let [{:keys [status body]} (test-fn router-id query-state-fn {})]
           (is (every? #(str/includes? (str body) %1)
-                      ["fallback" "interstitial" "kv-store" "leader" "local-usage" "maintainer" "router-metrics"
-                       "scheduler" "statsd"])
+                      ["codahale-reporters" "fallback" "interstitial" "kv-store" "leader" "local-usage"
+                       "maintainer" "router-metrics" "scheduler" "statsd"])
               (str "Body did not include necessary JSON keys:\n" body))
           (is (= 200 status)))))))
 

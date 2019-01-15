@@ -34,21 +34,22 @@
 
 (deftest ^:parallel ^:integration-fast test-statsd-instance-metrics-aggregation
   (testing-using-waiter-url
-    (let [router-id->router-url (routers waiter-url)
-          {:keys [cookies]} (make-request waiter-url "/waiter-auth")
-          metric-group (str "test-" (rand-int 3000000))
-          headers {:x-waiter-concurrency-level (count router-id->router-url)
-                   :x-waiter-name (rand-name)
-                   :x-waiter-metric-group metric-group}
-          {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (assert-response-status response 200)
-      ;; ensure all routers know about the service
-      (doseq [[_ router-url] router-id->router-url]
-        (let [response (make-request-with-debug-info headers #(make-kitchen-request router-url % :cookies cookies))]
-          (assert-response-status response 200)
-          (is (= service-id (:service-id response)))))
-      ;; verify metric groups when statsd is enabled
-      (when (statsd-enabled? waiter-url)
+    (when (statsd-enabled? waiter-url)
+      (let
+        [router-id->router-url (routers waiter-url)
+         {:keys [cookies]} (make-request waiter-url "/waiter-auth")
+         metric-group (str "test-" (rand-int 3000000))
+         headers {:x-waiter-concurrency-level (count router-id->router-url)
+                  :x-waiter-name (rand-name)
+                  :x-waiter-metric-group metric-group}
+         {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+        ;; ensure all routers know about the service
+        (assert-response-status response 200)
+        ;; verify metric groups when statsd is enabled
+        (doseq [[_ router-url] router-id->router-url]
+          (let [response (make-request-with-debug-info headers #(make-kitchen-request router-url % :cookies cookies))]
+            (assert-response-status response 200)
+            (is (= service-id (:service-id response)))))
         (let [{:keys [metric-group]} (response->service-description waiter-url response)
               metric-group-keyword (keyword metric-group)
               {:keys [sync-instances-interval-ms]} (get (waiter-settings waiter-url) :statsd)]
@@ -59,8 +60,8 @@
                 (every? #(contains? metric-group-gauges %)
                         [:cpus :instances.failed :instances.healthy :instances.unhealthy :mem])))
             :interval 1
-            :timeout (-> sync-instances-interval-ms (quot 1000) (* 2)))))
-      (delete-service waiter-url service-id))))
+            :timeout (-> sync-instances-interval-ms (quot 1000) (* 2))))
+        (delete-service waiter-url service-id)))))
 
 (deftest ^:parallel ^:integration-fast test-statsd-disabled
   (testing-using-waiter-url

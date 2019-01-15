@@ -47,6 +47,7 @@
             [waiter.metrics-sync :as metrics-sync]
             [waiter.password-store :as password-store]
             [waiter.process-request :as pr]
+            [waiter.reporter :as reporter]
             [waiter.scaling :as scaling]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
@@ -99,6 +100,7 @@
                      "state" [["" :state-all-handler-fn]
                               ["/autoscaler" :state-autoscaler-handler-fn]
                               ["/autoscaling-multiplexer" :state-autoscaling-multiplexer-handler-fn]
+                              ["/codahale-reporters" :state-codahale-reporters-handler-fn]
                               ["/fallback" :state-fallback-handler-fn]
                               ["/gc-broken-services" :state-gc-for-broken-services]
                               ["/gc-services" :state-gc-for-services]
@@ -529,8 +531,8 @@
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
                 (cond->> (utils/unique-identifier)
-                  (not (str/blank? router-id-prefix))
-                  (str (str/replace router-id-prefix #"[@.]" "-") "-")))
+                         (not (str/blank? router-id-prefix))
+                         (str (str/replace router-id-prefix #"[@.]" "-") "-")))
    :scaling-timeout-config (pc/fnk [[:settings
                                      [:blacklist-config blacklist-backoff-base-time-ms max-blacklist-time-ms]
                                      [:scaling inter-kill-request-wait-time-ms]]]
@@ -927,6 +929,18 @@
                                       scheduler instance-rpc-chan quanta-constraints scaling-timeout-config
                                       scheduler-interactions-thread-pool service-id))
                                   {})))
+   :codahale-reporters (pc/fnk [[:settings [:metrics-config codahale-reporters]]]
+                         (pc/map-vals
+                           (fn make-codahale-reporter [{:keys [factory-fn] :as reporter-config}]
+                             (let [resolved-factory-fn (utils/resolve-symbol! factory-fn)
+                                   reporter-instance (resolved-factory-fn reporter-config)]
+                               (when-not (satisfies? reporter/CodahaleReporter reporter-instance)
+                                 (throw (ex-info "Reporter factory did not create an instance of CodahaleReporter"
+                                                 {:reporter-config reporter-config
+                                                  :reporter-instance reporter-instance
+                                                  :resolved-factory-fn resolved-factory-fn})))
+                               reporter-instance))
+                           codahale-reporters))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  router-state-maintainer]
                           (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer
@@ -1261,6 +1275,13 @@
                                                  (wrap-secure-request-fn
                                                    (fn state-autoscaling-multiplexer-handler-fn [request]
                                                      (handler/get-query-chan-state-handler router-id query-chan request)))))
+   :state-codahale-reporters-handler-fn (pc/fnk [[:daemons codahale-reporters]
+                                                 [:state router-id]]
+                                          (fn codahale-reporter-state-handler-fn [request]
+                                            (handler/get-query-fn-state
+                                              router-id
+                                              #(pc/map-vals reporter/state codahale-reporters)
+                                              request)))
    :state-fallback-handler-fn (pc/fnk [[:daemons fallback-maintainer]
                                        [:state router-id]
                                        wrap-secure-request-fn]

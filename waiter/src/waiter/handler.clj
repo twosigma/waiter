@@ -33,6 +33,7 @@
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
+            [waiter.reporter :as reporter]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.service-description :as sd]
@@ -589,14 +590,14 @@
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (utils/clj->streaming-json-response
-        {:details (->> ["autoscaler" "autoscaling-multiplexer" "fallback"
-                        "gc-broken-services" "gc-services" "gc-transient-metrics"
-                        "interstitial" "kv-store" "launch-metrics" "leader" "local-usage" "maintainer"
-                        "router-metrics" "scheduler" "statsd"]
-                       (pc/map-from-keys make-url))
-         :router-id router-id
-         :routers routers}))
+      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters" "fallback"
+                                                          "gc-broken-services" "gc-services" "gc-transient-metrics" "interstitial"
+                                                          "kv-store" "launch-metrics" "leader" "local-usage" "maintainer"
+                                                          "router-metrics" "scheduler"
+                                                          "statsd"]
+                                                         (pc/map-from-keys make-url))
+                                           :router-id router-id
+                                           :routers routers}))
     (catch Exception ex
       (utils/exception->response ex request))))
 

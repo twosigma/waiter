@@ -465,6 +465,13 @@
   (log/info "Dynamically loading Clojure var:" sym)
   (resolve sym))
 
+(defn resolve-symbol!
+  "Resolve the given symbol to the corresponding Var. Throw an exception if resolved object is falsy."
+  [sym]
+  (if-let [resolved-sym (resolve-symbol sym)]
+    resolved-sym
+    (throw (ex-info "Unable to resolve symbol" {:sym sym :namespace (namespace sym)}))))
+
 (defn create-component
   "Creates a component based on the specified :kind"
   [{:keys [kind] :as component-config} & {:keys [context]}]
