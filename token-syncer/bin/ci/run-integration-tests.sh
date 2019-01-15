@@ -26,6 +26,10 @@ lein do clean, compile
 WAITER_URIS=""
 for waiter_port in 9093 9092 9091
 do
+  export GRAPHITE_SERVER_PORT=5555
+  # Start netcat to listen to a port. The Codahale Graphite reporter will be able to report without failing and spamming logs.
+  nc -kl localhost $GRAPHITE_SERVER_PORT > /dev/null &
+  
   WAITER_URI="http://127.0.0.1:${waiter_port}"
   WAITER_URIS="${WAITER_URI},${WAITER_URIS}"
   bin/run-using-shell-scheduler.sh ${waiter_port} 0 &
