@@ -349,6 +349,14 @@
                                  :authorizer {:kind :default
                                               :default {:factory-fn waiter.authorization/noop-authorizer}}
 
+                                 ;; The :log-bucket-url setting is optional, but if it's non-nil, it should be the URL (string) of an S3 bucket
+                                 ;; where log files should be copied when a waiter service pod is terminated.
+                                 ;; When a :log-bucket-url is given, the pod waits up to an additional :log-bucket-sync-secs before terminating
+                                 ;; (starting after :pod-sigkill-delay-secs or the user process's graceful exit).
+                                 ;; The log-bucket-sync-secs option should be set between 0 and 300 seconds, inclusive (default is 180).
+                                 :log-bucket-sync-secs 180
+                                 :log-bucket-url "http://s3.example.com/waiter-service-logs"
+
                                  ;; String value used to annotate Kubernetes objects that are orchestrated by this Waiter instantiation:
                                  :cluster-name "waiter"
 

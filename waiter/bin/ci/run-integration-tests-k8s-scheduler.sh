@@ -2,8 +2,8 @@
 # Usage: run-integration-tests-k8s-scheduler.sh [TEST_COMMAND] [TEST_SELECTOR]
 #
 # Examples:
-#   run-integration-tests-k8s-scheduler.sh parallel-test integration-fast
-#   run-integration-tests-k8s-scheduler.sh parallel-test integration-slow
+#   run-integration-tests-k8s-scheduler.sh parallel-test integration-heavy
+#   run-integration-tests-k8s-scheduler.sh parallel-test integration-lite
 #   run-integration-tests-k8s-scheduler.sh parallel-test
 #   run-integration-tests-k8s-scheduler.sh
 #
@@ -20,6 +20,13 @@ KITCHEN_DIR=${WAITER_DIR}/../kitchen
 
 # Start minikube
 ${DIR}/minikube-setup.sh
+
+# Start S3 test server
+if [[ $TEST_SELECTOR =~ heavy$ ]]; then
+    ${DIR}/s3-server-setup.sh
+    S3SERVER_IP=$(docker inspect s3server | jq -r '.[0].NetworkSettings.Networks.bridge.IPAddress')
+    export WAITER_S3_BUCKET=http://$S3SERVER_IP:8000/waiter-service-logs
+fi
 
 # Ensure we have the docker image for the pods
 ${KITCHEN_DIR}/bin/build-docker-image.sh

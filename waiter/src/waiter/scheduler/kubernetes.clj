@@ -17,9 +17,12 @@
   (:require [cheshire.core :as cheshire]
             [clj-http.client :as clj-http]
             [clj-time.core :as t]
+            [clojure.data.zip.xml :as zx]
             [clojure.java.io :as io]
             [clojure.string :as string]
             [clojure.tools.logging :as log]
+            [clojure.xml :as xml]
+            [clojure.zip :as zip]
             [plumbing.core :as pc]
             [slingshot.slingshot :as ss]
             [waiter.authorization :as authz]
@@ -135,6 +138,14 @@
          service-id (k8s-object->service-id pod)]
      (str service-id \. pod-name \- restart-count))))
 
+(defn- unpack-instance-id
+  "Extract the service-id, pod name, and pod restart-number from an instance-id."
+  [instance-id]
+   (let [[_ service-id pod-name restart-number] (re-find #"^([-a-z0-9]+)\.([-a-z0-9]+)-(\d+)$" instance-id)]
+     {:service-id service-id
+      :pod-name pod-name
+      :restart-number restart-number}))
+
 (defn- log-dir-path [namespace restart-count]
   "Build log directory path string for a containter run."
   (str "/home/" namespace "/r" restart-count))
@@ -201,6 +212,11 @@
     (catch Throwable e
       (log/error e "error converting pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
+
+(defn- pod-logs-live? [pod]
+  "Returns true if the given pod has its log fileserver running."
+  (and (some? pod)
+       (nil? (get-in pod [:status :containerStatuses 1 :state :terminated]))))
 
 (defn streaming-api-request
   "Make a long-lived HTTP request to the Kubernetes API server using the configured authentication.
@@ -444,6 +460,7 @@
                                 daemon-state
                                 fileserver
                                 http-client
+                                log-bucket-url
                                 max-patch-retries
                                 max-name-length
                                 pod-base-port
@@ -543,14 +560,11 @@
          :message "Error while scaling waiter service"})))
 
   (retrieve-directory-content
-    [{:keys [http-client] {:keys [port scheme]} :fileserver}
-     _ instance-id host browse-path]
-    (let [auth-str @k8s-api-auth-str
-          headers (when auth-str {"Authorization" auth-str})
-          instance-restart-number (->> (string/last-index-of instance-id \-)
-                                       inc
-                                       (subs instance-id))
-          instance-base-dir (str "/r" instance-restart-number)
+    [{:keys [http-client log-bucket-url service-id->service-description-fn watch-state]
+      {:keys [port scheme]} :fileserver}
+     service-id instance-id host browse-path]
+    (let [{:keys [_ pod-name restart-number]} (unpack-instance-id instance-id)
+          instance-base-dir (str "r" restart-number)
           browse-path (if (string/blank? browse-path) "/" browse-path)
           browse-path (cond->
                         browse-path
@@ -558,23 +572,50 @@
                         (str "/")
                         (not (string/starts-with? browse-path "/"))
                         (->> (str "/")))
-          target-url (str scheme "://" host ":" port instance-base-dir browse-path)]
-      (when port
-        (ss/try+
-          (let [result (http-utils/http-request
-                         http-client
-                         target-url
-                         :accept "application/json"
-                         :content-type "application/json"
-                         :headers headers)]
-            (for [{entry-name :name entry-type :type :as entry} result]
-              (if (= "file" entry-type)
-                (assoc entry :url (str target-url entry-name))
-                (assoc entry :path (str browse-path entry-name)))))
-          (catch [:client http-client] response
-            (log/error "request to fileserver failed: " target-url response))
-          (catch Throwable t
-            (log/error t "request to fileserver failed"))))))
+          run-as-user (-> service-id
+                          service-id->service-description-fn
+                          service-description->namespace)
+          pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])]
+      (ss/try+
+        (if (pod-logs-live? pod)
+          ;; the pod is live: try accessing logs through sidecar
+          (when port
+            (let [target-url (str scheme "://" host ":" port "/" instance-base-dir browse-path)
+                  result (http-utils/http-request
+                           http-client
+                           target-url
+                           :accept "application/json")]
+              (for [{entry-name :name entry-type :type :as entry} result]
+                (if (= "file" entry-type)
+                  (assoc entry :url (str target-url entry-name))
+                  (assoc entry :path (str browse-path entry-name))))))
+          ;; the pod is not live: try accessing logs through S3
+          (when log-bucket-url
+            (let [prefix (str run-as-user "/" service-id "/" pod-name "/" instance-base-dir browse-path)
+                  query-string (str "delimiter=/&prefix=" prefix)
+                  result (http-utils/http-request
+                           http-client
+                           log-bucket-url
+                           :query-string query-string)
+                  xml-listing (-> result .getBytes io/input-stream xml/parse zip/xml-zip)]
+              (vec
+                (concat
+                  (for [f (zx/xml-> xml-listing :Contents)]
+                    (let [path (zx/xml1-> f :Key zx/text)
+                          size (Long/parseLong (zx/xml1-> f :Size zx/text))
+                          basename (subs path (count prefix))]
+                      {:name basename :size size :type "file" :url (str log-bucket-url "/" path)}))
+                  (distinct
+                    (for [d (zx/xml-> xml-listing :CommonPrefixes)]
+                      (let [path (zx/xml1-> d :Prefix zx/text)
+                            subdir-path (subs path (count prefix))
+                            dirname-length (clojure.string/index-of subdir-path "/")
+                            dirname (subs subdir-path 0 dirname-length)]
+                        {:name dirname :path (str "/" prefix dirname) :type "directory"}))))))))
+        (catch [:client http-client] response
+          (log/error "request to fileserver failed: " response))
+        (catch Throwable t
+          (log/error t "request to fileserver failed")))))
 
   (service-id->state [_ service-id]
     {:failed-instances (vals (get @service-id->failed-instances-transient-store service-id))
@@ -586,7 +627,9 @@
      :syncer (retrieve-syncer-state-fn)})
 
   (validate-service [_ service-id]
-    (let [{:strs [run-as-user]} (service-id->service-description-fn service-id)]
+    (let [run-as-user (-> service-id
+                          service-id->service-description-fn
+                          service-description->namespace)]
       (authz/check-user authorizer run-as-user service-id))))
 
 (defn default-replicaset-builder
@@ -597,19 +640,32 @@
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures mem min-instances ports
            run-as-user] :as service-description}
-   {:keys [default-container-image] :as context}]
+   {:keys [default-container-image log-bucket-url] :as context}]
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
                                         service-id->password-fn home-path)
+        ;; We include the default log-bucket-sync-secs value in the total-sigkill-delay-secs
+        ;; delay iff the log-bucket-url setting was given the scheduler config.
+        log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
+        total-sigkill-delay-secs (+ pod-sigkill-delay-secs log-bucket-sync-secs)
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         port0 (-> service-id hash (mod 100) (* 10) (+ pod-base-port))
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
                    {:name "MESOS_DIRECTORY" :value home-path}
-                   {:name "MESOS_SANDBOX" :value home-path}]
+                   {:name "MESOS_SANDBOX" :value home-path}
+                   ;; Number of seconds to wait after receiving a sigterm
+                   ;; before sending a sigkill to the user's process.
+                   ;; This is handled by the waiter-init script,
+                   ;; separately from the pod's grace period,
+                   ;; in order to provide extra time for logs to sync to an s3 bucket.
+                   {:name "WAITER_GRACE_SECS" :value (str pod-sigkill-delay-secs)}]
                   (concat
+                    (when log-bucket-url
+                      [{:name "WAITER_LOG_BUCKET_URL"
+                        :value (str log-bucket-url "/" run-as-user "/" service-id)}])
                     (for [[k v] base-env]
                       {:name k :value v})
                     (for [i (range ports)]
@@ -663,7 +719,7 @@
                                               :workingDir work-path}]
                                 :volumes [{:name "user-home"
                                            :emptyDir {}}]
-                                :terminationGracePeriodSeconds pod-sigkill-delay-secs}}}}
+                                :terminationGracePeriodSeconds total-sigkill-delay-secs}}}}
       ;; Optional fileserver sidecar container
       (integer? (:port fileserver))
       (update-in
@@ -672,8 +728,7 @@
         (let [{:keys [cmd image port] {:keys [cpu mem]} :resources} fileserver
               memory (str mem "Mi")]
           {:command cmd
-           :env [{:name "WAITER_FILESERVER_PORT"
-                  :value (str port)}]
+           :env [{:name "WAITER_FILESERVER_PORT" :value (str port)}]
            :image image
            :imagePullPolicy "IfNotPresent"
            :name "waiter-fileserver"
@@ -861,10 +916,11 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication authorizer cluster-name http-options max-patch-retries max-name-length
-           pod-base-port pod-sigkill-delay-secs pod-suffix-length replicaset-api-version replicaset-spec-builder
-           scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
-           service-id->password-fn url start-scheduler-syncer-fn watch-retries]
+  [{:keys [authentication authorizer cluster-name http-options log-bucket-sync-secs log-bucket-url
+           max-patch-retries max-name-length pod-base-port pod-sigkill-delay-secs pod-suffix-length
+           replicaset-api-version replicaset-spec-builder scheduler-name scheduler-state-chan
+           scheduler-syncer-interval-secs service-id->service-description-fn service-id->password-fn
+           url start-scheduler-syncer-fn watch-retries]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver}]
   {:pre [(schema/contains-kind-sub-map? authorizer)
          (or (nil? fileserver-port)
@@ -873,6 +929,8 @@
          (re-matches #"https?" fileserver-scheme)
          (utils/pos-int? (:socket-timeout http-options))
          (utils/pos-int? (:conn-timeout http-options))
+         (and (number? log-bucket-sync-secs) (<= 0 log-bucket-sync-secs 300))
+         (or (nil? log-bucket-url) (some? (io/as-url log-bucket-url)))
          (utils/non-neg-int? max-patch-retries)
          (utils/pos-int? max-name-length)
          (not (string/blank? cluster-name))
@@ -896,13 +954,16 @@
                         (utils/assoc-if-absent :user-agent "waiter-k8s")
                         http-utils/http-client-factory)
         service-id->failed-instances-transient-store (atom {})
+        replicaset-spec-builder-ctx (assoc replicaset-spec-builder
+                                           :log-bucket-sync-secs log-bucket-sync-secs
+                                           :log-bucket-url log-bucket-url)
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
                                                utils/resolve-symbol
                                                deref)]
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description]
-                                       (f scheduler service-id service-description replicaset-spec-builder)))
+                                       (f scheduler service-id service-description replicaset-spec-builder-ctx)))
         watch-options (cond-> default-watch-options
                         (some? watch-retries)
                         (assoc :watch-retries watch-retries))
@@ -928,6 +989,7 @@
                                            daemon-state
                                            fileserver
                                            http-client
+                                           log-bucket-url
                                            max-patch-retries
                                            max-name-length
                                            pod-base-port

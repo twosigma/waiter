@@ -78,6 +78,7 @@
                  [org.clojure/data.codec "0.1.1"]
                  [org.clojure/data.json "0.2.6"]
                  [org.clojure/data.priority-map "0.0.10"]
+                 [org.clojure/data.zip "0.1.2"]
                  [org.clojure/tools.cli "0.4.1"]
                  [org.clojure/tools.logging "0.4.1"]
                  [org.clojure/tools.namespace "0.2.11"]
