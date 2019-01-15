@@ -39,7 +39,7 @@
                         (validate-console-reporter-config {:extra-key 444}))))
 
 (deftest console-reporter-good-schema
-  (validate-console-reporter-config {:period-ms 300 :extra-key 444}))
+  (validate-console-reporter-config {:extra-key 444 :filter-regex #".*" :period-ms 300}))
 
 (deftest graphite-reporter-bad-schema
   (is (thrown-with-msg? ExceptionInfo #"host missing-required-key"
@@ -54,21 +54,21 @@
                         (validate-graphite-reporter-config {:period-ms "five" :host "localhost" :port 7777}))))
 
 (deftest graphite-reporter-good-schema
-  (validate-graphite-reporter-config {:period-ms 300 :extra-key 444 :host "localhost" :port 7777}))
+  (validate-graphite-reporter-config {:extra-key 444 :filter-regex #".*" :period-ms 300 :prefix "" :host "localhost" :port 7777}))
 
 (defn make-printstream []
   (let [os (ByteArrayOutputStream.)
         ps (PrintStream. os)]
     {:ps ps :out #(.toString os "UTF8")}))
 
-(deftest console-reporter-no-filter
+(deftest console-reporter-wildcard-filter
   (with-isolated-registry
     (metrics/service-counter "service-id" "foo")
     (metrics/service-counter "service-id" "foo" "bar")
     (metrics/service-counter "service-id" "fee" "fie")
     (counters/inc! (metrics/service-counter "service-id" "foo" "bar") 100)
     (let [{:keys [ps out]} (make-printstream)
-          [console-reporter state] (make-console-reporter nil ps)]
+          [console-reporter state] (make-console-reporter #".*" ps)]
       (is (instance? ConsoleReporter console-reporter))
       (.report console-reporter)
       (is (= "
@@ -105,7 +105,7 @@ services.service-id.counters.fee.fie
                   (clojure.string/join "\n"))))
       (is (= {:run-state :created} @state)))))
 
-(deftest graphite-reporter-no-filter
+(deftest graphite-reporter-wildcard-filter
   (with-isolated-registry
     (metrics/service-counter "service-id" "foo")
     (metrics/service-counter "service-id" "foo" "bar")
@@ -118,7 +118,7 @@ services.service-id.counters.fee.fie
                      (getFailures [_] 0)
                      (isConnected [_] true)
                      (send [_ name value _] (swap! actual-values #(conj % (str name value)))))
-          [graphite-reporter state] (make-graphite-reporter nil "prefix" graphite)]
+          [graphite-reporter state] (make-graphite-reporter #".*" "prefix" graphite)]
       (is (instance? GraphiteReporter graphite-reporter))
       (with-redefs [t/now (fn [] time)]
         (.report graphite-reporter))
@@ -155,7 +155,7 @@ services.service-id.counters.fee.fie
               :failed-writes-to-server 0
               :last-report-successful true} @state)))))
 
-(deftest graphite-reporter-no-filter-exception
+(deftest graphite-reporter-wildcard-filter-exception
   (with-isolated-registry
     (metrics/service-counter "service-id" "foo")
     (metrics/service-counter "service-id" "foo" "bar")
@@ -168,7 +168,7 @@ services.service-id.counters.fee.fie
                      (getFailures [_] 0)
                      (isConnected [_] true)
                      (send [_ _ _ _] (throw (ex-info "test" {}))))
-          [graphite-reporter state] (make-graphite-reporter nil "prefix" graphite)]
+          [graphite-reporter state] (make-graphite-reporter #".*" "prefix" graphite)]
       (is (instance? GraphiteReporter graphite-reporter))
       (with-redefs [t/now (fn [] time)]
         (is (thrown-with-msg? ExceptionInfo #"^test$"

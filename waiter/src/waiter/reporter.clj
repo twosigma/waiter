@@ -51,8 +51,8 @@
 (defn validate-console-reporter-config
   "Validates ConsoleReporter settings and sets defaults"
   [config]
-  (s/validate {(s/required-key :period-ms) schema/positive-int
-               (s/optional-key :filter-regex) s/Regex
+  (s/validate {(s/required-key :filter-regex) s/Regex
+               (s/required-key :period-ms) schema/positive-int
                s/Any s/Any} config))
 
 (defn make-console-reporter
@@ -61,8 +61,8 @@
   ([filter-regex ^PrintStream output]
    (let [state-atom (atom {:run-state :created})
          console-reporter (-> (cond-> (ConsoleReporter/forRegistry metrics/default-registry)
-                                      output (.outputTo output)
-                                      filter-regex (.filter (make-metrics-filter filter-regex)))
+                                      output (.outputTo output))
+                              (.filter (make-metrics-filter filter-regex))
                               (.convertRatesTo TimeUnit/SECONDS)
                               (.convertDurationsTo TimeUnit/MILLISECONDS)
                               (.build))]
@@ -78,11 +78,11 @@
 (defn validate-graphite-reporter-config
   "Validates GraphiteReporter settings and sets defaults"
   [config]
-  (s/validate {(s/optional-key :filter-regex) s/Regex
+  (s/validate {(s/required-key :filter-regex) s/Regex
                (s/required-key :host) s/Str
                (s/required-key :period-ms) schema/positive-int
                (s/required-key :pickled?) s/Bool
-               (s/optional-key :prefix) s/Str
+               (s/required-key :prefix) s/Str
                (s/required-key :port) schema/positive-int
                s/Any s/Any}
               (merge {:pickled? true} config)))
@@ -119,8 +119,8 @@
                             (isConnected [_] (.isConnected graphite))
                             (getFailures [_] (.getFailures graphite))
                             (close [_] (.close graphite)))
-         graphite-reporter (-> (cond-> (GraphiteReporter/forRegistry metrics/default-registry)
-                                       filter-regex (.filter (make-metrics-filter filter-regex)))
+         graphite-reporter (-> (GraphiteReporter/forRegistry metrics/default-registry)
+                               (.filter (make-metrics-filter filter-regex))
                                (.prefixedWith prefix)
                                (.convertRatesTo TimeUnit/SECONDS)
                                (.convertDurationsTo TimeUnit/MILLISECONDS)

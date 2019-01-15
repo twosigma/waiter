@@ -707,7 +707,7 @@
                               :console {
                                         ;; Method that creates and starts an instance of com.codahale.metrics.ConsoleReporter
                                         :factory-fn waiter.reporter/console-reporter
-                                        ;; If present, a regex to filter by metric name
+                                        ;; A regex to filter by metric name
                                         :filter-regex #config/regex ".*"
                                         ;; Reporting period in milliseconds
                                         :period-ms 30000}
@@ -715,7 +715,7 @@
                               :graphite {
                                          ;; Method that creates and starts an instance of com.codahale.metrics.graphite.GraphiteReporter
                                          :factory-fn waiter.reporter/graphite-reporter
-                                         ;; If present, a regex to filter by metric name
+                                         ;; A regex to filter by metric name
                                          :filter-regex #config/regex ".*"
                                          ;; The hostname of where the Graphite server is running
                                          :host "graphite.example.com"
@@ -723,7 +723,7 @@
                                          :period-ms 30000
                                          ;; Flag to enable compression
                                          :pickled? true
-                                         ;; Optional prefix for metric names
+                                         ;; Prefix for metric names
                                          :prefix "waiter-internal"
                                          ;; The port on which the Graphite server is expecting metrics submissions
                                          :port 1111}}
