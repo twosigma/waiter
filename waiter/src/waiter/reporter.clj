@@ -71,7 +71,7 @@
 (defn console-reporter
   "Creates and starts a ConsoleReporter for codahale metrics"
   [config]
-  (let [{:keys [period-ms filter-regex]} (validate-console-reporter-config config)
+  (let [{:keys [filter-regex period-ms]} (validate-console-reporter-config config)
         [console-reporter state-atom] (make-console-reporter filter-regex)]
     (make-codahale-reporter console-reporter state-atom period-ms)))
 
@@ -130,6 +130,6 @@
 (defn graphite-reporter
   "Creates and starts a GraphiteReporter for metrics"
   [config]
-  (let [{:keys [period-ms filter-regex prefix host port pickled?]} (validate-graphite-reporter-config config)
+  (let [{:keys [filter-regex host period-ms pickled? port prefix]} (validate-graphite-reporter-config config)
         [graphite-reporter state-atom] (make-graphite-reporter filter-regex prefix host port pickled?)]
     (make-codahale-reporter graphite-reporter state-atom period-ms)))

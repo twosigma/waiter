@@ -9,14 +9,14 @@
 
  :metrics-config {
                   :codahale-reporters {
-                              :graphite {
-                                         :factory-fn waiter.reporter/graphite-reporter
-                                         :filter-regex #config/regex "^jvm.*|^waiter.*"
-                                         :host "localhost"
-                                         :period-ms 3000
-                                         :pickled? true
-                                         :prefix "waiter-internal"
-                                         :port #config/env-int "GRAPHITE_SERVER_PORT"}}}
+                                       :graphite {
+                                                  :factory-fn waiter.reporter/graphite-reporter
+                                                  :filter-regex #config/regex "^jvm.*|^waiter.*"
+                                                  :host "localhost"
+                                                  :period-ms 3000
+                                                  :pickled? true
+                                                  :prefix "waiter-internal"
+                                                  :port #config/env-int "GRAPHITE_SERVER_PORT"}}}
 
  ; ---------- Network ----------
 
@@ -41,5 +41,5 @@
  ; ---------- CORS ----------
  :cors-config {:kind :allow-all}
 
-;; Require fewer failed health checks
-:health-check-config {:failed-check-threshold 2}}
+ ;; Require fewer failed health checks
+ :health-check-config {:failed-check-threshold 2}}

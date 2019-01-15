@@ -44,8 +44,8 @@
                     last-event-time-str "last-reporting-time"
                     last-event-time (get state last-event-time-str)
                     last-report-successful (get state "last-report-successful")
-                    _# (is last-report-successful)
-                    _# (is last-event-time)
+                    _ (is last-report-successful)
+                    _ (is last-event-time)
                     last-event-time-ms (-> last-event-time du/str-to-date .getMillis)
                     next-last-event-time-ms (wait-for-period
                                               period-ms
@@ -57,4 +57,6 @@
                                                    next-last-event-time-ms nil)))]
                 (is next-last-event-time-ms)
                 (when next-last-event-time-ms
-                  (is (< (Math/abs (- next-last-event-time-ms last-event-time-ms period-ms)) 100)))))))))))
+                  (is (< (Math/abs (- next-last-event-time-ms last-event-time-ms period-ms))
+                         (let [sleep_precision 100]         ;; expected precision for system "sleep" calls. a sleep call will sleep the right duration within 100 ms.
+                           sleep_precision))))))))))))
