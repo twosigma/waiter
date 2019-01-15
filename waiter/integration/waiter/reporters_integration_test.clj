@@ -54,9 +54,10 @@
                                                                                  du/str-to-date
                                                                                  .getMillis)]
                                                  (if (not= next-last-event-time-ms last-event-time-ms)
-                                                   next-last-event-time-ms nil)))]
+                                                   next-last-event-time-ms nil)))
+                    ;; expected precision for system "sleep" calls. a sleep call will sleep the right duration within 100 ms.
+                    sleep_precision 100]
                 (is next-last-event-time-ms)
                 (when next-last-event-time-ms
                   (is (< (Math/abs (- next-last-event-time-ms last-event-time-ms period-ms))
-                         (let [sleep_precision 100]         ;; expected precision for system "sleep" calls. a sleep call will sleep the right duration within 100 ms.
-                           sleep_precision))))))))))))
+                         sleep_precision)))))))))))
