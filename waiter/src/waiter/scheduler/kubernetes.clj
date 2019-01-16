@@ -698,7 +698,10 @@
                                               :livenessProbe {:httpGet {:path health-check-url
                                                                         :port port0
                                                                         :scheme backend-protocol-upper}
-                                                              :failureThreshold health-check-max-consecutive-failures
+                                                              ;; We increment the threshold value to match Marathon behavior.
+                                                              ;; Marathon treats this as a retry count,
+                                                              ;; whereas Kubernetes treats it as a run count.
+                                                              :failureThreshold (inc health-check-max-consecutive-failures)
                                                               :initialDelaySeconds grace-period-secs
                                                               :periodSeconds health-check-interval-secs
                                                               :timeoutSeconds 1}
