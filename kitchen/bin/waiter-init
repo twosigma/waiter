@@ -17,9 +17,14 @@ waiter_child_pid=
 # This double-termination is an important part of our Waiter scale-down logic,
 # and the mechanics are described in more detail below.
 handle_k8s_terminate() {
-    waiter_2nd_sigterm=false
+    waiter_2nd_sigterm=awaiting
     trap handle_2nd_k8s_terminate SIGTERM  # new handler for next sigterm
+}
 
+# When this process receives a SIGTERM,
+# we assume that's Kubernetes signaling pod termination.
+# This function handles safe shutdown and log persistence.
+pod_shutdown() {
     # Propagate the SIGTERM to the user's app's process group,
     # giving it the opportunity to shut down gracefully.
     if [ "$waiter_child_pid" ]; then
@@ -81,7 +86,7 @@ handle_k8s_terminate() {
     fi
 
     # wait for second sigterm to arrive
-    while [ $waiter_2nd_sigterm != true ]; do
+    while [ $waiter_2nd_sigterm != received ]; do
         sleep 0.1
     done
 
@@ -91,12 +96,13 @@ handle_k8s_terminate() {
 
 # Catch the second SIGTERM sent by Kubernetes on pod deletion.
 # This double-termination is an important part of our Waiter scale-down logic,
-# and the mechanics are described in more detail above (in handle_k8s_terminate).
+# and the mechanics are described in more detail above (in pod_shutdown).
 handle_2nd_k8s_terminate() {
     trap : SIGTERM  # reset SIGTERM handler to no-op
-    waiter_2nd_sigterm=true
+    waiter_2nd_sigterm=received
 }
 
+waiter_2nd_sigterm=skip
 trap handle_k8s_terminate SIGTERM
 
 # Track container restart count
@@ -123,5 +129,8 @@ waiter_child_pid=$!
 
 # Wait for the user's process to exit, propagating the exit code.
 # If this wait call is interrupted by a SIGTERM,
-# then the control flow switches to the handle_k8s_terminate routine.
+# then the control flow switches to the pod_shutdown routine.
 wait %1
+exit_code=$?
+[ $waiter_2nd_sigterm != skip ] && pod_shutdown
+exit $exit_code
