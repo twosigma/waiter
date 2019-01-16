@@ -596,7 +596,10 @@
                   result (http-utils/http-request
                            http-client
                            log-bucket-url
-                           :query-string query-string)
+                           :query-string query-string
+                           ;; Enabling Kerberos/SPNEGO when the bucket is not kerberized does not
+                           ;; cause an error, and the extra flag is ignored on non-kerberized systems.
+                           :spnego-auth true)
                   xml-listing (-> result .getBytes io/input-stream xml/parse zip/xml-zip)]
               (vec
                 (concat
