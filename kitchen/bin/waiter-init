@@ -80,7 +80,9 @@ pod_shutdown() {
                 logfile="r$i/$f"
                 # Using the -T option with curl PUTs the target file to the given URL,
                 # and avoids loading the full file into memory when sending the payload.
-                curl -s -T "$logfile" "$base_url/$logfile"
+                # Enabling Kerberos/SPNEGO when the bucket is not kerberized does not
+                # cause an error, and the extra flags are ignored on non-kerberized systems.
+                curl -s --negotiate -u: -T "$logfile" "$base_url/$logfile"
             done
         done
     fi
