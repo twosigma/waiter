@@ -56,6 +56,27 @@
         (with-service-cleanup
           service-id
           (assert-service-on-all-routers waiter-url service-id cookies)
+
+          ;; Test that the active instances' logs are available.
+          ;; This portion of the test logic was copied from basic-test/test-basic-logs
+          (let [active-instances (get-in (service-settings waiter-url service-id :cookies cookies)
+                                         [:instances :active-instances])
+                log-url (:log-url (first active-instances))
+                _ (log/debug "Log Url Active:" log-url)
+                make-request-fn (fn [url] (make-request url "" :verbose true))
+                {:keys [body] :as logs-response} (make-request-fn log-url)
+                _ (assert-response-status logs-response 200)
+                _ (log/debug "Response body:" body)
+                log-files-list (walk/keywordize-keys (json/read-str body))
+                stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
+                stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
+            (is (every? #(string/includes? body %) ["stderr" "stdout"])
+                (str "Live directory listing is missing entries: stderr and stdout, got response: " logs-response))
+            (doseq [file-link [stderr-file-link stdout-file-link]]
+              (if (string/starts-with? (str file-link) "http")
+                (assert-response-status (make-request-fn file-link) 200)
+                (log/warn "test-basic-logs did not verify file link:" stdout-file-link))))
+
           ;; Get a service with at least one active and one killed instance.
           ;; This portion of the test logic was copied from basic-test/test-killed-instances
           (log/info "starting parallel requests")
@@ -77,26 +98,6 @@
                               seq)
                         :interval 2 :timeout 45)
               (str "No killed instances found for " service-id))
-
-          ;; Test that the active instances' logs are available.
-          ;; This portion of the test logic was copied from basic-test/test-basic-logs
-          (let [active-instances (get-in (service-settings waiter-url service-id :cookies cookies)
-                                         [:instances :active-instances])
-                log-url (:log-url (first active-instances))
-                _ (log/debug "Log Url Active:" log-url)
-                make-request-fn (fn [url] (make-request url "" :verbose true))
-                {:keys [body] :as logs-response} (make-request-fn log-url)
-                _ (assert-response-status logs-response 200)
-                _ (log/debug "Response body:" body)
-                log-files-list (walk/keywordize-keys (json/read-str body))
-                stdout-file-link (:url (first (filter #(= (:name %) "stdout") log-files-list)))
-                stderr-file-link (:url (first (filter #(= (:name %) "stderr") log-files-list)))]
-            (is (every? #(string/includes? body %) ["stderr" "stdout"])
-                (str "Directory listing is missing entries: stderr and stdout, got response: " logs-response))
-            (doseq [file-link [stderr-file-link stdout-file-link]]
-              (if (string/starts-with? (str file-link) "http")
-                (assert-response-status (make-request-fn file-link) 200)
-                (log/warn "test-basic-logs did not verify file link:" stdout-file-link))))
 
           ;; Test that the killed instances' logs were persisted to S3.
           ;; This portion of the test logic was modified from the active-instances tests above.
@@ -122,7 +123,7 @@
             (is (wait-for
                   #(every? (partial string/includes? body) ["stderr" "stdout"])
                   :interval 1 :timeout 30)
-                (str "Directory listing is missing entries: stderr and stdout, got response: " logs-response))
+                (str "Killed directory listing is missing entries: stderr and stdout, got response: " logs-response))
             (doseq [file-link [stderr-file-link stdout-file-link]]
               (if (string/starts-with? (str file-link) "http")
                 (assert-response-status (make-request-fn file-link) 200)
