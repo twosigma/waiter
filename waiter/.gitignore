@@ -22,6 +22,9 @@ test2junit/
 *config-local.edn
 bin/generated-nginx.conf
 
+# Persistent Key-Value store directory
+/kv-store
+
 # Shell scheduler directory
 /scheduler
 
