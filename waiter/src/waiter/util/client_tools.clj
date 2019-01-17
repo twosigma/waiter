@@ -854,20 +854,28 @@
         app-info-map (walk/keywordize-keys (try-parse-json (:body app-info-response)))]
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 
+(defn retrieve-default-scheduler-name
+  "Return the name of the default 'leaf-level' scheduler"
+  [waiter-url]
+  (let [settings (waiter-settings waiter-url)
+        kind (get-in settings [:scheduler-config :kind])
+        default-scheduler (get-in settings [:scheduler-config (keyword kind) :default-scheduler])]
+    (or default-scheduler kind)))
+
 (defn using-cook?
   "Returns true if Waiter is configured to use Cook for scheduling"
   [waiter-url]
-  (= "cook" (scheduler-kind waiter-url :verbose true)))
+  (= "cook" (retrieve-default-scheduler-name waiter-url)))
 
 (defn using-k8s?
   "Returns true if Waiter is configured to use Kubernetes for scheduling"
   [waiter-url]
-  (= "kubernetes" (scheduler-kind waiter-url :verbose true)))
+  (= "kubernetes" (retrieve-default-scheduler-name waiter-url)))
 
 (defn using-marathon?
   "Returns true if Waiter is configured to use Marathon for scheduling"
   [waiter-url]
-  (= "marathon" (scheduler-kind waiter-url :verbose true)))
+  (= "marathon" (retrieve-default-scheduler-name waiter-url)))
 
 (defn can-query-for-grace-period?
   "Returns true if Waiter supports querying for grace period"
