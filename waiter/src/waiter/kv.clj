@@ -15,6 +15,7 @@
 ;;
 (ns waiter.kv
   (:require [clj-time.core :as t]
+            [clojure.java.io :as io]
             [clojure.tools.logging :as log]
             [digest]
             [metrics.meters :as meters]
@@ -101,17 +102,17 @@
 (defn zk-keys
   "Create a lazy sequence of keys."
   ([curator base-path]
-   (lazy-seq 
+   (lazy-seq
      (let [buckets (seq (curator/children curator base-path :ignore-does-not-exist true))]
        (zk-keys curator base-path buckets))))
   ([curator base-path buckets]
-   (lazy-seq 
+   (lazy-seq
      (when (seq buckets)
        (let [ks (seq (curator/children curator (str base-path "/" (first buckets))))]
          (zk-keys curator base-path (rest buckets) ks)))))
   ([curator base-path buckets [f & r]]
-   (lazy-seq 
-     (if f 
+   (lazy-seq
+     (if f
        (cons f (zk-keys curator base-path buckets r))
        (zk-keys curator base-path buckets)))))
 
@@ -159,6 +160,39 @@
          (string? base-path)
          (utils/pos-int? sync-timeout-ms)]}
   (->ZooKeeperKeyValueStore curator base-path sync-timeout-ms))
+
+;; File-based persistent KV store
+
+(defrecord FileBasedKeyValueStore [target-file store]
+  KeyValueStore
+  (retrieve [_ key _]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (@store key))
+  (store [_ key value]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (locking store
+      (swap! store assoc key value)
+      (log/info "writing latest data after store to" target-file)
+      (nippy/freeze-to-file target-file @store)))
+  (delete [_ key]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (locking store
+      (swap! store dissoc key)
+      (log/info "writing latest data after delete to" target-file)
+      (nippy/freeze-to-file target-file @store)))
+  (state [_]
+    (let [store-data @store]
+      {:store {:count (count store-data)
+               :data store-data}
+       :variant "file-based"})))
+
+(defn new-file-based-kv-store [{:keys [target-file]}]
+  (let [store (atom {})]
+    (io/make-parents target-file)
+    (when (-> target-file io/as-file .exists)
+      (log/info "loading existing data from" target-file)
+      (reset! store (nippy/thaw-from-file target-file)))
+    (FileBasedKeyValueStore. target-file store)))
 
 ;; Encryption KV store that uses another KV store as its backing data source
 (defrecord EncryptedKeyValueStore [inner-kv-store passwords]
