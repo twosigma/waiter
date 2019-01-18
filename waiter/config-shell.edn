@@ -26,12 +26,6 @@
  ;; Set the port:
  :port #config/env-int "WAITER_PORT"
 
- ; ---------- Token Storage ----------
-
- :kv-config {:kind :persistent
-             :persistent {:factory-fn waiter.kv/new-persistent-kv-store
-                          :target-file "kv-store.bin"}}
-
  ; ---------- Security ----------
 
  :authenticator-config {:kind :one-user

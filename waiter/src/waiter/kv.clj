@@ -81,36 +81,6 @@
 (defn new-local-kv-store [_]
   (LocalKeyValueStore. (atom {})))
 
-;; Persistent (file-based) KV store
-
-(defrecord PersistentKeyValueStore [target-file store]
-  KeyValueStore
-  (retrieve [_ key _]
-    (@store key))
-  (store [_ key value]
-    (locking store
-      (swap! store assoc key value)
-      (log/info "writing latest data after store to" target-file)
-      (nippy/freeze-to-file target-file @store)))
-  (delete [_ key]
-    (locking store
-      (swap! store dissoc key)
-      (log/info "writing latest data after delete to" target-file)
-      (nippy/freeze-to-file target-file @store)))
-  (state [_]
-    (let [store-data @store]
-      {:store {:count (count store-data)
-               :data store-data}
-       :variant "persistent"})))
-
-(defn new-persistent-kv-store [{:keys [target-file]}]
-  (let [store (atom {})]
-    (io/make-parents target-file)
-    (when (-> target-file io/as-file .exists)
-      (log/info "loading existing data from" target-file)
-      (reset! store (nippy/thaw-from-file target-file)))
-    (PersistentKeyValueStore. target-file store)))
-
 ;; ZooKeeper KV store
 (defn key->zk-path
   "Converts a key to a valid ZooKeeper path.
@@ -190,6 +160,39 @@
          (string? base-path)
          (utils/pos-int? sync-timeout-ms)]}
   (->ZooKeeperKeyValueStore curator base-path sync-timeout-ms))
+
+;; File-based persistent KV store
+
+(defrecord FileBasedKeyValueStore [target-file store]
+  KeyValueStore
+  (retrieve [_ key _]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (@store key))
+  (store [_ key value]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (locking store
+      (swap! store assoc key value)
+      (log/info "writing latest data after store to" target-file)
+      (nippy/freeze-to-file target-file @store)))
+  (delete [_ key]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (locking store
+      (swap! store dissoc key)
+      (log/info "writing latest data after delete to" target-file)
+      (nippy/freeze-to-file target-file @store)))
+  (state [_]
+    (let [store-data @store]
+      {:store {:count (count store-data)
+               :data store-data}
+       :variant "file-based"})))
+
+(defn new-file-based-kv-store [{:keys [target-file]}]
+  (let [store (atom {})]
+    (io/make-parents target-file)
+    (when (-> target-file io/as-file .exists)
+      (log/info "loading existing data from" target-file)
+      (reset! store (nippy/thaw-from-file target-file)))
+    (FileBasedKeyValueStore. target-file store)))
 
 ;; Encryption KV store that uses another KV store as its backing data source
 (defrecord EncryptedKeyValueStore [inner-kv-store passwords]

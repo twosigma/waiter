@@ -47,9 +47,9 @@
   []
   (-> "./kv-store" (io/file) (.getCanonicalPath)))
 
-(deftest test-persistent-kv-store
+(deftest test-file-based-kv-store
   (let [target-file (str (work-dir) "/foo.bin")]
-    (let [test-store (kv/new-persistent-kv-store {:target-file target-file})
+    (let [test-store (kv/new-file-based-kv-store {:target-file target-file})
           bytes (byte-array 10)]
       (Arrays/fill bytes (byte 1))
       (is (nil? (kv/fetch test-store :a)))
@@ -58,17 +58,17 @@
       (kv/store test-store :a 3)
       (is (= 3 (kv/fetch test-store :a)))
       (is (nil? (kv/fetch test-store :b)))
-      (is (= {:store {:count 1, :data {:a 3}}, :variant "persistent"}
+      (is (= {:store {:count 1, :data {:a 3}}, :variant "file-based"}
              (kv/state test-store))))
     ;; testing data was persisted in the file
-    (let [test-store (kv/new-persistent-kv-store {:target-file target-file})]
-      (is (= {:store {:count 1, :data {:a 3}}, :variant "persistent"}
+    (let [test-store (kv/new-file-based-kv-store {:target-file target-file})]
+      (is (= {:store {:count 1, :data {:a 3}}, :variant "file-based"}
              (kv/state test-store)))
       (kv/delete test-store :a)
       (is (nil? (kv/fetch test-store :a)))
       (is (nil? (kv/fetch test-store :b)))
       (kv/delete test-store :does-not-exist)
-      (is (= {:store {:count 0, :data {}}, :variant "persistent"}
+      (is (= {:store {:count 0, :data {}}, :variant "file-based"}
              (kv/state test-store))))))
 
 (deftest test-encrypted-kv-store
