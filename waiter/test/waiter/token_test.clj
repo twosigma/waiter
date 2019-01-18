@@ -1487,7 +1487,43 @@
                  :request-method :post})]
           (is (= 403 status))
           (is (str/includes? body "You have reached the limit of number of tokens allowed"))
-          (is (nil? (kv/fetch kv-store token))))))))
+          (is (nil? (kv/fetch kv-store token)))))
+
+      (testing "post:same-token-in-query-and-payload"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys {:cpus 1 :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :query-params {"token" "abcdefgh"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")))
+          (is (str/includes? (str details) "json-payload") body)
+          (is (str/includes? (str details) "query-parameter") body)
+          (is (str/includes? message "The token should be provided only as a query parameter or in the json payload") body)))
+
+      (testing "post:different-token-in-query-and-payload"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys {:cpus 1 :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :query-params {"token" "stuvwxyz"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")))
+          (is (str/includes? (str details) "json-payload") body)
+          (is (str/includes? (str details) "query-parameter") body)
+          (is (str/includes? message "The token should be provided only as a query parameter or in the json payload") body))))))
 
 (deftest test-store-service-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))

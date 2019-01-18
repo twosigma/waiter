@@ -342,10 +342,13 @@
                                                ru/json-request
                                                :body
                                                sd/transform-allowed-params-token-entry)
-        token (or token
-                  (when-let [token-param (get request-params "token")]
-                    (log/info "resolved token" token "from query parameter")
-                    token-param))
+        token-param (get request-params "token")
+        _ (when (and (not (str/blank? token-param)) (not (str/blank? token)))
+            (throw (ex-info "The token should be provided only as a query parameter or in the json payload"
+                            {:status 400
+                             :token {:json-payload token
+                                     :query-parameter token-param}})))
+        token (or token token-param)
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
         new-user-metadata (select-keys new-token-metadata sd/user-metadata-keys)
         {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-parameter-template}
