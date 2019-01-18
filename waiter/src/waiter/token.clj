@@ -108,6 +108,7 @@
           ; Validate the token modification for concurrency races
           (validate-token-modification-based-on-hash existing-token-description version-hash)
           ; Validate that the maximum number of tokens per owner limit has not been reached
+          ; token limit is not always enforced, e.g., for admin operations.
           (when token-limit
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)]
               (validate-kv!
