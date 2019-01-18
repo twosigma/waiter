@@ -1035,3 +1035,16 @@
                 (do
                   (meters/mark! (metrics/waiter-meter "core" "source-tokens" "store" "no-op"))
                   (log/info source-tokens "source-tokens already associated with" service-id))))))))))
+
+(defn discover-service-parameters
+  "Processing the request headers to identify the Waiter service parameters.
+   Returns a map of the waiter and passthrough headers, the identified token, and
+   the service parameter template from the token."
+  [kv-store waiter-hostnames headers]
+  (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
+        {:keys [token]} (retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
+        service-parameter-template (and token (token->service-parameter-template kv-store token :error-on-missing false))]
+    {:passthrough-headers passthrough-headers
+     :service-parameter-template service-parameter-template
+     :token token
+     :waiter-headers waiter-headers}))

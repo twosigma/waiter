@@ -1158,7 +1158,7 @@
                                  service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
                                 [:state http-client instance-rpc-chan local-usage-agent interstitial-state-atom]
-                                wrap-auth-bypass-fn wrap-descriptor-fn wrap-secure-request-fn]
+                                wrap-auth-bypass-fn wrap-descriptor-fn wrap-secure-request-fn wrap-service-discovery-fn]
                          (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
                                                  (pr/make-request http-client make-basic-auth-fn service-id->password-fn
                                                                   instance request request-properties passthrough-headers end-route metric-group))
@@ -1174,7 +1174,8 @@
                                (interstitial/wrap-interstitial interstitial-state-atom)
                                wrap-descriptor-fn
                                wrap-secure-request-fn
-                               wrap-auth-bypass-fn)))
+                               wrap-auth-bypass-fn
+                               wrap-service-discovery-fn)))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
                                        [:state router-metrics-agent]]
@@ -1448,14 +1449,12 @@
                                (wrap-router-auth-fn
                                  (fn [request]
                                    (handler/work-stealing-handler instance-rpc-chan request))))
-   :wrap-auth-bypass-fn (pc/fnk [[:curator kv-store]
-                                 [:state waiter-hostnames]]
+   :wrap-auth-bypass-fn (pc/fnk []
                           (fn wrap-auth-bypass-fn
                             [handler]
-                            (fn [{:keys [headers] :as request}]
-                              (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
-                                    {:keys [token]} (sd/retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
-                                    {:strs [authentication] :as service-description} (and token (sd/token->service-parameter-template kv-store token :error-on-missing false))
+                            (fn [{:keys [waiter-discovery] :as request}]
+                              (let [{:keys [service-parameter-template token waiter-headers]} waiter-discovery
+                                    {:strs [authentication] :as service-description} service-parameter-template
                                     authentication-disabled? (= authentication "disabled")]
                                 (cond
                                   (contains? waiter-headers "x-waiter-authentication")
@@ -1510,4 +1509,12 @@
                                                    authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
-                                     (handler request))))))})
+                                     (handler request))))))
+   :wrap-service-discovery-fn (pc/fnk [[:curator kv-store]
+                                       [:state waiter-hostnames]]
+                                (fn wrap-service-discovery-fn
+                                  [handler]
+                                  (fn [{:keys [headers] :as request}]
+                                    ;; TODO optimization opportunity to avoid this re-computation later in the chain
+                                    (let [discovered-parameters (sd/discover-service-parameters kv-store waiter-hostnames headers)]
+                                      (handler (assoc request :waiter-discovery discovered-parameters))))))})
