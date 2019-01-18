@@ -926,7 +926,32 @@
                             "last-update-user" test-user
                             "owner" test-user
                             "root" "foo-bar"))
-                 (kv/fetch kv-store token))))))))
+                 (kv/fetch kv-store token)))))
+
+      (testing "post:new-service-description:token-query-param"
+        (let [test-token (str "token-" (rand-int 10000))
+              {:keys [body headers status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (-> service-description-1 (dissoc "token") utils/clj->json StringBufferInputStream.)
+                 :headers {}
+                 :query-params {"token" test-token}
+                 :request-method :post})]
+          (is (= 200 status))
+          (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store test-token))))
+          (is (str/includes? body (str "Successfully created " test-token)))
+          (is (= (select-keys service-description-1 sd/token-data-keys)
+                 (sd/token->service-parameter-template kv-store test-token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store test-token)]
+            (is (= (dissoc service-description-1 "token") service-parameter-template))
+            (is (= {"last-update-time" (clock-millis)
+                    "last-update-user" "tu1"
+                    "owner" "tu1"
+                    "previous" {}
+                    "root" token-root}
+                   token-metadata)))
+          (is (empty? (sd/fetch-core kv-store service-id-1))))))))
 
 (deftest test-post-failure-in-handle-token-request
   (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-parameter-keys))))]
