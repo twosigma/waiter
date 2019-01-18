@@ -94,6 +94,7 @@
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
    ; per-request related
    (s/optional-key "blacklist-on-503") s/Bool
+   (s/optional-key "https-redirect") s/Bool
    (s/optional-key "max-queue-length") schema/positive-int
    s/Str s/Any})
 
@@ -110,7 +111,7 @@
 
 (def ^:const service-override-keys
   #{"authentication" "blacklist-on-503" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate"
-    "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures"
+    "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures" "https-redirect"
     "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold" "max-queue-length" "min-instances"
     "max-instances" "restart-backoff-factor" "scale-down-factor" "scale-factor" "scale-up-factor"})
 

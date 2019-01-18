@@ -579,6 +579,7 @@
                                 "health-check-interval-secs" 10
                                 "health-check-max-consecutive-failures" 5
                                 "health-check-url" "/status"
+                                "https-redirect" false
                                 "idle-timeout-mins" 30
                                 "instance-expiry-mins" 7200
                                 "interstitial-secs" 0
