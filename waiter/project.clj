@@ -90,6 +90,8 @@
                  [prismatic/schema "1.1.9"]
                  [ring/ring-core "1.7.0"
                   :exclusions [org.clojure/tools.reader]]
+                 [ring/ring-ssl "0.3.0"
+                  :exclusions [ring/ring-core]]
                  [ring-basic-authentication "1.0.5"]
                  [slingshot "0.12.2"]
                  [try-let "1.2.0"

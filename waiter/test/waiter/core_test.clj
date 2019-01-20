@@ -1278,3 +1278,130 @@
     (testing "async, error"
       (let [{:keys [status]} (async/<!! ((wrap-error-handling handler-async-error) {}))]
         (is (= 400 status))))))
+
+(deftest test-wrap-https-redirect
+  (let [configuration {}
+        wrap-https-redirect-fn ((:wrap-https-redirect-fn request-handlers) configuration)
+        handler-response (Object.)
+        execute-request (fn execute-request-fn [test-request]
+                          (let [request-handler-argument-atom (atom nil)
+                                test-request-handler (fn request-handler-fn [request]
+                                                       (reset! request-handler-argument-atom request)
+                                                       handler-response)
+                                test-response ((wrap-https-redirect-fn test-request-handler) test-request)]
+                            {:handled-request @request-handler-argument-atom
+                             :response test-response}))]
+
+    (testing "no redirect"
+      (testing "ws request with token https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :ws
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"https-redirect" true}
+                                               :token "token.localtest.me"
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "http request with token https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"https-redirect" false}
+                                               :token "token.localtest.me"
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "http request with waiter header https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "false"}
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"https-redirect" true}
+                                               :token "token.localtest.me"
+                                               :waiter-headers {"x-waiter-https-redirect" false}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with token https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"https-redirect" false}
+                                               :token "token.localtest.me"
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with token https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"https-redirect" true}
+                                               :token "token.localtest.me"
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with waiter-header https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "false"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"cpus" 1}
+                                               :token "token.localtest.me"
+                                               :waiter-headers {"x-waiter-https-redirect" false}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with waiter-header https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "true"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"cpus" 1}
+                                               :token "token.localtest.me"
+                                               :waiter-headers {"x-waiter-https-redirect" true}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response)))))
+
+    (testing "https redirect"
+      (testing "http request with token https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me:1234"}
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"https-redirect" true}
+                                               :token "token.localtest.me"
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (nil? handled-request))
+          (is (= {:body ""
+                  :headers {"Location" "https://token.localtest.me"
+                            "Server" "waiter"}
+                  :status 307}
+                 response))))
+
+      (testing "http request with waiter header https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "true"}
+                            :request-method :get
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"https-redirect" false}
+                                               :token "token.localtest.me"
+                                               :waiter-headers {"x-waiter-https-redirect" true}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (nil? handled-request))
+          (is (= {:body ""
+                  :headers {"Location" "https://token.localtest.me"
+                            "Server" "waiter"}
+                  :status 301}
+                 response)))))))

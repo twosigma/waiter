@@ -29,6 +29,8 @@
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [ring.middleware.basic-authentication :as basic-authentication]
+            [ring.middleware.ssl :as ssl]
+            [ring.util.response :as rr]
             [slingshot.slingshot :refer [try+]]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
@@ -1158,7 +1160,8 @@
                                  service-id->password-fn start-new-service-fn]
                                 [:settings instance-request-properties]
                                 [:state http-client instance-rpc-chan local-usage-agent interstitial-state-atom]
-                                wrap-auth-bypass-fn wrap-descriptor-fn wrap-secure-request-fn wrap-service-discovery-fn]
+                                wrap-auth-bypass-fn wrap-descriptor-fn wrap-https-redirect-fn wrap-secure-request-fn
+                                wrap-service-discovery-fn]
                          (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
                                                  (pr/make-request http-client make-basic-auth-fn service-id->password-fn
                                                                   instance request request-properties passthrough-headers end-route metric-group))
@@ -1175,6 +1178,7 @@
                                wrap-descriptor-fn
                                wrap-secure-request-fn
                                wrap-auth-bypass-fn
+                               wrap-https-redirect-fn
                                wrap-service-discovery-fn)))
    :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
@@ -1483,6 +1487,25 @@
                                 [:state fallback-state-atom]]
                          (fn wrap-descriptor-fn [handler]
                            (descriptor/wrap-descriptor handler request->descriptor-fn start-new-service-fn fallback-state-atom)))
+   :wrap-https-redirect-fn (pc/fnk []
+                             (fn wrap-https-redirect-fn
+                               [handler]
+                               (fn [{:keys [waiter-discovery] :as request}]
+                                 (let [{:keys [service-parameter-template waiter-headers]} waiter-discovery]
+                                   (cond
+                                     ;; lookup waiter headers before checking the service parameter template
+                                     (and (if (contains? waiter-headers "x-waiter-https-redirect")
+                                            (get waiter-headers "x-waiter-https-redirect")
+                                            (get service-parameter-template "https-redirect"))
+                                          ;; ignore websocket requests
+                                          (= :http (utils/request->scheme request)))
+                                     (do
+                                       (log/info "triggering ssl redirect")
+                                       (-> (ssl/ssl-redirect-response request {})
+                                           (rr/header "Server" (utils/get-current-server-name))))
+
+                                     :else
+                                     (handler request))))))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]
