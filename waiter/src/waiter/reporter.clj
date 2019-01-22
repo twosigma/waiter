@@ -64,7 +64,7 @@
                                       output (.outputTo output))
                               (.filter (make-metrics-filter filter-regex))
                               (.convertRatesTo TimeUnit/SECONDS)
-                              (.convertDurationsTo TimeUnit/MILLISECONDS)
+                              (.convertDurationsTo TimeUnit/SECONDS)
                               (.build))]
      [console-reporter state-atom])))
 
@@ -123,7 +123,7 @@
                                (.filter (make-metrics-filter filter-regex))
                                (.prefixedWith prefix)
                                (.convertRatesTo TimeUnit/SECONDS)
-                               (.convertDurationsTo TimeUnit/MILLISECONDS)
+                               (.convertDurationsTo TimeUnit/SECONDS)
                                (.build ^GraphiteSender graphite-wrapper))]
      [graphite-reporter state-atom])))
 
