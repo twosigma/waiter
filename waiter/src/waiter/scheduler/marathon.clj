@@ -449,7 +449,8 @@
      :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_]
-    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
+    {:authorizer (when authorizer (authz/state authorizer))
+     :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
      :service-id->kill-info-store @service-id->kill-info-store
      :service-id->out-of-sync-state-store @service-id->out-of-sync-state-store
      :syncer (retrieve-syncer-state-fn)})

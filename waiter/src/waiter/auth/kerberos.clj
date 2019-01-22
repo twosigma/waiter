@@ -135,7 +135,10 @@
   [prestash-cache query-chan]
   authz/Authorizer
   (check-user [_ user service-id]
-    (check-has-prestashed-tickets prestash-cache query-chan user service-id)))
+    (check-has-prestashed-tickets prestash-cache query-chan user service-id))
+  (state [_]
+    {:type :kerberos
+     :users @prestash-cache}))
 
 (defn kerberos-authorizer
   "Factory function for creating KerberosAuthorizer"

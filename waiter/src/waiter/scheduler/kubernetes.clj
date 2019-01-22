@@ -625,9 +625,10 @@
      :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [{:keys [watch-state]}]
-    {:watch-state @watch-state
+    {:authorizer (when authorizer (authz/state authorizer))
      :service-id->failed-instances @service-id->failed-instances-transient-store
-     :syncer (retrieve-syncer-state-fn)})
+     :syncer (retrieve-syncer-state-fn)
+     :watch-state @watch-state})
 
   (validate-service [_ service-id]
     (let [run-as-user (-> service-id

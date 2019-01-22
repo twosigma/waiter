@@ -66,14 +66,18 @@
 (defprotocol Authorizer
   (check-user [this ^String user ^String service-id]
     "Checks if the user is set up correctly to successfully launch
-     a service using the authentication scheme. Throws an exception if not."))
+     a service using the authentication scheme. Throws an exception if not.")
+  (state [this]
+    "Returns the state of the authorizer"))
 
 ;; Default Authorizer implementation that never throws an exception
 ;; (i.e., all checks are authorized).
 (defrecord NoOpAuthorizer []
   Authorizer
   (check-user [_ _ _]
-    (comment "do nothing")))
+    (comment "do nothing"))
+  (state [_]
+    {:type :no-op}))
 
 (defn noop-authorizer [context]
   "Factory function for the default (no-op) authorizer."
@@ -86,7 +90,9 @@
   (check-user [_ user service-id]
     (assert (not (string/blank? user)))
     (assert (not (string/blank? service-id)))
-    (comment "ok")))
+    (comment "ok"))
+  (state [_]
+    {:type :sanity-check}))
 
 (defn sanity-check-authorizer [context]
   "Factory function for the sanity-check authorizer."
