@@ -145,6 +145,7 @@
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]
    (s/required-key :token-config) {(s/required-key :history-length) schema/positive-int
+                                   (s/required-key :limit-per-owner) schema/positive-int
                                    (s/required-key :token-defaults) {(s/required-key "fallback-period-secs") schema/non-negative-int
                                                                      (s/required-key "stale-timeout-mins") schema/non-negative-int}}
    (s/required-key :websocket-config) {(s/required-key :ws-max-binary-message-size) schema/positive-int
@@ -387,6 +388,7 @@
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
    :token-config {:history-length 5
+                  :limit-per-owner 1000
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)
                                    "stale-timeout-mins" 15}}
    :websocket-config {:ws-max-binary-message-size (* 1024 1024 40)

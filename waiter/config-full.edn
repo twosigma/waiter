@@ -794,6 +794,10 @@
                 ;; It must be a positive integer.
                 :history-length 5
 
+                ;; Configures the maximum number of tokens that can be stored per owner.
+                ;; It must be a positive integer.
+                :limit-per-owner 1000
+
                 ;; Default values associated with tokens while resolving the service description
                 :token-defaults {
                                  ;; The default period (minutes) for which an instance from a fallback service can be requested:
