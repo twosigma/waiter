@@ -1065,12 +1065,14 @@
 
 (deftest test-wrap-auth-bypass
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+        token-defaults {"fallback-period-secs" 300
+                        "https-redirect" false}
         waiter-hostnames #{"www.waiter-router.com"}
         configuration {}
         wrap-auth-bypass-fn ((:wrap-auth-bypass-fn request-handlers) configuration)
         handler-response (Object.)
         execute-request (fn execute-request-fn [{:keys [headers] :as in-request}]
-                          (let [test-request (->> (sd/discover-service-parameters kv-store waiter-hostnames headers)
+                          (let [test-request (->> (sd/discover-service-parameters kv-store token-defaults waiter-hostnames headers)
                                                   (assoc in-request :waiter-discovery))
                                 request-handler-argument-atom (atom nil)
                                 test-request-handler (fn request-handler-fn [request]
@@ -1103,6 +1105,7 @@
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.host.com"}
                                                       :service-parameter-template {}
                                                       :token "www.host.com"
+                                                      :token-metadata token-defaults
                                                       :waiter-headers {}})
                handled-request))
         (is (= handler-response response))))
@@ -1113,6 +1116,7 @@
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.host.com"}
                                                       :service-parameter-template {}
                                                       :token "www.host.com"
+                                                      :token-metadata token-defaults
                                                       :waiter-headers {"x-waiter-run-as-user" "test-user"}})
                handled-request))
         (is (= handler-response response))))
@@ -1123,6 +1127,7 @@
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-1.com"}
                                                       :service-parameter-template {"mem" 2048}
                                                       :token "www.token-1.com"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {}})
                handled-request))
         (is (= handler-response response))))
@@ -1135,6 +1140,7 @@
                                                       :service-parameter-template {"authentication" "disabled"
                                                                                    "mem" 2048}
                                                       :token "www.token-3.com"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {}})
                handled-request))
         (is (= handler-response response))))
@@ -1155,6 +1161,7 @@
         (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
                                                       :service-parameter-template {"mem" 2048}
                                                       :token "a-named-token-A"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {"x-waiter-token" "a-named-token-A"}})
                handled-request))
         (is (= handler-response response))))
@@ -1178,6 +1185,7 @@
                                                       :service-parameter-template {"authentication" "disabled"
                                                                                    "mem" 2048}
                                                       :token "a-named-token-B"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {"x-waiter-token" "a-named-token-B"}})
                handled-request))
         (is (= handler-response response))))
@@ -1210,6 +1218,7 @@
                                                       :service-parameter-template {"authentication" "standard"
                                                                                    "mem" 2048}
                                                       :token "a-named-token-C"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {"x-waiter-token" "a-named-token-C"}})
                handled-request))
         (is (= handler-response response))))
@@ -1233,6 +1242,7 @@
                                                       :service-parameter-template {"authentication" "standard"
                                                                                    "mem" 2048}
                                                       :token "a-named-token-C"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
                                                       :waiter-headers {"x-waiter-run-as-user" "test-user"
                                                                        "x-waiter-token" "a-named-token-C"}})
                handled-request))
@@ -1297,8 +1307,9 @@
         (let [test-request {:headers {"host" "token.localtest.me"}
                             :scheme :ws
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {"https-redirect" true}
+                                               :service-parameter-template {}
                                                :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
                                                :waiter-headers {}}}
               {:keys [handled-request response]} (execute-request test-request)]
           (is (= test-request handled-request))
@@ -1308,8 +1319,9 @@
         (let [test-request {:headers {"host" "token.localtest.me"}
                             :scheme :http
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {"https-redirect" false}
+                                               :service-parameter-template {}
                                                :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
                                                :waiter-headers {}}}
               {:keys [handled-request response]} (execute-request test-request)]
           (is (= test-request handled-request))
@@ -1317,12 +1329,14 @@
 
       (testing "http request with waiter header https-redirect set to false"
         (let [test-request {:headers {"host" "token.localtest.me"
-                                      "x-waiter-https-redirect" "false"}
+                                      "x-waiter-https-redirect" "true"}
+                            :request-method :get
                             :scheme :http
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {"https-redirect" true}
+                                               :service-parameter-template {}
                                                :token "token.localtest.me"
-                                               :waiter-headers {"x-waiter-https-redirect" false}}}
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {"x-waiter-https-redirect" true}}}
               {:keys [handled-request response]} (execute-request test-request)]
           (is (= test-request handled-request))
           (is (= handler-response response))))
@@ -1331,8 +1345,9 @@
         (let [test-request {:headers {"host" "token.localtest.me"}
                             :scheme :https
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {"https-redirect" false}
+                                               :service-parameter-template {}
                                                :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
                                                :waiter-headers {}}}
               {:keys [handled-request response]} (execute-request test-request)]
           (is (= test-request handled-request))
@@ -1342,8 +1357,9 @@
         (let [test-request {:headers {"host" "token.localtest.me"}
                             :scheme :https
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {"https-redirect" true}
+                                               :service-parameter-template {}
                                                :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
                                                :waiter-headers {}}}
               {:keys [handled-request response]} (execute-request test-request)]
           (is (= test-request handled-request))
@@ -1356,6 +1372,7 @@
                             :waiter-discovery {:passthrough-headers {}
                                                :service-parameter-template {"cpus" 1}
                                                :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
                                                :waiter-headers {"x-waiter-https-redirect" false}}}
               {:keys [handled-request response]} (execute-request test-request)]
           (is (= test-request handled-request))
@@ -1368,6 +1385,7 @@
                             :waiter-discovery {:passthrough-headers {}
                                                :service-parameter-template {"cpus" 1}
                                                :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
                                                :waiter-headers {"x-waiter-https-redirect" true}}}
               {:keys [handled-request response]} (execute-request test-request)]
           (is (= test-request handled-request))
@@ -1378,8 +1396,9 @@
         (let [test-request {:headers {"host" "token.localtest.me:1234"}
                             :scheme :http
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {"https-redirect" true}
+                                               :service-parameter-template {}
                                                :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
                                                :waiter-headers {}}}
               {:keys [handled-request response]} (execute-request test-request)]
           (is (nil? handled-request))
@@ -1391,13 +1410,14 @@
 
       (testing "http request with waiter header https-redirect set to false"
         (let [test-request {:headers {"host" "token.localtest.me"
-                                      "x-waiter-https-redirect" "true"}
+                                      "x-waiter-https-redirect" "false"}
                             :request-method :get
                             :scheme :http
                             :waiter-discovery {:passthrough-headers {}
-                                               :service-parameter-template {"https-redirect" false}
+                                               :service-parameter-template {}
                                                :token "token.localtest.me"
-                                               :waiter-headers {"x-waiter-https-redirect" true}}}
+                                               :token-metadata {"https-redirect" true}
+                                               :waiter-headers {"x-waiter-https-redirect" false}}}
               {:keys [handled-request response]} (execute-request test-request)]
           (is (nil? handled-request))
           (is (= {:body ""

@@ -579,7 +579,6 @@
                                 "health-check-interval-secs" 10
                                 "health-check-max-consecutive-failures" 5
                                 "health-check-url" "/status"
-                                "https-redirect" false
                                 "idle-timeout-mins" 30
                                 "instance-expiry-mins" 7200
                                 "interstitial-secs" 0
@@ -803,6 +802,9 @@
                 :token-defaults {
                                  ;; The default period (minutes) for which an instance from a fallback service can be requested:
                                  "fallback-period-secs" 300
+
+                                 ;; By default, Waiter allows non-secure HTTP requests from clients to services.
+                                 "https-redirect" false
 
                                  ;; Stale services are detected by looking at the version of the
                                  ;; token used to create them, such services will have their idle timeout

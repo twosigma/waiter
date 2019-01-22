@@ -29,7 +29,7 @@
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (java.io ByteArrayInputStream)
-           (java.net URL URLEncoder)))
+           (java.net URLEncoder)))
 
 (deftest ^:parallel ^:integration-fast test-basic-functionality
   (testing-using-waiter-url
@@ -179,28 +179,23 @@
           (let [response (make-request 24000)]
             (assert-response-status response 200))))
 
-      (testing "https redirects"
+      (testing "https-redirect header is a no-op"
         (let [request-headers (-> request-headers
                                   (assoc "x-waiter-https-redirect" "true")
                                   (dissoc "x-cid"))
-              url (URL. (str "http://" waiter-url))
               endpoint "/request-info"]
 
           (testing "get request"
-            (let [{:keys [headers status]}
+            (let [{:keys [headers] :as response}
                   (make-kitchen-request waiter-url request-headers :method :get :path endpoint)]
-              (is (= 301 status))
-              (is (= (str "https://" (.getHost url) endpoint)
-                     (get headers "location")))
-              (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))
+              (assert-response-status response 200)
+              (is (not (str/starts-with? (str (get headers "server")) "waiter")) (str "headers:" headers))))
 
           (testing "post request"
-            (let [{:keys [headers status]}
+            (let [{:keys [headers] :as response}
                   (make-kitchen-request waiter-url request-headers :method :post :path endpoint)]
-              (is (= 307 status))
-              (is (= (str "https://" (.getHost url) endpoint)
-                     (get headers "location")))
-              (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))))
+              (assert-response-status response 200)
+              (is (not (str/starts-with? (str (get headers "server")) "waiter")) (str "headers:" headers))))))
 
       (testing "metric group should be waiter_kitchen_test"
         (is (= "waiter_kitchen_test" (service-id->metric-group waiter-url service-id))

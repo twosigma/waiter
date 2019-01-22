@@ -928,6 +928,38 @@
       (delete-token-and-assert waiter-url token)
       (delete-service waiter-url service-id))))
 
+(deftest ^:parallel ^:integration-fast test-token-https-redirects
+  (testing-using-waiter-url
+    (let [token (rand-name)
+          token-response (post-token waiter-url {:cmd (str (kitchen-cmd) " -p $PORT0")
+                                                 :cmd-type "shell"
+                                                 :https-redirect true
+                                                 :name token
+                                                 :version "does-not-matter"
+                                                 :token token})]
+      (assert-response-status token-response 200)
+
+      (testing "https redirects"
+        (let [request-headers {:x-waiter-token token}
+              url (URL. (str "http://" waiter-url))
+              endpoint "/request-info"]
+
+          (testing "get request"
+            (let [{:keys [headers] :as response}
+                  (make-kitchen-request waiter-url request-headers :method :get :path endpoint)]
+              (assert-response-status response 301)
+              (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))
+              (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))
+
+          (testing "post request"
+            (let [{:keys [headers] :as response}
+                  (make-kitchen-request waiter-url request-headers :method :post :path endpoint)]
+              (assert-response-status response 307)
+              (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))
+              (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))))
+
+      (delete-token-and-assert waiter-url token))))
+
 (defmacro run-token-param-support
   [waiter-url request-fn request-headers expected-env]
   `(let [response# (make-request-with-debug-info ~request-headers ~request-fn)

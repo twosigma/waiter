@@ -1490,22 +1490,18 @@
    :wrap-https-redirect-fn (pc/fnk []
                              (fn wrap-https-redirect-fn
                                [handler]
-                               (fn [{:keys [waiter-discovery] :as request}]
-                                 (let [{:keys [service-parameter-template waiter-headers]} waiter-discovery]
-                                   (cond
-                                     ;; lookup waiter headers before checking the service parameter template
-                                     (and (if (contains? waiter-headers "x-waiter-https-redirect")
-                                            (get waiter-headers "x-waiter-https-redirect")
-                                            (get service-parameter-template "https-redirect"))
-                                          ;; ignore websocket requests
-                                          (= :http (utils/request->scheme request)))
-                                     (do
-                                       (log/info "triggering ssl redirect")
-                                       (-> (ssl/ssl-redirect-response request {})
-                                           (rr/header "Server" (utils/get-current-server-name))))
+                               (fn [request]
+                                 (cond
+                                   (and (get-in request [:waiter-discovery :token-metadata "https-redirect"])
+                                        ;; ignore websocket requests
+                                        (= :http (utils/request->scheme request)))
+                                   (do
+                                     (log/info "triggering ssl redirect")
+                                     (-> (ssl/ssl-redirect-response request {})
+                                         (rr/header "Server" (utils/get-current-server-name))))
 
-                                     :else
-                                     (handler request))))))
+                                   :else
+                                   (handler request)))))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]
@@ -1534,10 +1530,11 @@
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))
    :wrap-service-discovery-fn (pc/fnk [[:curator kv-store]
+                                       [:settings [:token-config token-defaults]]
                                        [:state waiter-hostnames]]
                                 (fn wrap-service-discovery-fn
                                   [handler]
                                   (fn [{:keys [headers] :as request}]
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
-                                    (let [discovered-parameters (sd/discover-service-parameters kv-store waiter-hostnames headers)]
+                                    (let [discovered-parameters (sd/discover-service-parameters kv-store token-defaults waiter-hostnames headers)]
                                       (handler (assoc request :waiter-discovery discovered-parameters))))))})
