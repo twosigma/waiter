@@ -267,7 +267,6 @@
               :not-found "Not found"
               :prestashed-tickets-not-available "Prestashed tickets not available"
               :service-state-failing "Failing"
-              :service-state-idle "Idle"
               :service-state-running "Running"
               :service-state-starting "Starting"}
    :metric-group-mappings []
