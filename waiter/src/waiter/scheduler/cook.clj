@@ -480,7 +480,8 @@
      :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_]
-    {:service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
+    {:authorizer (when authorizer (authz/state authorizer))
+     :service-id->failed-instances-transient-store @service-id->failed-instances-transient-store
      :syncer (retrieve-syncer-state-fn)})
 
   (validate-service [_ service-id]

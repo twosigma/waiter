@@ -855,7 +855,8 @@
     (is (= {:failed-instances [:failed-instances]
             :syncer {:last-update-time :time}}
            (scheduler/service-id->state cook-scheduler service-id)))
-    (is (= {:service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
+    (is (= {:authorizer nil
+            :service-id->failed-instances-transient-store {"service-id" [:failed-instances]}
             :syncer {:last-update-time :time
                      :service-id->health-check-context {}}}
            (scheduler/state cook-scheduler)))))
