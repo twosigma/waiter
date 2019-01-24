@@ -855,7 +855,10 @@ class Kitchen(HTTPWebSocketsHandler):
 
     def __request_info(self):
         """Build request-info endpoint dict data JSON response."""
-        info = { 'request-method': self.__method, 'uri': self.__path }
+        info = { 'protocol-version': self.protocol_version,
+                 'request-version': self.request_version,
+                 'request-method': self.__method,
+                 'uri': self.__path }
         if len(self.headers) > 0:
             info['headers'] = { k.lower(): v for k, v in self.headers.items() }
         if self.__query is not None:
