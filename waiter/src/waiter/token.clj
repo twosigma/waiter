@@ -149,7 +149,7 @@
     (synchronize-fn
       token-lock
       (fn inner-delete-service-description-for-token []
-        (log/info "attempting to delete service description for token:" token " hard-delete:" hard-delete)
+        (log/info "attempting to delete service description for token:" token "hard-delete:" hard-delete)
         (let [existing-token-data (kv/fetch kv-store token)
               existing-token-description (sd/token-data->token-description existing-token-data)]
           ; Validate the token modification for concurrency races
@@ -311,7 +311,7 @@
     (if (seq service-parameter-template)
       ;;NB do not ever return the password to the user
       (let [epoch-time->date-time (fn [epoch-time] (DateTime. epoch-time))]
-        (log/info "successfully retrieved token " token)
+        (log/info "successfully retrieved token" token)
         (utils/clj->json-response
           (cond-> (merge service-parameter-template
                          (select-keys token-metadata sd/user-metadata-keys))
@@ -342,6 +342,13 @@
                                                ru/json-request
                                                :body
                                                sd/transform-allowed-params-token-entry)
+        token-param (get request-params "token")
+        _ (when (and (not (str/blank? token-param)) (not (str/blank? token)))
+            (throw (ex-info "The token should be provided only as a query parameter or in the json payload"
+                            {:status 400
+                             :token {:json-payload token
+                                     :query-parameter token-param}})))
+        token (or token token-param)
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
         new-user-metadata (select-keys new-token-metadata sd/user-metadata-keys)
         {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-parameter-template}
