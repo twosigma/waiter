@@ -94,12 +94,12 @@
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
    ; per-request related
    (s/optional-key "blacklist-on-503") s/Bool
-   (s/optional-key "https-redirect") s/Bool
    (s/optional-key "max-queue-length") schema/positive-int
    s/Str s/Any})
 
 (def user-metadata-schema
   {(s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/hours 1))) 'at-most-1-hour))
+   (s/optional-key "https-redirect") s/Bool
    (s/optional-key "owner") schema/non-empty-string
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
    s/Str s/Any})
