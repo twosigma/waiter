@@ -15,14 +15,14 @@
 ;;
 (ns waiter.reporters-test
   (:require [clj-time.core :as t]
-            [clojure.test :refer :all]
+            [clojure.test :refer [deftest is]] ;; not using :refer :all because clojure.test has "report" that conflicts with waiter.reporter/report
             [metrics.core :as mc]
             [metrics.counters :as counters]
             [waiter.metrics :as metrics]
             [waiter.reporter :refer :all])
   (:import (clojure.lang ExceptionInfo)
            (com.codahale.metrics MetricFilter MetricRegistry ConsoleReporter)
-           (com.codahale.metrics.graphite GraphiteReporter GraphiteSender)
+           (com.codahale.metrics.graphite GraphiteSender)
            (java.io PrintStream ByteArrayOutputStream)))
 
 (def ^:private all-metrics-match-filter (reify MetricFilter (matches [_ _ _] true)))
@@ -118,10 +118,10 @@ services.service-id.counters.fee.fie
                      (getFailures [_] 0)
                      (isConnected [_] true)
                      (send [_ name value _] (swap! actual-values #(conj % (str name value)))))
-          [graphite-reporter state] (make-graphite-reporter #".*" "prefix" graphite)]
-      (is (instance? GraphiteReporter graphite-reporter))
+          codahale-reporter (make-graphite-reporter 0 #".*" "prefix" graphite)]
+      (is (satisfies? CodahaleReporter codahale-reporter))
       (with-redefs [t/now (fn [] time)]
-        (.report graphite-reporter))
+        (report codahale-reporter))
       (is (= #{"prefix.services.service-id.counters.fee.fie.count0"
                "prefix.services.service-id.counters.foo.count0"
                "prefix.services.service-id.counters.foo.bar.count100"}
@@ -129,7 +129,7 @@ services.service-id.counters.fee.fie
       (is (= {:run-state :created
               :last-reporting-time time
               :failed-writes-to-server 0
-              :last-report-successful true} @state)))))
+              :last-report-successful true} (state codahale-reporter))))))
 
 (deftest graphite-reporter-filter
   (with-isolated-registry
@@ -144,16 +144,16 @@ services.service-id.counters.fee.fie
                      (getFailures [_] 0)
                      (isConnected [_] true)
                      (send [_ name value _] (swap! actual-values #(conj % (str name value)))))
-          [graphite-reporter state] (make-graphite-reporter #"^.*fee.*" "prefix" graphite)]
-      (is (instance? GraphiteReporter graphite-reporter))
+          codahale-reporter (make-graphite-reporter 0 #"^.*fee.*" "prefix" graphite)]
+      (is (satisfies? CodahaleReporter codahale-reporter))
       (with-redefs [t/now (fn [] time)]
-        (.report graphite-reporter))
+        (report codahale-reporter))
       (is (= #{"prefix.services.service-id.counters.fee.fie.count0"}
              @actual-values))
       (is (= {:run-state :created
               :last-reporting-time time
               :failed-writes-to-server 0
-              :last-report-successful true} @state)))))
+              :last-report-successful true} (state codahale-reporter))))))
 
 (deftest graphite-reporter-wildcard-filter-exception
   (with-isolated-registry
@@ -168,13 +168,13 @@ services.service-id.counters.fee.fie
                      (getFailures [_] 0)
                      (isConnected [_] true)
                      (send [_ _ _ _] (throw (ex-info "test" {}))))
-          [graphite-reporter state] (make-graphite-reporter #".*" "prefix" graphite)]
-      (is (instance? GraphiteReporter graphite-reporter))
+          codahale-reporter (make-graphite-reporter 0 #".*" "prefix" graphite)]
+      (is (satisfies? CodahaleReporter codahale-reporter))
       (with-redefs [t/now (fn [] time)]
         (is (thrown-with-msg? ExceptionInfo #"^test$"
-                            (.report graphite-reporter))))
+                              (report codahale-reporter))))
       (is (= #{} @actual-values))
       (is (= {:run-state :created
               :last-send-failed-time time
               :failed-writes-to-server 0
-              :last-report-successful false} @state)))))
+              :last-report-successful false} (state codahale-reporter))))))
