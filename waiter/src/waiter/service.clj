@@ -304,5 +304,6 @@
   [deployment-error {:keys [healthy requested scheduled] :or {healthy 0 requested 0 scheduled 0}}]
   (cond
     deployment-error :service-state-failing
+    (and (zero? requested) (zero? scheduled) (zero? healthy)) :service-state-inactive
     (zero? healthy) :service-state-starting
     :else :service-state-running))
