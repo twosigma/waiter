@@ -179,6 +179,24 @@
           (let [response (make-request 24000)]
             (assert-response-status response 200))))
 
+      (testing "https-redirect header is a no-op"
+        (let [request-headers (-> request-headers
+                                  (assoc "x-waiter-https-redirect" "true")
+                                  (dissoc "x-cid"))
+              endpoint "/request-info"]
+
+          (testing "get request"
+            (let [{:keys [headers] :as response}
+                  (make-kitchen-request waiter-url request-headers :method :get :path endpoint)]
+              (assert-response-status response 200)
+              (is (not (str/starts-with? (str (get headers "server")) "waiter")) (str "headers:" headers))))
+
+          (testing "post request"
+            (let [{:keys [headers] :as response}
+                  (make-kitchen-request waiter-url request-headers :method :post :path endpoint)]
+              (assert-response-status response 200)
+              (is (not (str/starts-with? (str (get headers "server")) "waiter")) (str "headers:" headers))))))
+
       (testing "metric group should be waiter_kitchen_test"
         (is (= "waiter_kitchen_test" (service-id->metric-group waiter-url service-id))
             (str "Invalid metric group for " service-id)))

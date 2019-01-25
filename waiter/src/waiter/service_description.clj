@@ -99,6 +99,7 @@
 
 (def user-metadata-schema
   {(s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/hours 1))) 'at-most-1-hour))
+   (s/optional-key "https-redirect") s/Bool
    (s/optional-key "owner") schema/non-empty-string
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
    s/Str s/Any})
@@ -137,7 +138,7 @@
 (def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
-(def ^:const user-metadata-keys #{"fallback-period-secs" "owner" "stale-timeout-mins"})
+(def ^:const user-metadata-keys #{"fallback-period-secs" "https-redirect" "owner" "stale-timeout-mins"})
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
@@ -1034,3 +1035,20 @@
                 (do
                   (meters/mark! (metrics/waiter-meter "core" "source-tokens" "store" "no-op"))
                   (log/info source-tokens "source-tokens already associated with" service-id))))))))))
+
+(defn discover-service-parameters
+  "Processing the request headers to identify the Waiter service parameters.
+   Returns a map of the waiter and passthrough headers, the identified token, and
+   the service parameter template from the token."
+  [kv-store token-defaults waiter-hostnames headers]
+  (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
+        {:keys [token]} (retrieve-token-from-service-description-or-hostname waiter-headers passthrough-headers waiter-hostnames)
+        service-parameter-template (and token (token->service-parameter-template kv-store token :error-on-missing false))
+        token-metadata (and token
+                            (->> (token->token-metadata kv-store token :error-on-missing false)
+                                 (merge token-defaults)))]
+    {:passthrough-headers passthrough-headers
+     :service-parameter-template service-parameter-template
+     :token token
+     :token-metadata token-metadata
+     :waiter-headers waiter-headers}))

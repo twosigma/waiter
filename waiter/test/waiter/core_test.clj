@@ -1065,12 +1065,16 @@
 
 (deftest test-wrap-auth-bypass
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-        configuration {:curator {:kv-store kv-store}
-                       :state {:waiter-hostnames #{"www.waiter-router.com"}}}
+        token-defaults {"fallback-period-secs" 300
+                        "https-redirect" false}
+        waiter-hostnames #{"www.waiter-router.com"}
+        configuration {}
         wrap-auth-bypass-fn ((:wrap-auth-bypass-fn request-handlers) configuration)
         handler-response (Object.)
-        execute-request (fn execute-request-fn [test-request]
-                          (let [request-handler-argument-atom (atom nil)
+        execute-request (fn execute-request-fn [{:keys [headers] :as in-request}]
+                          (let [test-request (->> (sd/discover-service-parameters kv-store token-defaults waiter-hostnames headers)
+                                                  (assoc in-request :waiter-discovery))
+                                request-handler-argument-atom (atom nil)
                                 test-request-handler (fn request-handler-fn [request]
                                                        (reset! request-handler-argument-atom request)
                                                        handler-response)
@@ -1078,39 +1082,72 @@
                             {:handled-request @request-handler-argument-atom
                              :response test-response}))]
 
-    (kv/store kv-store "www.token-1.com" {"cpu" 1, "mem" 2048})
-    (kv/store kv-store "www.token-2.com" {"authentication" "standard", "cpu" 1, "mem" 2048})
-    (kv/store kv-store "www.token-3.com" {"authentication" "disabled", "cpu" 1, "mem" 2048})
-    (kv/store kv-store "a-named-token-A" {"cpu" 1, "mem" 2048})
-    (kv/store kv-store "a-named-token-B" {"authentication" "disabled", "cpu" 1, "mem" 2048})
-    (kv/store kv-store "a-named-token-C" {"authentication" "standard", "cpu" 1, "mem" 2048})
+    (kv/store kv-store "www.token-1.com" {"cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "www.token-2.com" {"authentication" "standard"
+                                          "cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "www.token-3.com" {"authentication" "disabled"
+                                          "cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "a-named-token-A" {"cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "a-named-token-B" {"authentication" "disabled"
+                                          "cpu" 1
+                                          "mem" 2048})
+    (kv/store kv-store "a-named-token-C" {"authentication" "standard"
+                                          "cpu" 1
+                                          "mem" 2048})
 
     (testing "request-without-non-existing-hostname-token"
       (let [test-request {:headers {"host" "www.host.com"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.host.com"}
+                                                      :service-parameter-template {}
+                                                      :token "www.host.com"
+                                                      :token-metadata token-defaults
+                                                      :waiter-headers {}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-non-existing-hostname-token-with-on-the-fly-headers"
-      (let [test-request {:headers {"host" "www.host.com", "x-waiter-run-as-user" "test-user"}}
+      (let [test-request {:headers {"host" "www.host.com" "x-waiter-run-as-user" "test-user"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.host.com"}
+                                                      :service-parameter-template {}
+                                                      :token "www.host.com"
+                                                      :token-metadata token-defaults
+                                                      :waiter-headers {"x-waiter-run-as-user" "test-user"}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-non-auth-hostname-token"
       (let [test-request {:headers {"host" "www.token-1.com"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.token-1.com"}
+                                                      :service-parameter-template {"mem" 2048}
+                                                      :token "www.token-1.com"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-auth-disabled-hostname-token"
       (let [test-request {:headers {"host" "www.token-3.com"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= (assoc test-request :skip-authentication true) handled-request))
+        (is (= (assoc test-request :skip-authentication true
+                                   :waiter-discovery {:passthrough-headers {"host" "www.token-3.com"}
+                                                      :service-parameter-template {"authentication" "disabled"
+                                                                                   "mem" 2048}
+                                                      :token "www.token-3.com"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-auth-disabled-hostname-token-with-on-the-fly-headers"
-      (let [test-request {:headers {"host" "www.token-3.com", "x-waiter-run-as-user" "test-user"}}
+      (let [test-request {:headers {"host" "www.token-3.com"
+                                    "x-waiter-run-as-user" "test-user"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
@@ -1118,13 +1155,21 @@
                response))))
 
     (testing "request-without-existing-non-auth-named-token"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-A"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-token" "a-named-token-A"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
+                                                      :service-parameter-template {"mem" 2048}
+                                                      :token "a-named-token-A"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {"x-waiter-token" "a-named-token-A"}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-non-auth-named-token-with-authentication-header"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-A", "x-waiter-authentication" "disabled"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-token" "a-named-token-A"
+                                    "x-waiter-authentication" "disabled"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
@@ -1132,13 +1177,23 @@
                response))))
 
     (testing "request-without-existing-auth-disabled-named-token"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-B"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-token" "a-named-token-B"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= (assoc test-request :skip-authentication true) handled-request))
+        (is (= (assoc test-request :skip-authentication true
+                                   :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
+                                                      :service-parameter-template {"authentication" "disabled"
+                                                                                   "mem" 2048}
+                                                      :token "a-named-token-B"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {"x-waiter-token" "a-named-token-B"}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-auth-disabled-named-token-with-authentication-header"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-authentication" "disabled", "x-waiter-token" "a-named-token-B"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-authentication" "disabled"
+                                    "x-waiter-token" "a-named-token-B"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
@@ -1146,7 +1201,9 @@
                response))))
 
     (testing "request-without-existing-auth-disabled-named-token-with-on-the-fly-headers"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-run-as-user" "test-user", "x-waiter-token" "a-named-token-B"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-run-as-user" "test-user"
+                                    "x-waiter-token" "a-named-token-B"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication disabled token may not be combined with on-the-fly headers"}
@@ -1154,13 +1211,22 @@
                response))))
 
     (testing "request-without-existing-auth-default-named-token"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-token" "a-named-token-C"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-token" "a-named-token-C"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
+                                                      :service-parameter-template {"authentication" "standard"
+                                                                                   "mem" 2048}
+                                                      :token "a-named-token-C"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {"x-waiter-token" "a-named-token-C"}})
+               handled-request))
         (is (= handler-response response))))
 
     (testing "request-without-existing-auth-default-named-token-with-authentication-header"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-authentication" "disabled", "x-waiter-token" "a-named-token-C"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-authentication" "disabled"
+                                    "x-waiter-token" "a-named-token-C"}}
             {:keys [handled-request response]} (execute-request test-request)]
         (is (nil? handled-request))
         (is (= (utils/clj->json-response {:error "An authentication parameter is not supported for on-the-fly headers"}
@@ -1168,9 +1234,18 @@
                response))))
 
     (testing "request-without-existing-auth-default-named-token-with-on-the-fly-headers"
-      (let [test-request {:headers {"host" "www.service.com", "x-waiter-run-as-user" "test-user", "x-waiter-token" "a-named-token-C"}}
+      (let [test-request {:headers {"host" "www.service.com"
+                                    "x-waiter-run-as-user" "test-user"
+                                    "x-waiter-token" "a-named-token-C"}}
             {:keys [handled-request response]} (execute-request test-request)]
-        (is (= test-request handled-request))
+        (is (= (assoc test-request :waiter-discovery {:passthrough-headers {"host" "www.service.com"}
+                                                      :service-parameter-template {"authentication" "standard"
+                                                                                   "mem" 2048}
+                                                      :token "a-named-token-C"
+                                                      :token-metadata (assoc token-defaults "owner" nil "previous" {})
+                                                      :waiter-headers {"x-waiter-run-as-user" "test-user"
+                                                                       "x-waiter-token" "a-named-token-C"}})
+               handled-request))
         (is (= handler-response response))))))
 
 (deftest test-authentication-method-wrapper-fn
@@ -1213,3 +1288,140 @@
     (testing "async, error"
       (let [{:keys [status]} (async/<!! ((wrap-error-handling handler-async-error) {}))]
         (is (= 400 status))))))
+
+(deftest test-wrap-https-redirect
+  (let [configuration {}
+        wrap-https-redirect-fn ((:wrap-https-redirect-fn request-handlers) configuration)
+        handler-response (Object.)
+        execute-request (fn execute-request-fn [test-request]
+                          (let [request-handler-argument-atom (atom nil)
+                                test-request-handler (fn request-handler-fn [request]
+                                                       (reset! request-handler-argument-atom request)
+                                                       handler-response)
+                                test-response ((wrap-https-redirect-fn test-request-handler) test-request)]
+                            {:handled-request @request-handler-argument-atom
+                             :response test-response}))]
+
+    (testing "no redirect"
+      (testing "ws request with token https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :ws
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "http request with token https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "http request with waiter header https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "true"}
+                            :request-method :get
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {"x-waiter-https-redirect" true}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with token https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with token https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with waiter-header https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "false"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"cpus" 1}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {"x-waiter-https-redirect" false}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response))))
+
+      (testing "https request with waiter-header https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "true"}
+                            :scheme :https
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {"cpus" 1}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" false}
+                                               :waiter-headers {"x-waiter-https-redirect" true}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (= test-request handled-request))
+          (is (= handler-response response)))))
+
+    (testing "https redirect"
+      (testing "http request with token https-redirect set to true"
+        (let [test-request {:headers {"host" "token.localtest.me:1234"}
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
+                                               :waiter-headers {}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (nil? handled-request))
+          (is (= {:body ""
+                  :headers {"Location" "https://token.localtest.me"
+                            "Server" "waiter"}
+                  :status 307}
+                 response))))
+
+      (testing "http request with waiter header https-redirect set to false"
+        (let [test-request {:headers {"host" "token.localtest.me"
+                                      "x-waiter-https-redirect" "false"}
+                            :request-method :get
+                            :scheme :http
+                            :waiter-discovery {:passthrough-headers {}
+                                               :service-parameter-template {}
+                                               :token "token.localtest.me"
+                                               :token-metadata {"https-redirect" true}
+                                               :waiter-headers {"x-waiter-https-redirect" false}}}
+              {:keys [handled-request response]} (execute-request test-request)]
+          (is (nil? handled-request))
+          (is (= {:body ""
+                  :headers {"Location" "https://token.localtest.me"
+                            "Server" "waiter"}
+                  :status 301}
+                 response)))))))

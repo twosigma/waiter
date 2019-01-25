@@ -803,6 +803,9 @@
                                  ;; The default period (minutes) for which an instance from a fallback service can be requested:
                                  "fallback-period-secs" 300
 
+                                 ;; By default, Waiter allows non-secure HTTP requests from clients to services.
+                                 "https-redirect" false
+
                                  ;; Stale services are detected by looking at the version of the
                                  ;; token used to create them, such services will have their idle timeout
                                  ;; reduced to stale-timeout-mins + fallback-period-secs.
