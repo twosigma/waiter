@@ -149,7 +149,7 @@
                                                      (pc/map-keys str))})
                     (.getHistograms registry metric-filter))
        (pc/map-vals (fn [^Meter m] {"count" (.getCount m)
-                                    "value" {:1min-rate (meters/rate-one m)}})
+                                    "value" (meters/rate-one m)})
                     (.getMeters registry metric-filter))
        (pc/map-vals (fn [^Timer t]
                       {"count" (.getCount t)
