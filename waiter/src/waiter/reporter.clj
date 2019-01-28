@@ -100,11 +100,6 @@
                s/Any s/Any}
               (merge {:pickled? true} config)))
 
-(defn- make-reporting-name
-  "Concatenates elements to form a dotted name for reporting, eliding any null values or empty strings."
-  [prefix & args]
-  (MetricRegistry/name prefix (into-array String args)))
-
 (let [df (DecimalFormat. "#.####################")]
   (defn- format-value
     "Convert numbers to string to send to graphite server"
@@ -115,11 +110,11 @@
 
 (defn- report-to-graphite-helper
   "Recursively traverse metrics map and send to graphite"
-  [prefix map ^GraphiteSender graphite timestamp]
-  (if (map? map)
-    (doseq [[k v] map]
-      (report-to-graphite-helper (make-reporting-name prefix (str k)) v graphite timestamp))
-    (.send graphite prefix (format-value map) timestamp)))
+  [prefix map-or-value ^GraphiteSender graphite timestamp]
+  (if (map? map-or-value)
+    (doseq [[k v] map-or-value]
+      (report-to-graphite-helper (str prefix "." (str k)) v graphite timestamp))
+    (.send graphite prefix (format-value map-or-value) timestamp)))
 
 (defn- report-to-graphite
   "Report values from a codahale MetricRegistry"
