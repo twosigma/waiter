@@ -300,10 +300,10 @@
    - Starting: the service has no healthy instances and is starting one up,
    - Running: the service is running successfully with at least one healthy instance,
    - Failing: the service has instances failing to start,
-   - Idle: the service is waiting to be started."
+   - Inactive: the service has no scheduled and running tasks."
   [deployment-error {:keys [healthy requested scheduled] :or {healthy 0 requested 0 scheduled 0}}]
   (cond
     deployment-error :service-state-failing
-    (and (zero? requested) (zero? scheduled) (zero? healthy)) :service-state-inactive
+    (and (zero? requested) (zero? scheduled)) :service-state-inactive
     (zero? healthy) :service-state-starting
     :else :service-state-running))
