@@ -16,13 +16,13 @@
 (ns waiter.reporter
   (:require [clj-time.core :as t]
             [clojure.tools.logging :as log]
-            [metrics.core :as metrics]
+            [metrics.core :as mc]
             [schema.core :as s]
+            [waiter.metrics :as metrics]
             [waiter.schema :as schema]
             [waiter.util.date-utils :as du])
-  (:import (com.codahale.metrics ConsoleReporter Counter Gauge Histogram Metered MetricFilter MetricRegistry
-                                 ScheduledReporter Snapshot Timer Clock)
-           (com.codahale.metrics.graphite Graphite GraphiteReporter GraphiteSender PickledGraphite)
+  (:import (com.codahale.metrics ConsoleReporter MetricFilter MetricRegistry ScheduledReporter Clock)
+           (com.codahale.metrics.graphite Graphite GraphiteSender PickledGraphite)
            (java.io IOException PrintStream)
            java.net.InetSocketAddress
            (java.text DecimalFormat)
@@ -71,7 +71,7 @@
   ([filter-regex] (make-console-reporter filter-regex nil))
   ([filter-regex ^PrintStream output]
    (let [state-atom (atom {:run-state :created})
-         console-reporter (-> (cond-> (ConsoleReporter/forRegistry metrics/default-registry)
+         console-reporter (-> (cond-> (ConsoleReporter/forRegistry mc/default-registry)
                                       output (.outputTo output))
                               (.filter (filter-regex->metric-filter filter-regex))
                               (.convertRatesTo TimeUnit/SECONDS)
@@ -103,80 +103,33 @@
 (defn- make-reporting-name
   "Concatenates elements to form a dotted name for reporting, eliding any null values or empty strings."
   [prefix & args]
-  (MetricRegistry/name prefix (into-array args)))
+  (MetricRegistry/name prefix (into-array String args)))
 
 (let [df (DecimalFormat. "#.####################")]
   (defn- format-value
-    "Convert double to string to send to graphite server"
+    "Convert numbers to string to send to graphite server"
     [value]
-    (.format df value)))
+    (if (number? value)
+      (.format df value)
+      (str value))))
 
-(defn- report-meter
-  "Report values from a codahale meter"
-  [prefix name ^Metered meter timestamp ^GraphiteSender graphite]
-  (let [send #(.send graphite (make-reporting-name prefix name %1) (format-value (%2 meter)) timestamp)]
-    (send "count" #(.getCount %))
-    (send "m1_rate" #(.getOneMinuteRate %))
-    (send "m5_rate" #(.getFiveMinuteRate %))
-    (send "m15_rate" #(.getFifteenMinuteRate %))
-    (send "mean_rate" #(.getMeanRate %))))
-
-(defn- report-snapshot
-  "Report values from a codahale snapshot"
-  [prefix name ^Snapshot snapshot timestamp ^GraphiteSender graphite]
-  (let [send #(.send graphite (make-reporting-name prefix name %1) (format-value (%2 snapshot)) timestamp)]
-    (send "max" #(.getMax %))
-    (send "mean" #(.getMean %))
-    (send "min" #(.getMin %))
-    (send "stddev" #(.getStdDev %))
-    (send "p50" #(.getMedian %))
-    (send "p75" #(.get75thPercentile %))
-    (send "p95" #(.get95thPercentile %))
-    (send "p98" #(.get98thPercentile %))
-    (send "p99" #(.get99thPercentile %))
-    (send "p999" #(.get999thPercentile %))))
-
-(defn- report-timer
-  "Report values from a codahale timer"
-  [prefix name ^Timer timer timestamp ^GraphiteSender graphite]
-  (let [snapshot (.getSnapshot timer)]
-    (report-snapshot prefix name snapshot timestamp graphite)
-    (report-meter prefix name timer timestamp graphite)))
-
-(defn- report-histogram
-  "Report values from a codahale histogram"
-  [prefix name ^Histogram histogram timestamp ^GraphiteSender graphite]
-  (let [snapshot (.getSnapshot histogram)]
-    (.send graphite (make-reporting-name prefix name "count") (format-value (.getCount histogram)) timestamp)
-    (report-snapshot prefix name snapshot timestamp graphite)))
-
-(defn- report-counter
-  "Report values from a codahale counter"
-  [prefix name ^Counter counter timestamp ^GraphiteSender graphite]
-  (.send graphite (make-reporting-name prefix name "count") (format-value (.getCount counter)) timestamp))
-
-(defn- report-gauge
-  "Report values from a codahale gauge"
-  [prefix name ^Gauge gauge timestamp ^GraphiteSender graphite]
-  (let [value (.getValue gauge)]
-    (when value
-      (.send graphite (make-reporting-name prefix name) (str value) timestamp))))
+(defn- report-to-graphite-helper
+  "Recursively traverse metrics map and send to graphite"
+  [prefix map ^GraphiteSender graphite timestamp]
+  (if (map? map)
+    (doseq [[k v] map]
+      (report-to-graphite-helper (make-reporting-name prefix (str k)) v graphite timestamp))
+    (.send graphite prefix (format-value map) timestamp)))
 
 (defn- report-to-graphite
   "Report values from a codahale MetricRegistry"
   [^MetricRegistry registry prefix ^MetricFilter filter ^GraphiteSender graphite]
   (let [timestamp (.getTime (Clock/defaultClock))
-        report (fn [reporting-fn values-map]
-                 (doseq [[k v] values-map]
-                   (reporting-fn prefix k v timestamp graphite)))]
+        map (metrics/metric-registry->map registry filter)]
     (try
       (when-not (.isConnected graphite)
         (.connect graphite))
-      (report report-gauge (.getGauges registry filter))
-      (report report-counter (.getCounters registry filter))
-      (report report-histogram (.getHistograms registry filter))
-      (report report-meter (.getMeters registry filter))
-      (report report-timer (.getTimers registry filter))
+      (report-to-graphite-helper prefix map graphite timestamp)
       (.flush graphite)
       (catch IOException e
         (try
@@ -221,7 +174,7 @@
          period-ms-period (t/millis period-ms)]
      (reify CodahaleReporter
        (close! [_] (.close graphite-wrapper) (swap! state-atom assoc :run-state :closed))
-       (report [_] (report-to-graphite metrics/default-registry prefix filter graphite-wrapper))
+       (report [_] (report-to-graphite mc/default-registry prefix filter graphite-wrapper))
        (start [_] (du/start-timer-task period-ms-period #(report _)))
        (state [_] @state-atom)))))
 

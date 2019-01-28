@@ -134,30 +134,37 @@
        (finally
          (counters/dec! counter#)))))
 
-(defn get-metrics
-  "Return a nested map of metrics data."
-  ([] (get-metrics mc/default-registry MetricFilter/ALL))
-  ([^MetricRegistry registry ^MetricFilter metric-filter]
-   (utils/keys->nested-map
+(let [percentiles [0.0 0.25 0.5 0.75 0.95 0.99 0.999 1.0]]
+  (defn metric-registry->map
+    "Unpack codahale metrics into a map of values"
+    ([] (metric-registry->map mc/default-registry MetricFilter/ALL))
+    ([^MetricRegistry registry ^MetricFilter metric-filter]
      (merge
        (pc/map-vals (fn [c] (counters/value c))
                     (.getCounters registry metric-filter))
        (pc/map-vals (fn [^Gauge m] {"value" (.getValue m)})
                     (.getGauges registry metric-filter))
        (pc/map-vals (fn [^Histogram h] {"count" (.getCount h)
-                                        "value" (->> (histograms/percentiles h [0.0 0.25 0.5 0.75 0.95 0.99 0.999 1.0])
+                                        "value" (->> (histograms/percentiles h percentiles)
                                                      (pc/map-keys str))})
                     (.getHistograms registry metric-filter))
        (pc/map-vals (fn [^Meter m] {"count" (.getCount m)
-                                    "value" (meters/rate-one m)})
+                                    "value" {:1min-rate (meters/rate-one m)}})
                     (.getMeters registry metric-filter))
        (pc/map-vals (fn [^Timer t]
                       {"count" (.getCount t)
                        ; nanos -> seconds
-                       "value" (->> (timers/percentiles t [0.0 0.25 0.5 0.75 0.95 0.99 0.999 1.0])
+                       "value" (->> (timers/percentiles t percentiles)
                                     (pc/map-vals #(/ % 1e9))
                                     (pc/map-keys str))})
-                    (.getTimers registry metric-filter)))
+                    (.getTimers registry metric-filter))))))
+
+(defn get-metrics
+  "Return a nested map of metrics data."
+  ([] (get-metrics mc/default-registry MetricFilter/ALL))
+  ([^MetricRegistry registry ^MetricFilter metric-filter]
+   (utils/keys->nested-map
+     (metric-registry->map registry metric-filter)
      #"\.")))
 
 (defn get-core-codahale-metrics
