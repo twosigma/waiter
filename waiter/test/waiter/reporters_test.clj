@@ -122,9 +122,9 @@ services.service-id.counters.fee.fie
       (is (satisfies? CodahaleReporter codahale-reporter))
       (with-redefs [t/now (fn [] time)]
         (report codahale-reporter))
-      (is (= #{"prefix.services.service-id.counters.fee.fie.count0"
-               "prefix.services.service-id.counters.foo.count0"
-               "prefix.services.service-id.counters.foo.bar.count100"}
+      (is (= #{"prefix.services.service-id.counters.fee.fie0"
+               "prefix.services.service-id.counters.foo0"
+               "prefix.services.service-id.counters.foo.bar100"}
              @actual-values))
       (is (= {:run-state :created
               :last-reporting-time time
@@ -148,7 +148,7 @@ services.service-id.counters.fee.fie
       (is (satisfies? CodahaleReporter codahale-reporter))
       (with-redefs [t/now (fn [] time)]
         (report codahale-reporter))
-      (is (= #{"prefix.services.service-id.counters.fee.fie.count0"}
+      (is (= #{"prefix.services.service-id.counters.fee.fie0"}
              @actual-values))
       (is (= {:run-state :created
               :last-reporting-time time

@@ -125,16 +125,18 @@
   "Report values from a codahale MetricRegistry"
   [^MetricRegistry registry prefix ^MetricFilter filter ^GraphiteSender graphite]
   (let [timestamp (.getTime (Clock/defaultClock))
-        map (metrics/metric-registry->map registry filter)]
+        map (metrics/metric-registry->metric-filter->metric-map registry filter)]
     (try
       (when-not (.isConnected graphite)
+        (log/info "Connecting to graphite server")
         (.connect graphite))
+      (log/info "Sending metrics to graphite server")
       (report-to-graphite-helper prefix map graphite timestamp)
       (.flush graphite)
       (catch IOException e
         (try
           (.close graphite)
-          (catch IOException e
+          (catch Throwable e
             (log/warn "Could not close GraphiteSender:" (.getMessage e))))
         (throw e)))))
 
@@ -173,10 +175,15 @@
          filter (filter-regex->metric-filter filter-regex)
          period-ms-period (t/millis period-ms)]
      (reify CodahaleReporter
-       (close! [_] (.close graphite-wrapper) (swap! state-atom assoc :run-state :closed))
-       (report [_] (report-to-graphite mc/default-registry prefix filter graphite-wrapper))
-       (start [_] (du/start-timer-task period-ms-period #(report _)))
-       (state [_] @state-atom)))))
+       (close! [_]
+         (.close graphite-wrapper)
+         (swap! state-atom assoc :run-state :closed))
+       (report [_]
+         (report-to-graphite mc/default-registry prefix filter graphite-wrapper))
+       (start [_]
+         (du/start-timer-task period-ms-period #(report _)))
+       (state [_]
+         @state-atom)))))
 
 (defn graphite-reporter
   "Creates and starts a GraphiteReporter for metrics"

@@ -135,9 +135,9 @@
          (counters/dec! counter#)))))
 
 (let [percentiles [0.0 0.25 0.5 0.75 0.95 0.99 0.999 1.0]]
-  (defn metric-registry->map
+  (defn metric-registry->metric-filter->metric-map
     "Unpack codahale metrics into a map of values"
-    ([] (metric-registry->map mc/default-registry MetricFilter/ALL))
+    ([] (metric-registry->metric-filter->metric-map mc/default-registry MetricFilter/ALL))
     ([^MetricRegistry registry ^MetricFilter metric-filter]
      (merge
        (pc/map-vals (fn [c] (counters/value c))
@@ -164,7 +164,7 @@
   ([] (get-metrics mc/default-registry MetricFilter/ALL))
   ([^MetricRegistry registry ^MetricFilter metric-filter]
    (utils/keys->nested-map
-     (metric-registry->map registry metric-filter)
+     (metric-registry->metric-filter->metric-map registry metric-filter)
      #"\.")))
 
 (defn get-core-codahale-metrics
