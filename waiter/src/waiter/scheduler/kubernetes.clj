@@ -825,7 +825,7 @@
                       (when-let [version' (latest-watch-state-version scheduler options)]
                         (recur version' (inc iter)))))
                   (catch Exception e
-                    (log/error e "error in" resource-name "state watch thread")
+                    (log/warn "error in" resource-name "state watch thread:" e)
                     (throw e))))))
           (catch Throwable t
             (when exit-on-error?
