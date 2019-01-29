@@ -1,0 +1,22 @@
+{
+  "clusters": [
+    {
+      "name": "dev0",
+      "url": "http://127.0.0.1:9091/",
+      "disabled": false
+    },
+    {
+      "name": "dev1",
+      "url": "http://127.0.0.1:9191/",
+      "disabled": true
+    }
+  ],
+  "metrics": {
+    "disabled": true,
+    "host": "localhost",
+    "port": 8125,
+    "line-formats": {
+      "count": "{namespace}.{name}:{value}|c"
+    }
+  }
+}
