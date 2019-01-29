@@ -242,13 +242,13 @@
   "Make an HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
    The response payload (if any) is automatically parsed to JSON."
-  [client url {:keys [scheduler-name]} metric-name & {:keys [body content-type request-method] :as options}]
+  [url {:keys [http-client scheduler-name]} metric-name & {:keys [body content-type request-method] :as options}]
   (scheduler/log "making request to K8s API server:" url request-method body)
   (ss/try+
     (let [auth-str @k8s-api-auth-str
           result (timers/start-stop-time!
                    (metrics/waiter-timer "scheduler" scheduler-name metric-name)
-                   (pc/mapply http-utils/http-request client url
+                   (pc/mapply http-utils/http-request http-client url
                               :accept "application/json"
                               (cond-> options
                                       auth-str (assoc-in [:headers "Authorization"] auth-str)
@@ -257,7 +257,7 @@
       result)
     (catch [:status 400] _
       (log/error "malformed K8s API request: " url options))
-    (catch [:client client] response
+    (catch [:client http-client] response
       (log/error "request to K8s API server failed: " url options body response)
       (ss/throw+ response))))
 
@@ -300,16 +300,16 @@
 
 (defn- patch-object-json
   "Make a JSON-patch request on a given Kubernetes object."
-  [http-client k8s-object-uri ops scheduler]
-  (api-request http-client k8s-object-uri scheduler "patch-object"
+  [k8s-object-uri ops scheduler]
+  (api-request k8s-object-uri scheduler "patch-object"
                :body (utils/clj->json ops)
                :content-type "application/json-patch+json"
                :request-method :patch))
 
 (defn- patch-object-replicas
   "Update the replica count in the given Kubernetes object's spec."
-  [http-client k8s-object-uri replicas replicas' scheduler]
-  (patch-object-json http-client k8s-object-uri
+  [k8s-object-uri replicas replicas' scheduler]
+  (patch-object-json k8s-object-uri
                      [{:op :test :path "/spec/replicas" :value replicas}
                       {:op :replace :path "/spec/replicas" :value replicas'}]
                      scheduler))
@@ -344,7 +344,7 @@
 (defn- scale-service-up-to
   "Scale the number of instances for a given service to a specific number.
    Only used for upward scaling. No-op if it would result in downward scaling."
-  [{:keys [http-client max-patch-retries] :as scheduler} {service-id :id :as service} instances']
+  [{:keys [max-patch-retries] :as scheduler} {service-id :id :as service} instances']
   (let [replicaset-url (build-replicaset-url scheduler service)]
     (loop [attempt 1
            instances (:instances service)]
@@ -352,27 +352,27 @@
         (log/warn "skipping non-upward scale-up request on" service-id
                   "from" instances "to" instances')
         (k8s-patch-with-retries
-          (patch-object-replicas http-client replicaset-url instances instances' scheduler)
+          (patch-object-replicas replicaset-url instances instances' scheduler)
           (<= attempt max-patch-retries)
           (recur (inc attempt) (get-replica-count scheduler service-id)))))))
 
 (defn- scale-service-by-delta
   "Scale the number of instances for a given service by a given delta.
    Can scale either upward (positive delta) or downward (negative delta)."
-  [{:keys [http-client max-patch-retries] :as scheduler} {service-id :id :as service} instances-delta]
+  [{:keys [max-patch-retries] :as scheduler} {service-id :id :as service} instances-delta]
   (let [replicaset-url (build-replicaset-url scheduler service)]
     (loop [attempt 1
            instances (:instances service)]
       (let [instances' (+ instances instances-delta)]
         (k8s-patch-with-retries
-          (patch-object-replicas http-client replicaset-url instances instances' scheduler)
+          (patch-object-replicas replicaset-url instances instances' scheduler)
           (<= attempt max-patch-retries)
           (recur (inc attempt) (get-replica-count scheduler service-id)))))))
 
 (defn- kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Returns nil on success, but throws on failure."
-  [{:keys [api-server-url http-client] :as scheduler} {:keys [id k8s/namespace k8s/pod-name service-id] :as instance} service]
+  [{:keys [api-server-url] :as scheduler} {:keys [id k8s/namespace k8s/pod-name service-id] :as instance} service]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
   ;;    Since the target pod is currently in the "Terminating" state,
@@ -400,7 +400,7 @@
                              {:instance-id id :killed? killed?
                               :message message :service-id service-id :status status})]
     ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-    (api-request http-client pod-url scheduler "delete" :request-method :delete
+    (api-request pod-url scheduler "delete" :request-method :delete
                  :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
     ; scale down the replicaset to reflect removal of this instance
     (try
@@ -411,7 +411,7 @@
     (try
       ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
       ; (note that the pod's default grace period is different from the 300s period set above)
-      (api-request http-client pod-url scheduler "delete" :request-method :delete)
+      (api-request pod-url scheduler "delete" :request-method :delete)
       (catch Throwable t
         (log/error t "Error force-killing pod")))
     (comment "Success! Even if the scale-down or force-kill operation failed,
@@ -420,7 +420,7 @@
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [service-description service-id]}
-   {:keys [api-server-url http-client replicaset-api-version replicaset-spec-builder-fn] :as scheduler}]
+   {:keys [api-server-url replicaset-api-version replicaset-spec-builder-fn] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -430,7 +430,7 @@
   (let [spec-json (replicaset-spec-builder-fn scheduler service-id service-description)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/"
                          (service-description->namespace service-description) "/replicasets")
-        response-json (api-request http-client request-url scheduler "create"
+        response-json (api-request request-url scheduler "create"
                                    :body (utils/clj->json spec-json)
                                    :request-method :post)]
     (some-> response-json replicaset->Service)))
@@ -438,12 +438,12 @@
 (defn- delete-service
   "Delete the Kubernetes ReplicaSet corresponding to a Waiter Service.
    Owned Pods will be removed asynchronously by the Kubernetes garbage collector."
-  [{:keys [api-server-url http-client] :as scheduler} {:keys [id] :as service}]
+  [scheduler {:keys [id] :as service}]
   (let [replicaset-url (build-replicaset-url scheduler service)
         kill-json (utils/clj->json
                     {:kind "DeleteOptions" :apiVersion "v1"
                      :propagationPolicy "Background"})]
-    (api-request http-client replicaset-url scheduler "delete" :request-method :delete :body kill-json)
+    (api-request replicaset-url scheduler "delete" :request-method :delete :body kill-json)
     {:message (str "Kubernetes deleted ReplicaSet for " id)
      :result :deleted}))
 
@@ -844,8 +844,8 @@
     (.start)))
 
 (defn- global-state-query
-  [{:keys [http-client] :as scheduler} {:keys [api-request-fn]} objects-url]
-  (let [{:keys [items] :as response} (api-request-fn http-client objects-url scheduler "get")
+  [scheduler {:keys [api-request-fn]} objects-url]
+  (let [{:keys [items] :as response} (api-request-fn objects-url scheduler "get")
         resource-version (k8s-object->resource-version response)]
     {:items items
      :version resource-version}))
