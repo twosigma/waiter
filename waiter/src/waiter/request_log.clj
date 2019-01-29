@@ -29,7 +29,7 @@
 
 (defn request->context
   "Convert a request into a context suitable for logging."
-  [{:keys [headers query-string remote-addr request-id request-method request-time uri] :as request}]
+  [{:keys [headers protocol query-string remote-addr request-id request-method request-time uri] :as request}]
   (let [{:strs [host origin user-agent x-cid x-forwarded-for]} headers]
     (cond-> {:cid x-cid
              :host host
@@ -39,6 +39,7 @@
              :scheme (-> request utils/request->scheme name)}
       origin (assoc :origin origin)
       request-method (assoc :method (-> request-method name str/upper-case))
+      protocol (assoc :client-protocol protocol)
       query-string (assoc :query-string query-string)
       request-time (assoc :request-time (du/date-to-str request-time))
       user-agent (assoc :user-agent user-agent))))
@@ -46,7 +47,7 @@
 (defn response->context
   "Convert a response into a context suitable for logging."
   [{:keys [authorization/principal backend-response-latency-ns descriptor latest-service-id get-instance-latency-ns
-           handle-request-latency-ns headers instance status] :as response}]
+           handle-request-latency-ns headers instance protocol status] :as response}]
   (let [{:keys [service-id service-description]} descriptor
         server (get headers "server")]
     (cond-> {:status (or status 200)}
@@ -62,6 +63,7 @@
                       :get-instance-latency-ns get-instance-latency-ns)
       latest-service-id (assoc :latest-service-id latest-service-id)
       principal (assoc :principal principal)
+      protocol (assoc :backend-protocol protocol)
       server (assoc :server server)
       handle-request-latency-ns (assoc :handle-request-latency-ns handle-request-latency-ns))))
 
