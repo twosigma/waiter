@@ -236,9 +236,10 @@
 
 (deftest test-resolve-service-status
   (is (= :service-state-failing (resolve-service-status :error {})))
-  (is (= :service-state-starting (resolve-service-status nil {})))
-  (is (= :service-state-starting (resolve-service-status nil {:healthy 0 :requested 0 :scheduled 0})))
-  (is (= :service-state-running (resolve-service-status nil {:healthy 1 :requested 0 :scheduled 0})))
+  (is (= :service-state-inactive (resolve-service-status nil {})))
+  (is (= :service-state-inactive (resolve-service-status nil {:healthy 0 :requested 0 :scheduled 0})))
+  ;; invalid scenario handled by giving priority to requested and scheduled counts
+  (is (= :service-state-inactive (resolve-service-status nil {:healthy 1 :requested 0 :scheduled 0})))
   (is (= :service-state-starting (resolve-service-status nil {:healthy 0 :requested 1 :scheduled 0})))
   (is (= :service-state-running (resolve-service-status nil {:healthy 1 :requested 1 :scheduled 0})))
   (is (= :service-state-starting (resolve-service-status nil {:healthy 0 :requested 0 :scheduled 1})))
