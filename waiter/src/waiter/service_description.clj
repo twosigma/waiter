@@ -98,7 +98,7 @@
    s/Str s/Any})
 
 (def user-metadata-schema
-  {(s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/hours 1))) 'at-most-1-hour))
+  {(s/optional-key "fallback-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/days 1))) 'at-most-1-day))
    (s/optional-key "https-redirect") s/Bool
    (s/optional-key "owner") schema/non-empty-string
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
