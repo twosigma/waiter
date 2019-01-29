@@ -247,7 +247,7 @@
   (ss/try+
     (let [auth-str @k8s-api-auth-str
           result (timers/start-stop-time!
-                   (metrics/waiter-timer "scheduler" scheduler-name (str request-method))
+                   (metrics/waiter-timer "scheduler" scheduler-name (name request-method))
                    (pc/mapply http-utils/http-request http-client url
                               :accept "application/json"
                               (cond-> options
