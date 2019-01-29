@@ -66,6 +66,7 @@
       :service-id->password-fn #(str "password-" %)
       :service-id->service-description-fn (pc/map-from-keys (constantly {"run-as-user" "myself"})
                                                             service-ids)
+      :scheduler-name "dummy-scheduler"
       :watch-state (atom nil)}
      (merge args)
      map->KubernetesScheduler)))
