@@ -33,7 +33,6 @@
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
-            [waiter.reporter :as reporter]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.service-description :as sd]
