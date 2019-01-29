@@ -1470,6 +1470,25 @@
           (is (str/includes? (str details) "fallback-period-secs") body)
           (is (str/includes? message "User metadata validation failed") body)))
 
+      (testing "post:new-user-metadata:fallback-period-secs-limit-exceeded"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:fallback-period-secs (-> 1 t/days t/in-seconds inc)
+                                     :token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :headers {"accept" "application/json"}
+                 :request-method :post})
+              {{:strs [details message]} "waiter-error"} (json/read-str body)]
+          (println body)
+          (is (= 400 status))
+          (is (not (str/includes? body "clojure")))
+          (is (str/includes? (str details) "fallback-period-secs") body)
+          (is (str/includes? message "User metadata validation failed") body)))
+
       (testing "post:new-service-description:token-limit-reached"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               test-user "test-user"
