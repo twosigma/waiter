@@ -495,7 +495,7 @@
                  actual))))
       (testing "unsuccessful-delete: no such instance"
         (let [error-msg "Instance not found"
-              actual (with-redefs [api-request (fn mocked-api-request [_ _ _ & {:keys [request-method]}]
+              actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
                                                    (ss/throw+ {:status 404})))]
                        (scheduler/kill-instance dummy-scheduler instance))]
@@ -505,7 +505,7 @@
                  actual))))
       (testing "successful-delete: terminated, but had patch conflict"
         (log/info "Expecting 409 patch-conflict error when deleting service instance...")
-        (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ _ & {:keys [request-method]}]
+        (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :patch)
                                                    (ss/throw+ {:status 409})))]
                        (scheduler/kill-instance dummy-scheduler instance))]
@@ -594,7 +594,7 @@
                                         (fn [scheduler service-id context]
                                           (-> (base-spec-builder-fn scheduler service-id context)
                                               (assoc-in [:metadata :annotations] {:waiter/x :waiter/y}))))))]
-      (let [spec-json (with-redefs [api-request (fn [_ _ _ & {:keys [body]}] body)
+      (let [spec-json (with-redefs [api-request (fn [_ _ & {:keys [body]}] body)
                                     replicaset->Service identity]
                         (create-service descriptor dummy-scheduler))]
         (is (str/includes? spec-json "\"annotations\":{\"waiter/x\":\"waiter/y\"}"))))))
@@ -611,7 +611,7 @@
                   :result :deleted}
                  actual))))
       (testing "unsuccessful-delete: service not found"
-        (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ _ & {:keys [request-method]}]
+        (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
                                                    (ss/throw+ {:status 404})))]
                        (scheduler/delete-service dummy-scheduler service-id))]

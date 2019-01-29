@@ -242,12 +242,12 @@
   "Make an HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
    The response payload (if any) is automatically parsed to JSON."
-  [url {:keys [http-client scheduler-name]} metric-name & {:keys [body content-type request-method] :as options}]
+  [url {:keys [http-client scheduler-name]} & {:keys [body content-type request-method] :or {request-method :get} :as options}]
   (scheduler/log "making request to K8s API server:" url request-method body)
   (ss/try+
     (let [auth-str @k8s-api-auth-str
           result (timers/start-stop-time!
-                   (metrics/waiter-timer "scheduler" scheduler-name metric-name)
+                   (metrics/waiter-timer "scheduler" scheduler-name (str request-method))
                    (pc/mapply http-utils/http-request http-client url
                               :accept "application/json"
                               (cond-> options
@@ -301,7 +301,7 @@
 (defn- patch-object-json
   "Make a JSON-patch request on a given Kubernetes object."
   [k8s-object-uri ops scheduler]
-  (api-request k8s-object-uri scheduler "patch-object"
+  (api-request k8s-object-uri scheduler
                :body (utils/clj->json ops)
                :content-type "application/json-patch+json"
                :request-method :patch))
@@ -400,7 +400,7 @@
                              {:instance-id id :killed? killed?
                               :message message :service-id service-id :status status})]
     ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-    (api-request pod-url scheduler "delete" :request-method :delete
+    (api-request pod-url scheduler :request-method :delete
                  :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
     ; scale down the replicaset to reflect removal of this instance
     (try
@@ -411,7 +411,7 @@
     (try
       ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
       ; (note that the pod's default grace period is different from the 300s period set above)
-      (api-request pod-url scheduler "delete" :request-method :delete)
+      (api-request pod-url scheduler :request-method :delete)
       (catch Throwable t
         (log/error t "Error force-killing pod")))
     (comment "Success! Even if the scale-down or force-kill operation failed,
@@ -430,7 +430,7 @@
   (let [spec-json (replicaset-spec-builder-fn scheduler service-id service-description)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/"
                          (service-description->namespace service-description) "/replicasets")
-        response-json (api-request request-url scheduler "create"
+        response-json (api-request request-url scheduler
                                    :body (utils/clj->json spec-json)
                                    :request-method :post)]
     (some-> response-json replicaset->Service)))
@@ -443,7 +443,7 @@
         kill-json (utils/clj->json
                     {:kind "DeleteOptions" :apiVersion "v1"
                      :propagationPolicy "Background"})]
-    (api-request replicaset-url scheduler "delete" :request-method :delete :body kill-json)
+    (api-request replicaset-url scheduler :request-method :delete :body kill-json)
     {:message (str "Kubernetes deleted ReplicaSet for " id)
      :result :deleted}))
 
@@ -845,7 +845,7 @@
 
 (defn- global-state-query
   [scheduler {:keys [api-request-fn]} objects-url]
-  (let [{:keys [items] :as response} (api-request-fn objects-url scheduler "get")
+  (let [{:keys [items] :as response} (api-request-fn objects-url scheduler)
         resource-version (k8s-object->resource-version response)]
     {:items items
      :version resource-version}))
