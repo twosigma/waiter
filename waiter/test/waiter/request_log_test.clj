@@ -69,7 +69,7 @@
             :latest-service-id "latest-service-id"
             :metric-group "service-metric-group"
             :principal "principal@DOMAIN.COM"
-            :response-server "foo-bar"
+            :server "foo-bar"
             :service-id "service-id"
             :service-name "service-name"
             :service-version "service-version"
