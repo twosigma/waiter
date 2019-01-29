@@ -48,8 +48,7 @@
   [{:keys [authorization/principal backend-response-latency-ns descriptor latest-service-id get-instance-latency-ns
            handle-request-latency-ns headers instance status] :as response}]
   (let [{:keys [service-id service-description]} descriptor
-        response-server (or (get headers "server")
-                            (get headers "Server"))]
+        response-server (get headers "server")]
     (cond-> {:status (or status 200)}
       backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)
       descriptor (assoc :metric-group (get service-description "metric-group")

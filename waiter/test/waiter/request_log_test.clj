@@ -52,7 +52,7 @@
                                                      "version" "service-version"}}
                   :get-instance-latency-ns 500
                   :handle-request-latency-ns 2000
-                  :headers {"Server" "foo-bar"}
+                  :headers {"server" "foo-bar"}
                   :instance {:host "instance-host"
                              :id "instance-id"
                              :port 123
