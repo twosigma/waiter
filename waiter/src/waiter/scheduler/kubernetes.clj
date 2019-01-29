@@ -870,14 +870,15 @@
                           service-id (k8s-object->service-id pod)
                           version (k8s-object->resource-version pod)]
                       (scheduler/log "pod state update:" update-type version pod)
-                      (swap! watch-state
-                             #(as-> % state
-                                (case update-type
-                                  "ADDED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
-                                  "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
-                                  "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
-                                (assoc-in state [:pods-metadata :timestamp :watch] now)
-                                (assoc-in state [:pods-metadata :version :watch] version)))))}
+                      (when (not= "ERROR" update-type)
+                        (swap! watch-state
+                               #(as-> % state
+                                  (case update-type
+                                    "ADDED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                    "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
+                                    "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
+                                  (assoc-in state [:pods-metadata :timestamp :watch] now)
+                                  (assoc-in state [:pods-metadata :version :watch] version))))))}
       (merge options))))
 
 (defn global-rs-state-query
@@ -910,14 +911,15 @@
                           version (k8s-object->resource-version rs)]
                       (when service
                         (scheduler/log "rs state update:" update-type version service)
-                        (swap! watch-state
-                               #(as-> % state
-                                  (case update-type
-                                    "ADDED" (assoc-in state [:service-id->service service-id] service)
-                                    "MODIFIED" (assoc-in state [:service-id->service service-id] service)
-                                    "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
-                                  (assoc-in state [:rs-metadata :timestamp :watch] now)
-                                  (assoc-in state [:rs-metadata :version :watch] version))))))}
+                        (when (not= "ERROR" update-type)
+                          (swap! watch-state
+                                 #(as-> % state
+                                    (case update-type
+                                      "ADDED" (assoc-in state [:service-id->service service-id] service)
+                                      "MODIFIED" (assoc-in state [:service-id->service service-id] service)
+                                      "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
+                                    (assoc-in state [:rs-metadata :timestamp :watch] now)
+                                    (assoc-in state [:rs-metadata :version :watch] version)))))))}
       (merge options))))
 
 (defn kubernetes-scheduler
