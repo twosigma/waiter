@@ -1404,7 +1404,7 @@
           (is (nil? handled-request))
           (is (= {:body ""
                   :headers {"Location" "https://token.localtest.me"
-                            "Server" "waiter"}
+                            "server" "waiter"}
                   :status 307}
                  response))))
 
@@ -1422,6 +1422,6 @@
           (is (nil? handled-request))
           (is (= {:body ""
                   :headers {"Location" "https://token.localtest.me"
-                            "Server" "waiter"}
+                            "server" "waiter"}
                   :status 301}
                  response)))))))

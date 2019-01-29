@@ -41,7 +41,7 @@
         handler (require-gss request-handler thread-pool max-queue-length password)
         standard-401-response {:body "Unauthorized"
                                :headers {"Content-Type" "text/plain"
-                                         "Server" "waiter"
+                                         "server" "waiter"
                                          "WWW-Authenticate" "Negotiate"}
                                :status 401}]
 
@@ -60,7 +60,7 @@
         (let [handler (require-gss request-handler thread-pool max-queue-length password)]
           (is (= {:body "Too many Kerberos authentication requests"
                   :headers {"Content-Type" "text/plain"
-                            "Server" "waiter"}
+                            "server" "waiter"}
                   :status 503}
                  (handler standard-request))))))
 

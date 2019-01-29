@@ -1498,7 +1498,7 @@
                                    (do
                                      (log/info "triggering ssl redirect")
                                      (-> (ssl/ssl-redirect-response request {})
-                                         (rr/header "Server" (utils/get-current-server-name))))
+                                         (rr/header "server" (utils/get-current-server-name))))
 
                                    :else
                                    (handler request)))))

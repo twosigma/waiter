@@ -64,7 +64,7 @@
   (-> (rr/response "Unauthorized")
       (rr/status 401)
       (rr/header "Content-Type" "text/plain")
-      (rr/header "Server" (utils/get-current-server-name))
+      (rr/header "server" (utils/get-current-server-name))
       (rr/header "WWW-Authenticate" "Negotiate")
       (cookies/cookies-response)))
 
@@ -77,7 +77,7 @@
   (-> (rr/response "Too many Kerberos authentication requests")
       (rr/status 503)
       (rr/header "Content-Type" "text/plain")
-      (rr/header "Server" (utils/get-current-server-name))
+      (rr/header "server" (utils/get-current-server-name))
       (cookies/cookies-response)))
 
 (defn gss-context-init
