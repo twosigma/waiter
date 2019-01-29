@@ -91,14 +91,18 @@
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
   [replicaset-json]
-  (try
-    (pc/letk
-      [[spec
-        [:metadata name namespace [:annotations waiter/service-id]]
-        [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
-       replicaset-json
-       requested (get spec :replicas 0)
-       staged (- replicas (+ availableReplicas unavailableReplicas))]
+  (if (contains? replicaset-json :error)
+    (do
+      (log/info "encountered error response in ReplicaSet query:" replicaset-json)
+      nil)
+    (try
+      (pc/letk
+        [[spec
+          [:metadata name namespace [:annotations waiter/service-id]]
+          [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]]
+         replicaset-json
+         requested (get spec :replicas 0)
+         staged (- replicas (+ availableReplicas unavailableReplicas))]
         (scheduler/make-Service
           {:id service-id
            :instances requested
@@ -109,8 +113,8 @@
                         :running (- replicas staged)
                         :staged staged
                         :unhealthy (- replicas readyReplicas staged)}}))
-    (catch Throwable t
-      (log/error t "error converting ReplicaSet to Waiter Service"))))
+      (catch Throwable t
+        (log/error t "error converting ReplicaSet to Waiter Service")))))
 
 (defn k8s-object->id
   "Get the id (name) from a ReplicaSet or Pod's metadata"
@@ -432,8 +436,13 @@
                          (service-description->namespace service-description) "/replicasets")
         response-json (api-request request-url scheduler
                                    :body (utils/clj->json spec-json)
-                                   :request-method :post)]
-    (some-> response-json replicaset->Service)))
+                                   :request-method :post)
+        service (some-> response-json replicaset->Service)]
+    (when-not service
+      (throw (ex-info "failed to create service"
+                      {:service-description service-description
+                       :service-id service-id})))
+    service))
 
 (defn- delete-service
   "Delete the Kubernetes ReplicaSet corresponding to a Waiter Service.
