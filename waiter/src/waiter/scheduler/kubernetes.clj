@@ -687,6 +687,7 @@
                         :value (str log-bucket-url "/" run-as-user "/" service-id)}])
                     (for [[k v] base-env]
                       {:name k :value v})
+                    [{:name "PORT" :value (str port0)}]
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
