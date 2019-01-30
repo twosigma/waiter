@@ -119,9 +119,9 @@
 (defn- report-to-graphite
   "Report values from a codahale MetricRegistry"
   [^MetricRegistry registry prefix ^MetricFilter filter ^GraphiteSender graphite]
-  ;; Graphite expects timestamp in seconds
-  (let [timestamp (/ (.getTime (Clock/defaultClock)) 1000)
-        map (metrics/metric-registry->metric-filter->metric-map registry filter)]
+  (let [timestamp (/ (.getTime (Clock/defaultClock)) 1000) ;; Graphite expects timestamp in seconds
+        map (metrics/metric-registry->metric-filter->metric-map
+              registry filter :map-keys-fn #(clojure.string/replace (str %) "." "_"))]
     (try
       (when-not (.isConnected graphite)
         (log/info "Connecting to graphite server")
