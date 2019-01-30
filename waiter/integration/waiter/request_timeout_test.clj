@@ -22,12 +22,12 @@
             [waiter.util.client-tools :refer :all])
   (:import java.util.concurrent.CountDownLatch))
 
-(defmacro assert-failed-request [service-name response-body start-time-ms timeout-period-sec faulty-app?]
+(defmacro assert-failed-request [service-name response-body start-time-ms timeout-period-sec unhealthy-app?]
   `(let [end-time-ms# (System/currentTimeMillis)
          elapsed-time-secs# (t/in-seconds (t/millis (- end-time-ms# ~start-time-ms)))]
      (is (>= elapsed-time-secs# ~timeout-period-sec))
      (is (str/includes? ~response-body (str "After " ~timeout-period-sec " seconds, no instance available to handle request.")))
-     (when ~faulty-app?
+     (when ~unhealthy-app?
        (is (str/includes? ~response-body "Check that your service is able to start properly!")))
      (is (and (str/includes? ~response-body "outstanding-requests")
               (not (str/includes? ~response-body "outstanding-requests 0"))))
@@ -49,10 +49,10 @@
     (assoc response :service-name service-name)))
 
 (defn- make-request-and-assert-timeout
-  [waiter-url request-headers start-time-ms timeout-period-sec faulty-app? & {:keys [cookies] :or {cookies {}}}]
+  [waiter-url request-headers start-time-ms timeout-period-sec & {:keys [cookies] :or {cookies {}}}]
   (let [{:keys [body service-name] :as response} (make-request-verbose waiter-url request-headers cookies)]
     (assert-response-status response 503)
-    (assert-failed-request service-name body start-time-ms timeout-period-sec faulty-app?)))
+    (assert-failed-request service-name body start-time-ms timeout-period-sec true)))
 
 (defn- make-successful-request
   [waiter-url request-headers & {:keys [cookies endpoint] :or {cookies {}, endpoint "/req"}}]
@@ -113,7 +113,7 @@
                                    {:x-waiter-name (rand-name)
                                     :x-waiter-cmd (kitchen-cmd (str "-p $PORT0 --start-up-sleep-ms " start-up-sleep-ms))
                                     :x-waiter-queue-timeout timeout-period-ms}))]
-      (make-request-and-assert-timeout waiter-url request-headers start-time-ms timeout-period-sec true)
+      (make-request-and-assert-timeout waiter-url request-headers start-time-ms timeout-period-sec)
       (delete-service waiter-url request-headers))))
 
 (deftest ^:parallel ^:integration-slow test-request-queue-timeout-faulty-app
@@ -130,7 +130,7 @@
                              :x-waiter-cmd "sleep 5"
                              :x-waiter-health-check-url "/status"
                              :x-waiter-queue-timeout (t/in-millis (t/seconds timeout-period-sec))})]
-      (make-request-and-assert-timeout waiter-url request-headers start-time-ms timeout-period-sec false)
+      (make-request-and-assert-timeout waiter-url request-headers start-time-ms timeout-period-sec)
       (delete-service waiter-url request-headers))))
 
 (deftest ^:parallel ^:integration-slow test-request-queue-timeout-max-instances-limit
