@@ -733,8 +733,7 @@
                                                                :failureThreshold 1
                                                                :periodSeconds health-check-interval-secs
                                                                :timeoutSeconds 1}
-                                              :resources {:limits {:cpu cpus
-                                                                   :memory memory}
+                                              :resources {:limits {:memory memory}
                                                           :requests {:cpu cpus
                                                                      :memory memory}}
                                               :volumeMounts [{:mountPath work-path
@@ -756,7 +755,7 @@
            :imagePullPolicy "IfNotPresent"
            :name "waiter-fileserver"
            :ports [{:containerPort port}]
-           :resources {:limits {:cpu cpu :memory memory}
+           :resources {:limits {:memory memory}
                        :requests {:cpu cpu :memory memory}}
            :volumeMounts [{:mountPath "/srv/www"
                            :name "user-home"}]
