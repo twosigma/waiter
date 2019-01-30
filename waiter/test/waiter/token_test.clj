@@ -1483,7 +1483,6 @@
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
-          (println body)
           (is (= 400 status))
           (is (not (str/includes? body "clojure")))
           (is (str/includes? (str details) "fallback-period-secs") body)
