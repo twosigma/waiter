@@ -105,27 +105,35 @@ services.service-id.counters.fee.fie
                   (clojure.string/join "\n"))))
       (is (= {:run-state :created} @state)))))
 
+;; maximum expected test duration. used for fuzzy timestamp comparison
+(def max-test-duration-ms 5000)
+
 (deftest graphite-reporter-wildcard-filter
   (with-isolated-registry
     (metrics/service-counter "service-id" "foo")
     (metrics/service-counter "service-id" "foo" "bar")
     (metrics/service-counter "service-id" "fee" "fie")
     (counters/inc! (metrics/service-counter "service-id" "foo" "bar") 100)
-    (let [actual-values (atom #{})
+    (let [actual-values (atom {})
           time (t/now)
           graphite (reify GraphiteSender
                      (flush [_])
                      (getFailures [_] 0)
                      (isConnected [_] true)
-                     (send [_ name value _] (swap! actual-values #(conj % (str name value)))))
+                     (send [_ name value timestamp]  (swap! actual-values assoc name value "timestamp" timestamp)))
           codahale-reporter (make-graphite-reporter 0 #".*" "prefix" graphite)]
       (is (satisfies? CodahaleReporter codahale-reporter))
-      (with-redefs [t/now (fn [] time)]
+      (with-redefs [t/now (constantly time)]
         (report codahale-reporter))
-      (is (= #{"prefix.services.service-id.counters.fee.fie0"
-               "prefix.services.service-id.counters.foo0"
-               "prefix.services.service-id.counters.foo.bar100"}
-             @actual-values))
+      (is (= #{"prefix.services.service-id.counters.fee.fie"
+               "prefix.services.service-id.counters.foo"
+               "prefix.services.service-id.counters.foo.bar"
+               "timestamp"}
+             (set (keys @actual-values))))
+      (is (= (get @actual-values "prefix.services.service-id.counters.fee.fie") "0"))
+      (is (= (get @actual-values "prefix.services.service-id.counters.foo") "0"))
+      (is (= (get @actual-values "prefix.services.service-id.counters.foo.bar") "100"))
+      (is (< (Math/abs (- (* 1000 (get @actual-values "timestamp")) (System/currentTimeMillis))) max-test-duration-ms))
       (is (= {:run-state :created
               :last-reporting-time time
               :failed-writes-to-server 0
@@ -137,19 +145,24 @@ services.service-id.counters.fee.fie
     (metrics/service-counter "service-id" "foo" "bar")
     (metrics/service-counter "service-id" "fee" "fie")
     (counters/inc! (metrics/service-counter "service-id" "foo" "bar") 100)
-    (let [actual-values (atom #{})
+    (let [actual-values (atom {})
           time (t/now)
           graphite (reify GraphiteSender
                      (flush [_])
                      (getFailures [_] 0)
                      (isConnected [_] true)
-                     (send [_ name value _] (swap! actual-values #(conj % (str name value)))))
+                     (send [_ name value timestamp]  (swap! actual-values assoc name value "timestamp" timestamp)))
           codahale-reporter (make-graphite-reporter 0 #"^.*fee.*" "prefix" graphite)]
       (is (satisfies? CodahaleReporter codahale-reporter))
-      (with-redefs [t/now (fn [] time)]
+      (with-redefs [t/now (constantly time)]
         (report codahale-reporter))
-      (is (= #{"prefix.services.service-id.counters.fee.fie0"}
-             @actual-values))
+      (is (= #{"prefix.services.service-id.counters.fee.fie"
+               "timestamp"}
+             (set (keys @actual-values))))
+      (is (= (get @actual-values "prefix.services.service-id.counters.fee.fie") "0"))
+      (println (get @actual-values "timestamp"))
+      (println (System/currentTimeMillis))
+      (is (< (Math/abs (- (* 1000 (get @actual-values "timestamp")) (System/currentTimeMillis))) max-test-duration-ms))
       (is (= {:run-state :created
               :last-reporting-time time
               :failed-writes-to-server 0
@@ -170,7 +183,7 @@ services.service-id.counters.fee.fie
                      (send [_ _ _ _] (throw (ex-info "test" {}))))
           codahale-reporter (make-graphite-reporter 0 #".*" "prefix" graphite)]
       (is (satisfies? CodahaleReporter codahale-reporter))
-      (with-redefs [t/now (fn [] time)]
+      (with-redefs [t/now (constantly time)]
         (is (thrown-with-msg? ExceptionInfo #"^test$"
                               (report codahale-reporter))))
       (is (= #{} @actual-values))

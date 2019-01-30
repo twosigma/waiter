@@ -119,7 +119,8 @@
 (defn- report-to-graphite
   "Report values from a codahale MetricRegistry"
   [^MetricRegistry registry prefix ^MetricFilter filter ^GraphiteSender graphite]
-  (let [timestamp (.getTime (Clock/defaultClock))
+  ;; Graphite expects timestamp in seconds
+  (let [timestamp (/ (.getTime (Clock/defaultClock)) 1000)
         map (metrics/metric-registry->metric-filter->metric-map registry filter)]
     (try
       (when-not (.isConnected graphite)
