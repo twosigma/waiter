@@ -738,8 +738,8 @@
                     :waiter-request?-fn (constantly true)}
           {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
       (is (= 200 status))
-      (is (= {} headers))
-      (is (= "ok" (str body))))))
+      (is (= expected-json-response-headers headers))
+      (is (= {"status" "ok"} (json/read-str body))))))
 
 (deftest test-leader-fn-factory
   (with-redefs [discovery/cluster-size int]
