@@ -40,7 +40,8 @@
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils])
+  (:import (java.io InputStream)))
 
 (defn make-auth-user-map
   "Creates a map containing the username and principal from a request"
@@ -863,3 +864,24 @@
   "Responds with a handler indicating a resource isn't found."
   [request]
   (utils/exception->response (ex-info (utils/message :not-found) {:log-level :info :status 404}) request))
+
+(defn status-handler
+  "Responds with an 'ok' status.
+   Includes representation of request if requested using the include=request-info query param."
+  [{:keys [body] :as request}]
+  (try
+    (when (instance? InputStream body)
+      (log/info "consuming request body before rendering response")
+      (slurp body))
+    (let [request-params (-> request ru/query-params-request :query-params)
+          include-request-info (utils/param-contains? request-params "include" "request-info")]
+      (-> (cond-> {:status "ok"}
+            include-request-info
+            (merge
+              (let [request-keys [:character-encoding :content-length :content-type :headers :protocol :query-string
+                                  :request-id :request-method :request-time :router-id :scheme :uri]]
+                (-> (select-keys request request-keys)
+                    (update :headers headers/truncate-header-values)))))
+          utils/clj->json-response))
+    (catch Throwable th
+      (utils/exception->response th request))))

@@ -1378,8 +1378,7 @@
                               (wrap-secure-request-fn
                                 (fn state-statsd-handler-fn [request]
                                   (handler/get-statsd-state router-id request))))
-   :status-handler-fn (pc/fnk []
-                        (fn status-handler-fn [_] {:body "ok" :headers {} :status 200}))
+   :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator kv-store]
                               [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
                               [:settings [:token-config history-length limit-per-owner]]
