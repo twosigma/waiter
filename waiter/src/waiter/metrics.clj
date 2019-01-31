@@ -138,7 +138,7 @@
   (defn metric-registry->metric-filter->metric-map
     "Unpack codahale metrics into a map of values"
     ([] (metric-registry->metric-filter->metric-map mc/default-registry MetricFilter/ALL))
-    ([^MetricRegistry registry ^MetricFilter metric-filter]
+    ([^MetricRegistry registry ^MetricFilter metric-filter & {:keys [map-keys-fn] :or {map-keys-fn str}}]
      (merge
        (pc/map-vals (fn [c] (counters/value c))
                     (.getCounters registry metric-filter))
@@ -146,7 +146,7 @@
                     (.getGauges registry metric-filter))
        (pc/map-vals (fn [^Histogram h] {"count" (.getCount h)
                                         "value" (->> (histograms/percentiles h percentiles)
-                                                     (pc/map-keys str))})
+                                                     (pc/map-keys map-keys-fn))})
                     (.getHistograms registry metric-filter))
        (pc/map-vals (fn [^Meter m] {"count" (.getCount m)
                                     "value" (meters/rate-one m)})
@@ -156,7 +156,7 @@
                        ; nanos -> seconds
                        "value" (->> (timers/percentiles t percentiles)
                                     (pc/map-vals #(/ % 1e9))
-                                    (pc/map-keys str))})
+                                    (pc/map-keys map-keys-fn))})
                     (.getTimers registry metric-filter))))))
 
 (defn get-metrics
