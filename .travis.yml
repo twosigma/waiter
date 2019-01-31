@@ -66,3 +66,8 @@ matrix:
       services: docker
       before_script: cd waiter
       script: ./bin/ci/run-integration-tests.sh marathon parallel-test integration-slow
+
+    - name: 'Waiter CLI integration tests'
+      services: docker
+      before_script: cd cli
+      script: ./bin/ci/run-integration-tests.sh
