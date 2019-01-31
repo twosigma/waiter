@@ -135,7 +135,7 @@
 (def ^:const on-the-fly-service-description-keys (set/union service-parameter-keys #{"token"}))
 
 ; keys allowed in system metadata for tokens, these need to be distinct from service description keys
-(def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "previous" "root"})
+(def ^:const system-metadata-keys #{"cluster" "deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
 (def ^:const user-metadata-keys #{"fallback-period-secs" "https-redirect" "owner" "stale-timeout-mins"})

@@ -254,6 +254,29 @@
             (let [owner-key (get owner->owner-key owner)]
               (kv/store kv-store owner-key index-entries))))))))
 
+(defprotocol ClusterCalculator
+  (get-default-cluster [this]
+    "Returns the default token root")
+  (calculate-cluster [this request]
+    "Returns the token root computed by using the incoming request"))
+
+(defn new-configured-cluster-calculator
+  "Returns a cluster calculator that returns a constant configured value as the cluster."
+  [{:keys [default-cluster]}]
+  (reify ClusterCalculator
+    (get-default-cluster [_] default-cluster)
+    (calculate-cluster [_ _] default-cluster)))
+
+(defn new-regex-cluster-calculator
+  "Returns a cluster calculator that uses a regex on the host header to determine the cluster."
+  [{:keys [root-regex default-cluster]}]
+  (reify ClusterCalculator
+    (get-default-cluster [_] default-cluster)
+    (calculate-cluster [_ {:keys [headers]}]
+      (or (when-let [host (get headers "host")]
+            (second (re-find root-regex host)))
+          default-cluster))))
+
 (defn- handle-delete-token-request
   "Deletes the token configuration if found."
   [clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager make-peer-requests-fn
@@ -299,7 +322,7 @@
 (defn- handle-get-token-request
   "Returns the configuration if found.
    Anyone can see the configuration, b/c it shouldn't contain any sensitive data."
-  [kv-store token-root waiter-hostnames {:keys [headers] :as request}]
+  [kv-store cluster-calculator token-root waiter-hostnames {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         include-deleted (utils/param-contains? request-params "include" "deleted")
         show-metadata (utils/param-contains? request-params "include" "metadata")
@@ -322,8 +345,10 @@
                                      (recur (update-in loop-token-metadata nested-last-update-time-path epoch-time->date-time)
                                             (concat ["previous"] nested-last-update-time-path))
                                      loop-token-metadata))
-                                 (not (contains? token-metadata "root"))
-                                 (assoc "root" token-root))))
+                           (not (contains? token-metadata "cluster"))
+                           (assoc "cluster" (get-default-cluster cluster-calculator))
+                           (not (contains? token-metadata "root"))
+                           (assoc "root" token-root))))
           :headers {"etag" token-hash}))
       (throw (ex-info (str "Couldn't find token " token)
                       {:headers {"etag" token-hash}
@@ -333,8 +358,8 @@
 (defn- handle-post-token-request
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store token-root history-length limit-per-owner waiter-hostnames entitlement-manager
-   make-peer-requests-fn validate-service-description-fn {:keys [headers] :as request}]
+  [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
+   entitlement-manager make-peer-requests-fn validate-service-description-fn {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         admin-mode? (= "admin" (get request-params "update-mode"))
         authenticated-user (get request :authorization/user)
@@ -449,7 +474,8 @@
                         {:previous previous :status 400 :token token}))))
 
     ; Store the token
-    (let [new-token-metadata (merge {"last-update-time" (.getMillis ^DateTime (clock))
+    (let [new-token-metadata (merge {"cluster" (calculate-cluster cluster-calculator request)
+                                     "last-update-time" (.getMillis ^DateTime (clock))
                                      "last-update-user" authenticated-user
                                      "owner" owner
                                      "root" (or (get existing-token-metadata "root") token-root)}
@@ -499,15 +525,16 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store token-root history-length limit-per-owner waiter-hostnames entitlement-manager
+  [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames entitlement-manager
    make-peer-requests-fn validate-service-description-fn {:keys [request-method] :as request}]
   (try
     (case request-method
       :delete (handle-delete-token-request clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager
                                            make-peer-requests-fn request)
-      :get (handle-get-token-request kv-store token-root waiter-hostnames request)
-      :post (handle-post-token-request clock synchronize-fn kv-store token-root history-length limit-per-owner waiter-hostnames
-                                       entitlement-manager make-peer-requests-fn validate-service-description-fn request)
+      :get (handle-get-token-request kv-store cluster-calculator token-root waiter-hostnames request)
+      :post (handle-post-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
+                                       waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                                       request)
       (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status 405})))
     (catch Exception ex
       (utils/exception->response ex request))))
