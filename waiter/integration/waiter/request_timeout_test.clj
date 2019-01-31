@@ -102,6 +102,7 @@
           (is (not (str/blank? (get headers "x-cid"))))))
       (delete-service waiter-url service-id))))
 
+; Marked explicit because it's flaky
 (deftest ^:parallel ^:integration-fast ^:explicit test-request-queue-timeout-slow-start-app
   (testing-using-waiter-url
     (let [timeout-period-sec 10
@@ -116,6 +117,9 @@
       (make-request-and-assert-timeout waiter-url request-headers start-time-ms timeout-period-sec)
       (delete-service waiter-url request-headers))))
 
+; Marked explicit because it's flaky
+; (is (str/includes? ~response-body "Check that your service is able to start properly!"))) fails
+; instead, we get Waiter Error 503  After 10 seconds, no instance is available to handle request
 (deftest ^:parallel ^:integration-slow ^:explicit test-request-queue-timeout-faulty-app
   (testing-using-waiter-url
     (log/info (str "request-queue-timeout-faulty-app: if we can't get an instance quickly (should take " (colored-time "~1 minute") ")"))
