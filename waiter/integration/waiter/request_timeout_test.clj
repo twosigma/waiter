@@ -102,7 +102,7 @@
           (is (not (str/blank? (get headers "x-cid"))))))
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-fast test-request-queue-timeout-slow-start-app
+(deftest ^:parallel ^:integration-fast ^:explicit test-request-queue-timeout-slow-start-app
   (testing-using-waiter-url
     (let [timeout-period-sec 10
           timeout-period-ms (t/in-millis (t/seconds timeout-period-sec))
@@ -116,7 +116,7 @@
       (make-request-and-assert-timeout waiter-url request-headers start-time-ms timeout-period-sec)
       (delete-service waiter-url request-headers))))
 
-(deftest ^:parallel ^:integration-slow test-request-queue-timeout-faulty-app
+(deftest ^:parallel ^:integration-slow ^:explicit test-request-queue-timeout-faulty-app
   (testing-using-waiter-url
     (log/info (str "request-queue-timeout-faulty-app: if we can't get an instance quickly (should take " (colored-time "~1 minute") ")"))
     (let [timeout-period-sec 10
