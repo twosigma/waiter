@@ -69,6 +69,7 @@
             [waiter.work-stealing :as work-stealing])
   (:import (java.net InetAddress URI)
            java.util.concurrent.Executors
+           (javax.servlet ServletRequest)
            org.apache.curator.framework.CuratorFrameworkFactory
            org.apache.curator.framework.api.CuratorEventType
            org.apache.curator.framework.api.CuratorListener
@@ -172,7 +173,7 @@
       (cid/with-correlation-id
         request-cid
         (log/info "request received:"
-                  (-> (dissoc request :body :ctrl :request-time :server-name :server-port :servlet-request
+                  (-> (dissoc request :body :ctrl :in :out :request-time :server-name :server-port :servlet-request
                               :ssl-client-cert :support-info)
                       (update :headers headers/truncate-header-values)))
         (let [response (handler request)
@@ -185,12 +186,27 @@
                   (cid/ensure-correlation-id nested-response get-request-cid)
                   nested-response)))))))))
 
+(defn request->protocol
+  "Determines the protocol and version used by the request.
+   For HTTP requests, it returns values like HTTP/1.0, HTTP/1.1, HTTP/2.
+   For WebSocket requests, it returns values like WS/8, WS/13."
+  [{:keys [headers scheme ^ServletRequest servlet-request]}]
+  (if servlet-request
+    (.getProtocol servlet-request)
+    (when scheme
+      (str/upper-case
+        ;; currently, only websockets need this branch to determine version
+        (if-let [version (get headers "sec-websocket-version")]
+          (str (name scheme) "/" version)
+          (name scheme))))))
+
 (defn wrap-request-info
   "Attaches request info to the request."
   [handler router-id support-info]
   (fn wrap-request-info-fn [request]
     (-> request
-        (assoc :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
+        (assoc :protocol (request->protocol request)
+               :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
                :request-time (t/now)
                :router-id router-id
                :support-info support-info)
@@ -1121,9 +1137,9 @@
                                    (fn default-websocket-handler-fn [request]
                                      (let [password (first passwords)
                                            make-request-fn (fn make-ws-request
-                                                             [instance request request-properties passthrough-headers end-route metric-group]
+                                                             [instance request request-properties passthrough-headers end-route metric-group proto-version]
                                                              (ws/make-request websocket-client service-id->password-fn instance request request-properties
-                                                                              passthrough-headers end-route metric-group))
+                                                                              passthrough-headers end-route metric-group proto-version))
                                            process-request-fn (fn process-request-fn [request]
                                                                 (pr/process make-request-fn instance-rpc-chan start-new-service-fn
                                                                             instance-request-properties determine-priority-fn ws/process-response!
@@ -1162,9 +1178,10 @@
                                 [:state http-client instance-rpc-chan local-usage-agent interstitial-state-atom]
                                 wrap-auth-bypass-fn wrap-descriptor-fn wrap-https-redirect-fn wrap-secure-request-fn
                                 wrap-service-discovery-fn]
-                         (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group]
+                         (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group proto-version]
                                                  (pr/make-request http-client make-basic-auth-fn service-id->password-fn
-                                                                  instance request request-properties passthrough-headers end-route metric-group))
+                                                                  instance request request-properties passthrough-headers
+                                                                  end-route metric-group proto-version))
                                process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)
                                inner-process-request-fn (fn inner-process-request [request]
                                                           (pr/process make-request-fn instance-rpc-chan start-new-service-fn

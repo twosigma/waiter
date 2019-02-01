@@ -39,6 +39,7 @@
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (java.io InputStream)))
@@ -52,11 +53,12 @@
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."
   [http-client instance-request-properties make-basic-auth-fn service-id->password-fn prepare-request-properties-fn make-request-fn]
-  (fn async-make-request-fn [instance {:keys [headers] :as request} end-route metric-group]
+  (fn async-make-request-fn [instance {:keys [headers protocol] :as request} end-route metric-group]
     (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
-          instance-request-properties (prepare-request-properties-fn instance-request-properties waiter-headers)]
+          instance-request-properties (prepare-request-properties-fn instance-request-properties waiter-headers)
+          proto-version (hu/determine-backend-protocol-version protocol)]
       (make-request-fn http-client make-basic-auth-fn service-id->password-fn instance request
-                       instance-request-properties passthrough-headers end-route metric-group))))
+                       instance-request-properties passthrough-headers end-route metric-group proto-version))))
 
 (defn- async-make-http-request
   "Helper function for async status/result handlers."

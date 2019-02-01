@@ -61,7 +61,7 @@
           [close-code error] (async/<!! ctrl-chan)]
       (is (= :qbits.jet.websocket/error close-code))
       (is (instance? UpgradeException error))
-      (is (= "403 Unauthorized" (.getMessage error)))
+      (is (str/includes? (.getMessage error) "403 Unauthorized"))
       (is (not (realized? connect-success-promise))))))
 
 (deftest ^:parallel ^:integration-fast test-request-auth-success

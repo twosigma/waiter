@@ -24,6 +24,7 @@
             [waiter.websocket :refer :all])
   (:import (java.net HttpCookie SocketTimeoutException URLDecoder)
            (java.util ArrayList Collection)
+           (org.eclipse.jetty.http HttpVersion)
            (org.eclipse.jetty.websocket.api MessageTooLargeException UpgradeRequest)
            (org.eclipse.jetty.websocket.client ClientUpgradeRequest)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
@@ -268,7 +269,8 @@
         connect-request (Object.)
         assert-request-headers (fn assert-request-headers [upgrade-request]
                                  (doseq [[header-name header-value] assertion-headers]
-                                   (is (= header-value (.getHeader upgrade-request header-name)) header-name)))]
+                                   (is (= header-value (.getHeader upgrade-request header-name)) header-name)))
+        proto-version HttpVersion/HTTP_1_1]
 
     (testing "successful-connect-ws"
       (with-redefs [ws-client/connect! (fn [_ instance-endpoint request-callback {:keys [middleware] :as request-properties}]
@@ -284,7 +286,8 @@
           test-cid
           (let [websocket-client nil
                 instance (assoc instance :protocol "http")
-                response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
+                response (make-request websocket-client service-id->password-fn instance request request-properties
+                                       passthrough-headers end-route nil proto-version)
                 response-map (async/<!! response)]
             (is (= #{:ctrl-mult :request} (-> response-map keys set)))
             (is (= connect-request (:request response-map)))))))
@@ -303,7 +306,8 @@
           test-cid
           (let [websocket-client nil
                 instance (assoc instance :protocol "https")
-                response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)
+                response (make-request websocket-client service-id->password-fn instance request request-properties
+                                       passthrough-headers end-route nil proto-version)
                 response-map (async/<!! response)]
             (is (= #{:ctrl-mult :request} (-> response-map keys set)))
             (is (= connect-request (:request response-map)))))))
@@ -319,7 +323,8 @@
                                            (throw test-exception))]
           (let [websocket-client nil
                 instance (assoc instance :protocol "http")
-                response (make-request websocket-client service-id->password-fn instance request request-properties passthrough-headers end-route nil)]
+                response (make-request websocket-client service-id->password-fn instance request request-properties
+                                       passthrough-headers end-route nil proto-version)]
             (is (= {:error test-exception} (async/<!! response)))))))))
 
 (deftest test-watch-ctrl-chan

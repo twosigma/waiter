@@ -37,11 +37,13 @@
             [waiter.statsd :as statsd]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
+            [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (java.io InputStream IOException)
            (java.util.concurrent TimeoutException)
            (org.eclipse.jetty.client HttpClient)
+           (org.eclipse.jetty.http HttpVersion)
            (org.eclipse.jetty.io EofException)
            (org.eclipse.jetty.server HttpChannel HttpOutput)))
 
@@ -179,10 +181,19 @@
     (deliver reservation-status-promise promise-value)
     (utils/exception->response (ex-info message (assoc metrics-map :status status) error) request)))
 
+(defn protocol->http-version
+  "Determines the http protocol version to use for the request to the backend."
+  [^String protocol]
+  (try
+    (when (and protocol (str/starts-with? protocol "HTTP"))
+      (HttpVersion/fromString protocol))
+    (catch Exception e
+      (log/error e "unable to determine http version from" protocol))))
+
 (defn- make-http-request
   "Makes an asynchronous request to the endpoint using Basic authentication."
   [^HttpClient http-client make-basic-auth-fn request-method endpoint query-string headers body service-password
-   {:keys [username principal]} idle-timeout output-buffer-size]
+   {:keys [username principal]} idle-timeout output-buffer-size proto-version]
   (let [auth (make-basic-auth-fn endpoint "waiter" service-password)
         headers (headers/assoc-auth-headers headers username principal)]
     (http/request
@@ -197,12 +208,13 @@
        :idle-timeout idle-timeout
        :method request-method
        :query-string query-string
+       :version (protocol->http-version proto-version)
        :url endpoint})))
 
 (defn make-request
   "Makes an asynchronous http request to the instance endpoint and returns a channel."
   [http-client make-basic-auth-fn service-id->password-fn instance {:keys [body query-string request-method] :as request}
-   {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group]
+   {:keys [initial-socket-timeout-ms output-buffer-size]} passthrough-headers end-route metric-group proto-version]
   (let [instance-endpoint (scheduler/end-point-url instance end-route)
         service-id (scheduler/instance->service-id instance)
         service-password (service-id->password-fn service-id)
@@ -225,7 +237,7 @@
       (log/info "connecting to" instance-endpoint))
     (make-http-request
       http-client make-basic-auth-fn request-method instance-endpoint query-string headers body service-password
-      (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size)))
+      (handler/make-auth-user-map request) initial-socket-timeout-ms output-buffer-size proto-version)))
 
 (defn extract-async-request-response-data
   "Helper function that inspects the response and returns the location and query-string if the response
@@ -409,7 +421,7 @@
     [make-request-fn instance-rpc-chan start-new-service-fn
      instance-request-properties determine-priority-fn process-backend-response-fn
      request-abort-callback-factory local-usage-agent
-     {:keys [ctrl descriptor request-id request-time] :as request}]
+     {:keys [ctrl descriptor protocol request-id request-time] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
           {:keys [uri] :as request} (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
@@ -449,7 +461,7 @@
                                             :time request-time
                                             :cid (cid/get-correlation-id)
                                             :request-id request-id}
-                                           priority (assoc :priority priority))
+                                     priority (assoc :priority priority))
                         ; pass false to keep request-state-chan open after control-mult is closed
                         ; request-state-chan should be explicitly closed after the request finishes processing
                         request-state-chan (async/tap control-mult (au/latest-chan) false)
@@ -460,7 +472,8 @@
                                                                   start-new-service-fn request-state-chan queue-timeout-ms
                                                                   reservation-status-promise metric-group)))
                         instance (:out timed-instance)
-                        instance-elapsed (:elapsed timed-instance)]
+                        instance-elapsed (:elapsed timed-instance)
+                        proto-version (hu/determine-backend-protocol-version protocol)]
                     (statsd/histo! metric-group "get_instance" instance-elapsed)
                     (-> (try
                           (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
@@ -469,7 +482,7 @@
                                                  (metrics/service-timer service-id "backend-response")
                                                  (async/<!
                                                    (make-request-fn instance request instance-request-properties
-                                                                    passthrough-headers uri metric-group)))
+                                                                    passthrough-headers uri metric-group proto-version)))
                                 response-elapsed (:elapsed timed-response)
                                 {:keys [error] :as response} (:out timed-response)]
                             (statsd/histo! metric-group "backend_response" response-elapsed)
@@ -494,7 +507,8 @@
                             (async/close! request-state-chan)
                             (handle-process-exception e request)))
                         (assoc :get-instance-latency-ns instance-elapsed
-                               :instance instance)
+                               :instance instance
+                               :protocol proto-version)
                         (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
@@ -508,8 +522,8 @@
     (if (get suspended-state :suspended false)
       (let [{:keys [last-updated-by time]} suspended-state
             response-map (cond-> {:service-id service-id}
-                                 time (assoc :suspended-at (du/date-to-str time))
-                                 (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
+                           time (assoc :suspended-at (du/date-to-str time))
+                           (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "Service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
         (-> {:details response-map, :message "Service has been suspended", :status 503}
