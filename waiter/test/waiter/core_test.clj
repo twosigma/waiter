@@ -1427,12 +1427,12 @@
                   :status 301}
                  response)))))))
 
-(deftest test-determine-request-protocol
-  (is (nil? (determine-request-protocol {})))
-  (is (= "HTTP" (determine-request-protocol {:scheme :http})))
-  (is (= "HTTP/1.1" (determine-request-protocol {:scheme :http
+(deftest test-request->protocol
+  (is (nil? (request->protocol {})))
+  (is (= "HTTP" (request->protocol {:scheme :http})))
+  (is (= "HTTP/1.1" (request->protocol {:scheme :http
                                                  :servlet-request (reify ServletRequest
                                                                     (getProtocol [_] "HTTP/1.1"))})))
-  (is (= "WS" (determine-request-protocol {:scheme :ws})))
-  (is (= "WS" (determine-request-protocol {:headers {} :scheme :ws})))
-  (is (= "WS/13" (determine-request-protocol {:headers {"sec-websocket-version" "13"} :scheme :ws}))))
+  (is (= "WS" (request->protocol {:scheme :ws})))
+  (is (= "WS" (request->protocol {:headers {} :scheme :ws})))
+  (is (= "WS/13" (request->protocol {:headers {"sec-websocket-version" "13"} :scheme :ws}))))

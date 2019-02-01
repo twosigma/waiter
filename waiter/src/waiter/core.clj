@@ -186,8 +186,10 @@
                   (cid/ensure-correlation-id nested-response get-request-cid)
                   nested-response)))))))))
 
-(defn determine-request-protocol
-  "Determines the protocol and version used by the request."
+(defn request->protocol
+  "Determines the protocol and version used by the request.
+   For HTTP requests, it returns values like HTTP/1.0, HTTP/1.1, HTTP/2.
+   For WebSocket requests, it returns values like WS/8, WS/13."
   [{:keys [headers scheme ^ServletRequest servlet-request]}]
   (if servlet-request
     (.getProtocol servlet-request)
@@ -203,7 +205,7 @@
   [handler router-id support-info]
   (fn wrap-request-info-fn [request]
     (-> request
-        (assoc :protocol (determine-request-protocol request)
+        (assoc :protocol (request->protocol request)
                :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
                :request-time (t/now)
                :router-id router-id

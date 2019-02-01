@@ -181,7 +181,7 @@
     (deliver reservation-status-promise promise-value)
     (utils/exception->response (ex-info message (assoc metrics-map :status status) error) request)))
 
-(defn determine-http-version
+(defn protocol->http-version
   "Determines the http protocol version to use for the request to the backend."
   [^String protocol]
   (try
@@ -208,7 +208,7 @@
        :idle-timeout idle-timeout
        :method request-method
        :query-string query-string
-       :version (determine-http-version proto-version)
+       :version (protocol->http-version proto-version)
        :url endpoint})))
 
 (defn make-request
