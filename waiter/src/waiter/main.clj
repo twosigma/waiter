@@ -93,6 +93,7 @@
                                                                core/correlation-id-middleware
                                                                (core/wrap-request-info router-id support-info))
                                         :host host
+                                        :http2c? true
                                         :join? false
                                         :max-threads 250
                                         :port port
