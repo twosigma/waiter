@@ -889,7 +889,7 @@
                     (update :headers headers/truncate-header-values))))
 
             include-auth-info
-            (merge {:authentication-scheme (auth/scheme authenticator)})      )
+            (merge {:authentication-scheme (auth/scheme authenticator)}))
           utils/clj->json-response))
     (catch Throwable th
       (utils/exception->response th request))))
