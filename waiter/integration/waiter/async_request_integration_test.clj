@@ -187,7 +187,8 @@
             (assert-response-status response 200))))
       (delete-service waiter-url service-id))))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-multiple-async-requests
+; Marked explicit because it's flaky. Disabled tests are documented and will be fixed
+(deftest ^:parallel ^:integration-slow ^:resource-heavy ^:explicit test-multiple-async-requests
   ;; tests the metrics and state flow associated with a multiple concurrent async requests.
   (testing-using-waiter-url
     (let [metrics-sync-interval-ms (-> (waiter-settings waiter-url)
