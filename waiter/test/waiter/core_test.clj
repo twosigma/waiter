@@ -735,7 +735,7 @@
   (testing "health-check-handler:status-ok"
     (let [request {:request-method :get, :uri "/status"}
           waiter-request?-fn (fn [_] true)
-          handlers {:status-handler-fn ((:status-handler-fn request-handlers) {})
+          handlers {:status-handler-fn ((:status-handler-fn request-handlers) {:state {:authenticator {}}})
                     :waiter-request?-fn (constantly true)}
           {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
       (is (= 200 status))

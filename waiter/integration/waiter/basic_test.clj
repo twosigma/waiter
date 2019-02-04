@@ -904,3 +904,8 @@
             (is (service waiter-url service-id {}) (str service-id "not found in /apps endpoint")))
           (doseq [service-id service-ids]
             (delete-service waiter-url service-id)))))))
+
+(deftest ^:parallel ^:integration-fast test-status-include-auth-info
+  (testing-using-waiter-url
+    (let [{:keys [authentication-scheme]} (waiter-status waiter-url {"include" "auth-info"})]
+      (is (some #{authentication-scheme} ["one-user" "kerberos"])))))
