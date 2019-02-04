@@ -27,7 +27,10 @@
     "Attaches middleware that enables the application to perform authentication.
      The middleware should
      - either issue a 401 challenge asking the client to authenticate itself,
-     - or upon successful authentication populate the request with :authorization/user and :authorization/principal"))
+     - or upon successful authentication populate the request with :authorization/user and :authorization/principal")
+
+  (scheme [this]
+    "Returns a string representing the authentication scheme (e.g. kerberos)"))
 
 (defn- add-cached-auth
   [response password principal]
@@ -100,7 +103,10 @@
   Authenticator
   (wrap-auth-handler [_ request-handler]
     (fn anonymous-handler [request] 
-      (handle-request-auth request-handler request run-as-user run-as-user password))))
+      (handle-request-auth request-handler request run-as-user run-as-user password)))
+
+  (scheme [_]
+    "one-user"))
 
 (defn one-user-authenticator
   "Factory function for creating single-user authenticator"

@@ -27,6 +27,7 @@
             [plumbing.core :as pc]
             [ring.middleware.multipart-params :as multipart-params]
             [waiter.async-request :as async-req]
+            [waiter.auth.authentication :as auth]
             [waiter.authorization :as authz]
             [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
@@ -869,21 +870,26 @@
 
 (defn status-handler
   "Responds with an 'ok' status.
-   Includes representation of request if requested using the include=request-info query param."
-  [{:keys [body] :as request}]
+   Includes representation of request if requested using the include=request-info query param.
+   Includes the authentication scheme if requested using the include=auth-info query param."
+  [authenticator {:keys [body] :as request}]
   (try
     (when (instance? InputStream body)
       (log/info "consuming request body before rendering response")
       (slurp body))
     (let [request-params (-> request ru/query-params-request :query-params)
-          include-request-info (utils/param-contains? request-params "include" "request-info")]
+          include-request-info (utils/param-contains? request-params "include" "request-info")
+          include-auth-info (utils/param-contains? request-params "include" "auth-info")]
       (-> (cond-> {:status "ok"}
             include-request-info
             (merge
               (let [request-keys [:character-encoding :content-length :content-type :headers :protocol :query-string
                                   :request-id :request-method :request-time :router-id :scheme :uri]]
                 (-> (select-keys request request-keys)
-                    (update :headers headers/truncate-header-values)))))
+                    (update :headers headers/truncate-header-values))))
+
+            include-auth-info
+            (merge {:authentication-scheme (auth/scheme authenticator)})      )
           utils/clj->json-response))
     (catch Throwable th
       (utils/exception->response th request))))

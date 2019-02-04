@@ -106,7 +106,10 @@
 (defrecord KerberosAuthenticator [^ThreadPoolExecutor executor max-queue-length password]
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
-    (spnego/require-gss request-handler executor max-queue-length password)))
+    (spnego/require-gss request-handler executor max-queue-length password))
+
+  (scheme [_]
+    "kerberos"))
 
 (defn kerberos-authenticator
   "Factory function for creating Kerberos authenticator middleware"
