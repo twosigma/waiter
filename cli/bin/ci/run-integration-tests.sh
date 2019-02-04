@@ -8,6 +8,10 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CLI_DIR=${DIR}/../..
 
+export GRAPHITE_SERVER_PORT=5555
+# Start netcat to listen to a port. The Codahale Graphite reporter will be able to report without failing and spamming logs.
+nc -kl localhost ${GRAPHITE_SERVER_PORT} > /dev/null &
+
 # Start waiter
 : ${WAITER_PORT:=9091}
 ${CLI_DIR}/../waiter/bin/run-using-shell-scheduler.sh ${WAITER_PORT} &
