@@ -395,7 +395,7 @@
    :token-config {:cluster-calculator {:kind :configured
                                        :configured {:factory-fn 'waiter.token/new-configured-cluster-calculator}
                                        :regex {:factory-fn 'waiter.token/new-regex-cluster-calculator
-                                               :root-regex #"(.*)(:.*)?"}}
+                                               :root-regex #"^waiter-([a-zA-Z][0-9a-zA-Z\\-]*)"}}
                   :history-length 5
                   :limit-per-owner 1000
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)

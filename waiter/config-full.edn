@@ -801,7 +801,7 @@
                                              ;; A regex to determine the root from the incoming request host header.
                                              ;; The first group from the match is used to determine the root.
                                              ;; If no match is found, it defaults to the :cluster-config :name.
-                                             :root-regex #config/regex "(.*)(:.*)?"}}
+                                             :root-regex #config/regex "^waiter-([a-zA-Z][0-9a-zA-Z\\-]*)"}}
 
                 ;; Configures the amount of history we store for a token.
                 ;; It must be a positive integer.
