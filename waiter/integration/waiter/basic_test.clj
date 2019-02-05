@@ -907,5 +907,6 @@
 
 (deftest ^:parallel ^:integration-fast test-status-include-auth-info
   (testing-using-waiter-url
-    (let [{:keys [authentication-scheme]} (waiter-status waiter-url {"include" "auth-info"})]
-      (is (some #{authentication-scheme} ["one-user" "kerberos"])))))
+    (let [{:keys [authentication-scheme]} (waiter-status waiter-url {"include" "auth-info"})
+          {:keys [authenticator-config]} (waiter-settings waiter-url)]
+      (is (= (:kind authenticator-config) authentication-scheme)))))
