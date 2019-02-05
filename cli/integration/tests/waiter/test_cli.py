@@ -41,7 +41,7 @@ class WaiterCliTest(util.WaiterTest):
 
             # Make sure we can access the service
             resp = util.session.get(self.waiter_url, headers={'X-Waiter-Token': token_name})
-            self.assertEqual(200, resp.status_code)
+            self.assertEqual(200, resp.status_code, resp.text)
             self.assertEqual(response_text, resp.text)
         finally:
             util.delete_token(self.waiter_url, token_name)
