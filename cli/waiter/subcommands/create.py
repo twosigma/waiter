@@ -69,6 +69,7 @@ def register(add_parser):
     submit_parser.add_argument('--name', '-n', help='name of service')
     submit_parser.add_argument('--version', '-v', help='version of service')
     submit_parser.add_argument('--cmd', '-C', help='command to start service')
+    submit_parser.add_argument('--cmd-type', '-t', help='command type of service (e.g. "shell")', dest='cmd-type')
     submit_parser.add_argument('--cpus', '-c', help='cpus to reserve for service', type=float)
     submit_parser.add_argument('--mem', '-m', help='memory to reserve for service', type=int)
     submit_parser.add_argument('--ports', help='number of ports to reserve for service', type=int)

@@ -67,5 +67,6 @@ def create_from_service_description(token_name, waiter_url, service):
     cp = create(token_name, waiter_url, create_flags=f"--cmd '{service['cmd']}' "
                                                      f"--cpus {service['cpus']} "
                                                      f"--mem {service['mem']} "
+                                                     f"--cmd-type {service['cmd-type']} "
                                                      f"--version {service['version']}")
     return cp

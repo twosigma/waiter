@@ -38,6 +38,7 @@ class WaiterCliTest(util.WaiterTest):
             token = util.load_token(self.waiter_url, token_name)
             self.assertIsNotNone(token)
             self.assertEqual(cmd, token['cmd'])
+            self.assertEqual('shell', token['cmd-type'])
 
             # Make sure we can access the service
             resp = util.session.get(self.waiter_url, headers={'X-Waiter-Token': token_name})
