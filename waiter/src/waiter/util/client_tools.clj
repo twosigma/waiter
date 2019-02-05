@@ -954,6 +954,6 @@
        (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#)))))))
 
 (defn waiter-status [waiter-url query-params]
-  (let [status-result (make-request waiter-url "/status" :verbose true :query-params query-params)
+  (let [status-result (make-request waiter-url "/status" :query-params query-params :verbose true)
         status-json (try-parse-json (:body status-result))]
     (walk/keywordize-keys status-json)))
