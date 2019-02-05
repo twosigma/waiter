@@ -80,7 +80,8 @@ def minimal_service_description(**kwargs):
         'cmd': minimal_service_cmd(),
         'cpus': float(os.getenv('WAITER_TEST_DEFAULT_CPUS', 1.0)),
         'mem': int(os.getenv('WAITER_TEST_DEFAULT_MEM_MB', 256)),
-        'version': 'version-does-not-matter'
+        'version': 'version-does-not-matter',
+        'cmd-type': 'shell'
     }
     service.update(kwargs)
     return service
