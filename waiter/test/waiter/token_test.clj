@@ -52,10 +52,41 @@
     (authorized? [_ _ _ _]
       true)))
 
+(deftest test-constant-cluster-calculator
+  (let [default-cluster "test-cluster"
+        cluster-calculator (new-configured-cluster-calculator {:default-cluster default-cluster})]
+    (is (= default-cluster (get-default-cluster cluster-calculator)))
+    (is (= default-cluster (calculate-cluster cluster-calculator {})))
+    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "test.com"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter.localtest.me"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.localtest.me"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo-bar.localtest.me:1234"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.bar.localtest.me"}})))))
+
+(deftest test-regex-cluster-calculator
+  (let [root-regex #"waiter-(.*).localtest.me*(:.*)?"
+        default-cluster "test-cluster"
+        cluster-calculator (new-regex-cluster-calculator {:root-regex root-regex
+                                                    :default-cluster default-cluster})]
+    (is (= default-cluster (get-default-cluster cluster-calculator)))
+    (is (= default-cluster (calculate-cluster cluster-calculator {})))
+    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "test.com"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter.localtest.me"}})))
+    (is (= "foo" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.localtest.me"}})))
+    (is (= "foo-bar" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo-bar.localtest.me"}})))
+    (is (= "foo.bar" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.bar.localtest.me"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "test.com:1234"}})))
+    (is (= default-cluster (calculate-cluster cluster-calculator {:headers {"host" "waiter.localtest.me:1234"}})))
+    (is (= "foo" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.localtest.me:1234"}})))
+    (is (= "foo-bar" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo-bar.localtest.me:1234"}})))
+    (is (= "foo.bar" (calculate-cluster cluster-calculator {:headers {"host" "waiter-foo.bar.localtest.me:1234"}})))))
+
 (defn- run-handle-token-request
   [kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn request]
-  (handle-token-request clock synchronize-fn kv-store token-root history-length limit-per-owner waiter-hostnames
-                        entitlement-manager make-peer-requests-fn validate-service-description-fn request))
+  (let [cluster-calculator (new-configured-cluster-calculator {:default-cluster (str token-root "-cluster")})]
+    (handle-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
+                          waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                          request)))
 
 (def optional-metadata-keys (disj sd/user-metadata-keys "owner"))
 
@@ -306,7 +337,8 @@
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-1 "token") service-parameter-template))
-            (is (= {"last-update-time" (clock-millis)
+            (is (= {"cluster" (str token-root "-cluster")
+                    "last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu1"
                     "previous" {}
@@ -346,7 +378,8 @@
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-1 "token") service-parameter-template))
-            (is (= {"last-update-time" (clock-millis)
+            (is (= {"cluster" (str token-root "-cluster")
+                    "last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu2"
                     "previous" {}
@@ -400,7 +433,8 @@
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-2 "token") service-parameter-template))
-            (is (= {"last-update-time" (clock-millis)
+            (is (= {"cluster" (str token-root "-cluster")
+                    "last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu1"
                     "previous" existing-service-description
@@ -454,7 +488,8 @@
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc existing-service-parameter-template "owner") service-parameter-template))
-            (is (= {"last-update-time" (clock-millis)
+            (is (= {"cluster" (str token-root "-cluster")
+                    "last-update-time" (clock-millis)
                     "last-update-user" auth-user
                     "owner" auth-user
                     "previous" existing-service-parameter-template
@@ -478,7 +513,8 @@
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
             (is (= (dissoc service-description-2 "token") service-parameter-template))
-            (is (= {"last-update-time" (clock-millis)
+            (is (= {"cluster" (str token-root "-cluster")
+                    "last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu2"
                     "previous" existing-service-description
@@ -601,7 +637,8 @@
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (-> service-description
                      (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
+                     (assoc "cluster" (str token-root "-cluster")
+                            "last-update-time" (clock-millis)
                             "last-update-user" auth-user
                             "owner" "tu1"
                             "root" token-root))
@@ -623,7 +660,8 @@
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (-> service-description
                      (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
+                     (assoc "cluster" (str token-root "-cluster")
+                            "last-update-time" (clock-millis)
                             "last-update-user" auth-user
                             "owner" "tu1"
                             "root" token-root))
@@ -649,7 +687,8 @@
           (is (= (-> service-description
                      sd/transform-allowed-params-token-entry
                      (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
+                     (assoc "cluster" (str token-root "-cluster")
+                            "last-update-time" (clock-millis)
                             "last-update-user" auth-user
                             "owner" "tu1"
                             "root" token-root))
@@ -676,7 +715,8 @@
             (is (= (-> service-description
                        sd/transform-allowed-params-token-entry
                        (dissoc "token")
-                       (assoc "last-update-time" (clock-millis)
+                       (assoc "cluster" (str token-root "-cluster")
+                              "last-update-time" (clock-millis)
                               "last-update-user" auth-user
                               "owner" "tu1"
                               "root" token-root))
@@ -727,7 +767,8 @@
           (is (= (-> service-description-2
                      sd/transform-allowed-params-token-entry
                      (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
+                     (assoc "cluster" (str token-root "-cluster")
+                            "last-update-time" (clock-millis)
                             "last-update-user" auth-user
                             "owner" "tu1"
                             "previous" service-description-1
@@ -775,7 +816,8 @@
           (is (str/includes? body "Successfully updated test-token"))
           (is (= (-> service-description
                      (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
+                     (assoc "cluster" (str token-root "-cluster")
+                            "last-update-time" (clock-millis)
                             "last-update-user" auth-user
                             "owner" "tu1"
                             "previous" existing-service-description
@@ -800,7 +842,8 @@
           (is (str/includes? body "Successfully updated test-token"))
           (is (= (-> service-description
                      (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
+                     (assoc "cluster" (str token-root "-cluster")
+                            "last-update-time" (clock-millis)
                             "last-update-user" auth-user
                             "owner" "tu1"
                             "previous" existing-service-description
@@ -829,7 +872,8 @@
           (is (str/includes? body "Successfully created test-token"))
           (is (= (-> service-description
                      (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
+                     (assoc "cluster" (str token-root "-cluster")
+                            "last-update-time" (clock-millis)
                             "last-update-user" test-user
                             "owner" "user2"
                             "root" "foo-bar"))
@@ -857,7 +901,8 @@
           (is (str/includes? body "Successfully created test-token"))
           (is (= (-> service-description
                      (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
+                     (assoc "cluster" (str token-root "-cluster")
+                            "last-update-time" (clock-millis)
                             "last-update-user" test-user
                             "root" token-root))
                  (kv/fetch kv-store token)))))
@@ -885,7 +930,8 @@
               (is (str/includes? body "Successfully updated test-token"))
               (is (= (-> service-description
                          (dissoc "token")
-                         (assoc "cpus" iteration
+                         (assoc "cluster" (str token-root "-cluster")
+                                "cpus" iteration
                                 "last-update-time" (clock-millis)
                                 "last-update-user" test-user
                                 "previous" existing-service-description
@@ -922,7 +968,8 @@
           (is (str/includes? body "Successfully created test-token"))
           (is (= (-> service-description
                      (dissoc "token")
-                     (assoc "last-update-time" (clock-millis)
+                     (assoc "cluster" (str token-root "-cluster")
+                            "last-update-time" (clock-millis)
                             "last-update-user" test-user
                             "owner" test-user
                             "root" "foo-bar"))
@@ -945,7 +992,8 @@
                  (sd/token->service-parameter-template kv-store test-token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store test-token)]
             (is (= (dissoc service-description-1 "token") service-parameter-template))
-            (is (= {"last-update-time" (clock-millis)
+            (is (= {"cluster" (str token-root "-cluster")
+                    "last-update-time" (clock-millis)
                     "last-update-user" "tu1"
                     "owner" "tu1"
                     "previous" {}

@@ -578,6 +578,9 @@
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100
                                              :ttl (-> 1 t/minutes t/in-millis)}))
+   :token-cluster-calculator (pc/fnk [[:settings [:cluster-config name] [:token-config cluster-calculator]]]
+                               (utils/create-component
+                                 cluster-calculator :context {:default-cluster name}))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :waiter-hostnames (pc/fnk [[:settings hostname]]
                        (set (if (sequential? hostname)
@@ -1399,13 +1402,13 @@
    :token-handler-fn (pc/fnk [[:curator kv-store]
                               [:routines make-inter-router-requests-sync-fn synchronize-fn validate-service-description-fn]
                               [:settings [:token-config history-length limit-per-owner]]
-                              [:state clock entitlement-manager token-root waiter-hostnames]
+                              [:state clock entitlement-manager token-cluster-calculator token-root waiter-hostnames]
                               wrap-secure-request-fn]
                        (wrap-secure-request-fn
                          (fn token-handler-fn [request]
                            (token/handle-token-request
-                             clock synchronize-fn kv-store token-root history-length limit-per-owner waiter-hostnames
-                             entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
+                             clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
+                             waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
                              request))))
    :token-list-handler-fn (pc/fnk [[:curator kv-store]
                                    [:state entitlement-manager]
