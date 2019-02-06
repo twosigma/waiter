@@ -1044,6 +1044,18 @@
           (is (= 403 status))
           (is (str/includes? body "Token name is reserved"))))
 
+      (testing "post:new-service-description:no-parameters"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys {:token "abcdefgh"})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true)
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :request-method :post})]
+          (is (= 400 status))
+          (is (str/includes? body (str "No parameters provided for abcdefgh")))))
+
       (testing "post:new-service-description:schema-fail"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys

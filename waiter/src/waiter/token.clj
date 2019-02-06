@@ -387,6 +387,8 @@
       (throw (ex-info "Must provide the token" {:status 400})))
     (when (some #(= token %) waiter-hostnames)
       (throw (ex-info "Token name is reserved" {:status 403 :token token})))
+    (when (empty? (select-keys new-token-data sd/token-user-editable-keys))
+      (throw (ex-info (str "No parameters provided for " token) {:status 400})))
     (sd/validate-token token)
     (validate-service-description-fn new-service-parameter-template)
     (when-let [user-metadata-check (s/check sd/user-metadata-schema new-user-metadata)]
