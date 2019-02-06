@@ -2396,7 +2396,7 @@
                  service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
                  token->token-metadata token-defaults service-id)))))
 
-    (testing "service outdated and fallback and timeout configured on multiple source tokens"
+    (testing "service using latest of one partial token among many"
       (let [stale-timeout-mins 45
             token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
                                "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
@@ -2408,6 +2408,63 @@
             service-id->source-token-entries-fn (fn [in-service-id]
                                                   (is (= service-id in-service-id))
                                                   #{[{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash0"}]
+                                                    [{"token" "t3" "version" "t3.hash0"} {"token" "t4" "version" "t4.hash0"}]})
+            token->token-metadata (token->token-metadata-fn token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
+                 token->token-metadata token-defaults service-id)))))
+
+    (testing "service using latest versions of multiple tokens"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+                               "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (= service-id in-service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->source-token-entries-fn (fn [in-service-id]
+                                                  (is (= service-id in-service-id))
+                                                  #{[{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash1"}]
+                                                    [{"token" "t3" "version" "t3.hash1"} {"token" "t4" "version" "t4.hash1"}]})
+            token->token-metadata (token->token-metadata-fn token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
+                 token->token-metadata token-defaults service-id)))))
+
+    (testing "service using latest of one set of token entries"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+                               "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (= service-id in-service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->source-token-entries-fn (fn [in-service-id]
+                                                  (is (= service-id in-service-id))
+                                                  #{[{"token" "t1" "version" "t1.hash1"} {"token" "t2" "version" "t2.hash1"}]
+                                                    [{"token" "t3" "version" "t3.hash0"} {"token" "t4" "version" "t4.hash0"}]})
+            token->token-metadata (token->token-metadata-fn token->token-data)]
+        (is (= idle-timeout-mins
+               (service-id->idle-timeout
+                 service-id->service-description-fn service-id->source-token-entries-fn token->token-hash
+                 token->token-metadata token-defaults service-id)))))
+
+    (testing "service outdated and fallback and timeout configured on multiple source tokens"
+      (let [stale-timeout-mins 45
+            token->token-data {"t1" {"cpus" 123 "fallback-period-secs" 300}
+                               "t2" {"cmd" "tc" "fallback-period-secs" 600 "stale-timeout-mins" stale-timeout-mins}
+                               "t3" {"cmd" "tc" "fallback-period-secs" 900}
+                               "t4" {"fallback-period-secs" 1200 "stale-timeout-mins" (+ stale-timeout-mins 15)}}
+            service-id->service-description-fn (fn [in-service-id]
+                                                 (is (= service-id in-service-id))
+                                                 {"idle-timeout-mins" idle-timeout-mins})
+            service-id->source-token-entries-fn (fn [in-service-id]
+                                                  (is (= service-id in-service-id))
+                                                  #{[{"token" "t1" "version" "t1.hash0"} {"token" "t2" "version" "t2.hash0"}]
                                                     [{"token" "t3" "version" "t3.hash0"} {"token" "t4" "version" "t4.hash0"}]})
             token->token-metadata (token->token-metadata-fn token->token-data)]
         (is (= (max (-> 900 t/seconds t/in-minutes (+ stale-timeout-mins))

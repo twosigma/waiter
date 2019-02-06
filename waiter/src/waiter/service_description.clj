@@ -974,12 +974,12 @@
   (let [{:strs [idle-timeout-mins]} (service-id->service-description-fn service-id)
         source-tokens-set (service-id->source-tokens-set-fn service-id)]
     (if (and (seq source-tokens-set)
-             (some (fn [source-tokens]
-                     (and (seq source-tokens)
-                          ;; safe assumption mark a service stale when every token used to access it is stale
-                          (every? (fn [{:strs [token version]}]
-                                    (not= (token->token-hash token) version))
-                                source-tokens)))
+             ;; safe assumption mark a service stale when every token used to access it is stale
+             (every? (fn [source-tokens]
+                       (and (seq source-tokens)
+                            (every? (fn [{:strs [token version]}]
+                                      (not= (token->token-hash token) version))
+                                    source-tokens)))
                    source-tokens-set))
       (do
         (log/info service-id "that uses tokens is stale")
