@@ -143,6 +143,12 @@
           current-user (System/getProperty "user.name")
           token-root (retrieve-token-root waiter-url)]
 
+      (log/info "creating token without parameters should fail")
+      (let [token (str service-id-prefix ".empty")
+            {:keys [body] :as response} (post-token waiter-url {:token token})]
+        (assert-response-status response 400)
+        (is (str/includes? (str body) (str "No parameters provided for " token)) (str body)))
+
       (log/info "creating the tokens")
       (doseq [token tokens-to-create]
         (let [response (post-token waiter-url {:health-check-url "/check"
