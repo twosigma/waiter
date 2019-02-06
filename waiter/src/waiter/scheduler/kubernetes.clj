@@ -657,7 +657,7 @@
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
            replicaset-api-version service-id->password-fn] :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
+   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs image
            health-check-max-consecutive-failures mem min-instances ports
            run-as-user] :as service-description}
    {:keys [default-container-image log-bucket-url] :as context}]
@@ -714,7 +714,7 @@
                                              :waiter-cluster cluster-name}}
                          :spec {:containers [{:command ["/usr/bin/waiter-init" cmd]
                                               :env env
-                                              :image default-container-image
+                                              :image (or image default-container-image)
                                               :imagePullPolicy "IfNotPresent"
                                               :livenessProbe {:httpGet {:path health-check-url
                                                                         :port port0
