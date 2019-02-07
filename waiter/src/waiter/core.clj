@@ -192,7 +192,10 @@
    For WebSocket requests, it returns values like WS/8, WS/13."
   [{:keys [headers scheme ^ServletRequest servlet-request]}]
   (if servlet-request
-    (.getProtocol servlet-request)
+    (or (some-> headers
+                (get "x-forwarded-proto-version")
+                str/upper-case)
+        (.getProtocol servlet-request))
     (when scheme
       (str/upper-case
         ;; currently, only websockets need this branch to determine version
