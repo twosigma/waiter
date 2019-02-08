@@ -1429,7 +1429,10 @@
 
 (deftest test-request->protocol
   (is (nil? (request->protocol {})))
+  (is (nil? (request->protocol {:headers {"x-forwarded-proto-version" "Foo/Bar"}})))
   (is (= "HTTP" (request->protocol {:scheme :http})))
+  (is (= "FOO/BAR" (request->protocol {:headers {"x-forwarded-proto-version" "Foo/Bar"}
+                                       :servlet-request (Object.)})))
   (is (= "HTTP/1.1" (request->protocol {:scheme :http
                                                  :servlet-request (reify ServletRequest
                                                                     (getProtocol [_] "HTTP/1.1"))})))
