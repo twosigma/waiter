@@ -66,9 +66,7 @@
    ; Marathon imposes a 512 character limit on environment variable keys and values
    (s/optional-key "env") (s/constrained {environment-variable-schema (s/constrained s/Str #(<= 1 (count %) 512))}
                                          #(< (count %) 100))
-   (s/optional-key "image") (s/cond-pre schema/non-empty-string
-                                        {(s/required-key "docker-image") schema/non-empty-string
-                                         (s/required-key "vats-volume") schema/non-empty-string})
+   (s/optional-key "image") schema/non-empty-string
    (s/optional-key "metadata") (s/constrained {(s/both schema/valid-string-length #"^[a-z][a-z0-9\\-]*$")
                                                schema/valid-string-length}
                                               #(< (count %) 100))
