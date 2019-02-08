@@ -659,7 +659,7 @@
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs image
            health-check-max-consecutive-failures mem min-instances ports
-           run-as-user] {:strs [docker-image]} "image" :as service-description}
+           run-as-user] :as service-description}
    {:keys [default-container-image log-bucket-url] :as context}]
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
@@ -714,7 +714,7 @@
                                              :waiter-cluster cluster-name}}
                          :spec {:containers [{:command ["/usr/bin/waiter-init" cmd]
                                               :env env
-                                              :image (or docker-image image default-container-image)
+                                              :image (or image default-container-image)
                                               :imagePullPolicy "IfNotPresent"
                                               :livenessProbe {:httpGet {:path health-check-url
                                                                         :port port0
