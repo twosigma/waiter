@@ -137,7 +137,8 @@
       (make-request-and-assert-timeout waiter-url request-headers start-time-ms timeout-period-sec)
       (delete-service waiter-url request-headers))))
 
-(deftest ^:parallel ^:integration-slow test-request-queue-timeout-max-instances-limit
+; Marked explicit because it's flaky
+(deftest ^:parallel ^:integration-slow ^:explicit test-request-queue-timeout-max-instances-limit
   ;; Limits the service to a single instance and then makes a long requests to it on each router.
   ;; Then we make a request with a small timeout and make sure it actually times out.
   (testing-using-waiter-url
