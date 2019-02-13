@@ -14,10 +14,11 @@
 ;; limitations under the License.
 ;;
 (defproject token-syncer "0.1.0-SNAPSHOT"
-  :dependencies [[twosigma/jet "0.7.10-20180627_133335-g2a9429e"]
+  :dependencies [[twosigma/jet "0.7.10-20190124_123705-g05ee789"]
                  [clj-time "0.12.0"]
                  [commons-codec/commons-codec "1.10"]
-                 [org.clojure/clojure "1.8.0"]
+                 [org.clojure/clojure "1.10.0"]
+                 [org.clojure/core.async "0.4.474"]
                  [org.clojure/data.json "0.2.6"]
                  [org.clojure/tools.cli "0.3.5"]
                  [org.clojure/tools.logging "0.3.1"]

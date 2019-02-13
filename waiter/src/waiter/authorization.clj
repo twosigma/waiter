@@ -14,7 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.authorization
-  (require [clojure.string :as string]))
+  (:require [clojure.string :as string]))
 
 (defprotocol EntitlementManager
   "Security related methods"

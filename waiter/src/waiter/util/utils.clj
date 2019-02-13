@@ -484,11 +484,6 @@
         (throw (ex-info "Unable to resolve factory function" (assoc component-config :ns (namespace factory-fn)))))
       (throw (ex-info "No :factory-fn specified" component-config)))))
 
-(defn pos-int?
-  "Returns true if x is a positive integer"
-  [x]
-  (and (integer? x) (pos? x)))
-
 (defn port-available?
   "Returns true if port is not in use"
   [port]

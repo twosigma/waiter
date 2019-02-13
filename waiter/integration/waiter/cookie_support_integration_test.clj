@@ -15,6 +15,7 @@
 ;;
 (ns waiter.cookie-support-integration-test
   (:require [clojure.data.json :as json]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [waiter.util.client-tools :refer :all]))
 
@@ -54,6 +55,6 @@
         (let [{:keys [service-id cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))
               {:keys [body]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/request-info"
                                                                                           :cookies cookies))
-              {:strings [headers]} (json/read-str (str body))]
-          (is (not (contains? headers "cookie")))
+              {:strs [headers]} (json/read-str (str body))]
+          (is (str/blank? (get headers "cookie")))
           (delete-service waiter-url service-id))))))

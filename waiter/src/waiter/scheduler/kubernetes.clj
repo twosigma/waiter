@@ -767,7 +767,7 @@
    and optionally start a chime to periodically refresh the value."
   [{:keys [action-fn refresh-delay-mins] :as context}]
   {:pre [(or (nil? refresh-delay-mins)
-             (utils/pos-int? refresh-delay-mins))
+             (pos-int? refresh-delay-mins))
          (symbol? action-fn)]}
   (let [refresh! (-> action-fn utils/resolve-symbol deref)
         auth-update-task (fn auth-update-task []
@@ -954,24 +954,24 @@
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
          (re-matches #"https?" fileserver-scheme)
-         (utils/pos-int? (:socket-timeout http-options))
-         (utils/pos-int? (:conn-timeout http-options))
+         (pos-int? (:socket-timeout http-options))
+         (pos-int? (:conn-timeout http-options))
          (and (number? log-bucket-sync-secs) (<= 0 log-bucket-sync-secs 300))
          (or (nil? log-bucket-url) (some? (io/as-url log-bucket-url)))
          (utils/non-neg-int? max-patch-retries)
-         (utils/pos-int? max-name-length)
+         (pos-int? max-name-length)
          (not (string/blank? cluster-name))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
          (integer? pod-sigkill-delay-secs)
          (<= 0 pod-sigkill-delay-secs 300)
-         (utils/pos-int? pod-suffix-length)
+         (pos-int? pod-suffix-length)
          (not (string/blank? replicaset-api-version))
          (symbol? (:factory-fn replicaset-spec-builder))
          (some? (io/as-url url))
          (not (string/blank? scheduler-name))
          (au/chan? scheduler-state-chan)
-         (utils/pos-int? scheduler-syncer-interval-secs)
+         (pos-int? scheduler-syncer-interval-secs)
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
