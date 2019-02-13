@@ -30,7 +30,7 @@
                    :dev :dev
                    :perf (every-pred :perf (complement :explicit))}
 
-  :dependencies [[bidi "2.1.4"
+  :dependencies [[bidi "2.1.5"
                   :exclusions [prismatic/schema ring/ring-core]]
                  [twosigma/jet "0.7.10-20190124_123705-g05ee789"]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
@@ -53,7 +53,7 @@
                   [org.clojure/clojure
                    clj-time/clj-time
                    org.clojure/core.async]]
-                 [joda-time "2.10"]
+                 [joda-time "2.10.1"]
                  [twosigma/metrics-clojure "2.6.0-20180124_201441-g72cee16"
                   :exclusions [org.clojure/clojure io.netty/netty org.slf4j/slf4j-api]]
                  [metrics-clojure-jvm "2.10.0"
@@ -72,7 +72,7 @@
                  [org.apache.curator/curator-x-discovery "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.10.0"]
-                 [org.clojure/core.async "0.4.474"
+                 [org.clojure/core.async "0.4.490"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [org.clojure/core.memoize "0.7.1"
                   :exclusions [org.clojure/clojure]]
@@ -83,19 +83,19 @@
                  [org.clojure/tools.cli "0.4.1"]
                  [org.clojure/tools.logging "0.4.1"]
                  [org.clojure/tools.namespace "0.2.11"]
-                 [org.clojure/tools.reader "1.3.1"]
+                 [org.clojure/tools.reader "1.3.2"]
                  [org.slf4j/slf4j-log4j12 "1.7.25"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]
                  [prismatic/plumbing "0.5.5"]
-                 [prismatic/schema "1.1.9"]
-                 [ring/ring-core "1.7.0"
+                 [prismatic/schema "1.1.10"]
+                 [ring/ring-core "1.7.1"
                   :exclusions [org.clojure/tools.reader]]
                  [ring/ring-ssl "0.3.0"
                   :exclusions [ring/ring-core]]
                  [ring-basic-authentication "1.0.5"]
                  [slingshot "0.12.2"]
-                 [try-let "1.2.0"
+                 [try-let "1.3.1"
                   :exclusions [org.clojure/clojure]]]
 
   :resource-paths ["resources"]
