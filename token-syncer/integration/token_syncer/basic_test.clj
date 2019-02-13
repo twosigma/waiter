@@ -31,7 +31,9 @@
                         "mem" 2048
                         "metric-group" "syncer-test"})
 
-(defn- waiter-urls []
+(defn- waiter-urls
+  "Retrieves urls to the waiter clusters provided in the WAITER_URIS environment variable."
+  []
   (let [waiter-uris (System/getenv "WAITER_URIS")]
     (is waiter-uris)
     (-> waiter-uris
@@ -39,10 +41,13 @@
         sort)))
 
 (defn- waiter-url->cluster
+  "Retrieves the cluster name corresponding to the provided cluster,"
   [waiter-url]
   (str "cluster-" (hash waiter-url)))
 
-(defn- waiter-api []
+(defn- waiter-api
+  "Initializes and returns the Waiter API functions."
+  []
   (main/init-waiter-api {:connection-timeout-ms 5000, :idle-timeout-ms 5000}))
 
 (deftest ^:integration test-environment
@@ -75,6 +80,7 @@
       (get :token-etag)))
 
 (defn- cleanup-token
+  "'Hard' deletes the token on all provided clusters."
   [{:keys [hard-delete-token] :as waiter-api} waiter-urls token-name]
   (log/info "Cleaning up token:" token-name)
   (doseq [waiter-url waiter-urls]
