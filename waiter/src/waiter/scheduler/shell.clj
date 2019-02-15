@@ -759,13 +759,12 @@
   "Detects and marks lost processes."
   [running-pids id->instance]
   (pc/map-vals
-    (fn [{:strs [killed?] :as instance}]
-      (let [pid (get instance "shell-scheduler/pid")]
-        (cond-> (-> (pc/map-keys keyword instance)
-                    (update :started-at str-to-date-safe))
-          (and (not killed?) (not (contains? running-pids pid)))
-          (assoc :killed? true
-                 :message "Process lost after restart"))))
+    (fn [{:strs [killed?] pid "shell-scheduler/pid" :as instance}]
+      (cond-> (-> (pc/map-keys keyword instance)
+                  (update :started-at str-to-date-safe))
+        (and (not killed?) (not (contains? running-pids pid)))
+        (assoc :killed? true
+               :message "Process lost after restart")))
     id->instance))
 
 (defn- keywordize-task-stats
