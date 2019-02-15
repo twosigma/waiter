@@ -14,15 +14,16 @@
 ;; limitations under the License.
 ;;
 (defproject token-syncer "0.1.0-SNAPSHOT"
-  :dependencies [[twosigma/jet "0.7.10-20180627_133335-g2a9429e"]
-                 [clj-time "0.12.0"]
-                 [commons-codec/commons-codec "1.10"]
-                 [org.clojure/clojure "1.8.0"]
+  :dependencies [[twosigma/jet "0.7.10-20190124_123705-g05ee789"]
+                 [clj-time "0.15.1"]
+                 [commons-codec/commons-codec "1.11"]
+                 [org.clojure/clojure "1.10.0"]
+                 [org.clojure/core.async "0.4.490"]
                  [org.clojure/data.json "0.2.6"]
-                 [org.clojure/tools.cli "0.3.5"]
-                 [org.clojure/tools.logging "0.3.1"]
-                 [org.slf4j/slf4j-log4j12 "1.7.21"]
-                 [prismatic/plumbing "0.5.4"]]
+                 [org.clojure/tools.cli "0.4.1"]
+                 [org.clojure/tools.logging "0.4.1"]
+                 [org.slf4j/slf4j-log4j12 "1.7.25"]
+                 [prismatic/plumbing "0.5.5"]]
   :jvm-opts ["-server"
              "-XX:+UseG1GC"
              "-XX:MaxGCPauseMillis=50"]
