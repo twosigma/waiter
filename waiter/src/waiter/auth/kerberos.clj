@@ -118,7 +118,8 @@
          (pos? keep-alive-mins)
          (integer? max-queue-length)
          (pos? max-queue-length)]}
-  (let [executor (ThreadPoolExecutor. 1 concurrency-level keep-alive-mins TimeUnit/MINUTES (LinkedBlockingQueue.))]
+  (let [queue (LinkedBlockingQueue.)
+        executor (ThreadPoolExecutor. concurrency-level concurrency-level keep-alive-mins TimeUnit/MINUTES queue)]
     (metrics/waiter-gauge #(.getActiveCount executor)
                           "core" "kerberos" "throttle" "active-thread-count")
     (metrics/waiter-gauge #(- concurrency-level (.getActiveCount executor))
