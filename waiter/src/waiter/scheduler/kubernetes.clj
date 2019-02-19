@@ -91,7 +91,7 @@
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
   [replicaset-json]
-  (if (contains? replicaset-json :error)
+  (if (= "Failure" (:status replicaset-json))
     (do
       (log/info "encountered error response in ReplicaSet query:" replicaset-json)
       nil)
